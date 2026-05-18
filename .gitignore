@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Deployment scratch
+.fly/
+.vercel/
+
+# Drizzle migration cache (when added per-app)
+**/drizzle/meta/_journal.json.lock
+
+# Misc
+.turbo/
