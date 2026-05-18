@@ -28,7 +28,7 @@ circls-platform/
 ├── IMPLEMENTATION_GUIDE.md   Phased plan for sessions
 ├── pnpm-workspace.yaml
 ├── package.json
-├── .nvmrc                    Node 22
+├── .nvmrc                    Node 24
 └── .gitignore
 ```
 
@@ -43,7 +43,7 @@ The `apps/` and `packages/` directories are intentionally empty at Phase 0. Each
 ## Quick start (once apps exist)
 
 ```bash
-nvm use                       # Node 22
+nvm use                       # Node 24
 pnpm install
 pnpm dev                      # Currently a stub — wired up in Phase 1
 ```

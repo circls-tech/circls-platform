@@ -20,7 +20,7 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 ## Conventions (locked)
 
-- **Node 22** (via `.nvmrc`). `nvm use` before any command.
+- **Node 24** (via `.nvmrc`). `nvm use` before any command.
 - **pnpm 9** for all installs. Never npm or yarn.
 - **TypeScript strict mode** on every package (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
 - **DB columns:** `snake_case`. TypeScript / API: `camelCase`. Drizzle's `mapped` field name handles the bridge.
@@ -36,7 +36,7 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 | When needed | What |
 |---|---|
-| Phase 1 | Node 22 + pnpm 9 installed locally. Docker Desktop installed (for local Postgres if not using Neon directly in dev). |
+| Phase 1 | Node 24 + pnpm 9 installed locally. Docker Desktop installed (for local Postgres if not using Neon directly in dev). |
 | Phase 1 | Fly.io account + `fly` CLI installed + `fly auth login`. |
 | Phase 2 | Neon account created. New Neon project named `circls-platform`. Get the connection string. |
 | Phase 3 | Firebase project (new or reuse stage). Enable phone OTP + email/password sign-in methods. Download a service-account JSON for the backend. |
@@ -70,7 +70,7 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 - `apps/api/src/lib/errors.ts` — `AppError` hierarchy: `BadRequest`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`, `RateLimit`, `Upstream`.
 - `apps/api/src/routes/health.ts` — `/v1/health` + `/v1/health/live`.
 - `apps/api/.env.example` — `PORT=8080`, `LOG_LEVEL=info`.
-- `apps/api/Dockerfile` — multi-stage Node 22-alpine, pnpm install via corepack.
+- `apps/api/Dockerfile` — multi-stage Node 24-alpine, pnpm install via corepack.
 - `apps/api/fly.toml` — `primary_region = "bom"`, single `app` process on `:8080`.
 - Root `package.json` — wire `pnpm dev` to filter `@circls/api`.
 
@@ -89,7 +89,23 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 **Out of scope (will exist later):** DB connection, auth, any real route. The health check is intentionally the only endpoint.
 
-**Actual outcome:** _(fill in after the session)_
+**Actual outcome:**
+- Fastify v5 server in `apps/api` boots on `:8080`. `GET /v1/health` and `/v1/health/live` both return `{ok:true}`. Unknown routes return `{error:{code:"not_found",message:"..."}}`.
+- Plugins registered: `@fastify/cors` (origin: true, credentials: true), `@fastify/helmet` (defaults), `@fastify/sensible`. Rate-limit + swagger deferred until they have a real consumer.
+- Env: `PORT`, `LOG_LEVEL`, `NODE_ENV` — zod-validated in `src/config/env.ts`; invalid env fails fast with a readable error.
+- Logger: Fastify-owned Pino instance using pino-pretty in non-prod; a standalone `lib/logger.ts` covers entrypoint lifecycle logs (boot, shutdown).
+- Errors: `AppError` hierarchy (`BadRequest`/`Unauthorized`/`Forbidden`/`NotFound`/`Conflict`/`RateLimit`/`Upstream`) → mapped to the shared `{error:{code,message,details?}}` shape by `setErrorHandler`. Fastify validation errors → 400 `bad_request`. Unhandled → 500 `internal_error` (message hidden in production).
+- Graceful shutdown: SIGTERM/SIGINT call `app.close()`; verified by sending SIGTERM in dev (`shutdown_start` log emitted before exit; final flushed line is occasionally lost to pino-pretty's worker transport — non-blocking for Phase 1).
+- Dockerfile is multi-stage; build context is the repo root (`docker build -f apps/api/Dockerfile .`). Uses `pnpm deploy --prod /out` for a clean runtime artifact. Runs as the `node` user, exposes 8080.
+- `fly.toml` placed but not deployed — primary_region `bom`, single `app` process running `node dist/index.js`, health check on `/v1/health/live`.
+- Root `pnpm dev` now filters to `@circls/api`.
+
+**Deviations from the guide:**
+- **Node 24, not 22**: `.nvmrc`, root + api `engines.node`, Dockerfile base image, and the guide's own Conventions/Prerequisites entries were bumped to Node 24 (current LTS). Phase-1 decision.
+- Added `apps/api/.dockerignore` (not in the deliverable list) — necessary to keep `node_modules` out of the Docker build context.
+
+**Follow-ups queued:**
+- `pnpm` itself flags an upgrade `9.12.0 → 11.x` available. Phase-1 stays on 9.12.0 (locked in `packageManager`). Bump as a separate, deliberate step before any phase that depends on it.
 
 ---
 

@@ -4,11 +4,11 @@
   "private": true,
   "description": "Circls platform monorepo — Fastify API + Next.js portals.",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "packageManager": "pnpm@9.12.0",
   "scripts": {
-    "dev": "echo 'No app scaffolded yet. See IMPLEMENTATION_GUIDE.md → Phase 1.'",
+    "dev": "pnpm --filter @circls/api dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
