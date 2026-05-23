@@ -537,6 +537,23 @@ When a decision is made *during* a phase that's not in the plan above, log it he
 - **2026-05-23 (hosting):** Replaced Fly.io + Neon with a single self-hosted **Coolify** VPS (India region). Rationale + tradeoffs in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) → *Hosting revision (2026-05-23)*. Inserted **Phase 2 — Infrastructure** and renumbered the old DB/Auth phases to 3/4; `apps/api/fly.toml` retired; UUID v7 now uses PG18's native `uuidv7()`.
 - **2026-05-23 (sequencing):** Deferred the consumer booking app + all online-payment work. Grouped phases into **Track A — Walk-in Reception MVP** (2–10) and **Track B — Online / Consumer / Integrations** (11–19, deferred). Moved the Admin Console skeleton from the old Phase 4 into Phase 16 (not on the MVP critical path).
 
+## Build log — 2026-05-24 (autonomous session)
+
+Track A (walk-in reception MVP) backend built end-to-end and verified against
+Postgres 18 — **26/26 integration tests**, clean strict typecheck + production
+build. Each phase committed + pushed separately.
+
+- **Phase 2 (infra):** VPS provisioned (DO Bangalore) + hardened (ufw/fail2ban/swap); Coolify 4.1.0 installed; repo created + pushed to GitHub (private). **The live API deploy + Coolify-managed Postgres are a browser handoff — see [`DEPLOYMENT.md`](./DEPLOYMENT.md).** Local dev Postgres via `compose.yaml`.
+- **Phase 3:** Drizzle over postgres-js; `users` + migrations + `pingDb()`. PG18 native `uuidv7()`.
+- **Phase 4:** `firebase-admin` token verify, `requireAuth`, race-safe find-or-create, `GET /v1/me`.
+- **Phase 6:** `tenants` + `tenant_members`; `createTenant` (owner); membership + admin guards.
+- **Phase 7:** `venues` (membership-scoped CRUD + soft-delete).
+- **Phase 8:** `arenas` + `weekly_schedule` + `bookings`; `btree_gist` + the GIST exclusion constraint (DB-enforced no-double-booking).
+- **Phase 9:** walk-in bookings (`POST /v1/bookings`, idempotency-keyed) + inventory engine (overlap → `slot_taken`); cancel frees the slot.
+- **Phase 10:** `pricing_rules` + `resolvePricePaise` (priority, venue-local time); price stamped on the booking.
+
+**Deviations / deferred:** Phase 5 Partner Portal UI deferred to a frontend pass (needs Firebase web config + visual QA); `@circls/api-types` will land with the frontend (kept types in the API for now to avoid a monorepo build dependency); the live deploy + Firebase project are in `DEPLOYMENT.md`; UUID v7 uses PG18's native function. Per-phase commits: `37a538e` (3+4), `e95eb7f` (6), `e0d3eb4` (7), `0267b73` (8), `ad44619` (9), `a24167a` (10).
+
 ## Notes for fresh sessions
 
 If a future session opens this guide and you (Claude) are catching up cold:
