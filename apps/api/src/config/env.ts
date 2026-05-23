@@ -6,6 +6,10 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (postgres connection string)'),
+  // Firebase Admin service-account JSON (raw or base64). Optional in dev/test;
+  // required at runtime once auth is exercised (GET /v1/me etc.).
+  FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

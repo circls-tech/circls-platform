@@ -10,6 +10,7 @@ import sensible from '@fastify/sensible';
 import { env } from './config/env.js';
 import { AppError } from './lib/errors.js';
 import { healthRoutes } from './routes/health.js';
+import { meRoutes } from './routes/me.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -88,6 +89,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes);
+  await app.register(meRoutes);
 
   return app;
 }

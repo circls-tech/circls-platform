@@ -1,0 +1,25 @@
+# Local development Postgres — mirrors the self-hosted prod PG on Coolify
+# (Postgres 18: native uuidv7(), btree_gist available). NOT for production.
+#   docker compose up -d --wait
+#   DATABASE_URL=postgres://postgres:postgres@localhost:5433/circls
+services:
+  postgres:
+    image: postgres:18
+    container_name: circls-devpg
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: circls
+    ports:
+      - '5433:5432'
+    volumes:
+      # PG18 image wants the mount at /var/lib/postgresql (not .../data) — it
+      # stores data in a major-version subdir and refuses the old layout.
+      - circls_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d circls']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  circls_pgdata:

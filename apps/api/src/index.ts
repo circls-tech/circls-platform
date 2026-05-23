@@ -1,14 +1,24 @@
 import { env } from './config/env.js';
+import { closeDb, pingDb } from './db/client.js';
 import { logger } from './lib/logger.js';
 import { buildServer } from './server.js';
 
 async function main(): Promise<void> {
+  try {
+    await pingDb();
+    logger.info('db_connected');
+  } catch (err) {
+    logger.fatal({ err }, 'db_connection_failed');
+    process.exit(1);
+  }
+
   const app = await buildServer();
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     logger.info({ signal }, 'shutdown_start');
     try {
       await app.close();
+      await closeDb();
       logger.info('shutdown_complete');
       process.exit(0);
     } catch (err) {
