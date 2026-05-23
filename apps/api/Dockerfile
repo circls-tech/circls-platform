@@ -1,6 +1,6 @@
 # Build from the monorepo root, not from apps/api:
 #   docker build -f apps/api/Dockerfile -t circls-api .
-# Fly: `fly deploy -c apps/api/fly.toml` from the repo root.
+# Coolify: build pack = Dockerfile · base directory = repo root · Dockerfile = apps/api/Dockerfile · port 8080.
 
 FROM node:24-alpine AS base
 ENV PNPM_HOME=/pnpm

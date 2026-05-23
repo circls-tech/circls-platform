@@ -2,6 +2,8 @@
 
 > Phased build plan. **One phase per session.** Each phase has a single, reviewable goal. Phases are sequenced by dependency — don't skip ahead. Locked decisions live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md); the *what* and *why* live in [`docs/VISION.md`](./docs/VISION.md). This document is the *how* and *when*.
 
+> **Revised 2026-05-23.** Two pivots: **(1) Hosting** moved to a single self-hosted **Coolify** VPS (was Fly.io + Neon) — see [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) → *Hosting revision (2026-05-23)*. **(2) Sequencing** now ships a **walk-in reception MVP first** — a venue runs its booking desk *manually* through the Partner Portal — and **defers the consumer booking app (`circls.app`) and every online-payment phase** until that MVP is in real use. Phases are grouped into **Track A — Walk-in Reception MVP** (Phases 2–10) and **Track B — Online, Consumer & Integrations** (Phases 11–19, deferred).
+
 ## Working pattern
 
 Every session follows this rhythm:
@@ -26,25 +28,23 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 - **DB columns:** `snake_case`. TypeScript / API: `camelCase`. Drizzle's `mapped` field name handles the bridge.
 - **Money:** always `BIGINT` paise, suffix the variable with `Paise` (e.g., `pricePaise`). Never store rupees as decimals.
 - **Datetime:** always `TIMESTAMPTZ`. Always UTC at rest. Render in venue-local TZ on the frontend using the Venue's `tz_name`.
-- **IDs:** UUID v7 via `pg_uuidv7` extension. Generated server-side at insert.
+- **IDs:** UUID v7 via Postgres 18's native `uuidv7()` (the `pg_uuidv7` extension only as a fallback on PG<18). Generated server-side at insert.
 - **Auth header:** `Authorization: Bearer <firebase-jwt>` for consumer/partner/admin; `X-API-Key: <key>` for integration partners.
 - **Error shape:** all errors return `{error: {code: string, message: string, details?: object}}`. Codes are stable strings like `slot_taken`, `kyc_pending`, `auth_required`.
 - **API versioning:** every route prefixed `/v1/`. Bump to `/v2/` only if a breaking change is unavoidable.
 - **Idempotency:** `POST` endpoints that create rows require an `Idempotency-Key` header. Server stores responses for 24h.
+- **Hosting:** self-hosted **Coolify** on one India-region VPS; the API, worker, Postgres, cron, and the Next.js apps all run on that one box. Postgres is reached over Coolify's private network. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) → *Hosting revision*.
 
 ## Prerequisites (Vedant ops — do these before the relevant phase, not all at once)
 
 | When needed | What |
 |---|---|
-| Phase 1 | Node 24 + pnpm 9 installed locally. Docker Desktop installed (for local Postgres if not using Neon directly in dev). |
-| Phase 1 | Fly.io account + `fly` CLI installed + `fly auth login`. |
-| Phase 2 | Neon account created. New Neon project named `circls-platform`. Get the connection string. |
-| Phase 3 | Firebase project (new or reuse stage). Enable phone OTP + email/password sign-in methods. Download a service-account JSON for the backend. |
-| Phase 5 | Vercel account + Vercel CLI + `vercel login`. New Vercel project for `apps/admin`. |
-| Phase 6 | Same as Phase 5, second Vercel project for `apps/partners`. |
-| Phase 11 | Razorpay test-mode account. Note the Key ID + Key Secret. Apply for live-mode (24-72h approval). |
-| Phase 11 | Cloudflare account + create an R2 bucket named `circls-assets`. |
-| Phase 13 | Pick + sign up for SMS / WhatsApp / email providers (decision deferred until phase). |
+| Phase 1 | Node 24 + pnpm 9 installed locally. Docker Desktop installed (for local Postgres in dev). |
+| Phase 2 | A VPS — India region, Ubuntu 24.04 LTS, ~8 GB RAM / 4 vCPU (e.g. DigitalOcean Bangalore / AWS Lightsail Mumbai / E2E Networks). A domain you control + a Cloudflare account (DNS/CDN in front). *(Coolify install is walked through in the phase itself.)* |
+| Phase 2 | A Cloudflare R2 bucket `circls-backups` for off-box Postgres backups. |
+| Phase 4 | Firebase project (new or reuse stage). Enable phone OTP + email/password sign-in methods. Download a service-account JSON for the backend. |
+| Phase 11 *(Track B)* | Razorpay test-mode account (Key ID + Secret; apply for live-mode, 24-72h). Cloudflare R2 bucket `circls-assets` for venue media. |
+| Phase 13 *(Track B)* | Pick + sign up for SMS / WhatsApp / email providers (decision deferred until phase). |
 
 ## Phases
 
@@ -106,44 +106,83 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 **Follow-ups queued:**
 - `pnpm` itself flags an upgrade `9.12.0 → 11.x` available. Phase-1 stays on 9.12.0 (locked in `packageManager`). Bump as a separate, deliberate step before any phase that depends on it.
+- **`apps/api/fly.toml` is superseded** by the 2026-05-23 hosting decision (Coolify). Coolify deploys straight from the `Dockerfile`; the `fly.toml` is removed in Phase 2.
 
 ---
 
-### Phase 2 — Database + Drizzle
+## Track A — Walk-in Reception MVP
 
-**Goal:** Neon database wired; `pg_uuidv7` extension installed; Drizzle ORM connected; first migration creates the `users` table; the API can `SELECT 1` on startup as a connection check.
+> **Goal of this track (Phases 2–10):** a venue's reception desk runs entirely on Circls. Staff sign into the Partner Portal, configure venue → arenas → weekly schedule → pricing, and create + manage **walk-in bookings by hand**, with Postgres enforcing no-double-booking. No online payments, no consumer app yet.
 
-**Vedant ops before this phase:** Neon project created, connection string in hand.
+### Phase 2 — Infrastructure: Coolify + Postgres + first live deploy
+
+**Goal:** The Phase-1 API skeleton runs **live** on a self-hosted Coolify VPS at `https://api.circls.app/v1/health`, backed by a self-hosted **PostgreSQL 18** on the same box (internal network; not yet wired to the app). One platform, one dashboard, automated off-box DB backups.
+
+**Vedant ops before this phase:** VPS provisioned (India region, Ubuntu 24.04 LTS, ~8 GB / 4 vCPU); a domain + Cloudflare; an R2 bucket `circls-backups`. (We walk through Coolify install together in-session.)
+
+**Deliverables:**
+- VPS hardened: SSH-key-only, non-root sudo user, `ufw` (22/80/443), `fail2ban`, unattended security upgrades.
+- Coolify installed (`AUTOUPDATE=false`), dashboard secured behind HTTPS on its own subdomain.
+- Coolify GitHub App connected to the `circls-platform` repo.
+- **API service** deployed from `apps/api/Dockerfile` (root build context) → `api.circls.app`, auto-SSL, health check on `/v1/health/live`, auto-redeploy on push to `main`.
+- **PostgreSQL 18** one-click service on Coolify's internal network — not publicly exposed; strong creds stored in Coolify; `DATABASE_URL` (internal hostname) set as an API env var for Phase 3.
+- Automated **Postgres backups → R2** (Coolify scheduled backups) with a **tested restore**.
+- `apps/api/fly.toml` removed (superseded).
+- Cloudflare DNS for `circls.app` + `api.circls.app`, proxied.
+
+**Verify:**
+- `curl https://api.circls.app/v1/health` → `{"ok":true}` over HTTPS with a valid cert.
+- `curl https://api.circls.app/v1/health/live` → `{"ok":true}`; Coolify shows the service healthy.
+- A `git push` to `main` triggers an automatic rebuild + redeploy.
+- Postgres answers `SELECT 1` from inside the API container over the internal hostname; the DB port is **not** reachable from the public internet.
+- A backup file lands in the R2 bucket; a test restore succeeds.
+
+**Decisions made in this phase:**
+- VPS provider + region + size.
+- Postgres image: **PG18** (native `uuidv7()`) vs a custom image carrying `pg_uuidv7`. (Recommend PG18.)
+- Coolify control plane: self-hosted on the box vs **Coolify Cloud** (~$5/mo, removes the dashboard SPOF).
+- Backup cadence + retention; where secrets are backed up (Doppler / 1Password).
+
+**Out of scope:** Drizzle / ORM wiring (Phase 3), any schema (Phase 3), auth (Phase 4). Postgres exists, but the app doesn't talk to it yet beyond a connectivity check.
+
+**Actual outcome:** _(fill in after the session)_
+
+---
+
+### Phase 3 — Database + Drizzle
+
+**Goal:** Drizzle ORM connected to the self-hosted Postgres from Phase 2; first migration creates the `users` table (UUID v7 PKs via PG18's native `uuidv7()`); the API runs `pingDb()` (`SELECT 1`) on startup as a connection check.
+
+**Vedant ops before this phase:** None — Postgres was provisioned in Phase 2; its internal `DATABASE_URL` is already an env var on the Coolify API service.
 
 **Deliverables:**
 - `apps/api/package.json` — add drizzle-orm, postgres@^3, drizzle-kit (dev).
 - `apps/api/drizzle.config.ts` — postgresql dialect, schema at `src/db/schema/index.ts`, migrations to `src/db/migrations/`.
-- `apps/api/src/db/client.ts` — `postgres-js` client + drizzle wrapper. **`prepare: false`** for Neon pgbouncer compatibility.
+- `apps/api/src/db/client.ts` — `postgres-js` client + drizzle wrapper. Prepared statements stay **on** (self-hosted PG, no external pooler — the Neon `prepare:false` workaround is gone); pool size ~10.
 - `apps/api/src/db/schema/index.ts` — barrel export.
 - `apps/api/src/db/schema/_columns.ts` — shared column helpers (`uuidPk()`, `createdAt()`, `updatedAt()`, `bigintPaise()`).
 - `apps/api/src/db/schema/users.ts` — `users` table: `id (uuid v7)`, `firebase_uid (text, unique)`, `phone_e164 (text, nullable, unique)`, `email (text, nullable, unique)`, `display_name (text, nullable)`, `status (enum: active/suspended)`, `created_at`, `updated_at`.
-- `apps/api/src/db/migrations/0001_enable_uuidv7.sql` — `CREATE EXTENSION IF NOT EXISTS pg_uuidv7;`
-- `apps/api/src/db/migrations/0002_users.sql` — `users` table.
+- `apps/api/src/db/migrations/0001_users.sql` — `users` table; `id` defaults to `uuidv7()` (PG18 native — no extension migration needed). (`btree_gist` is enabled later in Phase 8, where the booking exclusion constraint first needs it.)
 - `apps/api/src/db/migrate.ts` — runs migrations programmatically; called as `pnpm db:migrate`.
 - `.env.example` — add `DATABASE_URL=postgres://...`.
 - API startup: a `pingDb()` call that logs "DB connected" or exits on failure.
 
 **Verify:**
-- `pnpm db:migrate` runs cleanly against Neon.
-- `SELECT * FROM users;` on Neon dashboard returns 0 rows.
+- `pnpm db:migrate` runs cleanly against the self-hosted Postgres.
+- `SELECT * FROM users;` (via `psql` or Coolify's DB terminal) returns 0 rows.
 - `SELECT id FROM users LIMIT 1;` after a manual insert returns a UUID v7 starting with `01…` (current timestamp prefix).
 - API server logs "DB connected" on boot.
 
 **Decisions made:**
 - Migration filename convention (`NNNN_slug.sql` recommended).
 - Drizzle's `mapped` snake_case ↔ camelCase pattern.
-- Connection-pool size for Neon (start low, e.g., 10).
+- Connection-pool size (start low, e.g., 10).
 
 **Actual outcome:** _(fill in after the session)_
 
 ---
 
-### Phase 3 — Auth integration
+### Phase 4 — Auth integration
 
 **Goal:** Firebase Admin SDK wired; JWT verification middleware works; `GET /v1/me` returns the authenticated user (find-or-create on first call).
 
@@ -172,57 +211,40 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 ---
 
-### Phase 4 — Admin Console skeleton (`apps/admin`)
-
-**Goal:** Next.js 15 admin shell. Email/password login via Firebase Auth. Protected layout calls `/v1/me` and renders the admin's email + Firebase UID. Vercel preview deploy works.
-
-**Vedant ops before this phase:** Vercel project created for `apps/admin`. Add `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_API_BASE_URL` to Vercel + local `.env.local`.
-
-**Deliverables:**
-- `apps/admin/package.json` — next@^15, react@^19, @tanstack/react-query@^5, firebase@^11, tailwindcss@^4, @circls/api-types.
-- `apps/admin/next.config.ts` — typedRoutes, transpilePackages `['@circls/api-types']`, output `standalone`.
-- `apps/admin/tsconfig.json`, `apps/admin/postcss.config.mjs`, `apps/admin/eslint.config.mjs`.
-- `apps/admin/app/layout.tsx` — root html/body + providers + `robots: { index: false }`.
-- `apps/admin/app/globals.css` — Tailwind v4 `@import "tailwindcss"` + brand palette via `@theme`.
-- `apps/admin/app/providers.tsx` — TanStack Query client + AuthProvider.
-- `apps/admin/app/(auth)/login/page.tsx` — email/password form.
-- `apps/admin/app/(protected)/layout.tsx` — client-side gate (W phase-12 moves to middleware).
-- `apps/admin/app/(protected)/dashboard/page.tsx` — placeholder showing `useMe()` result.
-- `apps/admin/lib/firebase/client.ts` — Firebase init.
-- `apps/admin/lib/firebase/auth_context.tsx` — `AuthProvider` + `useAuth()`.
-- `apps/admin/lib/api/client.ts` — fetch wrapper attaching `Authorization: Bearer <jwt>`.
-- `apps/admin/lib/api/queries.ts` — `useMe()` Hook calling `/v1/me`.
-- `apps/admin/vercel.json` — monorepo build command.
-- `apps/admin/.env.local.example`.
-
-**Verify:**
-- `pnpm --filter @circls/admin dev` boots on `:3000`.
-- Sign in with email/password → land on `/dashboard` → see the User row from `/v1/me`.
-- Sign out → redirected to `/login`.
-- Vercel preview deploys cleanly.
-
-**Decisions made:**
-- TanStack Query defaults (stale time, retry policy).
-- Brand colors (Tailwind `@theme` palette).
-- Whether server-side auth gate (middleware) is in scope here or deferred to a later phase.
-
-**Actual outcome:** _(fill in)_
-
----
-
 ### Phase 5 — Partner Portal skeleton (`apps/partners`)
 
-**Goal:** Mirror of Phase 4 but with phone-OTP login (Firebase phone auth). Renders `useMe()` result on the protected dashboard. Vercel preview deploy works.
+**Goal:** Next.js 15 Partner Portal shell — **the first frontend, and the reception staff's app.** Phone-OTP login via Firebase Auth. Protected layout calls `/v1/me` and renders the signed-in user. Deploys live on Coolify at `partners.circls.app`. This phase establishes the frontend pattern (providers, auth context, API client, `useMe()`) that the Admin Console reuses later in Phase 16.
 
-**Deliverables:** Identical shape to `apps/admin` but with:
+**Vedant ops before this phase:** Firebase phone-OTP enabled (done in Phase 4). Add `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_API_BASE_URL` to the Coolify service env + local `.env.local`.
+
+**Deliverables:**
+- `apps/partners/package.json` — next@^15, react@^19, @tanstack/react-query@^5, firebase@^11, tailwindcss@^4, @circls/api-types.
+- `apps/partners/next.config.ts` — typedRoutes, transpilePackages `['@circls/api-types']`, output `standalone`.
+- `apps/partners/tsconfig.json`, `postcss.config.mjs`, `eslint.config.mjs`.
+- `apps/partners/app/layout.tsx` — root html/body + providers + Firebase recaptcha container + `robots: { index: false }`.
+- `apps/partners/app/globals.css` — Tailwind v4 `@import "tailwindcss"` + brand palette via `@theme`.
+- `apps/partners/app/providers.tsx` — TanStack Query client + AuthProvider.
 - `apps/partners/app/(auth)/login/page.tsx` — phone-input + OTP-confirmation flow.
-- Firebase recaptcha container in `app/layout.tsx`.
+- `apps/partners/app/(protected)/layout.tsx` — client-side auth gate (server-side middleware deferred).
+- `apps/partners/app/(protected)/dashboard/page.tsx` — placeholder showing `useMe()` result.
+- `apps/partners/lib/firebase/client.ts` — Firebase init.
+- `apps/partners/lib/firebase/auth_context.tsx` — `AuthProvider` + `useAuth()`.
+- `apps/partners/lib/api/client.ts` — fetch wrapper attaching `Authorization: Bearer <jwt>`.
+- `apps/partners/lib/api/queries.ts` — `useMe()` hook calling `/v1/me`.
+- Coolify service for `apps/partners` → `partners.circls.app`, auto-SSL.
+- `apps/partners/.env.local.example`.
 
-**Verify:** Sign in with phone OTP → see User row → sign out works.
+**Verify:**
+- `pnpm --filter @circls/partners dev` boots on `:3000`.
+- Sign in with phone OTP → land on `/dashboard` → see the User row from `/v1/me`.
+- Sign out → redirected to `/login`.
+- Deploys cleanly on Coolify at `partners.circls.app`.
 
 **Decisions made:**
 - Phone country-code handling (E.164, India `+91` default).
 - Recaptcha mode (invisible — same as legacy circls.app).
+- TanStack Query defaults (stale time, retry policy).
+- Brand colors (Tailwind `@theme` palette).
 - Whether onboarding flow lives here (no — Phase 7 adds it).
 
 **Actual outcome:** _(fill in)_
@@ -242,11 +264,11 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 - `apps/api/src/routes/tenants.ts` — `POST /v1/tenants`, `GET /v1/tenants` (admin), `GET /v1/me/tenants` (partner).
 - `packages/api-types/src/tenant.ts` — `Tenant` + `CreateTenantRequest`.
 - `apps/partners/app/(protected)/onboarding/create-tenant/page.tsx` — form.
-- `apps/admin/app/(protected)/tenants/page.tsx` — table view.
+- `apps/admin/app/(protected)/tenants/page.tsx` — table view. *(Admin UI deferred to Phase 16 with the Admin Console; the `GET /v1/tenants` endpoint is still built now.)*
 
 **Verify:**
 - Partner: create tenant → row inserted; TenantMember row created with `role='owner'`.
-- Admin: see all tenants in list.
+- Admin: all tenants returned by `GET /v1/tenants` (admin UI lands in Phase 16).
 - Slug uniqueness enforced (try duplicate → 409 `slug_taken`).
 - `withTenant` wrapper: a partner querying `tenants` only sees their own.
 
@@ -320,6 +342,16 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 **Actual outcome:** _(fill in)_
 
 ---
+
+## 🏁 Milestone — Walk-in Reception MVP
+
+> At the end of Phase 10, a venue's reception desk runs entirely on Circls: staff sign into the Partner Portal, configure venue → arenas → weekly schedule → pricing, and create + manage walk-in bookings by hand, with Postgres guaranteeing no double-booking. **This is the first shippable product — get it into real use at a venue before starting Track B.**
+
+---
+
+## Track B — Online, Consumer & Integrations *(deferred)*
+
+> **Deferred until the Walk-in Reception MVP is in real use.** Online payments (Razorpay Route), the consumer booking app (`circls.app`), notifications, cancellations/refunds, events/memberships, the **Admin Console**, the public Integration Surface, and production cutover all live here — sequenced by dependency as before, but not started until Track A has shipped and been validated at a real venue.
 
 ### Phase 11 — Razorpay Linked Account + KYC onboarding
 
@@ -415,16 +447,21 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 ---
 
-### Phase 16 — Audit log + Admin support tooling
+### Phase 16 — Admin Console (`apps/admin`) + Audit log + support tooling
 
-**Goal:** Every financial / KYC / admin / membership action writes to `audit_log`. Admin Console can search audit log for any booking / user / tenant.
+> The **Admin Console skeleton** was deferred here from the original Phase 4 — it isn't on the walk-in MVP critical path (the first tenants can be created by partners themselves or seeded via SQL). Build it now, alongside the audit log it surfaces.
+
+**Goal:** Next.js 15 admin shell with email/password login (reuses the frontend pattern from Phase 5). Every financial / KYC / admin / membership action writes to `audit_log`. The Admin Console can search the audit log for any booking / user / tenant.
+
+**Vedant ops before this phase:** `FIREBASE_*` + `NEXT_PUBLIC_API_BASE_URL` set on the Coolify service for `apps/admin`.
 
 **Deliverables:**
+- **Admin Console skeleton** (`apps/admin`) — same shape as `apps/partners` (Phase 5) but with email/password login; deploys on Coolify at `admin.circls.app`; protected dashboard renders `useMe()`. Includes the deferred tenant-list view (`app/(protected)/tenants/page.tsx`).
 - `audit_log` table + write helper (`writeAudit(ctx, action, entity, payload)`).
 - Hooks in all financial + KYC services.
-- Admin UI: timeline view per entity.
+- Admin UI: timeline view per entity; search by booking / user / tenant.
 
-**Verify:** Issue refund → audit row written. View booking in Admin → see refund event.
+**Verify:** Sign in to Admin (email/password) → see `/v1/me`. Issue refund → audit row written → view booking in Admin → see refund event.
 
 **Actual outcome:** _(fill in)_
 
@@ -448,6 +485,8 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 ---
 
 ### Phase 18 — Flutter consumer app renovation (in `circls-flutter`)
+
+> **Explicitly deferred (2026-05-23).** The consumer booking app does not start until the walk-in reception MVP is in real use *and* online booking (Phases 11–12) is live. This is the consumer-platform half of Circls (P1 in VISION).
 
 **Goal:** In the `circls-flutter` repo, rewrite the Firestore SDK calls to call our Fastify backend. OpenAPI-generated Dart client wired in. Phone-OTP login uses Firebase Auth → backend `/v1/me`.
 
@@ -486,13 +525,17 @@ Commit message style: `phase-N: <slug> — <short description>`. Example: `phase
 
 Captured as we go. Each item is queued for a future phase or session.
 
-- (placeholder — appended as we discover)
+- **Coolify control-plane SPOF** — decide self-hosted vs Coolify Cloud (~$5/mo) once the platform is production-critical.
+- **Staging environment** — a second Coolify environment or a cheap Hetzner box once there's more than one developer / real data to protect.
+- **Secrets backup** — mirror Coolify env vars into Doppler / 1Password so the VPS is never the only copy.
+- **Postgres PITR** — basic scheduled backups land in Phase 2; revisit WAL-archiving / point-in-time recovery before real payment data exists (Track B).
 
 ## Decision log
 
 When a decision is made *during* a phase that's not in the plan above, log it here with the phase tag.
 
-- (placeholder)
+- **2026-05-23 (hosting):** Replaced Fly.io + Neon with a single self-hosted **Coolify** VPS (India region). Rationale + tradeoffs in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) → *Hosting revision (2026-05-23)*. Inserted **Phase 2 — Infrastructure** and renumbered the old DB/Auth phases to 3/4; `apps/api/fly.toml` retired; UUID v7 now uses PG18's native `uuidv7()`.
+- **2026-05-23 (sequencing):** Deferred the consumer booking app + all online-payment work. Grouped phases into **Track A — Walk-in Reception MVP** (2–10) and **Track B — Online / Consumer / Integrations** (11–19, deferred). Moved the Admin Console skeleton from the old Phase 4 into Phase 16 (not on the MVP critical path).
 
 ## Notes for fresh sessions
 
@@ -502,3 +545,4 @@ If a future session opens this guide and you (Claude) are catching up cold:
 2. Check `git log --oneline` to see which phases are actually done in the repo (the ✅ in this guide is an indicator, not always current).
 3. Confirm the current phase with Vedant before writing any code.
 4. Never auto-chain phases. The guide is for *humans following step by step*, not for autonomous build.
+5. **Mind the tracks.** Track A (Phases 2–10) is the walk-in reception MVP and the only active work. Track B (Phases 11–19) — online payments, the `circls.app` consumer app, integrations — is deferred until the MVP is in real use; don't start it without an explicit go-ahead.

@@ -1,6 +1,6 @@
 # Circls — System Architecture
 
-> Tech stack and repository structure locked **2026-05-18**. Data-model column shape + ORM locked **2026-05-19**. See the *Tech stack*, *Repository structure*, and *Schema decisions* sections below. This document captures the system design (entities, boundaries, data flows, locked tooling). Specific endpoint contracts, UX flows, and revenue model are out of scope and live elsewhere.
+> Tech stack and repository structure locked **2026-05-18**. Data-model column shape + ORM locked **2026-05-19**. **Hosting revisited 2026-05-23** — moved from Fly.io + Neon to a single self-hosted Coolify VPS; see *Hosting revision (2026-05-23)* below. See the *Tech stack*, *Repository structure*, and *Schema decisions* sections below. This document captures the system design (entities, boundaries, data flows, locked tooling). Specific endpoint contracts, UX flows, and revenue model are out of scope and live elsewhere.
 
 ## High-level shape
 
@@ -27,24 +27,34 @@ No portal talks to another portal. No portal talks to the database. All cross-po
 | Layer | Technology | Notes |
 |---|---|---|
 | **Backend** | Node.js + **Fastify** (TypeScript) | Serves all frontends + Integration Surface via one typed HTTP API. |
-| **Database** | **PostgreSQL** on **Neon** | Serverless, scale-to-zero, branching for staging. ACID transactions back the inventory invariant. |
+| **Database** | **PostgreSQL 18** (self-hosted on Coolify, same VPS) | ACID transactions back the inventory invariant. Native `uuidv7()` + `btree_gist`; co-located with the API on Coolify's private network. *(was Neon — revisited 2026-05-23)* |
 | **ORM / query layer** | **Drizzle** (TypeScript) | SQL-honest, fast runtime, type-safe; pairs naturally with Fastify. App-layer tenancy enforced through a typed `withTenant(ctx, db)` wrapper. |
 | **Job queue** | **pg-boss** | Postgres-native; no Redis required. Upgrade path to BullMQ + Upstash if we outgrow it. |
 | **Authentication** | **Firebase Auth** (Firebase Auth *only* — no other Firebase services) | Phone OTP for consumers + partners; email/password for admins. Backend verifies JWTs via `firebase-admin`. |
 | **Image / asset storage** | **Cloudflare R2** | S3-compatible API, zero egress fees, easy CDN integration. |
-| **Consumer app** (`circls.app`) | **Flutter web** (existing codebase, largely rewritten against the new backend) | Path to mobile reuse later. |
+| **Consumer app** (`circls.app`) | **Flutter web** (existing codebase, largely rewritten against the new backend) | Path to mobile reuse later. **Build deferred (2026-05-23)** — the walk-in reception MVP ships first; see IMPLEMENTATION_GUIDE. |
 | **Partner Portal** (`partners.circls.app`) | **Next.js** (App Router) | Consumes the backend API; no business logic in `app/api/*` routes. |
 | **Admin Console** (`admin.circls.app`) | **Next.js** (App Router) | Same shape as Partner Portal. |
-| **Backend deploy** | **Fly.io** (`bom` region — Mumbai) | Persistent workers; low India latency. |
-| **Next.js deploy** | **Vercel** | Both Next.js apps. |
+| **Backend deploy** | **Coolify** on a single VPS (India region) | Self-hosted PaaS: API + worker + Postgres + cron on one box, one config surface, no per-GB egress, full Postgres control, in-country latency. *(was Fly.io `bom` — revisited 2026-05-23)* |
+| **Next.js deploy** | **Coolify** (same VPS) | Both Next.js apps, consolidated onto the single platform. *(was Vercel — revisited 2026-05-23)* |
 | **Flutter web deploy** | **Cloudflare Pages** | Keeps Firebase footprint to Auth only. |
 
 ### Design implications of this stack
 
 - **Same business logic everywhere.** The Fastify backend is the single source of truth. The Next.js portals and the Flutter app are thin frontends calling its endpoints. **No `app/api/*` route in Next.js carries business logic** — Next.js handles UI, routing, and at most thin BFF concerns (e.g., file-upload presigning if needed).
-- **Workers share the backend codebase.** A second entry point in `apps/api` runs as a worker process on Fly.io, sharing models, services, and DB-connection logic with the API server. No code duplication.
+- **Workers share the backend codebase.** A second entry point in `apps/api` runs as a worker process (a second Coolify service), sharing models, services, and DB-connection logic with the API server. No code duplication.
 - **Strong types across the JS boundary.** The Fastify backend defines the API contract in TypeScript; both Next.js apps consume the same `packages/api-types`. Contract changes surface as compile errors immediately.
 - **Flutter ↔ backend uses an OpenAPI contract.** The backend emits an OpenAPI spec; Flutter consumes it via Dart codegen, not hand-written types.
+
+### Hosting revision (2026-05-23)
+
+The original stack split hosting across **Fly.io** (compute, Mumbai) + **Neon** (serverless Postgres). Revisited and replaced with **a single self-hosted Coolify instance on one India-region VPS**, for three reasons:
+
+- **One platform, one config surface.** API + background worker + Postgres + cron + the Next.js apps all live on one box managed through one dashboard — no Fly/Neon/Vercel split to keep in sync.
+- **Egress.** VPS bandwidth allowances (TBs) remove per-GB egress billing; the chatty app↔DB path becomes free internal networking; media stays on R2 (zero egress).
+- **In-country + full Postgres control.** An India-region VPS co-locates app and DB in-country (neither Railway nor Neon offers an India region). Self-managed Postgres gives us PG18's native `uuidv7()` and `btree_gist` with no curated-extension limits.
+
+**Accepted tradeoffs (self-managed):** single point of failure (mitigate with provider snapshots + off-box Postgres backups to R2), we own OS patching/security, and DB durability/PITR is our responsibility rather than a managed provider's. Acceptable at pre-launch scale; the `Dockerfile` + vanilla Postgres keep us portable to a managed host later if we outgrow one box. Optional **Coolify Cloud** (~$5/mo) can run the control plane to remove the dashboard SPOF while still using our own server.
 
 ## Repository structure
 
@@ -120,7 +130,7 @@ These determine the storage shape of every table. Locked 2026-05-19.
 
 | # | Decision | Choice |
 |---|---|---|
-| 1 | **Primary keys** | **UUID v7** via the `pg_uuidv7` extension on Neon. Time-ordered so B-tree indexes stay clean; no business-volume leakage; client-generatable for optimistic UI. |
+| 1 | **Primary keys** | **UUID v7** via Postgres 18's native `uuidv7()` (self-hosted PG ≥18); the `pg_uuidv7` extension is the fallback for PG<18. Time-ordered so B-tree indexes stay clean; no business-volume leakage; client-generatable for optimistic UI. *(was "`pg_uuidv7` on Neon" — revisited 2026-05-23)* |
 | 2 | **Money** | **`BIGINT` paise** for every money column. Currency is INR-only at MVP; multi-currency deferred. No floats anywhere in the data path. |
 | 3 | **Time + timezone** | **`TIMESTAMPTZ`** for every datetime column. `Venue` carries an IANA `tz_name` (e.g., `Asia/Kolkata`) for rendering in venue-local time on the frontend. Never use `TIMESTAMP WITHOUT TZ`. |
 | 4 | **Delete strategy** | **Status enum + selective hard-delete + append-only financials.** Concrete map: <br>• **Status enum** on Booking, Tenant, Venue, Arena, Event, Membership, UserMembership, ApiKey, WebhookSubscription, TenantMember. <br>• **Hard-delete on TTL** for ephemeral rows: idempotency keys, expired sessions, abandoned-cart bookings (after sweep grace period). <br>• **Append-only, never deleted:** Payment, PayoutRecord, AuditLog. |
@@ -227,9 +237,9 @@ These remain open; each is a downstream choice from the locked stack.
 **Sub-decisions waiting on first implementation:**
 - **Worker process shape** — single codebase, two entry points (`pnpm api:server` / `pnpm api:worker`) — direction agreed; wiring done at build time.
 - **OpenAPI codegen for Flutter** — which Dart generator (`openapi-generator-cli` with `dart-dio`, or alternatives) — decided when first endpoint exists.
-- **Local dev** — docker-compose for Postgres locally vs a Neon branch per developer — cheap to defer.
-- **Secrets management** — Fly.io secrets + Vercel env vars + shared store (Doppler / 1Password) for cross-environment configs.
-- **Staging environment** — Neon branching makes per-PR DB environments cheap; worth setting up alongside CI.
+- **Local dev** — docker-compose for Postgres locally (mirrors the self-hosted prod PG); cheap to defer.
+- **Secrets management** — Coolify per-service env vars, backed up in a shared store (Doppler / 1Password) so the box is never the only copy.
+- **Staging environment** — a second Coolify environment (or a cheap second/Hetzner VPS) for staging; per-PR ephemeral DBs are a later nicety (no Neon branching now).
 
 **Data-modeling follow-ups (next round):**
 - `Payment` table shape (status fields, Razorpay refs, charge vs refund vs adjustment).
@@ -250,6 +260,6 @@ These remain open; each is a downstream choice from the locked stack.
 
 - Specific endpoint contracts → will live in an OpenAPI spec emitted by the Fastify backend.
 - DB migrations themselves (the actual `CREATE TABLE` SQL with all columns) → live in `apps/api/src/db/migrations/`.
-- Hosting / DevOps layout → captured in `apps/api/fly.toml`, Vercel project configs, Cloudflare Pages build settings.
+- Hosting / DevOps layout → captured in Coolify (per-app service config + env vars) and the per-app `Dockerfile`s; Cloudflare DNS/CDN in front.
 - UX flows → per-product feature docs.
 - Revenue model (commission % per channel, subscription tier pricing) → open product decision.
