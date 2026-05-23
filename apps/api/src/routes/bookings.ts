@@ -6,6 +6,7 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
+import { resolvePricePaise } from '../services/pricing_service.js';
 import {
   cancelBooking,
   createSlotBooking,
@@ -51,6 +52,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const result = await withIdempotency(idemKey, tenantId, async () => {
+      // Manual price wins; otherwise resolve from the arena's pricing rules.
+      const resolvedPaise =
+        pricePaise ?? (await resolvePricePaise({ arenaId, startAt, channel: 'walkin' }));
       const booking = await createSlotBooking({
         tenantId,
         venueId: venue.id,
@@ -60,7 +64,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         channel: 'walkin',
         paymentMethod: 'external',
         status: 'confirmed',
-        pricePaise: pricePaise ?? null,
+        pricePaise: resolvedPaise,
         customerContact: customerContact ?? null,
         createdByUserId: user.id,
       });

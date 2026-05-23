@@ -14,6 +14,7 @@ import { meRoutes } from './routes/me.js';
 import { tenantRoutes } from './routes/tenants.js';
 import { arenaRoutes } from './routes/arenas.js';
 import { bookingRoutes } from './routes/bookings.js';
+import { pricingRoutes } from './routes/pricing.js';
 import { venueRoutes } from './routes/venues.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -98,6 +99,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(venueRoutes);
   await app.register(arenaRoutes);
   await app.register(bookingRoutes);
+  await app.register(pricingRoutes);
 
   return app;
 }

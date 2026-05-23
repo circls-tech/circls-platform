@@ -8,3 +8,4 @@ export * from './arenas.js';
 export * from './schedules.js';
 export * from './bookings.js';
 export * from './idempotency.js';
+export * from './pricing_rules.js';
