@@ -15,6 +15,13 @@
       "when": 1779562705587,
       "tag": "0001_tenants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779562933092,
+      "tag": "0002_venues",
+      "breakpoints": true
     }
   ]
 }
