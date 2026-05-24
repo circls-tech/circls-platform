@@ -1,20 +1,86 @@
 'use client';
-import { useMe } from '@/lib/api/queries';
+import Link from 'next/link';
+import { type FormEvent, useState } from 'react';
+import { useCreateTenant, useMe, useMyTenants } from '@/lib/api/queries';
 
 export default function DashboardPage() {
-  const { data: me, isLoading, error } = useMe();
+  const { data: me } = useMe();
+  const { data: tenants, isLoading } = useMyTenants();
+  const createTenant = useCreateTenant();
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    try {
+      await createTenant.mutateAsync({ name, slug });
+      setName('');
+      setSlug('');
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Dashboard</h1>
-      {isLoading && <p className="text-gray-500">Loading your profile…</p>}
-      {error && <p className="text-red-600">Couldn’t load profile: {(error as Error).message}</p>}
-      {me && (
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-sm text-gray-500">Signed in as</p>
-          <p className="font-medium">{me.phoneE164 ?? me.email ?? me.id}</p>
-          <p className="mt-2 text-xs text-gray-400">user id: {me.id}</p>
-        </div>
-      )}
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-semibold">Dashboard</h1>
+        {me && (
+          <p className="text-sm text-gray-500">Signed in as {me.phoneE164 ?? me.email ?? me.id}</p>
+        )}
+      </div>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-medium">Your tenants</h2>
+        {isLoading && <p className="text-gray-500">Loading…</p>}
+        <ul className="flex flex-col gap-2">
+          {tenants?.map((t) => (
+            <li key={t.id}>
+              <Link
+                href={`/tenants/${t.id}`}
+                className="block rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
+              >
+                <span className="font-medium">{t.name}</span>
+                <span className="ml-2 text-xs text-gray-400">
+                  /{t.slug} · KYC {t.kycStatus}
+                </span>
+              </Link>
+            </li>
+          ))}
+          {tenants?.length === 0 && (
+            <p className="text-sm text-gray-500">No tenants yet — create one below.</p>
+          )}
+        </ul>
+      </section>
+
+      <form
+        onSubmit={onCreate}
+        className="flex max-w-md flex-col gap-2 rounded border border-gray-200 bg-white p-4"
+      >
+        <h2 className="font-medium">Create a tenant</h2>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Business name"
+          className="rounded border border-gray-300 px-3 py-2"
+        />
+        <input
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="slug-like-this"
+          className="rounded border border-gray-300 px-3 py-2"
+        />
+        <button
+          type="submit"
+          disabled={createTenant.isPending}
+          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+        >
+          {createTenant.isPending ? 'Creating…' : 'Create tenant'}
+        </button>
+        {err && <p className="text-sm text-red-600">{err}</p>}
+      </form>
     </div>
   );
 }
