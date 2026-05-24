@@ -171,6 +171,17 @@ export default function ScheduleBuilderPage() {
       setValidationError('Daily open time must be before close time.');
       return;
     }
+    // Guard against an empty or NaN default price so `price: NaN` is never sent
+    // to the API. The field may be blank if the user clears it.
+    if (
+      cfg.defaultPriceRupees === undefined ||
+      cfg.defaultPriceRupees === null ||
+      Number.isNaN(cfg.defaultPriceRupees) ||
+      cfg.defaultPriceRupees < 0
+    ) {
+      setValidationError('Default price must be a valid non-negative number (in ₹).');
+      return;
+    }
 
     const ws = sundayOnOrBefore(cfg.startDate);
     setWeekStart(ws);
@@ -181,6 +192,12 @@ export default function ScheduleBuilderPage() {
 
   const handleBulk = useCallback(
     (slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
+      // Reject a NaN per-cell price before it reaches the preview or the API
+      if (patch.price !== undefined && (Number.isNaN(patch.price) || patch.price < 0)) {
+        setValidationError('Per-cell price must be a valid non-negative number (in paise).');
+        return;
+      }
+      setValidationError(null);
       setPreviewSlots((prev) =>
         prev
           ? prev.map((s) => {

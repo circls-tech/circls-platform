@@ -1,8 +1,10 @@
 'use client';
+import { useRef } from 'react';
 import { useOrg } from '@/lib/org_context';
 
 export function OrgSwitcher() {
   const { activeTenantId, setActiveTenantId, tenants } = useOrg();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
 
   if (tenants.length === 0) {
     return (
@@ -12,8 +14,14 @@ export function OrgSwitcher() {
 
   const active = tenants.find((t) => t.id === activeTenantId) ?? tenants[0];
 
+  function handleSelect(id: string) {
+    setActiveTenantId(id);
+    // Close the <details> via ref so the dropdown collapses after selection
+    if (detailsRef.current) detailsRef.current.open = false;
+  }
+
   return (
-    <details className="relative">
+    <details ref={detailsRef} className="relative">
       <summary
         className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 select-none"
         style={{ outline: 'none' }}
@@ -43,11 +51,7 @@ export function OrgSwitcher() {
             <li key={t.id}>
               <button
                 type="button"
-                onClick={() => {
-                  setActiveTenantId(t.id);
-                  // close the <details>
-                  (document.activeElement as HTMLElement)?.blur();
-                }}
+                onClick={() => handleSelect(t.id)}
                 className={[
                   'flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors',
                   t.id === activeTenantId

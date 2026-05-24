@@ -40,8 +40,13 @@ export default function ArenaReceptionPage() {
   // ── Week state ──
   const [weekStart, setWeekStart] = useState<Date>(thisSunday);
 
-  const fromIso = useMemo(() => weekStart.toISOString(), [weekStart]);
-  const toIso = useMemo(() => addDays(weekStart, 7).toISOString(), [weekStart]);
+  // Widen the fetch window by ±1 day to absorb browser↔venue timezone skew so
+  // boundary slots are never clipped. The Matrix still places slots into the
+  // correct 7 columns using the venue tz (IST); this only widens the fetch.
+  // NOTE: single-tz assumption (IST/Asia/Kolkata) — full tz-correct windowing
+  // is deferred; see the matching caveat in slot_service.ts.
+  const fromIso = useMemo(() => addDays(weekStart, -1).toISOString(), [weekStart]);
+  const toIso = useMemo(() => addDays(weekStart, 8).toISOString(), [weekStart]);
 
   // ── Slots query ──
   const { data: rawSlots, isLoading, isError, error } = useArenaSlots(arenaId, fromIso, toIso);

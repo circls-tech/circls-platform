@@ -21,9 +21,15 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem(STORAGE_KEY) ?? null;
   });
 
-  // Once tenants load, default to the first one if no persisted choice
+  // Once tenants load:
+  //  1. Default to the first tenant when no persisted choice exists.
+  //  2. Reconcile a stale localStorage id that no longer belongs to this user
+  //     (e.g. the tenant was removed) — reset to the first available tenant so
+  //     they are never stranded on 403 / empty venue lists.
   useEffect(() => {
-    if (tenants.length > 0 && !activeTenantId) {
+    if (tenants.length === 0) return;
+    const tenantIds = tenants.map((t) => t.id);
+    if (!activeTenantId || !tenantIds.includes(activeTenantId)) {
       const firstId = tenants[0].id;
       setActiveTenantIdState(firstId);
       localStorage.setItem(STORAGE_KEY, firstId);

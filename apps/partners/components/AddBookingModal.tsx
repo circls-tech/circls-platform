@@ -46,9 +46,24 @@ export function AddBookingModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Compute total from the selected open slots
+  // Release hold if the modal unmounts while a hold is active and no booking
+  // was confirmed (guard: heldRef is set to false on successful booking).
+  useEffect(() => {
+    return () => {
+      if (heldRef.current && slotIds.length > 0) {
+        releaseHold.mutate(slotIds);
+        heldRef.current = false;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Compute total from the selected slots regardless of status.
+  // We intentionally do NOT filter by status === 'open' because on open the
+  // modal places a hold, which refetches slots as status:'held', collapsing the
+  // total to ₹0. Selection membership is the only predicate needed here.
   const totalPaise = slots
-    .filter((s) => slotIds.includes(s.id) && s.status === 'open')
+    .filter((s) => slotIds.includes(s.id))
     .reduce((sum, s) => sum + s.pricePaise, 0);
 
   async function handleSubmit(e: FormEvent) {

@@ -78,44 +78,6 @@ export function useArenaSlots(arenaId: string, fromISO: string, toISO: string) {
   });
 }
 
-export function useArenaBookings(arenaId: string, fromISO: string, toISO: string) {
-  return useQuery({
-    queryKey: ['bookings', arenaId, fromISO, toISO],
-    queryFn: () =>
-      apiFetch<Booking[]>(
-        `/v1/arenas/${arenaId}/bookings?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`,
-      ),
-  });
-}
-
-export function useCreateBooking(arenaId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: {
-      tenantId: string;
-      arenaId: string;
-      startAt: string;
-      endAt: string;
-      pricePaise?: number;
-    }) =>
-      apiFetch<Booking>('/v1/bookings', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify(input),
-      }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['bookings', arenaId] }),
-  });
-}
-
-export function useCancelBooking(arenaId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (bookingId: string) =>
-      apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, { method: 'POST' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['bookings', arenaId] }),
-  });
-}
-
 // ── Schedule-builder hooks ────────────────────────────────────────────────────
 
 export interface ReleaseCell {
@@ -208,7 +170,7 @@ export function useHoldSlots(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (slotIds: string[]) =>
-      apiFetch<{ heldCount: number }>('/v1/slots/hold', {
+      apiFetch<{ held: number }>('/v1/slots/hold', {
         method: 'POST',
         body: JSON.stringify({ slotIds }),
       }),
@@ -220,7 +182,7 @@ export function useReleaseHoldSlots(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (slotIds: string[]) =>
-      apiFetch<{ releasedCount: number }>('/v1/slots/release-hold', {
+      apiFetch<{ released: number }>('/v1/slots/release-hold', {
         method: 'POST',
         body: JSON.stringify({ slotIds }),
       }),
