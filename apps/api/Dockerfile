@@ -11,7 +11,10 @@ WORKDIR /repo
 FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/api/package.json apps/api/package.json
-RUN pnpm install --frozen-lockfile --filter @circls/api...
+# --prod=false forces devDependencies (typescript/tsc, etc.) to install for the
+# build stage even if the platform injects NODE_ENV=production at build time.
+# The runtime artifact is still prod-only via `pnpm deploy --prod` below.
+RUN pnpm install --frozen-lockfile --prod=false --filter @circls/api...
 
 FROM deps AS build
 COPY apps/api ./apps/api
