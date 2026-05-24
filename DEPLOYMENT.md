@@ -56,8 +56,24 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 - **`Idempotency-Key` header is required** on `POST /v1/bookings`.
 - DNS is on **GoDaddy** (not Cloudflare); `api`/`coolify` A records → the droplet IP; the apex `circls.app` (legacy Firebase app) is untouched.
 
+## Partner Portal (apps/partners)
+
+Next.js 15 app — reception staff sign in (phone OTP) and run the desk: tenant → venue → arena → walk-in bookings.
+
+**Run locally (fastest way to try it):**
+```bash
+cp apps/partners/.env.local.example apps/partners/.env.local   # prod web config + api.circls.app
+pnpm --filter @circls/partners dev                              # http://localhost:3001
+```
+It talks to the live `api.circls.app`. Flow: log in → dashboard → create tenant → venue → arena → take walk-in bookings.
+
+**For phone-OTP login to work** (Firebase console, project `circls-418b6`):
+- Authentication → Sign-in method: enable **Phone** + **Email/Password**.
+- Authentication → Settings → **Authorized domains**: `localhost` is allowed by default; add `partners.circls.app` (and any other deploy domain) before using it there.
+
+**Deploy:** mirrors the API on Coolify (new Application from the repo). A Next.js Dockerfile for `apps/partners` (standalone output is already enabled) is a small follow-up; until then, run locally or use Coolify's Nixpacks Next.js builder.
+
 ## Still deferred
 
-- **Phase 5 Partner Portal UI** (`apps/partners`) — needs Firebase web config + visual QA.
-- **`@circls/api-types`** package — lands with the frontend.
+- **`@circls/api-types`** shared types package (the portal mirrors types locally for now).
 - **Track B** — online payments (Razorpay), the `circls.app` consumer app, notifications, integrations.
