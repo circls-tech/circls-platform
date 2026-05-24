@@ -24,6 +24,7 @@ describe.skipIf(!runIntegration)('slots GIST exclusion (inventory invariant)', (
   });
 
   afterAll(async () => {
+    await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
     await closeDb();
   });
 

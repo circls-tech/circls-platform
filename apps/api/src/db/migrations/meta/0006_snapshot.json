@@ -1,5 +1,5 @@
 {
-  "id": "cda16fd4-ce8e-436f-b298-3ea858b7fc6b",
+  "id": "2d9369e4-9daf-4b75-97e2-47a59d785672",
   "prevId": "ddca0627-0c36-49d3-a954-05271747d8ed",
   "version": "7",
   "dialect": "postgresql",
@@ -889,7 +889,7 @@
         },
         "quantization_min": {
           "name": "quantization_min",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },

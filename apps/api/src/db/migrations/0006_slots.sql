@@ -5,7 +5,7 @@ CREATE TABLE "slot_releases" (
 	"arena_id" uuid NOT NULL,
 	"start_date" timestamp with time zone NOT NULL,
 	"end_date" timestamp with time zone NOT NULL,
-	"quantization_min" bigint NOT NULL,
+	"quantization_min" integer NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
