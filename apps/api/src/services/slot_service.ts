@@ -1,0 +1,291 @@
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { isExclusionViolation } from '../db/errors.js';
+import { type Slot, slotReleases, slots } from '../db/schema/index.js';
+import { Conflict } from '../lib/errors.js';
+import { type AuditCtx, writeAudit } from '../lib/audit.js';
+import { resolvePricePaise } from './pricing_service.js';
+import { getArenaById } from './arena_service.js';
+import { getVenueById } from './venue_service.js';
+
+export interface ReleaseCell {
+  dayOfWeek: number;
+  startTimeMin: number;
+  durationMin: number;
+  price?: number | null;
+  blocked?: boolean;
+}
+
+export interface ReleaseInput {
+  startDate: string;
+  endDate: string;
+  quantizationMin: number;
+  cells: ReleaseCell[];
+}
+
+export interface Occurrence {
+  startIso: string;
+  endIso: string;
+  price: number | null;
+  blocked: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Timezone helpers
+// ---------------------------------------------------------------------------
+
+const WEEKDAY: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/**
+ * Given a local date string (YYYY-MM-DD) and a wall-clock offset in minutes from
+ * local midnight, compute the UTC ISO instant at which the local clock reads
+ * exactly `localMinutes` past midnight on that date in `tz`.
+ *
+ * Strategy: seed a candidate UTC timestamp (date@UTC + localMinutes), format it
+ * in the target tz to discover the actual local wall-clock reading at that UTC
+ * moment, derive the tz offset from the difference, then correct.
+ */
+function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string): string {
+  const dateUtcMidnight = Date.UTC(
+    parseInt(dateStr.slice(0, 4), 10),
+    parseInt(dateStr.slice(5, 7), 10) - 1,
+    parseInt(dateStr.slice(8, 10), 10),
+  );
+  const approxUtcMs = dateUtcMidnight + localMinutes * 60_000;
+
+  // Read back the local wall-clock time at this UTC moment.
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(approxUtcMs));
+
+  const get = (type: string): string =>
+    parts.find((p) => p.type === type)?.value ?? '0';
+
+  const rawHour = parseInt(get('hour'), 10);
+  const localHour = rawHour === 24 ? 0 : rawHour; // ICU emits '24' at some midnights
+
+  // "As-if UTC" of the local reading — used to compute the tz offset.
+  const localWallClockAsUtcMs = Date.UTC(
+    parseInt(get('year'), 10),
+    parseInt(get('month'), 10) - 1,
+    parseInt(get('day'), 10),
+    localHour,
+    parseInt(get('minute'), 10),
+  );
+  // e.g. for IST (UTC+5:30): tzOffsetMs = approxUtcMs - localWallClockAsUtcMs < 0
+  const tzOffsetMs = approxUtcMs - localWallClockAsUtcMs;
+
+  // UTC instant = local-midnight-as-UTC + localMinutes + tzOffset
+  return new Date(dateUtcMidnight + localMinutes * 60_000 + tzOffsetMs).toISOString();
+}
+
+/**
+ * Returns the weekday (0=Sun … 6=Sat) of a YYYY-MM-DD date string in `tz`.
+ * Samples at noon UTC to avoid DST edge-cases near local midnight.
+ */
+function weekdayInTz(dateStr: string, tz: string): number {
+  const noonUtc = new Date(
+    Date.UTC(
+      parseInt(dateStr.slice(0, 4), 10),
+      parseInt(dateStr.slice(5, 7), 10) - 1,
+      parseInt(dateStr.slice(8, 10), 10),
+      12, // noon UTC
+    ),
+  );
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+  }).formatToParts(noonUtc);
+  const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun';
+  return WEEKDAY[wd] ?? 0;
+}
+
+/** Advance a YYYY-MM-DD date string by one calendar day. */
+function nextDay(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Public exports
+// ---------------------------------------------------------------------------
+
+/**
+ * PURE — exported for unit testing.
+ * For each calendar date in [startDate, endDate] inclusive, and each cell whose
+ * dayOfWeek matches that date's weekday IN `tz`, yields one Occurrence.
+ */
+export function enumerateOccurrences(
+  startDate: string,
+  endDate: string,
+  cells: ReleaseCell[],
+  tz: string,
+): Occurrence[] {
+  const occurrences: Occurrence[] = [];
+  let current = startDate;
+
+  while (current <= endDate) {
+    const dow = weekdayInTz(current, tz);
+
+    for (const cell of cells) {
+      if (cell.dayOfWeek !== dow) continue;
+
+      occurrences.push({
+        startIso: localMinutesToUtcIso(current, cell.startTimeMin, tz),
+        endIso: localMinutesToUtcIso(current, cell.startTimeMin + cell.durationMin, tz),
+        price: cell.price ?? null,
+        blocked: cell.blocked ?? false,
+      });
+    }
+
+    current = nextDay(current);
+  }
+
+  return occurrences;
+}
+
+export async function releaseSlots(
+  ctx: AuditCtx,
+  arenaId: string,
+  input: ReleaseInput,
+): Promise<{ created: number; skipped: number }> {
+  const arena = await getArenaById(arenaId);
+  if (!arena) throw new Conflict('Arena not found', 'arena_not_found');
+  const venue = await getVenueById(arena.venueId);
+  const tz = venue?.tzName ?? 'Asia/Kolkata';
+
+  return db.transaction(async (tx) => {
+    const [rel] = await tx
+      .insert(slotReleases)
+      .values({
+        tenantId: ctx.tenantId,
+        arenaId,
+        startDate: new Date(input.startDate),
+        endDate: new Date(input.endDate),
+        quantizationMin: input.quantizationMin,
+      })
+      .returning();
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const occ of enumerateOccurrences(input.startDate, input.endDate, input.cells, tz)) {
+      const price =
+        occ.price ??
+        (await resolvePricePaise({ arenaId, startAt: occ.startIso, channel: 'walkin' })) ??
+        0;
+
+      try {
+        // Use a nested transaction (savepoint) so that an exclusion violation
+        // only rolls back this single insert, leaving the outer tx intact.
+        await tx.transaction(async (stx) => {
+          await stx.insert(slots).values({
+            tenantId: ctx.tenantId,
+            arenaId,
+            timeRange: sql`tstzrange(${occ.startIso}::timestamptz, ${occ.endIso}::timestamptz, '[)')`,
+            pricePaise: price,
+            status: occ.blocked ? 'blocked' : 'open',
+            releaseId: rel!.id,
+          });
+        });
+        created++;
+      } catch (err) {
+        if (isExclusionViolation(err)) skipped++;
+        else throw err;
+      }
+    }
+
+    return { created, skipped };
+  });
+}
+
+export async function listSlots(
+  arenaId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<Slot[]> {
+  return db
+    .select()
+    .from(slots)
+    .where(
+      and(
+        eq(slots.arenaId, arenaId),
+        sql`${slots.deletedAt} is null`,
+        sql`${slots.timeRange} && tstzrange(${fromIso}::timestamptz, ${toIso}::timestamptz, '[)')`,
+      ),
+    );
+}
+
+export async function bulkUpdateSlots(
+  ctx: AuditCtx,
+  slotIds: string[],
+  patch: { price?: number; blocked?: boolean },
+): Promise<Slot[]> {
+  return db.transaction(async (tx) => {
+    // `inArray` generates `id IN ($1, $2, …)` with proper individual bindings —
+    // avoids the `any(($1,$2)::uuid[])` record-cast error from postgres-js.
+    const rows = await tx
+      .select()
+      .from(slots)
+      .where(and(inArray(slots.id, slotIds), sql`${slots.deletedAt} is null`));
+
+    for (const r of rows) {
+      if (r.status === 'booked' || r.status === 'held') {
+        throw new Conflict('Slot is locked', 'slot_locked');
+      }
+    }
+
+    const set: Partial<typeof slots.$inferInsert> = {};
+    if (patch.price !== undefined) set.pricePaise = patch.price;
+    if (patch.blocked !== undefined) set.status = patch.blocked ? 'blocked' : 'open';
+
+    const updated = await tx
+      .update(slots)
+      .set(set)
+      .where(inArray(slots.id, slotIds))
+      .returning();
+
+    for (const u of updated) {
+      await writeAudit(
+        tx,
+        ctx,
+        patch.price !== undefined ? 'slot.reprice' : 'slot.block',
+        'slot',
+        u.id,
+        null,
+        set as Record<string, unknown>,
+      );
+    }
+
+    return updated;
+  });
+}
+
+export async function holdSlots(slotIds: string[]): Promise<void> {
+  await db
+    .update(slots)
+    .set({ status: 'held', holdExpiresAt: sql`now() + interval '5 minutes'` })
+    .where(and(inArray(slots.id, slotIds), eq(slots.status, 'open')));
+}
+
+export async function releaseHold(slotIds: string[]): Promise<void> {
+  await db
+    .update(slots)
+    .set({ status: 'open', holdExpiresAt: null })
+    .where(and(inArray(slots.id, slotIds), eq(slots.status, 'held')));
+}
