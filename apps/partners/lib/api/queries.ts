@@ -115,3 +115,56 @@ export function useCancelBooking(arenaId: string) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['bookings', arenaId] }),
   });
 }
+
+// ── Schedule-builder hooks ────────────────────────────────────────────────────
+
+export interface ReleaseCell {
+  dayOfWeek: number;      // 0 (Sun) – 6 (Sat)
+  startTimeMin: number;   // minutes from midnight in venue tz
+  durationMin: number;
+  price?: number | null;  // paise
+  blocked?: boolean;
+}
+
+export interface ReleaseInput {
+  startDate: string;        // 'YYYY-MM-DD'
+  endDate: string;          // 'YYYY-MM-DD'
+  quantizationMin: number;
+  cells: ReleaseCell[];
+}
+
+export interface ReleaseResult {
+  created: number;
+  skipped: number;
+}
+
+export function useReleaseSlots(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReleaseInput) =>
+      apiFetch<ReleaseResult>(`/v1/arenas/${arenaId}/slots/release`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export interface BulkSlotPatch {
+  slotIds: string[];
+  price?: number;
+  blocked?: boolean;
+}
+
+export function useBulkSlots() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BulkSlotPatch) =>
+      apiFetch<Slot[]>('/v1/slots/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots'] }),
+  });
+}
