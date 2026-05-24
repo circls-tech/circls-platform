@@ -42,3 +42,6 @@ coverage/
 
 # Misc
 .turbo/
+
+# Brainstorm visual-companion scratch
+.superpowers/
