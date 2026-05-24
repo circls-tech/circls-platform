@@ -10,3 +10,4 @@ export * from './bookings.js';
 export * from './idempotency.js';
 export * from './pricing_rules.js';
 export * from './slots.js';
+export * from './audit_log.js';

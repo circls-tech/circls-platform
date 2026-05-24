@@ -50,6 +50,13 @@
       "when": 1779614680136,
       "tag": "0006_slots",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779614872989,
+      "tag": "0007_bookings_audit",
+      "breakpoints": true
     }
   ]
 }
