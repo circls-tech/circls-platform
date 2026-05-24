@@ -8,6 +8,9 @@ import { resolvePricePaise } from './pricing_service.js';
 import { getArenaById } from './arena_service.js';
 import { getVenueById } from './venue_service.js';
 
+/** Slot row extended with ISO-string bounds extracted from the tstzrange. */
+export type SlotWithBounds = Slot & { startAt: string; endAt: string };
+
 export interface ReleaseCell {
   dayOfWeek: number;
   startTimeMin: number;
@@ -228,17 +231,36 @@ export async function listSlots(
   arenaId: string,
   fromIso: string,
   toIso: string,
-): Promise<Slot[]> {
-  return db
-    .select()
-    .from(slots)
-    .where(
-      and(
-        eq(slots.arenaId, arenaId),
-        sql`${slots.deletedAt} is null`,
-        sql`${slots.timeRange} && tstzrange(${fromIso}::timestamptz, ${toIso}::timestamptz, '[)')`,
-      ),
-    );
+): Promise<SlotWithBounds[]> {
+  // Use a raw SELECT so we can extract lower/upper bounds from the tstzrange column
+  // as proper ISO timestamp strings without client-side string parsing.
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    select *,
+           lower(time_range) as start_at,
+           upper(time_range) as end_at
+    from slots
+    where arena_id = ${arenaId}
+      and deleted_at is null
+      and time_range && tstzrange(${fromIso}::timestamptz, ${toIso}::timestamptz, '[)')
+    order by lower(time_range)
+  `);
+
+  return (rows as unknown as Record<string, unknown>[]).map((row) => ({
+    id: row['id'] as string,
+    tenantId: row['tenant_id'] as string,
+    arenaId: row['arena_id'] as string,
+    timeRange: row['time_range'] as string,
+    pricePaise: Number(row['price_paise']),
+    status: row['status'] as Slot['status'],
+    holdExpiresAt: row['hold_expires_at'] ? new Date(row['hold_expires_at'] as string) : null,
+    bookingId: (row['booking_id'] as string | null) ?? null,
+    releaseId: (row['release_id'] as string | null) ?? null,
+    deletedAt: row['deleted_at'] ? new Date(row['deleted_at'] as string) : null,
+    createdAt: new Date(row['created_at'] as string),
+    updatedAt: new Date(row['updated_at'] as string),
+    startAt: new Date(row['start_at'] as string).toISOString(),
+    endAt: new Date(row['end_at'] as string).toISOString(),
+  }));
 }
 
 export async function bulkUpdateSlots(

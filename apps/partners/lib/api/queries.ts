@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Arena, Booking, Tenant, User, Venue } from './types';
+import type { Arena, Booking, Slot, Tenant, User, Venue } from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -65,6 +65,16 @@ export function useCreateArena(venueId: string) {
         body: JSON.stringify(input),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['arenas', venueId] }),
+  });
+}
+
+export function useArenaSlots(arenaId: string, fromISO: string, toISO: string) {
+  return useQuery({
+    queryKey: ['slots', arenaId, fromISO, toISO],
+    queryFn: () =>
+      apiFetch<Slot[]>(
+        `/v1/arenas/${arenaId}/slots?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`,
+      ),
   });
 }
 

@@ -37,6 +37,25 @@ export interface Arena {
   status: string;
 }
 
+export interface Slot {
+  id: string;
+  tenantId: string;
+  arenaId: string;
+  timeRange: string;
+  pricePaise: number;
+  status: 'open' | 'held' | 'blocked' | 'booked';
+  holdExpiresAt: string | null;
+  bookingId: string | null;
+  releaseId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** ISO-8601 string: lower bound of time_range (from Postgres lower(time_range)). */
+  startAt: string;
+  /** ISO-8601 string: upper bound of time_range (from Postgres upper(time_range)). */
+  endAt: string;
+}
+
 export interface Booking {
   id: string;
   slotArenaId: string | null;
