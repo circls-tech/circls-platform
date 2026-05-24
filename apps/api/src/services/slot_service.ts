@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isExclusionViolation } from '../db/errors.js';
 import { type Slot, slotReleases, slots } from '../db/schema/index.js';
@@ -32,6 +32,13 @@ export interface Occurrence {
 
 // ---------------------------------------------------------------------------
 // Timezone helpers
+// ---------------------------------------------------------------------------
+//
+// NOTE — DST / large-offset limitation:
+// Assumes a non-DST timezone (Asia/Kolkata, the only venue tz today).
+// The local→UTC offset sampling in `localMinutesToUtcIso` and the noon-UTC
+// weekday sample in `weekdayInTz` are NOT correct for DST-observing or
+// UTC+12+ zones — revisit before onboarding such venues.
 // ---------------------------------------------------------------------------
 
 const WEEKDAY: Record<string, number> = {
@@ -129,6 +136,9 @@ function nextDay(dateStr: string): string {
  * PURE — exported for unit testing.
  * For each calendar date in [startDate, endDate] inclusive, and each cell whose
  * dayOfWeek matches that date's weekday IN `tz`, yields one Occurrence.
+ *
+ * NOTE — DST / large-offset limitation: assumes a non-DST timezone
+ * (Asia/Kolkata). See the header comment on the timezone helpers above.
  */
 export function enumerateOccurrences(
   startDate: string,
@@ -244,6 +254,7 @@ export async function bulkUpdateSlots(
       .from(slots)
       .where(and(inArray(slots.id, slotIds), sql`${slots.deletedAt} is null`));
 
+    // Pre-SELECT check: eagerly reject if any slot is already locked.
     for (const r of rows) {
       if (r.status === 'booked' || r.status === 'held') {
         throw new Conflict('Slot is locked', 'slot_locked');
@@ -254,20 +265,41 @@ export async function bulkUpdateSlots(
     if (patch.price !== undefined) set.pricePaise = patch.price;
     if (patch.blocked !== undefined) set.status = patch.blocked ? 'blocked' : 'open';
 
+    // Empty-patch guard: drizzle .set({}) produces invalid SQL — bail early.
+    if (Object.keys(set).length === 0) return [];
+
+    // TOCTOU guard: the UPDATE itself excludes booked/held rows so a
+    // concurrently-booked slot cannot be silently overwritten.
     const updated = await tx
       .update(slots)
       .set(set)
-      .where(inArray(slots.id, slotIds))
+      .where(and(inArray(slots.id, slotIds), notInArray(slots.status, ['booked', 'held'])))
       .returning();
+
+    // If counts differ, a slot was locked between our SELECT and this UPDATE.
+    if (updated.length !== slotIds.length) {
+      throw new Conflict('Slot is locked', 'slot_locked');
+    }
+
+    // Build a lookup map from the pre-SELECT rows for accurate `before` values.
+    const beforeMap = new Map(rows.map((r) => [r.id, { pricePaise: r.pricePaise, status: r.status }]));
+
+    // Determine audit action.
+    const bothChanged = patch.price !== undefined && patch.blocked !== undefined;
+    const action = bothChanged
+      ? 'slot.update'
+      : patch.price !== undefined
+        ? 'slot.reprice'
+        : 'slot.block';
 
     for (const u of updated) {
       await writeAudit(
         tx,
         ctx,
-        patch.price !== undefined ? 'slot.reprice' : 'slot.block',
+        action,
         'slot',
         u.id,
-        null,
+        beforeMap.get(u.id) ?? null,
         set as Record<string, unknown>,
       );
     }

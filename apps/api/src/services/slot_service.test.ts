@@ -57,6 +57,7 @@ describe('enumerateOccurrences (pure)', () => {
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('slot_service integration', () => {
   let tenantId: string;
+  let venueId: string;
   let arenaId: string;
   const ctx = { tenantId: '', actorUserId: '00000000-0000-0000-0000-000000000001' };
 
@@ -77,6 +78,7 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       .returning();
 
     tenantId = t!.id;
+    venueId = v!.id;
     arenaId = a!.id;
     ctx.tenantId = tenantId;
 
@@ -90,6 +92,9 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
     await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from slot_releases where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from pricing_rules where arena_id = ${arenaId}`);
+    await db.execute(sql`delete from arenas where id = ${arenaId}`);
+    await db.execute(sql`delete from venues where id = ${venueId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await closeDb();
   });
 
@@ -164,6 +169,17 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
         .where(sql`tenant_id = ${tenantId} and action = 'slot.reprice'`);
 
       expect(auditRows.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('returns [] immediately when patch is empty (no price or blocked)', async () => {
+      const existingSlots = await db
+        .select()
+        .from(slots)
+        .where(sql`arena_id = ${arenaId} and deleted_at is null`);
+
+      const slotIds = existingSlots.slice(0, 1).map((s) => s.id);
+      const result = await bulkUpdateSlots(ctx, slotIds, {});
+      expect(result).toEqual([]);
     });
 
     it('throws slot_locked when a booked slot is in the update set', async () => {
