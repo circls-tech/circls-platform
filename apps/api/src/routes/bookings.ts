@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
-import { getBookingById, listArenaBookings } from '../services/inventory_service.js';
+import { getBookingById } from '../services/inventory_service.js';
 import { bookSlots, cancelBooking } from '../services/booking_service.js';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -82,18 +82,5 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return cancelBooking({ tenantId: booking.tenantId, actorUserId: user.id }, id);
   });
 
-  // Day grid for the reception dashboard.
-  app.get('/v1/arenas/:arenaId/bookings', { preHandler: requireAuth }, async (req) => {
-    const { arenaId } = req.params as { arenaId: string };
-    const q = req.query as { from?: string; to?: string };
-    const arena = await getArenaById(arenaId);
-    if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
-    const venue = await getVenueById(arena.venueId);
-    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
-    const user = await currentUser(req);
-    await requireTenantMembership(user.id, venue.tenantId);
-    const from = q.from ?? new Date(Date.now() - 86_400_000).toISOString();
-    const to = q.to ?? new Date(Date.now() + 7 * 86_400_000).toISOString();
-    return listArenaBookings(arenaId, from, to);
-  });
 };
+

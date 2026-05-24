@@ -1,8 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { auditLog, arenas, slots, tenants, venues } from '../db/schema/index.js';
+import { auditLog, arenas, slots, tenants, users, venues } from '../db/schema/index.js';
 import { createPricingRule } from './pricing_service.js';
+import { bookSlots } from './booking_service.js';
 import {
   bulkUpdateSlots,
   enumerateOccurrences,
@@ -59,10 +60,18 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
   let tenantId: string;
   let venueId: string;
   let arenaId: string;
-  const ctx = { tenantId: '', actorUserId: '00000000-0000-0000-0000-000000000001' };
+  let actorUserId: string;
+  const ctx = { tenantId: '', actorUserId: '' };
 
   beforeAll(async () => {
     await pingDb();
+
+    // Create a real user row (required by bookings.created_by_user_id FK)
+    const [u] = await db
+      .insert(users)
+      .values({ firebaseUid: `slotsvc-fb-${Date.now()}`, email: `slotsvc-${Date.now()}@test.x` })
+      .returning();
+    actorUserId = u!.id;
 
     const [t] = await db
       .insert(tenants)
@@ -81,20 +90,25 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
     venueId = v!.id;
     arenaId = a!.id;
     ctx.tenantId = tenantId;
+    ctx.actorUserId = actorUserId;
 
     // Default pricing rule: ₹500 (50000 paise) for any slot
     await createPricingRule(arenaId, { pricePaise: 50000, priority: 0 });
   });
 
   afterAll(async () => {
-    // Clean up in FK-safe order
+    // Clean up in FK-safe order.
+    // slots.booking_id → bookings.id, so null out FK before deleting bookings.
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`update slots set booking_id = null where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from slot_releases where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from pricing_rules where arena_id = ${arenaId}`);
     await db.execute(sql`delete from arenas where id = ${arenaId}`);
     await db.execute(sql`delete from venues where id = ${venueId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    await db.execute(sql`delete from users where id = ${actorUserId}`);
     await closeDb();
   });
 
@@ -204,6 +218,54 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       await db.execute(
         sql`update slots set status = 'open' where id = ${targetSlot.id}`,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Real DB-level concurrency race test
+  // -------------------------------------------------------------------------
+  describe('bookSlots — real DB concurrency', () => {
+    it('exactly one wins and one fails with slot_taken when two transactions race', async () => {
+      // Release a fresh single slot dedicated to the race test.
+      // 2028-01-02 is a Sunday (dayOfWeek 0) in IST — 10:00 IST = 04:30 UTC.
+      const raceResult = await releaseSlots(ctx, arenaId, {
+        startDate: '2028-01-02',
+        endDate: '2028-01-02',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 0, startTimeMin: 600, durationMin: 60, price: 10000 }],
+      });
+      // exactly 1 slot created
+      expect(raceResult.created).toBe(1);
+
+      const [raceSlot] = await db
+        .select()
+        .from(slots)
+        .where(sql`arena_id = ${arenaId} and deleted_at is null and status = 'open' and lower(time_range) = '2028-01-02T04:30:00.000Z'::timestamptz`);
+
+      if (!raceSlot) throw new Error('Race slot not found');
+
+      const slotIds = [raceSlot.id];
+      const bookingInput = { slotIds, customerName: 'Racer', customerContact: '0000' };
+
+      // NOTE: app.inject() at the route layer serializes requests in the Fastify
+      // test harness, so the "concurrency" test in bookings_slots.test.ts
+      // actually races only at DB-transaction level (which is still meaningful —
+      // the second UPDATE finds 0 rows to claim and throws slot_taken). This
+      // service-layer test uses Promise.allSettled directly against the DB, so
+      // the two transactions genuinely race the postgres UPDATE for the same row.
+      const results = await Promise.allSettled([
+        bookSlots(ctx, venueId, bookingInput),
+        bookSlots(ctx, venueId, { ...bookingInput }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+
+      const err = (rejected[0] as PromiseRejectedResult).reason as { code: string };
+      expect(err.code).toBe('slot_taken');
     });
   });
 });

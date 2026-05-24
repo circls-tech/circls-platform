@@ -249,10 +249,11 @@ export async function bulkUpdateSlots(
   return db.transaction(async (tx) => {
     // `inArray` generates `id IN ($1, $2, …)` with proper individual bindings —
     // avoids the `any(($1,$2)::uuid[])` record-cast error from postgres-js.
+    // eq(slots.tenantId, ctx.tenantId) scopes to the caller's tenant.
     const rows = await tx
       .select()
       .from(slots)
-      .where(and(inArray(slots.id, slotIds), sql`${slots.deletedAt} is null`));
+      .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, ctx.tenantId), sql`${slots.deletedAt} is null`));
 
     // Pre-SELECT check: eagerly reject if any slot is already locked.
     for (const r of rows) {
@@ -270,10 +271,11 @@ export async function bulkUpdateSlots(
 
     // TOCTOU guard: the UPDATE itself excludes booked/held rows so a
     // concurrently-booked slot cannot be silently overwritten.
+    // eq(slots.tenantId, ctx.tenantId) ensures cross-tenant IDs in slotIds are silently ignored.
     const updated = await tx
       .update(slots)
       .set(set)
-      .where(and(inArray(slots.id, slotIds), notInArray(slots.status, ['booked', 'held'])))
+      .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, ctx.tenantId), notInArray(slots.status, ['booked', 'held'])))
       .returning();
 
     // If counts differ, a slot was locked between our SELECT and this UPDATE.
@@ -308,16 +310,16 @@ export async function bulkUpdateSlots(
   });
 }
 
-export async function holdSlots(slotIds: string[]): Promise<void> {
+export async function holdSlots(tenantId: string, slotIds: string[]): Promise<void> {
   await db
     .update(slots)
     .set({ status: 'held', holdExpiresAt: sql`now() + interval '5 minutes'` })
-    .where(and(inArray(slots.id, slotIds), eq(slots.status, 'open')));
+    .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId), eq(slots.status, 'open')));
 }
 
-export async function releaseHold(slotIds: string[]): Promise<void> {
+export async function releaseHold(tenantId: string, slotIds: string[]): Promise<void> {
   await db
     .update(slots)
     .set({ status: 'open', holdExpiresAt: null })
-    .where(and(inArray(slots.id, slotIds), eq(slots.status, 'held')));
+    .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId), eq(slots.status, 'held')));
 }

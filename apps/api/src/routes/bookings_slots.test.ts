@@ -5,6 +5,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     const map: Record<string, Record<string, unknown>> = {
       owner: { uid: 'fbuid_bsowner', email: 'bsowner@x.com' },
+      ownerB: { uid: 'fbuid_bsownerb', email: 'bsownerb@x.com' },
       other: { uid: 'fbuid_bsother', email: 'bsother@x.com' },
     };
     const u = map[token];
@@ -91,7 +92,8 @@ describe.skipIf(!runIntegration)('slots + multi-slot bookings', () => {
 
   afterAll(async () => {
     await app.close();
-    await closeDb();
+    // Note: closeDb() is called by the cross-tenant suite's afterAll so the pool
+    // remains open for tests that run after this describe block.
   });
 
   let bookingId: string;
@@ -135,9 +137,14 @@ describe.skipIf(!runIntegration)('slots + multi-slot bookings', () => {
     // Use the 3rd remaining open slot (index 2)
     const raceSlotIds = [openSlotIds[2]!];
 
-    // Fire both requests against the same app. Even though app.inject may
-    // serialize at the HTTP layer, the DB transaction atomicity ensures only
-    // one succeeds when the same slot is targeted.
+    // LIMITATION: app.inject() is a synchronous-ish in-process call; Fastify
+    // serializes injected requests rather than truly running them concurrently.
+    // As a result, the "race" here is resolved sequentially at the DB level —
+    // the second transaction still sees 0 claimable rows (because the first
+    // already flipped status to 'booked') and correctly throws slot_taken.
+    // For a genuine parallel-connection race see the service-level test in
+    // slot_service.test.ts which uses Promise.allSettled([bookSlots, bookSlots])
+    // directly, exercising two concurrent DB transactions.
     const [res1, res2] = await Promise.all([
       app.inject({
         method: 'POST',
@@ -235,5 +242,159 @@ describe.skipIf(!runIntegration)('slots + multi-slot bookings', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('slot_locked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cross-tenant slot-claim security test
+// ---------------------------------------------------------------------------
+describe.skipIf(!runIntegration)('cross-tenant booking guard', () => {
+  let app: FastifyInstance;
+
+  // Tenant A (owner)
+  let tenantAId: string;
+  let arenaAId: string;
+  let slotAId: string;
+
+  // Tenant B (ownerB — a different user/owner)
+  let tenantBId: string;
+  let arenaBId: string;
+  let slotBId: string;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    // --- Tenant A setup ---
+    const tA = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'Cross-Tenant A', slug: `cta-${Date.now()}` },
+    });
+    tenantAId = tA.json().id;
+
+    const vA = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantAId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Venue A' },
+    });
+    const venueAId = vA.json().id;
+
+    const aA = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueAId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Arena A', slotDurationMin: 60 },
+    });
+    arenaAId = aA.json().id;
+
+    // 2029-03-04 is a Sunday (dayOfWeek 0) in IST; 08:00 IST = 02:30 UTC
+    const relA = await app.inject({
+      method: 'POST',
+      url: `/v1/arenas/${arenaAId}/slots/release`,
+      headers: withKey('owner', `ctrel-a-${Date.now()}`),
+      payload: {
+        startDate: '2029-03-04',
+        endDate: '2029-03-04',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 0, startTimeMin: 480, durationMin: 60, price: 10000 }],
+      },
+    });
+    expect(relA.statusCode).toBe(200);
+    expect(relA.json().created).toBeGreaterThanOrEqual(1);
+
+    const slotsA = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaAId}/slots?from=2029-03-04T00:00:00Z&to=2029-03-05T00:00:00Z`,
+      headers: bearer('owner'),
+    });
+    expect(slotsA.statusCode).toBe(200);
+    slotAId = (slotsA.json() as Array<{ id: string; status: string }>)
+      .find((s) => s.status === 'open')!.id;
+
+    // --- Tenant B setup (different user: ownerB) ---
+    const tB = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('ownerB'),
+      payload: { name: 'Cross-Tenant B', slug: `ctb-${Date.now()}` },
+    });
+    tenantBId = tB.json().id;
+
+    const vB = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantBId}/venues`,
+      headers: bearer('ownerB'),
+      payload: { name: 'Venue B' },
+    });
+    const venueBId = vB.json().id;
+
+    const aB = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueBId}/arenas`,
+      headers: bearer('ownerB'),
+      payload: { name: 'Arena B', slotDurationMin: 60 },
+    });
+    arenaBId = aB.json().id;
+
+    const relB = await app.inject({
+      method: 'POST',
+      url: `/v1/arenas/${arenaBId}/slots/release`,
+      headers: withKey('ownerB', `ctrel-b-${Date.now()}`),
+      payload: {
+        startDate: '2029-03-04',
+        endDate: '2029-03-04',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 0, startTimeMin: 480, durationMin: 60, price: 20000 }],
+      },
+    });
+    expect(relB.statusCode).toBe(200);
+    expect(relB.json().created).toBeGreaterThanOrEqual(1);
+
+    const slotsB = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaBId}/slots?from=2029-03-04T00:00:00Z&to=2029-03-05T00:00:00Z`,
+      headers: bearer('ownerB'),
+    });
+    expect(slotsB.statusCode).toBe(200);
+    slotBId = (slotsB.json() as Array<{ id: string; status: string }>)
+      .find((s) => s.status === 'open')!.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await closeDb();
+  });
+
+  it('tenant A owner cannot claim tenant B slot — 409 slot_taken, B slot stays open', async () => {
+    // Owner of tenant A tries to book both their own slot AND a slot from tenant B.
+    // The booking route resolves tenant from slot A (first slot), so the auth check passes.
+    // The bookSlots UPDATE now includes eq(slots.tenantId, ctx.tenantId), so B's slot
+    // is excluded from the UPDATE → claimed.length (1) !== slotIds.length (2) → 409.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/bookings',
+      headers: withKey('owner', `ct-attack-${Date.now()}`),
+      payload: {
+        slotIds: [slotAId, slotBId],
+        customer: { name: 'Attacker', contact: '0000' },
+      },
+    });
+
+    // The fix: B's slot won't be claimed → claimed.length < slotIds.length → 409 slot_taken.
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('slot_taken');
+
+    // Verify B's slot is still open (not booked by the cross-tenant request).
+    const bSlots = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaBId}/slots?from=2029-03-04T00:00:00Z&to=2029-03-05T00:00:00Z`,
+      headers: bearer('ownerB'),
+    });
+    const bSlot = (bSlots.json() as Array<{ id: string; status: string }>)
+      .find((s) => s.id === slotBId);
+    expect(bSlot?.status).toBe('open');
   });
 });

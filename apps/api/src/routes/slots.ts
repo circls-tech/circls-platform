@@ -60,7 +60,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     const { arenaId } = req.params as { arenaId: string };
 
     const idemKey = req.headers['idempotency-key'];
-    if (typeof idemKey !== 'string' || idemKey.length < 1) {
+    if (typeof idemKey !== 'string' || idemKey.length < 8) {
       throw new BadRequest('Idempotency-Key header required', 'idempotency_key_required');
     }
 
@@ -167,7 +167,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
 
-    await holdSlots(slotIds);
+    await holdSlots(venue.tenantId, slotIds);
     return { held: slotIds.length };
   });
 
@@ -196,7 +196,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
 
-    await releaseHold(slotIds);
+    await releaseHold(venue.tenantId, slotIds);
     return { released: slotIds.length };
   });
 };

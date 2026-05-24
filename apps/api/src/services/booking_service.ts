@@ -51,12 +51,15 @@ export async function bookSlots(
 
     // Atomic claim: only take slots that are open OR held-but-expired.
     // Using inArray() avoids the any(array::uuid[]) record-cast error from postgres-js.
+    // eq(slots.tenantId, ctx.tenantId) guards against cross-tenant slot injection:
+    // a member of tenant A passing slotIds from tenant B would otherwise claim B's slots.
     const claimed = await tx
       .update(slots)
       .set({ status: 'booked', bookingId: booking!.id, holdExpiresAt: null })
       .where(
         and(
           inArray(slots.id, input.slotIds),
+          eq(slots.tenantId, ctx.tenantId),
           sql`${slots.deletedAt} is null`,
           or(
             eq(slots.status, 'open'),
@@ -94,7 +97,7 @@ export async function cancelBooking(ctx: AuditCtx, bookingId: string): Promise<B
     await tx
       .update(slots)
       .set({ status: 'open', bookingId: null })
-      .where(eq(slots.bookingId, bookingId));
+      .where(and(eq(slots.bookingId, bookingId), sql`${slots.deletedAt} is null`));
 
     await writeAudit(tx, ctx, 'booking.cancel', 'booking', bookingId, null, null);
 
