@@ -1,4 +1,4 @@
-import { customType, jsonb, pgEnum, pgTable, uuid } from 'drizzle-orm/pg-core';
+import { customType, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { arenas } from './arenas.js';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
@@ -54,6 +54,10 @@ export const bookings = pgTable('bookings', {
   pricePaise: bigintPaise('price_paise'),
   customerUserId: uuid('customer_user_id').references(() => users.id),
   customerContactJson: jsonb('customer_contact_json').$type<Record<string, unknown>>(),
+  customerName: text('customer_name'),
+  customerContact: text('customer_contact'),
+  note: text('note'),
+  totalPaise: bigintPaise('total_paise'),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

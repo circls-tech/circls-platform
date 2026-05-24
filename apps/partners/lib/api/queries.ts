@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Arena, Booking, Tenant, User, Venue } from './types';
+import type { Arena, Booking, Slot, Tenant, User, Venue } from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -68,40 +68,124 @@ export function useCreateArena(venueId: string) {
   });
 }
 
-export function useArenaBookings(arenaId: string, fromISO: string, toISO: string) {
+export function useArenaSlots(arenaId: string, fromISO: string, toISO: string) {
   return useQuery({
-    queryKey: ['bookings', arenaId, fromISO, toISO],
+    queryKey: ['slots', arenaId, fromISO, toISO],
     queryFn: () =>
-      apiFetch<Booking[]>(
-        `/v1/arenas/${arenaId}/bookings?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`,
+      apiFetch<Slot[]>(
+        `/v1/arenas/${arenaId}/slots?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`,
       ),
   });
 }
 
-export function useCreateBooking(arenaId: string) {
+// ── Schedule-builder hooks ────────────────────────────────────────────────────
+
+export interface ReleaseCell {
+  dayOfWeek: number;      // 0 (Sun) – 6 (Sat)
+  startTimeMin: number;   // minutes from midnight in venue tz
+  durationMin: number;
+  price?: number | null;  // paise
+  blocked?: boolean;
+}
+
+export interface ReleaseInput {
+  startDate: string;        // 'YYYY-MM-DD'
+  endDate: string;          // 'YYYY-MM-DD'
+  quantizationMin: number;
+  cells: ReleaseCell[];
+}
+
+export interface ReleaseResult {
+  created: number;
+  skipped: number;
+}
+
+export function useReleaseSlots(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
-      tenantId: string;
-      arenaId: string;
-      startAt: string;
-      endAt: string;
-      pricePaise?: number;
-    }) =>
+    mutationFn: (input: ReleaseInput) =>
+      apiFetch<ReleaseResult>(`/v1/arenas/${arenaId}/slots/release`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export interface BulkSlotPatch {
+  slotIds: string[];
+  price?: number;
+  blocked?: boolean;
+}
+
+export function useBulkSlots() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BulkSlotPatch) =>
+      apiFetch<Slot[]>('/v1/slots/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots'] }),
+  });
+}
+
+// ── Reception hooks ───────────────────────────────────────────────────────────
+
+export interface BookingCustomer {
+  name: string;
+  contact: string;
+  note?: string;
+}
+
+export interface BookSlotsInput {
+  slotIds: string[];
+  customer: BookingCustomer;
+}
+
+export function useBookSlots(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BookSlotsInput) =>
       apiFetch<Booking>('/v1/bookings', {
         method: 'POST',
         headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify(input),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['bookings', arenaId] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
   });
 }
 
-export function useCancelBooking(arenaId: string) {
+export function useCancelBookingById(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (bookingId: string) =>
       apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, { method: 'POST' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['bookings', arenaId] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export function useHoldSlots(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slotIds: string[]) =>
+      apiFetch<{ held: number }>('/v1/slots/hold', {
+        method: 'POST',
+        body: JSON.stringify({ slotIds }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export function useReleaseHoldSlots(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slotIds: string[]) =>
+      apiFetch<{ released: number }>('/v1/slots/release-hold', {
+        method: 'POST',
+        body: JSON.stringify({ slotIds }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
   });
 }

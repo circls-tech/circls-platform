@@ -1,147 +1,223 @@
 'use client';
+
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { type FormEvent, useMemo, useState } from 'react';
-import { useArenaBookings, useCancelBooking, useCreateBooking } from '@/lib/api/queries';
+import { useCallback, useMemo, useState } from 'react';
+import { Matrix } from '@/components/Matrix';
+import { AddBookingModal } from '@/components/AddBookingModal';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useArenaSlots, useBulkSlots, useCancelBookingById } from '@/lib/api/queries';
+import { Card } from '@/lib/ui';
 
-function dayRange(dateStr: string) {
-  const start = new Date(`${dateStr}T00:00:00`);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { fromISO: start.toISOString(), toISO: end.toISOString() };
-}
-function rupees(paise: number | null) {
-  return paise == null ? '—' : `₹${(paise / 100).toFixed(0)}`;
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+const TZ = 'Asia/Kolkata';
+
+/** Return the Sunday on/before today (browser local date). */
+function thisSunday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
 }
 
-export default function ArenaPage() {
+function addDays(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Page
+// ──────────────────────────────────────────────────────────────────────────────
+
+export default function ArenaReceptionPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
-  const today = new Date().toISOString().slice(0, 10);
 
-  const [date, setDate] = useState(today);
-  const { fromISO, toISO } = useMemo(() => dayRange(date), [date]);
-  const { data: bookings, isLoading } = useArenaBookings(arenaId, fromISO, toISO);
-  const createBooking = useCreateBooking(arenaId);
-  const cancelBooking = useCancelBooking(arenaId);
+  // ── Week state ──
+  const [weekStart, setWeekStart] = useState<Date>(thisSunday);
 
-  const [startLocal, setStartLocal] = useState(`${today}T10:00`);
-  const [durationMin, setDurationMin] = useState(60);
-  const [price, setPrice] = useState('');
-  const [err, setErr] = useState<string | null>(null);
+  // Widen the fetch window by ±1 day to absorb browser↔venue timezone skew so
+  // boundary slots are never clipped. The Matrix still places slots into the
+  // correct 7 columns using the venue tz (IST); this only widens the fetch.
+  // NOTE: single-tz assumption (IST/Asia/Kolkata) — full tz-correct windowing
+  // is deferred; see the matching caveat in slot_service.ts.
+  const fromIso = useMemo(() => addDays(weekStart, -1).toISOString(), [weekStart]);
+  const toIso = useMemo(() => addDays(weekStart, 8).toISOString(), [weekStart]);
 
-  async function onBook(e: FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    try {
-      const startMs = new Date(startLocal).getTime();
-      await createBooking.mutateAsync({
-        tenantId,
-        arenaId,
-        startAt: new Date(startMs).toISOString(),
-        endAt: new Date(startMs + durationMin * 60 * 1000).toISOString(),
-        ...(price ? { pricePaise: Math.round(Number(price) * 100) } : {}),
-      });
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
+  // ── Slots query ──
+  const { data: rawSlots, isLoading, isError, error } = useArenaSlots(arenaId, fromIso, toIso);
+
+  // Memoize the slots array so Matrix selection is NOT reset on background refetch
+  const slots = useMemo(() => rawSlots ?? [], [rawSlots]);
+
+  // ── Mutations ──
+  const bulk = useBulkSlots();
+  const cancel = useCancelBookingById(arenaId);
+
+  // ── Booking modal state ──
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingSlotIds, setBookingSlotIds] = useState<string[]>([]);
+
+  // ── Cancel confirm state ──
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelBookingId, setCancelBookingId] = useState<string>('');
+
+  // ── Price-change confirm state ──
+  const [priceConfirmOpen, setPriceConfirmOpen] = useState(false);
+  const [pendingPricePatch, setPendingPricePatch] = useState<{
+    slotIds: string[];
+    patch: { price?: number; blocked?: boolean };
+  } | null>(null);
+
+  // ── Matrix callbacks ──
+  const handlePrevWeek = useCallback(() => {
+    setWeekStart((prev) => addDays(prev, -7));
+  }, []);
+
+  const handleNextWeek = useCallback(() => {
+    setWeekStart((prev) => addDays(prev, 7));
+  }, []);
+
+  const handleBulk = useCallback(
+    (slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
+      if (patch.price !== undefined) {
+        // Route price changes through a confirm dialog
+        setPendingPricePatch({ slotIds, patch });
+        setPriceConfirmOpen(true);
+      } else {
+        // Block/unblock is immediate
+        bulk.mutate({ slotIds, ...patch });
+      }
+    },
+    [bulk],
+  );
+
+  const handleBook = useCallback((slotIds: string[]) => {
+    setBookingSlotIds(slotIds);
+    setBookingOpen(true);
+  }, []);
+
+  const handleCancel = useCallback((bookingId: string) => {
+    setCancelBookingId(bookingId);
+    setConfirmOpen(true);
+  }, []);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/dashboard" className="text-sm text-gray-500">
-        ← Dashboard
-      </Link>
-      <h1 className="text-xl font-semibold">Reception — walk-in bookings</h1>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Link href="/dashboard" className="hover:underline">
+              Dashboard
+            </Link>
+            <span>/</span>
+            <span className="font-medium text-slate-700">Reception</span>
+          </div>
+          <h1 className="mt-1 text-xl font-semibold text-slate-800">Reception</h1>
+        </div>
 
-      <div className="flex items-center gap-2">
-        <label className="text-sm" htmlFor="day">
-          Day
-        </label>
-        <input
-          id="day"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded border border-gray-300 px-2 py-1"
-        />
+        <Link
+          href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+        >
+          Schedule builder →
+        </Link>
       </div>
 
-      <section className="flex flex-col gap-2">
-        {isLoading && <p className="text-gray-500">Loading bookings…</p>}
-        {bookings?.length === 0 && <p className="text-sm text-gray-500">No bookings this day.</p>}
-        {bookings?.map((b) => (
-          <div
-            key={b.id}
-            className="flex items-center justify-between rounded border border-gray-200 bg-white p-3"
-          >
-            <div>
-              <span className="font-mono text-xs">{b.timeRange}</span>
-              <span className="ml-2 text-xs text-gray-400">
-                {b.status} · {b.channel} · {rupees(b.pricePaise)}
-              </span>
-            </div>
-            {b.status !== 'cancelled' && (
-              <button
-                type="button"
-                onClick={() => cancelBooking.mutate(b.id)}
-                className="text-sm text-red-600 hover:underline"
+      {/* Loading / error / empty */}
+      {isLoading && (
+        <p className="text-sm text-slate-500">Loading slots…</p>
+      )}
+      {isError && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {(error as Error).message}
+        </div>
+      )}
+      {!isLoading && !isError && slots.length === 0 && (
+        <Card>
+          <div className="flex flex-col gap-2 text-center py-4">
+            <p className="text-sm text-slate-500">No slots released for this week.</p>
+            <p className="text-xs text-slate-400">
+              Use the{' '}
+              <Link
+                href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
+                className="font-medium text-brand-600 hover:underline"
               >
-                Cancel
-              </button>
-            )}
+                schedule builder
+              </Link>{' '}
+              to release slots first.
+            </p>
           </div>
-        ))}
-      </section>
+        </Card>
+      )}
 
-      <form
-        onSubmit={onBook}
-        className="flex max-w-md flex-col gap-2 rounded border border-gray-200 bg-white p-4"
-      >
-        <h2 className="font-medium">New walk-in booking</h2>
-        <label className="text-sm" htmlFor="start">
-          Start
-        </label>
-        <input
-          id="start"
-          type="datetime-local"
-          value={startLocal}
-          onChange={(e) => setStartLocal(e.target.value)}
-          className="rounded border border-gray-300 px-3 py-2"
+      {/* Matrix */}
+      {!isLoading && !isError && (
+        <Matrix
+          mode="reception"
+          slots={slots}
+          weekStart={weekStart}
+          tz={TZ}
+          onBulk={handleBulk}
+          onBook={handleBook}
+          onCancel={handleCancel}
+          onPrevWeek={handlePrevWeek}
+          onNextWeek={handleNextWeek}
         />
-        <label className="text-sm" htmlFor="dur">
-          Duration (min)
-        </label>
-        <input
-          id="dur"
-          type="number"
-          value={durationMin}
-          onChange={(e) => setDurationMin(Number(e.target.value))}
-          className="rounded border border-gray-300 px-3 py-2"
-        />
-        <label className="text-sm" htmlFor="price">
-          Price (₹, optional — else resolved from pricing rules)
-        </label>
-        <input
-          id="price"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          placeholder="500"
-          className="rounded border border-gray-300 px-3 py-2"
-        />
-        <button
-          type="submit"
-          disabled={createBooking.isPending || !tenantId}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {createBooking.isPending ? 'Booking…' : 'Create booking'}
-        </button>
-        {!tenantId && (
-          <p className="text-xs text-amber-600">
-            Open this arena via a venue so the tenant context is set.
-          </p>
-        )}
-        {err && <p className="text-sm text-red-600">{err}</p>}
-      </form>
+      )}
+
+      {/* Add booking modal */}
+      <AddBookingModal
+        arenaId={arenaId}
+        open={bookingOpen}
+        slotIds={bookingSlotIds}
+        slots={slots}
+        onClose={() => setBookingOpen(false)}
+      />
+
+      {/* Cancel booking confirm */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Cancel booking?"
+        message="This frees the slot(s) and is logged."
+        confirmLabel="Cancel booking"
+        danger
+        onConfirm={() => {
+          if (cancelBookingId) cancel.mutate(cancelBookingId);
+        }}
+        onClose={() => setConfirmOpen(false)}
+      />
+
+      {/* Price-change confirm */}
+      <ConfirmDialog
+        open={priceConfirmOpen}
+        title="Apply price change?"
+        message={
+          pendingPricePatch?.patch.price !== undefined
+            ? `Set price to ₹${((pendingPricePatch.patch.price) / 100).toFixed(0)} for ${pendingPricePatch.slotIds.length} slot(s)?`
+            : ''
+        }
+        confirmLabel="Apply"
+        onConfirm={() => {
+          if (pendingPricePatch) {
+            bulk.mutate({ slotIds: pendingPricePatch.slotIds, ...pendingPricePatch.patch });
+            setPendingPricePatch(null);
+          }
+        }}
+        onClose={() => {
+          setPriceConfirmOpen(false);
+          setPendingPricePatch(null);
+        }}
+      />
     </div>
   );
 }
