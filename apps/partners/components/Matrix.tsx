@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Slot } from '@/lib/api/types';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useGridSelection } from './useGridSelection';
@@ -197,6 +197,7 @@ function Inspector({ selected, slots, mode, onBulk, onBook }: InspectorProps) {
           <Button
             size="sm"
             variant="primary"
+            disabled={selectedSlots.some((s) => s.status !== 'open')}
             onClick={() => onBook(ids)}
           >
             Add booking
@@ -258,11 +259,15 @@ export function Matrix({
   const weekEnd = addDays(weekStart, 6);
   const weekLabel = `${fmtShortDate(weekStart)} – ${fmtShortDate(weekEnd)}`;
 
-  // Pointer-up on document to end drag.
+  // Pointer-up / pointer-cancel on document to end drag.
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     document.addEventListener('pointerup', handlePointerUp);
-    return () => document.removeEventListener('pointerup', handlePointerUp);
+    document.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
+    };
   }, [handlePointerUp]);
 
   return (
@@ -309,10 +314,9 @@ export function Matrix({
 
             {/* ── Time rows ── */}
             {timeKeys.map((tk, rowIndex) => (
-              <>
+              <Fragment key={`row-${rowIndex}`}>
                 {/* Time label */}
                 <button
-                  key={`row-${rowIndex}`}
                   className={[
                     'flex items-center justify-end pr-2 text-[11px] font-mono text-slate-400',
                     'hover:text-slate-600 cursor-pointer select-none py-1',
@@ -350,7 +354,7 @@ export function Matrix({
                     </div>
                   );
                 })}
-              </>
+              </Fragment>
             ))}
           </div>
         </div>

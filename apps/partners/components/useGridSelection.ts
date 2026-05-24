@@ -15,6 +15,7 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
   // Reset when slots or weekStart change identity.
   useEffect(() => {
     setSelected(new Set());
+    cellMap.current = new Map();
   }, [slots, weekStart]);
 
   // Drag state — we need refs so event handlers don't stale-close over state.
