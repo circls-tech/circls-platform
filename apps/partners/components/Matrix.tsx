@@ -16,6 +16,7 @@ interface MatrixProps {
   mode: 'builder' | 'reception';
   onBulk: (slotIds: string[], patch: { price?: number; blocked?: boolean }) => void;
   onBook: (slotIds: string[]) => void;
+  onCancel?: (bookingId: string) => void;
   onPrevWeek: () => void;
   onNextWeek: () => void;
 }
@@ -110,9 +111,10 @@ interface InspectorProps {
   mode: 'builder' | 'reception';
   onBulk: MatrixProps['onBulk'];
   onBook: MatrixProps['onBook'];
+  onCancel?: MatrixProps['onCancel'];
 }
 
-function Inspector({ selected, slots, mode, onBulk, onBook }: InspectorProps) {
+function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: InspectorProps) {
   const [priceInput, setPriceInput] = useState('');
 
   const selectedSlots = slots.filter((s) => selected.has(s.id));
@@ -203,6 +205,21 @@ function Inspector({ selected, slots, mode, onBulk, onBook }: InspectorProps) {
             Add booking
           </Button>
         )}
+
+        {/* Reception: Cancel booking (single booked slot) */}
+        {mode === 'reception' &&
+          onCancel &&
+          n === 1 &&
+          selectedSlots[0]?.status === 'booked' &&
+          selectedSlots[0]?.bookingId && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => onCancel(selectedSlots[0]!.bookingId!)}
+            >
+              Cancel booking
+            </Button>
+          )}
       </div>
     </Card>
   );
@@ -219,6 +236,7 @@ export function Matrix({
   mode,
   onBulk,
   onBook,
+  onCancel,
   onPrevWeek,
   onNextWeek,
 }: MatrixProps) {
@@ -368,6 +386,7 @@ export function Matrix({
           mode={mode}
           onBulk={onBulk}
           onBook={onBook}
+          onCancel={onCancel}
         />
       </div>
     </div>
