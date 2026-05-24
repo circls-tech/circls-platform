@@ -1,12 +1,21 @@
 'use client';
 import Link from 'next/link';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useCreateTenant, useMe, useMyTenants } from '@/lib/api/queries';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { data: me } = useMe();
   const { data: tenants, isLoading } = useMyTenants();
   const createTenant = useCreateTenant();
+
+  // Redirect new users who have no org yet to the onboarding wizard.
+  useEffect(() => {
+    if (!isLoading && tenants !== undefined && tenants.length === 0) {
+      router.replace('/onboarding');
+    }
+  }, [isLoading, tenants, router]);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [err, setErr] = useState<string | null>(null);
