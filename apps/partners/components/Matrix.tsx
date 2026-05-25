@@ -367,12 +367,11 @@ export function Matrix({
       }
 
       const locked = mode === 'reception' && now != null && isSlotLocked(slot, now);
-      if (locked) {
-        lockedIds.add(slot.id);
-      } else {
-        // Only register non-locked cells so selection cannot include past slots.
-        registerCell(slot.id, dayIndex, rowIndex);
-      }
+      if (locked) lockedIds.add(slot.id);
+      // Register every in-bounds cell with its locked flag. Selection helpers
+      // skip locked cells, so this stays correct even as slots lock on the 60s
+      // `now` tick (cellMap is not rebuilt between ticks).
+      registerCell(slot.id, dayIndex, rowIndex, locked);
     }
   });
 
@@ -428,6 +427,29 @@ export function Matrix({
     nowRowOffset !== null
       ? Math.round(nowRowOffset * ROW_H)
       : null;
+
+  // Render the "now" line for a given time-row if `now` falls within that row's
+  // vertical span; null otherwise. Callers gate on today's column. Rendered for
+  // BOTH filled and empty cells so the line never disappears in a gap or after
+  // the last slot of the day.
+  const renderNowLine = (rowIndex: number) => {
+    if (nowLineTop === null) return null;
+    const cellTop = rowIndex * ROW_H;
+    if (nowLineTop < cellTop || nowLineTop >= cellTop + ROW_H) return null;
+    return (
+      <div
+        className="pointer-events-none absolute left-0 right-0 z-10"
+        style={{ top: nowLineTop - cellTop }}
+      >
+        <div className="relative flex items-center">
+          {/* Red dot at the left edge */}
+          <div className="absolute -left-1 h-2 w-2 rounded-full bg-red-500" />
+          {/* Red rule spanning the column width */}
+          <div className="h-0.5 w-full bg-red-500" />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex gap-4 w-full">
@@ -516,10 +538,12 @@ export function Matrix({
                       <div
                         key={key}
                         className={[
-                          'min-h-[40px] rounded border border-dashed border-slate-100 m-0.5',
+                          'relative min-h-[40px] rounded border border-dashed border-slate-100 m-0.5',
                           todayBg,
                         ].join(' ')}
-                      />
+                      >
+                        {isToday && renderNowLine(rowIndex)}
+                      </div>
                     );
                   }
 
@@ -541,36 +565,9 @@ export function Matrix({
                           handleCellPointerEnter(colIndex, rowIndex)
                         }
                       />
-                      {/* Now-line segment: render only for today's column at the first row
-                          where nowRowOffset falls in this row's span. We use absolute
-                          positioning within the cell wrapper. */}
-                      {isToday &&
-                        nowLineTop !== null &&
-                        (() => {
-                          // Position of the top of this cell relative to the start of the
-                          // time-rows section: rowIndex * ROW_H
-                          const cellTop = rowIndex * ROW_H;
-                          const cellBottom = cellTop + ROW_H;
-                          // nowLineTop is relative to the start of time-rows section.
-                          // We want to show the line if it falls within this cell's vertical span.
-                          if (nowLineTop >= cellTop && nowLineTop < cellBottom) {
-                            const offsetWithinCell = nowLineTop - cellTop;
-                            return (
-                              <div
-                                className="pointer-events-none absolute left-0 right-0 z-10"
-                                style={{ top: offsetWithinCell }}
-                              >
-                                <div className="relative flex items-center">
-                                  {/* Red dot at the left edge */}
-                                  <div className="absolute -left-1 h-2 w-2 rounded-full bg-red-500" />
-                                  {/* Red line spanning the full column width */}
-                                  <div className="h-0.5 w-full bg-red-500" />
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
+                      {/* Now-line: shown when `now` falls within this row's span
+                          (today's column only; same helper used for empty cells). */}
+                      {isToday && renderNowLine(rowIndex)}
                     </div>
                   );
                 })}
