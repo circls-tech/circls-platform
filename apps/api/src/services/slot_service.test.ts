@@ -10,6 +10,7 @@ import {
   holdSlots,
   releaseHold,
   releaseSlots,
+  sweepExpiredHolds,
 } from './slot_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -493,6 +494,103 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
         customerContact: '+91-9000000100',
       });
       expect(booking.status).toBe('confirmed');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // sweepExpiredHolds — the background reaper. Frees holds whose
+  // hold_expires_at has passed back to 'open'; leaves everything else alone.
+  // -------------------------------------------------------------------------
+  describe('sweepExpiredHolds', () => {
+    /**
+     * Insert a slot with an explicit status and optional hold metadata.
+     * Each call uses a distinct future tstzrange (driven by `dateStr`) so the
+     * per-arena slots_no_overlap exclusion constraint is never tripped.
+     */
+    async function insertSlot(
+      dateStr: string,
+      status: 'open' | 'held' | 'booked',
+      holdExpiresSql: string | null,
+      heldBy: string | null,
+    ): Promise<string> {
+      const [row] = await db.execute<{ id: string }>(sql`
+        insert into slots (tenant_id, arena_id, time_range, price_paise, status, hold_expires_at, held_by_user_id)
+        values (
+          ${tenantId}, ${arenaId},
+          tstzrange(${dateStr + 'T10:00:00Z'}::timestamptz, ${dateStr + 'T11:00:00Z'}::timestamptz, '[)'),
+          10000, ${status},
+          ${holdExpiresSql ? sql`${holdExpiresSql}::timestamptz` : sql`null`},
+          ${heldBy}
+        )
+        returning id
+      `);
+      return (row as { id: string }).id;
+    }
+
+    it('frees an expired hold back to open with hold fields nulled, count reflects it', async () => {
+      // status='held', hold_expires_at in the past.
+      const expiredId = await insertSlot(
+        '2031-01-05',
+        'held',
+        new Date(Date.now() - 60_000).toISOString(),
+        actorUserId,
+      );
+
+      const freed = await sweepExpiredHolds();
+      expect(freed).toBeGreaterThanOrEqual(1);
+
+      const [after] = await db.select().from(slots).where(sql`id = ${expiredId}`);
+      expect(after?.status).toBe('open');
+      expect(after?.heldByUserId).toBeNull();
+      expect(after?.holdExpiresAt).toBeNull();
+    });
+
+    it('leaves a still-active hold (future expiry) untouched', async () => {
+      const activeId = await insertSlot(
+        '2031-02-05',
+        'held',
+        new Date(Date.now() + 5 * 60_000).toISOString(),
+        actorUserId,
+      );
+
+      await sweepExpiredHolds();
+
+      const [after] = await db.select().from(slots).where(sql`id = ${activeId}`);
+      expect(after?.status).toBe('held');
+      expect(after?.heldByUserId).toBe(actorUserId);
+      expect(after?.holdExpiresAt).not.toBeNull();
+    });
+
+    it('leaves open and booked slots untouched', async () => {
+      const openId = await insertSlot('2031-03-05', 'open', null, null);
+      const bookedId = await insertSlot('2031-04-05', 'booked', null, null);
+
+      await sweepExpiredHolds();
+
+      const [openAfter] = await db.select().from(slots).where(sql`id = ${openId}`);
+      const [bookedAfter] = await db.select().from(slots).where(sql`id = ${bookedId}`);
+      expect(openAfter?.status).toBe('open');
+      expect(bookedAfter?.status).toBe('booked');
+    });
+
+    it('only counts the rows it actually freed', async () => {
+      // Sweep first to drain any pre-existing expired holds (the sweep is
+      // global, not tenant-scoped), so the next sweep's count is attributable
+      // solely to the single hold we introduce below.
+      await sweepExpiredHolds();
+
+      const expiredId = await insertSlot(
+        '2031-05-05',
+        'held',
+        new Date(Date.now() - 120_000).toISOString(),
+        actorUserId,
+      );
+
+      const freed = await sweepExpiredHolds();
+      expect(freed).toBe(1);
+
+      const [after] = await db.select().from(slots).where(sql`id = ${expiredId}`);
+      expect(after?.status).toBe('open');
     });
   });
 });

@@ -379,3 +379,28 @@ export async function releaseHold(tenantId: string, slotIds: string[]): Promise<
     .set({ status: 'open', holdExpiresAt: null, heldByUserId: null })
     .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId), eq(slots.status, 'held')));
 }
+
+/**
+ * Reaper for stale holds: flips every slot whose hold has expired
+ * (`status='held'` AND `hold_expires_at < now()`, ignoring soft-deleted rows)
+ * back to `open`, clearing the hold metadata. Returns the number of rows freed.
+ *
+ * Tenant-agnostic by design — it sweeps the whole table so a single recurring
+ * job covers all tenants. Independent of pg-boss so it stays directly callable
+ * (and unit-testable) without booting the worker.
+ */
+export async function sweepExpiredHolds(): Promise<number> {
+  const freed = await db
+    .update(slots)
+    .set({ status: 'open', holdExpiresAt: null, heldByUserId: null })
+    .where(
+      and(
+        eq(slots.status, 'held'),
+        sql`${slots.holdExpiresAt} < now()`,
+        sql`${slots.deletedAt} is null`,
+      ),
+    )
+    .returning({ id: slots.id });
+
+  return freed.length;
+}
