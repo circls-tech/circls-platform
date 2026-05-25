@@ -20,12 +20,17 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
 
   // Drag state — we need refs so event handlers don't stale-close over state.
   const dragStart = useRef<{ dayIndex: number; rowIndex: number } | null>(null);
-  const cellMap = useRef<Map<string, { dayIndex: number; rowIndex: number }>>(new Map());
+  const cellMap = useRef<Map<string, { dayIndex: number; rowIndex: number; locked: boolean }>>(new Map());
 
-  /** Called by the grid to register every (slotId → cell coordinate) mapping. */
+  /**
+   * Called by the grid to register every (slotId → cell coordinate) mapping,
+   * with a `locked` flag. Locked (past) cells are registered too, but every
+   * selection helper skips them — so re-registering with an updated flag on the
+   * 60s `now` tick keeps selection correct without rebuilding cellMap.
+   */
   const registerCell = useCallback(
-    (slotId: string, dayIndex: number, rowIndex: number) => {
-      cellMap.current.set(slotId, { dayIndex, rowIndex });
+    (slotId: string, dayIndex: number, rowIndex: number, locked = false) => {
+      cellMap.current.set(slotId, { dayIndex, rowIndex, locked });
     },
     [],
   );
@@ -40,6 +45,7 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
       const ids: string[] = [];
       cellMap.current.forEach((cell, slotId) => {
         if (
+          !cell.locked &&
           cell.rowIndex >= minR &&
           cell.rowIndex <= maxR &&
           cell.dayIndex >= minC &&
@@ -91,7 +97,7 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
   const selectDay = useCallback((dayIndex: number) => {
     const ids: string[] = [];
     cellMap.current.forEach((cell, slotId) => {
-      if (cell.dayIndex === dayIndex) ids.push(slotId);
+      if (cell.dayIndex === dayIndex && !cell.locked) ids.push(slotId);
     });
     setSelected(new Set(ids));
   }, []);
@@ -100,7 +106,7 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
   const selectRow = useCallback((rowIndex: number) => {
     const ids: string[] = [];
     cellMap.current.forEach((cell, slotId) => {
-      if (cell.rowIndex === rowIndex) ids.push(slotId);
+      if (cell.rowIndex === rowIndex && !cell.locked) ids.push(slotId);
     });
     setSelected(new Set(ids));
   }, []);

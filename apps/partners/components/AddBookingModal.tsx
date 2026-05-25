@@ -79,6 +79,8 @@ export function AddBookingModal({
     } catch (err) {
       if (err instanceof ApiError && err.code === 'slot_taken') {
         setError('Some slots were just taken — close and refresh.');
+      } else if (err instanceof ApiError && err.code === 'slot_in_past') {
+        setError('This slot has already started — refresh.');
       } else {
         setError((err as Error).message);
       }
