@@ -18,6 +18,9 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 // Pure unit test — no DB required
 // ---------------------------------------------------------------------------
 describe('enumerateOccurrences (pure)', () => {
+  // A "now" well before any window used in these tests, so date math is unaffected.
+  const NOW_BEFORE_WINDOW = '2020-01-01T00:00:00.000Z';
+
   it('returns exactly 2 occurrences for Saturdays in a 2-week window', () => {
     // 2026-07-04 and 2026-07-11 are Saturdays; 18:00 IST = 12:30 UTC
     const result = enumerateOccurrences(
@@ -25,6 +28,7 @@ describe('enumerateOccurrences (pure)', () => {
       '2026-07-14',
       [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
       'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
     );
 
     expect(result).toHaveLength(2);
@@ -39,6 +43,7 @@ describe('enumerateOccurrences (pure)', () => {
       '2026-07-01',
       [{ dayOfWeek: 0, startTimeMin: 600, durationMin: 60 }],
       'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
     );
     expect(result).toHaveLength(0);
   });
@@ -50,8 +55,36 @@ describe('enumerateOccurrences (pure)', () => {
       '2026-07-04',
       [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
       'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
     );
     expect(result[0]?.endIso).toBe('2026-07-04T13:30:00.000Z');
+  });
+
+  it('skips occurrences whose start is at or before nowIso, keeps later ones', () => {
+    // Two Saturdays: 2026-07-04T12:30Z and 2026-07-11T12:30Z.
+    // nowIso == the first occurrence's start → that one is skipped (<=), second kept.
+    const result = enumerateOccurrences(
+      '2026-07-01',
+      '2026-07-14',
+      [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
+      'Asia/Kolkata',
+      '2026-07-04T12:30:00.000Z',
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]?.startIso).toBe('2026-07-11T12:30:00.000Z');
+  });
+
+  it('keeps an occurrence whose start is strictly after nowIso', () => {
+    // nowIso one second before the first occurrence → both kept.
+    const result = enumerateOccurrences(
+      '2026-07-01',
+      '2026-07-14',
+      [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
+      'Asia/Kolkata',
+      '2026-07-04T12:29:59.000Z',
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]?.startIso).toBe('2026-07-04T12:30:00.000Z');
   });
 });
 
@@ -379,6 +412,87 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       expect(held?.status).toBe('open');
       expect(held?.heldByUserId).toBeNull();
       expect(held?.holdExpiresAt).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK 2 — Time-awareness: a slot is locked once its start <= now().
+  // No create/edit/book in the past. Error code: slot_in_past.
+  // -------------------------------------------------------------------------
+  describe('time-awareness — no past edit/book', () => {
+    /**
+     * Insert an open slot whose tstzrange is entirely in the past; return its id.
+     * `dateStr` (YYYY-MM-DD) lets each test use a distinct range so the
+     * per-arena slots_no_overlap exclusion constraint is never tripped.
+     */
+    async function insertPastSlot(dateStr: string): Promise<string> {
+      const [row] = await db.execute<{ id: string }>(sql`
+        insert into slots (tenant_id, arena_id, time_range, price_paise, status)
+        values (
+          ${tenantId}, ${arenaId},
+          tstzrange(${dateStr + 'T10:00:00Z'}::timestamptz, ${dateStr + 'T11:00:00Z'}::timestamptz, '[)'),
+          10000, 'open'
+        )
+        returning id
+      `);
+      return (row as { id: string }).id;
+    }
+
+    it('bulkUpdateSlots on a past slot throws slot_in_past', async () => {
+      const pastId = await insertPastSlot('2020-01-01');
+      await expect(
+        bulkUpdateSlots(ctx, [pastId], { price: 22222 }),
+      ).rejects.toMatchObject({ code: 'slot_in_past' });
+
+      // Unchanged price proves the UPDATE did not touch it.
+      const [after] = await db.select().from(slots).where(sql`id = ${pastId}`);
+      expect(after?.pricePaise).toBe(10000);
+    });
+
+    it('bookSlots on a past slot throws slot_in_past', async () => {
+      const pastId = await insertPastSlot('2020-02-02');
+      await expect(
+        bookSlots(ctx, venueId, {
+          slotIds: [pastId],
+          customerName: 'Time Traveller',
+          customerContact: '+91-9000000099',
+        }),
+      ).rejects.toMatchObject({ code: 'slot_in_past' });
+
+      // Slot stays open (not booked).
+      const [after] = await db.select().from(slots).where(sql`id = ${pastId}`);
+      expect(after?.status).toBe('open');
+    });
+
+    it('a future slot still edits and books fine', async () => {
+      // Release a fresh far-future slot (2030-08-04 is a Sunday in IST).
+      const res = await releaseSlots(ctx, arenaId, {
+        startDate: '2030-08-04',
+        endDate: '2030-08-04',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 0, startTimeMin: 600, durationMin: 60, price: 10000 }],
+      });
+      expect(res.created).toBe(1);
+      const [slot] = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is null and lower(time_range) = '2030-08-04T04:30:00.000Z'::timestamptz`,
+        );
+      const futureId = slot!.id;
+
+      // Edit succeeds.
+      const updated = await bulkUpdateSlots(ctx, [futureId], { price: 33333 });
+      expect(updated).toHaveLength(1);
+      expect(updated[0]?.pricePaise).toBe(33333);
+
+      // Book succeeds.
+      const booking = await bookSlots(ctx, venueId, {
+        slotIds: [futureId],
+        customerName: 'Future Guest',
+        customerContact: '+91-9000000100',
+      });
+      expect(booking.status).toBe('confirmed');
     });
   });
 });

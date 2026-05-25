@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Booking, bookings, slots } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
@@ -20,7 +20,10 @@ export async function bookSlots(
 
   return db.transaction(async (tx) => {
     const sel = await tx
-      .select()
+      .select({
+        ...getTableColumns(slots),
+        startsInPast: sql<boolean>`lower(${slots.timeRange}) <= now()`,
+      })
       .from(slots)
       .where(
         and(
@@ -29,6 +32,11 @@ export async function bookSlots(
           sql`${slots.deletedAt} is null`,
         ),
       );
+
+    // A slot whose start instant has passed can no longer be booked.
+    if (sel.some((r) => r.startsInPast)) {
+      throw new Conflict('This slot has already started', 'slot_in_past');
+    }
 
     const total = sel.reduce((s, r) => s + r.pricePaise, 0);
 
@@ -62,6 +70,8 @@ export async function bookSlots(
           inArray(slots.id, input.slotIds),
           eq(slots.tenantId, ctx.tenantId),
           sql`${slots.deletedAt} is null`,
+          // TOCTOU guard: never claim a slot whose start has passed.
+          sql`lower(${slots.timeRange}) > now()`,
           or(
             eq(slots.status, 'open'),
             and(

@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isExclusionViolation } from '../db/errors.js';
 import { type Slot, slotReleases, slots } from '../db/schema/index.js';
@@ -140,6 +140,10 @@ function nextDay(dateStr: string): string {
  * For each calendar date in [startDate, endDate] inclusive, and each cell whose
  * dayOfWeek matches that date's weekday IN `tz`, yields one Occurrence.
  *
+ * Occurrences whose start instant is at or before `nowIso` are skipped — a slot
+ * may never be created in the past. ISO-8601 instants in UTC ('…Z') compare
+ * correctly as strings, so the `<=` comparison is lexicographic and exact.
+ *
  * NOTE — DST / large-offset limitation: assumes a non-DST timezone
  * (Asia/Kolkata). See the header comment on the timezone helpers above.
  */
@@ -148,6 +152,7 @@ export function enumerateOccurrences(
   endDate: string,
   cells: ReleaseCell[],
   tz: string,
+  nowIso: string,
 ): Occurrence[] {
   const occurrences: Occurrence[] = [];
   let current = startDate;
@@ -158,8 +163,12 @@ export function enumerateOccurrences(
     for (const cell of cells) {
       if (cell.dayOfWeek !== dow) continue;
 
+      const startIso = localMinutesToUtcIso(current, cell.startTimeMin, tz);
+      // Skip occurrences that have already started (or start exactly now).
+      if (startIso <= nowIso) continue;
+
       occurrences.push({
-        startIso: localMinutesToUtcIso(current, cell.startTimeMin, tz),
+        startIso,
         endIso: localMinutesToUtcIso(current, cell.startTimeMin + cell.durationMin, tz),
         price: cell.price ?? null,
         blocked: cell.blocked ?? false,
@@ -197,7 +206,11 @@ export async function releaseSlots(
     let created = 0;
     let skipped = 0;
 
-    for (const occ of enumerateOccurrences(input.startDate, input.endDate, input.cells, tz)) {
+    // Pass the wall-clock now so that releasing a window starting today
+    // auto-begins at the first slot boundary strictly after now.
+    const nowIso = new Date().toISOString();
+
+    for (const occ of enumerateOccurrences(input.startDate, input.endDate, input.cells, tz, nowIso)) {
       const price =
         occ.price ??
         (await resolvePricePaise({ arenaId, startAt: occ.startIso, channel: 'walkin' })) ??
@@ -273,8 +286,12 @@ export async function bulkUpdateSlots(
     // `inArray` generates `id IN ($1, $2, …)` with proper individual bindings —
     // avoids the `any(($1,$2)::uuid[])` record-cast error from postgres-js.
     // eq(slots.tenantId, ctx.tenantId) scopes to the caller's tenant.
+    // `startsInPast` reads the tstzrange lower bound so we can reject started slots.
     const rows = await tx
-      .select()
+      .select({
+        ...getTableColumns(slots),
+        startsInPast: sql<boolean>`lower(${slots.timeRange}) <= now()`,
+      })
       .from(slots)
       .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, ctx.tenantId), sql`${slots.deletedAt} is null`));
 
@@ -282,6 +299,10 @@ export async function bulkUpdateSlots(
     for (const r of rows) {
       if (r.status === 'booked' || r.status === 'held') {
         throw new Conflict('Slot is locked', 'slot_locked');
+      }
+      // A slot whose start instant has passed can no longer be edited.
+      if (r.startsInPast) {
+        throw new Conflict('This slot has already started', 'slot_in_past');
       }
     }
 
@@ -293,12 +314,20 @@ export async function bulkUpdateSlots(
     if (Object.keys(set).length === 0) return [];
 
     // TOCTOU guard: the UPDATE itself excludes booked/held rows so a
-    // concurrently-booked slot cannot be silently overwritten.
+    // concurrently-booked slot cannot be silently overwritten, and excludes
+    // rows whose start has passed (slot_in_past) — both checked in the WHERE.
     // eq(slots.tenantId, ctx.tenantId) ensures cross-tenant IDs in slotIds are silently ignored.
     const updated = await tx
       .update(slots)
       .set(set)
-      .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, ctx.tenantId), notInArray(slots.status, ['booked', 'held'])))
+      .where(
+        and(
+          inArray(slots.id, slotIds),
+          eq(slots.tenantId, ctx.tenantId),
+          notInArray(slots.status, ['booked', 'held']),
+          sql`lower(${slots.timeRange}) > now()`,
+        ),
+      )
       .returning();
 
     // If counts differ, a slot was locked between our SELECT and this UPDATE.
