@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -39,6 +39,13 @@ export default function ArenaReceptionPage() {
 
   // ── Week state ──
   const [weekStart, setWeekStart] = useState<Date>(thisSunday);
+
+  // ── Ticking now (for time-awareness UI) ──
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Widen the fetch window by ±1 day to absorb browser↔venue timezone skew so
   // boundary slots are never clipped. The Matrix still places slots into the
@@ -167,6 +174,7 @@ export default function ArenaReceptionPage() {
           slots={slots}
           weekStart={weekStart}
           tz={TZ}
+          now={now}
           onBulk={handleBulk}
           onBook={handleBook}
           onCancel={handleCancel}

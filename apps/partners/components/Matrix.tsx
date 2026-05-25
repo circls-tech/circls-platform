@@ -14,6 +14,7 @@ interface MatrixProps {
   weekStart: Date;           // Sunday of the visible week
   tz: string;                // venue IANA tz, e.g. 'Asia/Kolkata'
   mode: 'builder' | 'reception';
+  now?: Date;                // ticking current time; reception-mode only
   onBulk: (slotIds: string[], patch: { price?: number; blocked?: boolean }) => void;
   onBook: (slotIds: string[]) => void;
   onCancel?: (bookingId: string) => void;
@@ -26,6 +27,13 @@ interface MatrixProps {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** Cell min-height in px — must stay in sync with min-h-[40px] below. */
+const CELL_MIN_H = 40;
+/** Cell margin (m-0.5 = 2px each side = 4px total per cell). */
+const CELL_MARGIN = 4;
+/** Total row height including margins. */
+const ROW_H = CELL_MIN_H + CELL_MARGIN;
 
 function addDays(date: Date, n: number): Date {
   const d = new Date(date);
@@ -61,6 +69,70 @@ function getDayIndex(isoString: string, tz: string, weekStart: Date): number {
   return (slotDow - weekStartDow + 7) % 7;
 }
 
+/**
+ * Returns whether a slot is "locked" (in the past) for reception mode.
+ * A slot is locked when its start instant <= now (no timezone math needed —
+ * both are absolute instants).
+ */
+function isSlotLocked(slot: Slot, now: Date): boolean {
+  return new Date(slot.startAt).getTime() <= now.getTime();
+}
+
+/**
+ * Returns a "YYYY-MM-DD" date string in the given IANA timezone.
+ */
+function localDateStr(date: Date, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+/**
+ * Given a list of sorted time-key strings ("HH:mm") and the sorted slot list,
+ * compute the fractional row offset (0..timeKeys.length) where `now` falls.
+ *
+ * - Before first slot row start → 0
+ * - After last slot row end    → timeKeys.length
+ * - Within a row               → rowIndex + elapsed_fraction
+ * - In a gap between rows      → at the gap boundary (floor)
+ *
+ * `slotsByTimeKey` maps timeKey → first slot at that time (to get startAt/endAt).
+ */
+function computeNowRowOffset(
+  timeKeys: string[],
+  slotsByTimeKey: Map<string, Slot>,
+  now: Date,
+): number {
+  if (timeKeys.length === 0) return 0;
+  const nowMs = now.getTime();
+
+  for (let i = 0; i < timeKeys.length; i++) {
+    const tk = timeKeys[i]!;
+    const slot = slotsByTimeKey.get(tk);
+    if (!slot) continue;
+
+    const rowStart = new Date(slot.startAt).getTime();
+    const rowEnd = new Date(slot.endAt).getTime();
+
+    if (nowMs < rowStart) {
+      // now is before this row — either in a gap above it or before everything.
+      return i;
+    }
+    if (nowMs >= rowStart && nowMs < rowEnd) {
+      // now is within this row — compute fractional offset.
+      const fraction = (nowMs - rowStart) / (rowEnd - rowStart);
+      return i + fraction;
+    }
+    // nowMs >= rowEnd → now is at or after this row, continue to next.
+  }
+
+  // now is past the last row.
+  return timeKeys.length;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Cell component
 // ──────────────────────────────────────────────────────────────────────────────
@@ -68,11 +140,12 @@ function getDayIndex(isoString: string, tz: string, weekStart: Date): number {
 interface CellProps {
   slot: Slot;
   isSelected: boolean;
+  locked: boolean;
   onPointerDown: () => void;
   onPointerEnter: () => void;
 }
 
-function SlotCell({ slot, isSelected, onPointerDown, onPointerEnter }: CellProps) {
+function SlotCell({ slot, isSelected, locked, onPointerDown, onPointerEnter }: CellProps) {
   const toneMap: Record<Slot['status'], 'open' | 'booked' | 'blocked' | 'held'> = {
     open: 'open',
     booked: 'booked',
@@ -81,6 +154,24 @@ function SlotCell({ slot, isSelected, onPointerDown, onPointerEnter }: CellProps
   };
   const priceDisplay =
     slot.status === 'open' ? `₹${(slot.pricePaise / 100).toFixed(0)}` : '';
+
+  if (locked) {
+    // Dimmed, non-interactive locked cell.
+    return (
+      <div
+        className={[
+          'relative flex items-center justify-center rounded p-1 select-none',
+          'min-h-[40px] opacity-40 cursor-default',
+        ].join(' ')}
+      >
+        <Badge
+          tone={toneMap[slot.status]}
+          label={priceDisplay || slot.status}
+          className="w-full justify-center truncate text-[10px]"
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -234,6 +325,7 @@ export function Matrix({
   weekStart,
   tz,
   mode,
+  now,
   onBulk,
   onBook,
   onCancel,
@@ -256,16 +348,56 @@ export function Matrix({
   ].sort();
 
   // Build a map: `${dayIndex}:${rowIndex}` → Slot
+  // Also build slotsByTimeKey for now-line offset computation.
   const cellData = new Map<string, Slot>();
+  const slotsByTimeKey = new Map<string, Slot>();
+
+  // Determine which slots are locked (reception mode only).
+  const lockedIds = new Set<string>();
+
   slots.forEach((slot) => {
     const dayIndex = getDayIndex(slot.startAt, tz, weekStart);
     const tk = fmtTimeKey(slot.startAt, tz);
     const rowIndex = timeKeys.indexOf(tk);
     if (dayIndex >= 0 && dayIndex <= 6 && rowIndex >= 0) {
       cellData.set(`${dayIndex}:${rowIndex}`, slot);
-      registerCell(slot.id, dayIndex, rowIndex);
+
+      if (!slotsByTimeKey.has(tk)) {
+        slotsByTimeKey.set(tk, slot);
+      }
+
+      const locked = mode === 'reception' && now != null && isSlotLocked(slot, now);
+      if (locked) {
+        lockedIds.add(slot.id);
+      } else {
+        // Only register non-locked cells so selection cannot include past slots.
+        registerCell(slot.id, dayIndex, rowIndex);
+      }
     }
   });
+
+  // ── Today detection (reception mode) ──
+  // Determine which column index corresponds to today in the venue tz.
+  // Also check if today is within the currently displayed week.
+  let todayColIndex: number | null = null;
+  if (mode === 'reception' && now != null) {
+    const todayStr = localDateStr(now, tz);
+    for (let i = 0; i < 7; i++) {
+      const colDate = addDays(weekStart, i);
+      const colStr = localDateStr(colDate, tz);
+      if (colStr === todayStr) {
+        todayColIndex = i;
+        break;
+      }
+    }
+  }
+
+  // ── Now-line position (reception mode) ──
+  // Compute fractional row offset so we can position the line absolutely.
+  let nowRowOffset: number | null = null;
+  if (mode === 'reception' && now != null && todayColIndex !== null && timeKeys.length > 0) {
+    nowRowOffset = computeNowRowOffset(timeKeys, slotsByTimeKey, now);
+  }
 
   // Column headers: day labels + date.
   const dayHeaders = DAYS.map((day, i) => ({
@@ -287,6 +419,15 @@ export function Matrix({
       document.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [handlePointerUp]);
+
+  // ── Now-line: measure header row height so we can offset correctly ──
+  // The grid has a header row (day headers), then time rows.
+  // We wrap the time-rows section in a relative container and position
+  // the line within it using nowRowOffset * ROW_H.
+  const nowLineTop =
+    nowRowOffset !== null
+      ? Math.round(nowRowOffset * ROW_H)
+      : null;
 
   return (
     <div className="flex gap-4 w-full">
@@ -313,24 +454,40 @@ export function Matrix({
             {/* ── Header row ── */}
             {/* top-left corner */}
             <div />
-            {dayHeaders.map(({ day, date }, colIndex) => (
-              <button
-                key={colIndex}
-                className={[
-                  'flex flex-col items-center py-2 text-xs font-semibold text-slate-500',
-                  'hover:bg-slate-50 rounded cursor-pointer select-none',
-                ].join(' ')}
-                onClick={() => selectDay(colIndex)}
-                title={`Select all ${day} slots`}
-              >
-                <span>{day}</span>
-                <span className="text-[10px] font-normal text-slate-400">
-                  {fmtShortDate(date)}
-                </span>
-              </button>
-            ))}
+            {dayHeaders.map(({ day, date }, colIndex) => {
+              const isToday = todayColIndex === colIndex;
+              return (
+                <button
+                  key={colIndex}
+                  className={[
+                    'flex flex-col items-center py-2 text-xs font-semibold text-slate-500',
+                    'hover:bg-slate-50 rounded cursor-pointer select-none',
+                    isToday ? 'text-red-600' : '',
+                  ].join(' ')}
+                  onClick={() => selectDay(colIndex)}
+                  title={`Select all ${day} slots`}
+                >
+                  <span className={isToday ? 'font-bold' : ''}>{day}</span>
+                  <span
+                    className={[
+                      'text-[10px] font-normal',
+                      isToday
+                        ? 'mt-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-white font-semibold'
+                        : 'text-slate-400',
+                    ].join(' ')}
+                  >
+                    {fmtShortDate(date)}
+                  </span>
+                </button>
+              );
+            })}
 
-            {/* ── Time rows ── */}
+            {/* ── Time rows (wrapped in relative for now-line) ── */}
+            {/* We render time rows as a sub-grid overlay approach:
+                The time rows are already inside the outer CSS grid.
+                For the now-line we use a positioned overlay div
+                placed OVER the today column cells, offset by nowLineTop.
+                We accomplish this with a wrapper that spans the time rows section. */}
             {timeKeys.map((tk, rowIndex) => (
               <Fragment key={`row-${rowIndex}`}>
                 {/* Time label */}
@@ -349,19 +506,34 @@ export function Matrix({
                 {Array.from({ length: 7 }, (_, colIndex) => {
                   const key = `${colIndex}:${rowIndex}`;
                   const slot = cellData.get(key);
+                  const isToday = todayColIndex === colIndex;
+
+                  // Thin column tint for today (applied to empty cells and the wrapper div for filled cells).
+                  const todayBg = isToday ? 'bg-red-50/50' : '';
+
                   if (!slot) {
                     return (
                       <div
                         key={key}
-                        className="min-h-[40px] rounded border border-dashed border-slate-100 m-0.5"
+                        className={[
+                          'min-h-[40px] rounded border border-dashed border-slate-100 m-0.5',
+                          todayBg,
+                        ].join(' ')}
                       />
                     );
                   }
+
+                  const locked = lockedIds.has(slot.id);
+
                   return (
-                    <div key={key} className="m-0.5">
+                    <div
+                      key={key}
+                      className={['m-0.5 relative', todayBg].join(' ')}
+                    >
                       <SlotCell
                         slot={slot}
                         isSelected={selected.has(slot.id)}
+                        locked={locked}
                         onPointerDown={() =>
                           handleCellPointerDown(slot.id, colIndex, rowIndex)
                         }
@@ -369,6 +541,36 @@ export function Matrix({
                           handleCellPointerEnter(colIndex, rowIndex)
                         }
                       />
+                      {/* Now-line segment: render only for today's column at the first row
+                          where nowRowOffset falls in this row's span. We use absolute
+                          positioning within the cell wrapper. */}
+                      {isToday &&
+                        nowLineTop !== null &&
+                        (() => {
+                          // Position of the top of this cell relative to the start of the
+                          // time-rows section: rowIndex * ROW_H
+                          const cellTop = rowIndex * ROW_H;
+                          const cellBottom = cellTop + ROW_H;
+                          // nowLineTop is relative to the start of time-rows section.
+                          // We want to show the line if it falls within this cell's vertical span.
+                          if (nowLineTop >= cellTop && nowLineTop < cellBottom) {
+                            const offsetWithinCell = nowLineTop - cellTop;
+                            return (
+                              <div
+                                className="pointer-events-none absolute left-0 right-0 z-10"
+                                style={{ top: offsetWithinCell }}
+                              >
+                                <div className="relative flex items-center">
+                                  {/* Red dot at the left edge */}
+                                  <div className="absolute -left-1 h-2 w-2 rounded-full bg-red-500" />
+                                  {/* Red line spanning the full column width */}
+                                  <div className="h-0.5 w-full bg-red-500" />
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                     </div>
                   );
                 })}
