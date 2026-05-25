@@ -1,0 +1,1 @@
+ALTER TABLE "slots" ADD COLUMN "held_by_user_id" uuid;

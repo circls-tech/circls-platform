@@ -167,7 +167,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
 
-    await holdSlots(venue.tenantId, slotIds);
+    await holdSlots(venue.tenantId, user.id, slotIds);
     return { held: slotIds.length };
   });
 

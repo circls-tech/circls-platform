@@ -253,6 +253,7 @@ export async function listSlots(
     pricePaise: Number(row['price_paise']),
     status: row['status'] as Slot['status'],
     holdExpiresAt: row['hold_expires_at'] ? new Date(row['hold_expires_at'] as string) : null,
+    heldByUserId: (row['held_by_user_id'] as string | null) ?? null,
     bookingId: (row['booking_id'] as string | null) ?? null,
     releaseId: (row['release_id'] as string | null) ?? null,
     deletedAt: row['deleted_at'] ? new Date(row['deleted_at'] as string) : null,
@@ -332,16 +333,20 @@ export async function bulkUpdateSlots(
   });
 }
 
-export async function holdSlots(tenantId: string, slotIds: string[]): Promise<void> {
+export async function holdSlots(
+  tenantId: string,
+  userId: string,
+  slotIds: string[],
+): Promise<void> {
   await db
     .update(slots)
-    .set({ status: 'held', holdExpiresAt: sql`now() + interval '5 minutes'` })
+    .set({ status: 'held', holdExpiresAt: sql`now() + interval '5 minutes'`, heldByUserId: userId })
     .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId), eq(slots.status, 'open')));
 }
 
 export async function releaseHold(tenantId: string, slotIds: string[]): Promise<void> {
   await db
     .update(slots)
-    .set({ status: 'open', holdExpiresAt: null })
+    .set({ status: 'open', holdExpiresAt: null, heldByUserId: null })
     .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId), eq(slots.status, 'held')));
 }

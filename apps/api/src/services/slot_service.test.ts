@@ -7,6 +7,8 @@ import { bookSlots } from './booking_service.js';
 import {
   bulkUpdateSlots,
   enumerateOccurrences,
+  holdSlots,
+  releaseHold,
   releaseSlots,
 } from './slot_service.js';
 
@@ -266,6 +268,117 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
 
       const err = (rejected[0] as PromiseRejectedResult).reason as { code: string };
       expect(err.code).toBe('slot_taken');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK 1 — Owned holds: the booker can claim their OWN active hold, others
+  // cannot, and any expired hold is reclaimable.
+  // -------------------------------------------------------------------------
+  describe('bookSlots — owned holds', () => {
+    /** Release a single far-future slot on `date` (a Sunday) and return its id. */
+    async function freshFutureSlot(date: string): Promise<string> {
+      const res = await releaseSlots(ctx, arenaId, {
+        startDate: date,
+        endDate: date,
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 0, startTimeMin: 600, durationMin: 60, price: 10000 }],
+      });
+      expect(res.created).toBe(1);
+      const [row] = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is null and lower(time_range) = ${date + 'T04:30:00.000Z'}::timestamptz`,
+        );
+      if (!row) throw new Error('fresh slot not found');
+      return row.id;
+    }
+
+    it('booking succeeds when the slot is held by the SAME (booking) user', async () => {
+      const slotId = await freshFutureSlot('2030-06-02');
+
+      // Same user (ctx.actorUserId) places the hold.
+      await holdSlots(tenantId, ctx.actorUserId, [slotId]);
+
+      const booking = await bookSlots(ctx, venueId, {
+        slotIds: [slotId],
+        customerName: 'Owner Holder',
+        customerContact: '+91-9000000001',
+      });
+      expect(booking.status).toBe('confirmed');
+
+      const [after] = await db.select().from(slots).where(sql`id = ${slotId}`);
+      expect(after?.status).toBe('booked');
+      // heldByUserId cleared on successful claim
+      expect(after?.heldByUserId).toBeNull();
+      expect(after?.holdExpiresAt).toBeNull();
+    });
+
+    it('booking throws slot_taken when held by a DIFFERENT user, still active', async () => {
+      const slotId = await freshFutureSlot('2030-06-09');
+
+      // A different user holds the slot.
+      const [other] = await db
+        .insert(users)
+        .values({ firebaseUid: `slotsvc-other-${Date.now()}`, email: `other-${Date.now()}@test.x` })
+        .returning();
+      await holdSlots(tenantId, other!.id, [slotId]);
+
+      await expect(
+        bookSlots(ctx, venueId, {
+          slotIds: [slotId],
+          customerName: 'Loser',
+          customerContact: '+91-9000000002',
+        }),
+      ).rejects.toMatchObject({ code: 'slot_taken' });
+
+      // Slot remains held by the other user (not booked).
+      const [after] = await db.select().from(slots).where(sql`id = ${slotId}`);
+      expect(after?.status).toBe('held');
+      expect(after?.heldByUserId).toBe(other!.id);
+    });
+
+    it('booking succeeds when the hold is expired (regardless of holder)', async () => {
+      const slotId = await freshFutureSlot('2030-06-16');
+
+      // Some other user holds it, but the hold has already expired.
+      const [other] = await db
+        .insert(users)
+        .values({ firebaseUid: `slotsvc-exp-${Date.now()}`, email: `exp-${Date.now()}@test.x` })
+        .returning();
+      await holdSlots(tenantId, other!.id, [slotId]);
+      // Force the hold into the past.
+      await db.execute(
+        sql`update slots set hold_expires_at = now() - interval '1 minute' where id = ${slotId}`,
+      );
+
+      const booking = await bookSlots(ctx, venueId, {
+        slotIds: [slotId],
+        customerName: 'Expired Reclaim',
+        customerContact: '+91-9000000003',
+      });
+      expect(booking.status).toBe('confirmed');
+
+      const [after] = await db.select().from(slots).where(sql`id = ${slotId}`);
+      expect(after?.status).toBe('booked');
+      expect(after?.heldByUserId).toBeNull();
+    });
+
+    it('releaseHold clears heldByUserId back to null', async () => {
+      const slotId = await freshFutureSlot('2030-07-07');
+      await holdSlots(tenantId, ctx.actorUserId, [slotId]);
+
+      let [held] = await db.select().from(slots).where(sql`id = ${slotId}`);
+      expect(held?.status).toBe('held');
+      expect(held?.heldByUserId).toBe(ctx.actorUserId);
+
+      await releaseHold(tenantId, [slotId]);
+
+      [held] = await db.select().from(slots).where(sql`id = ${slotId}`);
+      expect(held?.status).toBe('open');
+      expect(held?.heldByUserId).toBeNull();
+      expect(held?.holdExpiresAt).toBeNull();
     });
   });
 });

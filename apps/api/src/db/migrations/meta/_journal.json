@@ -57,6 +57,13 @@
       "when": 1779614872989,
       "tag": "0007_bookings_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779684140926,
+      "tag": "0008_held_by_user",
+      "breakpoints": true
     }
   ]
 }

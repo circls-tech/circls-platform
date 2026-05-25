@@ -25,6 +25,9 @@ export const slots = pgTable('slots', {
   status: slotStatus('status').notNull().default('open'),
   // set when status='held'; null otherwise
   holdExpiresAt: timestamp('hold_expires_at', { withTimezone: true }),
+  // owner of an active hold; lets the booker claim their own hold while others
+  // cannot. no FK reference (matches the no-FK bookingId pattern below).
+  heldByUserId: uuid('held_by_user_id'),
   // no FK reference: avoids circular dep with bookings (enforced at app level)
   bookingId: uuid('booking_id'),
   releaseId: uuid('release_id').references(() => slotReleases.id),

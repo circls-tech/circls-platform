@@ -49,13 +49,14 @@ export async function bookSlots(
       })
       .returning();
 
-    // Atomic claim: only take slots that are open OR held-but-expired.
+    // Atomic claim: take slots that are open, OR held by the booking actor
+    // (their own active hold), OR held-but-expired (reclaimable from anyone).
     // Using inArray() avoids the any(array::uuid[]) record-cast error from postgres-js.
     // eq(slots.tenantId, ctx.tenantId) guards against cross-tenant slot injection:
     // a member of tenant A passing slotIds from tenant B would otherwise claim B's slots.
     const claimed = await tx
       .update(slots)
-      .set({ status: 'booked', bookingId: booking!.id, holdExpiresAt: null })
+      .set({ status: 'booked', bookingId: booking!.id, holdExpiresAt: null, heldByUserId: null })
       .where(
         and(
           inArray(slots.id, input.slotIds),
@@ -63,7 +64,10 @@ export async function bookSlots(
           sql`${slots.deletedAt} is null`,
           or(
             eq(slots.status, 'open'),
-            and(eq(slots.status, 'held'), sql`${slots.holdExpiresAt} < now()`),
+            and(
+              eq(slots.status, 'held'),
+              or(eq(slots.heldByUserId, ctx.actorUserId), sql`${slots.holdExpiresAt} < now()`),
+            ),
           ),
         ),
       )
