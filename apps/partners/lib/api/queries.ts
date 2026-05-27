@@ -56,6 +56,14 @@ export function useArenas(venueId: string) {
   });
 }
 
+export function useArena(arenaId: string | null) {
+  return useQuery({
+    queryKey: ['arena', arenaId],
+    queryFn: () => apiFetch<Arena>('/v1/arenas/' + arenaId!),
+    enabled: Boolean(arenaId),
+  });
+}
+
 export function useCreateArena(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
