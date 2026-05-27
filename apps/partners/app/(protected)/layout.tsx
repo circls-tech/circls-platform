@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { OrgProvider } from '@/lib/org_context';
-import { OrgSwitcher } from '@/components/OrgSwitcher';
+import { ContextBar } from '@/components/ContextBar';
 import { Button } from '@/lib/ui';
 
 const NAV_LINKS = [
@@ -81,7 +81,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         <div className="ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
           <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#e5e7eb] bg-white px-6">
-            <OrgSwitcher />
+            <ContextBar />
             <Button
               variant="ghost"
               size="sm"
