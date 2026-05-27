@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Arena, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
+import type { Analytics, Arena, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -219,5 +219,15 @@ export function useBookingDetail(bookingId: string | null) {
     queryKey: ['booking-detail', bookingId],
     queryFn: () => apiFetch<BookingDetail>(`/v1/bookings/${bookingId}`),
     enabled: Boolean(bookingId),
+  });
+}
+
+// ── Analytics hooks ───────────────────────────────────────────────────────────
+
+export function useAnalytics(tenantId: string) {
+  return useQuery({
+    queryKey: ['analytics', tenantId],
+    queryFn: () => apiFetch<Analytics>(`/v1/tenants/${tenantId}/analytics`),
+    enabled: Boolean(tenantId),
   });
 }
