@@ -4,6 +4,8 @@ import { BadRequest } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAdmin } from '../middleware/require_admin.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { requireTenantMembership } from '../middleware/tenant_context.js';
+import { getAnalytics } from '../services/analytics_service.js';
 import { createTenant, listAllTenants, listTenantsForUser } from '../services/tenant_service.js';
 
 const createTenantSchema = z.object({
@@ -43,5 +45,13 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
   // Admin: every tenant on the platform.
   app.get('/v1/tenants', { preHandler: [requireAuth, requireAdmin] }, async () => {
     return listAllTenants();
+  });
+
+  // Partner: tenant-scoped, slot-based analytics (today + trailing 7 days, IST).
+  app.get('/v1/tenants/:tenantId/analytics', { preHandler: requireAuth }, async (req) => {
+    const { tenantId } = req.params as { tenantId: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+    return getAnalytics(tenantId);
   });
 };
