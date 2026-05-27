@@ -6,6 +6,9 @@ vi.mock('../lib/firebase_admin.js', () => ({
     const map: Record<string, Record<string, unknown>> = {
       owner: { uid: 'fbuid_aowner', email: 'aowner@x.com' },
       other: { uid: 'fbuid_aother', email: 'aother@x.com' },
+      // separate user for arena-read tenant-isolation tests
+      arOwner: { uid: 'fbuid_arowner', email: 'arowner@x.com' },
+      arOther: { uid: 'fbuid_arother', email: 'arother@x.com' },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
@@ -45,7 +48,7 @@ describe.skipIf(!runIntegration)('arenas + schedule', () => {
   });
   afterAll(async () => {
     await app.close();
-    await closeDb();
+    // closeDb deferred to the GET /v1/arenas/:arenaId suite below
   });
 
   it('creates an arena under a venue', async () => {
@@ -86,5 +89,81 @@ describe.skipIf(!runIntegration)('arenas + schedule', () => {
     expect(put.json().length).toBe(2);
     const get = await app.inject({ method: 'GET', url: `/v1/arenas/${arenaId}/schedule`, headers: bearer('owner') });
     expect(get.json().length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /v1/arenas/:arenaId — tenant-scoped read endpoint
+// ---------------------------------------------------------------------------
+describe.skipIf(!runIntegration)('GET /v1/arenas/:arenaId', () => {
+  let app: FastifyInstance;
+  let venueId: string;
+  let arenaId: string;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    // Seed: arOwner creates tenant → venue → arena
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('arOwner'),
+      payload: { name: 'Arena Read Co', slug: `arco-${Date.now()}` },
+    });
+    const tenantId: string = t.json().id;
+
+    const v = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/venues`,
+      headers: bearer('arOwner'),
+      payload: { name: 'Read Hall' },
+    });
+    venueId = v.json().id;
+
+    const a = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('arOwner'),
+      payload: { name: 'Main Court', sport: 'tennis', slotDurationMin: 60 },
+    });
+    arenaId = a.json().id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await closeDb();
+  });
+
+  it('returns 200 with arena id, name, and venueId for a tenant member', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaId}`,
+      headers: bearer('arOwner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.id).toBe(arenaId);
+    expect(body.name).toBe('Main Court');
+    expect(body.venueId).toBe(venueId);
+  });
+
+  it('returns 403 for a user who is not a member of the arena tenant', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaId}`,
+      headers: bearer('arOther'),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 404 with arena_not_found for an unknown arenaId', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/arenas/00000000-0000-0000-0000-000000000099',
+      headers: bearer('arOwner'),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('arena_not_found');
   });
 });

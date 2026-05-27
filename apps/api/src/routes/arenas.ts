@@ -66,6 +66,11 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     return listArenas(venueId);
   });
 
+  app.get('/v1/arenas/:arenaId', { preHandler: requireAuth }, async (req) => {
+    const { arenaId } = req.params as { arenaId: string };
+    return authorizeArena(req, arenaId);
+  });
+
   app.put('/v1/arenas/:arenaId/schedule', { preHandler: requireAuth }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
     const parsed = scheduleSchema.safeParse(req.body);
