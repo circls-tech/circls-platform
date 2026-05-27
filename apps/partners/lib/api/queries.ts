@@ -34,6 +34,7 @@ export function useVenues(tenantId: string) {
   return useQuery({
     queryKey: ['venues', tenantId],
     queryFn: () => apiFetch<Venue[]>(`/v1/tenants/${tenantId}/venues`),
+    enabled: Boolean(tenantId),
   });
 }
 
@@ -53,6 +54,7 @@ export function useArenas(venueId: string) {
   return useQuery({
     queryKey: ['arenas', venueId],
     queryFn: () => apiFetch<Arena[]>(`/v1/venues/${venueId}/arenas`),
+    enabled: Boolean(venueId),
   });
 }
 
