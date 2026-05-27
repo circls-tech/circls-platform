@@ -107,3 +107,19 @@ export interface BookingDetail {
   arenaName: string;
   slots: BookingSlot[];
 }
+
+export interface AnalyticsTrendDay {
+  /** 'YYYY-MM-DD' */
+  date: string;
+  bookings: number;
+  revenuePaise: number;
+}
+
+export interface Analytics {
+  bookingsToday: number;
+  revenueTodayPaise: number;
+  revenue7dPaise: number;
+  occupancy7dPct: number;
+  /** 7 entries, oldest → newest (inclusive of today) */
+  trend7d: AnalyticsTrendDay[];
+}
