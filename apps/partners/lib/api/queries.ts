@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Arena, Booking, Slot, Tenant, User, Venue } from './types';
+import type { Arena, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -187,5 +187,37 @@ export function useReleaseHoldSlots(arenaId: string) {
         body: JSON.stringify({ slotIds }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+// ── Bookings hooks ────────────────────────────────────────────────────────────
+
+export interface VenueBookingsParams {
+  from: string;
+  to: string;
+  arenaId?: string;
+  status?: string;
+  q?: string;
+}
+
+export function useVenueBookings(venueId: string, params: VenueBookingsParams) {
+  const qs = new URLSearchParams();
+  qs.set('from', params.from);
+  qs.set('to', params.to);
+  if (params.arenaId) qs.set('arenaId', params.arenaId);
+  if (params.status) qs.set('status', params.status);
+  if (params.q) qs.set('q', params.q);
+  return useQuery({
+    queryKey: ['venue-bookings', venueId, params.from, params.to, params.arenaId, params.status, params.q],
+    queryFn: () => apiFetch<BookingListItem[]>(`/v1/venues/${venueId}/bookings?${qs.toString()}`),
+    enabled: Boolean(venueId),
+  });
+}
+
+export function useBookingDetail(bookingId: string | null) {
+  return useQuery({
+    queryKey: ['booking-detail', bookingId],
+    queryFn: () => apiFetch<BookingDetail>(`/v1/bookings/${bookingId}`),
+    enabled: Boolean(bookingId),
   });
 }

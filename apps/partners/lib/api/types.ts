@@ -65,3 +65,45 @@ export interface Booking {
   paymentMethod: string;
   pricePaise: number | null;
 }
+
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show';
+
+export interface BookingListItem {
+  id: string;
+  customerName: string | null;
+  customerContact: string | null;
+  note: string | null;
+  status: BookingStatus;
+  channel: string;
+  totalPaise: number;
+  createdAt: string;
+  arenaId: string;
+  arenaName: string;
+  firstStartAt: string;
+  lastEndAt: string;
+  slotCount: number;
+}
+
+export interface BookingSlot {
+  id: string;
+  startAt: string;
+  endAt: string;
+  pricePaise: number;
+  status: string;
+}
+
+export interface BookingDetail {
+  id: string;
+  customerName: string | null;
+  customerContact: string | null;
+  note: string | null;
+  status: BookingStatus;
+  channel: string;
+  paymentMethod: string;
+  totalPaise: number;
+  createdAt: string;
+  venueId: string;
+  arenaId: string;
+  arenaName: string;
+  slots: BookingSlot[];
+}

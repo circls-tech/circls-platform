@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Slot } from '@/lib/api/types';
 import { Badge, Button, Card, Input } from '@/lib/ui';
+import { useBookingDetail } from '@/lib/api/queries';
 import { useGridSelection } from './useGridSelection';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -212,6 +213,16 @@ function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: Inspecto
   const ids = selectedSlots.map((s) => s.id);
   const n = ids.length;
 
+  // Determine whether we are in the single-booked-slot reception case so we can
+  // conditionally fetch the booking detail.  Hook is called unconditionally;
+  // `enabled` is false when the conditions are not met.
+  const singleBookedSlot =
+    mode === 'reception' && n === 1 && selectedSlots[0]?.status === 'booked'
+      ? selectedSlots[0]
+      : null;
+  const detailBookingId = singleBookedSlot?.bookingId ?? null;
+  const { data: bookingDetail } = useBookingDetail(detailBookingId);
+
   const hasLockedSlots = selectedSlots.some(
     (s) => s.status === 'booked' || s.status === 'held',
   );
@@ -295,6 +306,24 @@ function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: Inspecto
           >
             Add booking
           </Button>
+        )}
+
+        {/* Reception: booked-slot customer info */}
+        {singleBookedSlot && bookingDetail && (
+          <div className="flex flex-col gap-1.5 rounded-md bg-blue-50 px-3 py-2.5 text-xs">
+            <p className="font-semibold text-blue-800">
+              {bookingDetail.customerName ?? '—'}
+            </p>
+            {bookingDetail.customerContact && (
+              <p className="text-blue-700">{bookingDetail.customerContact}</p>
+            )}
+            {bookingDetail.note && (
+              <p className="italic text-blue-600">{bookingDetail.note}</p>
+            )}
+            <p className="text-blue-700">
+              Total: ₹{(bookingDetail.totalPaise / 100).toFixed(0)}
+            </p>
+          </div>
         )}
 
         {/* Reception: Cancel booking (single booked slot) */}
