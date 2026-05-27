@@ -9,6 +9,7 @@ import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import { getBookingById } from '../services/inventory_service.js';
 import { bookSlots, cancelBooking } from '../services/booking_service.js';
+import { getBookingDetail, listBookings } from '../services/bookings_read_service.js';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { slots } from '../db/schema/index.js';
@@ -20,6 +21,14 @@ const bookSlotsSchema = z.object({
     contact: z.string().min(1),
     note: z.string().optional(),
   }),
+});
+
+const listBookingsQuerySchema = z.object({
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+  arenaId: z.string().uuid().optional(),
+  status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show']).optional(),
+  q: z.string().optional(),
 });
 
 export const bookingRoutes: FastifyPluginAsync = async (app) => {
@@ -70,6 +79,38 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     }));
 
     return reply.status(result.status).send(result.body);
+  });
+
+  // List a venue's bookings overlapping a [from,to) window, with optional filters.
+  app.get('/v1/venues/:venueId/bookings', { preHandler: requireAuth }, async (req) => {
+    const { venueId } = req.params as { venueId: string };
+    const parsed = listBookingsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid bookings query', 'bad_request', { issues: parsed.error.issues });
+    }
+    const venue = await getVenueById(venueId);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, venue.tenantId);
+
+    const { from, to, arenaId, status, q } = parsed.data;
+    return listBookings(venue.tenantId, venueId, {
+      fromIso: from,
+      toIso: to,
+      ...(arenaId !== undefined ? { arenaId } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(q !== undefined ? { q } : {}),
+    });
+  });
+
+  // Single booking detail (with its non-deleted slots).
+  app.get('/v1/bookings/:id', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const booking = await getBookingById(id);
+    if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, booking.tenantId);
+    return getBookingDetail(booking.tenantId, id);
   });
 
   // Cancel — frees the slots back to open.
