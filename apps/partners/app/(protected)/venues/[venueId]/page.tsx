@@ -30,7 +30,15 @@ export default function VenuePage() {
       <Link href={`/tenants/${tenantId}`} className="text-sm text-gray-500">
         ← Venues
       </Link>
-      <h1 className="text-xl font-semibold">Arenas</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Arenas</h1>
+        <Link
+          href={`/venues/${venueId}/bookings${tenantId ? `?tenantId=${tenantId}` : ''}`}
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+        >
+          View bookings →
+        </Link>
+      </div>
       {isLoading && <p className="text-gray-500">Loading…</p>}
       <ul className="flex flex-col gap-2">
         {arenas?.map((a) => (
