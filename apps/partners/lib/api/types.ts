@@ -13,6 +13,7 @@ export interface Tenant {
   id: string;
   name: string;
   slug: string;
+  isPlatform?: boolean;
   kycStatus: string;
   subscriptionStatus: string;
   status: string;

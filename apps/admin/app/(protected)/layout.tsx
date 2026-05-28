@@ -1,8 +1,10 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { apiFetch } from '@/lib/api/client';
+import type { MeTenant } from '@/lib/api/types';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -48,11 +50,32 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
 
+  const [memberships, setMemberships] = useState<MeTenant[] | null>(null);
+  const [membershipsLoading, setMembershipsLoading] = useState(true);
+
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
 
-  if (loading) {
+  useEffect(() => {
+    if (!user) return;
+    setMembershipsLoading(true);
+    apiFetch<MeTenant[]>('/v1/me/tenants')
+      .then(setMemberships)
+      .catch(() => setMemberships([]))
+      .finally(() => setMembershipsLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    if (loading || membershipsLoading || memberships === null) return;
+    const platformMembership = memberships.find((t) => t.isPlatform);
+    if (!platformMembership) {
+      void signOut();
+      router.replace('/login?error=not_circls_team');
+    }
+  }, [loading, membershipsLoading, memberships, signOut, router]);
+
+  if (loading || (user && membershipsLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <span className="block h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />

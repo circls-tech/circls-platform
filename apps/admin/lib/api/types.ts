@@ -1,6 +1,14 @@
 // Response shapes consumed by the Admin Console. Keep aligned with
 // apps/api/src/routes/admin_*.ts.
 
+/** Shape returned by GET /v1/me/tenants — used to gate the platform check. */
+export interface MeTenant {
+  id: string;
+  name: string;
+  slug: string;
+  isPlatform: boolean;
+}
+
 export interface AdminStats {
   tenantsTotal: number;
   tenantsActive: number;
