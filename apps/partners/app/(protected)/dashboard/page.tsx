@@ -169,6 +169,10 @@ export default function DashboardPage() {
   const { data: tenants, isLoading } = useMyTenants();
   const { activeTenantId, tenants: orgTenants } = useOrg();
 
+  // NOTE: org-wide analytics (bookingsToday, revenue, occupancy) are computed
+  // in IST (Asia/Kolkata) on the backend. Multi-venue timezone support for the
+  // dashboard is a known deferred limitation — the backend would need to accept
+  // a tz parameter and perform per-venue aggregation to fix this.
   const { data: analytics, isLoading: analyticsLoading } = useAnalytics(
     activeTenantId ?? '',
   );

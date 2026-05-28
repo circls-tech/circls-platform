@@ -3,22 +3,24 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useArenas, useBookingDetail, useCancelBookingById, useVenueBookings } from '@/lib/api/queries';
+import { useArenas, useBookingDetail, useCancelBookingById, useVenueBookings, useVenues } from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus } from '@/lib/api/types';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
+import { useOrg } from '@/lib/org_context';
 
 // ──────────────────────────────────────────────────────────────────────────────
-// IST helpers
+// Timezone-aware helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-const IST = 'Asia/Kolkata';
+/** Fallback tz while the venue is still loading. */
+const FALLBACK_TZ = 'Asia/Kolkata';
 
-/** Format an ISO string to a human-readable date+time in IST. */
-function fmtIST(iso: string): string {
+/** Format an ISO string to a human-readable date+time in the given tz. */
+function fmtInTz(iso: string, tz: string): string {
   return new Intl.DateTimeFormat('en-IN', {
-    timeZone: IST,
+    timeZone: tz,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -28,10 +30,10 @@ function fmtIST(iso: string): string {
   }).format(new Date(iso));
 }
 
-/** Format a time portion only. */
-function fmtTimeIST(iso: string): string {
+/** Format a time portion only in the given tz. */
+function fmtTimeInTz(iso: string, tz: string): string {
   return new Intl.DateTimeFormat('en-IN', {
-    timeZone: IST,
+    timeZone: tz,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -39,26 +41,59 @@ function fmtTimeIST(iso: string): string {
 }
 
 /**
- * Returns start/end of "today" in IST as UTC ISO strings:
- * today 00:00 IST → tomorrow 00:00 IST.
+ * Returns start/end of a calendar day in `tz` as UTC ISO strings.
+ *
+ * Uses `Intl.DateTimeFormat('en-CA', {timeZone: tz})` to determine the
+ * calendar date, then samples the tz offset via a probe formatter to derive
+ * that day's midnight-in-tz as an absolute UTC instant — no hardcoded offsets.
+ *
+ * @param date - A `Date` object or the string `'today'` (uses `new Date()`).
+ * @param tz   - IANA timezone name, e.g. `'Asia/Kolkata'`.
  */
-function todayISTBounds(): { from: string; to: string } {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: IST,
+function dayBoundsInTz(date: Date | 'today', tz: string): { from: string; to: string } {
+  const d = date === 'today' ? new Date() : date;
+
+  // Step 1: determine the calendar date in `tz`.
+  const calStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  });
-  const todayStr = fmt.format(now); // 'YYYY-MM-DD'
-  // Parse local midnight in IST
-  const [y, m, d] = todayStr.split('-').map(Number) as [number, number, number];
-  const istOffsetMs = 5.5 * 60 * 60 * 1000; // IST = UTC+5:30
-  const todayMidnightIST = Date.UTC(y, m - 1, d) - istOffsetMs;
-  const tomorrowMidnightIST = todayMidnightIST + 24 * 60 * 60 * 1000;
+  }).format(d); // 'YYYY-MM-DD'
+
+  // Step 2: derive midnight-in-tz for that calendar date via offset sampling.
+  // We construct a UTC instant for that date at 00:00 UTC, then measure the
+  // difference between what that instant reads in `tz` versus UTC midnight,
+  // and subtract to land on the true local midnight.
+  const [y, m, day] = calStr.split('-').map(Number) as [number, number, number];
+
+  // Probe: UTC instant for 'YYYY-MM-DDT00:00:00Z'
+  const probeUtcMs = Date.UTC(y, m - 1, day);
+  // What does that UTC instant read in `tz`?
+  const probeParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(probeUtcMs));
+  const get = (type: string) => Number(probeParts.find((p) => p.type === type)?.value ?? '0');
+  // Hours/minutes in tz at probeUtcMs — these represent how far past midnight we are in tz.
+  const tzHour = get('hour');
+  const tzMin = get('minute');
+  const tzSec = get('second');
+  const tzOffsetMs = (tzHour * 3600 + tzMin * 60 + tzSec) * 1000;
+
+  // Midnight in tz = probeUtcMs − tzOffsetMs (could be previous calendar day in UTC).
+  const midnightMs = probeUtcMs - tzOffsetMs;
+  const nextMidnightMs = midnightMs + 24 * 60 * 60 * 1000;
+
   return {
-    from: new Date(todayMidnightIST).toISOString(),
-    to: new Date(tomorrowMidnightIST).toISOString(),
+    from: new Date(midnightMs).toISOString(),
+    to: new Date(nextMidnightMs).toISOString(),
   };
 }
 
@@ -68,12 +103,12 @@ function computeDateBounds(
   filter: DateFilter,
   customFrom: string,
   customTo: string,
+  tz: string,
 ): { from: string; to: string } {
   const now = new Date();
-  const istOffsetMs = 5.5 * 60 * 60 * 1000;
   switch (filter) {
     case 'today':
-      return todayISTBounds();
+      return dayBoundsInTz('today', tz);
     case 'upcoming': {
       const in60d = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
       return { from: now.toISOString(), to: in60d.toISOString() };
@@ -83,16 +118,12 @@ function computeDateBounds(
       return { from: ago60d.toISOString(), to: now.toISOString() };
     }
     case 'custom': {
-      // customFrom/customTo are 'YYYY-MM-DD' local calendar dates interpreted as IST day bounds
-      if (!customFrom || !customTo) return todayISTBounds();
-      const [fy, fm, fd] = customFrom.split('-').map(Number) as [number, number, number];
-      const [ty, tm, td] = customTo.split('-').map(Number) as [number, number, number];
-      const fromMs = Date.UTC(fy, fm - 1, fd) - istOffsetMs;
-      const toMs = Date.UTC(ty, tm - 1, td) - istOffsetMs + 24 * 60 * 60 * 1000;
-      return {
-        from: new Date(fromMs).toISOString(),
-        to: new Date(toMs).toISOString(),
-      };
+      // customFrom/customTo are 'YYYY-MM-DD' calendar dates in the venue tz.
+      // Use noon UTC so that tz offsets ±12h don't shift the calendar date.
+      if (!customFrom || !customTo) return dayBoundsInTz('today', tz);
+      const fromBounds = dayBoundsInTz(new Date(`${customFrom}T12:00:00Z`), tz);
+      const toBounds = dayBoundsInTz(new Date(`${customTo}T12:00:00Z`), tz);
+      return { from: fromBounds.from, to: toBounds.to };
     }
   }
 }
@@ -127,10 +158,11 @@ const STATUS_OPTIONS: { value: BookingStatus | ''; label: string }[] = [
 interface BookingDetailModalProps {
   bookingId: string | null;
   venueId: string;
+  tz: string;
   onClose: () => void;
 }
 
-function BookingDetailModal({ bookingId, venueId, onClose }: BookingDetailModalProps) {
+function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailModalProps) {
   const qc = useQueryClient();
   const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
   const cancel = useCancelBookingById('');
@@ -200,7 +232,7 @@ function BookingDetailModal({ bookingId, venueId, onClose }: BookingDetailModalP
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Booked at</p>
-                <p className="mt-0.5 text-slate-700">{fmtIST(detail.createdAt)}</p>
+                <p className="mt-0.5 text-slate-700">{fmtInTz(detail.createdAt, tz)}</p>
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Channel</p>
@@ -224,7 +256,7 @@ function BookingDetailModal({ bookingId, venueId, onClose }: BookingDetailModalP
                     className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
                   >
                     <span className="text-slate-700">
-                      {fmtIST(slot.startAt)} – {fmtTimeIST(slot.endAt)}
+                      {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
                     </span>
                     <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
                   </div>
@@ -283,6 +315,11 @@ export default function BookingsPage() {
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
 
+  // ── Resolve venue timezone ──
+  const { activeTenantId } = useOrg();
+  const { data: venues } = useVenues(activeTenantId ?? '');
+  const tz = venues?.find((v) => v.id === venueId)?.tzName ?? FALLBACK_TZ;
+
   // ── Filters ──
   const [searchInput, setSearchInput] = useState('');
   const q = useDebounced(searchInput, 300);
@@ -297,8 +334,8 @@ export default function BookingsPage() {
 
   // ── Date bounds ──
   const { from, to } = useMemo(
-    () => computeDateBounds(dateFilter, customFrom, customTo),
-    [dateFilter, customFrom, customTo],
+    () => computeDateBounds(dateFilter, customFrom, customTo, tz),
+    [dateFilter, customFrom, customTo, tz],
   );
 
   // ── Queries ──
@@ -468,7 +505,7 @@ export default function BookingsPage() {
                   Arena
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Date / Time (IST)
+                  Date / Time
                 </th>
                 <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Slots
@@ -496,9 +533,9 @@ export default function BookingsPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{b.arenaName}</td>
                   <td className="px-4 py-3 text-slate-600">
-                    {fmtIST(b.firstStartAt)}
+                    {fmtInTz(b.firstStartAt, tz)}
                     {b.firstStartAt !== b.lastEndAt && (
-                      <span className="text-slate-400"> – {fmtTimeIST(b.lastEndAt)}</span>
+                      <span className="text-slate-400"> – {fmtTimeInTz(b.lastEndAt, tz)}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center text-slate-600">{b.slotCount}</td>
@@ -519,6 +556,7 @@ export default function BookingsPage() {
       <BookingDetailModal
         bookingId={selectedBookingId}
         venueId={venueId}
+        tz={tz}
         onClose={() => setSelectedBookingId(null)}
       />
     </div>
