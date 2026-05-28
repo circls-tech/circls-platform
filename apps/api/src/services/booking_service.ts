@@ -87,6 +87,25 @@ export async function bookSlots(
       throw new Conflict('Slot already taken', 'slot_taken');
     }
 
+    // Persist the booking's own arena + time-span so that cancelled bookings
+    // (which null slots.booking_id) still have an arena + window the read paths
+    // can fall back to. Single-arena booking model: all claimed slots must
+    // share one arena — assert so future multi-arena designs surface loudly.
+    const claimedArenaId = claimed[0]!.arenaId;
+    if (!claimed.every((c) => c.arenaId === claimedArenaId)) {
+      throw new Conflict('Multi-arena booking not supported', 'multi_arena_booking');
+    }
+
+    await tx
+      .update(bookings)
+      .set({
+        slotArenaId: claimedArenaId,
+        // The sub-SELECT computes the span from the slots we just linked
+        // (booking_id was set in the UPDATE above), as their definitive span.
+        timeRange: sql`(select tstzrange(min(lower(time_range)), max(upper(time_range)), '[)') from slots where booking_id = ${booking!.id})`,
+      })
+      .where(eq(bookings.id, booking!.id));
+
     await writeAudit(tx, ctx, 'booking.create', 'booking', booking!.id, null, {
       slotIds: input.slotIds,
       total,
