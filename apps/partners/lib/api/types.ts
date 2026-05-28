@@ -123,3 +123,21 @@ export interface Analytics {
   /** 7 entries, oldest → newest (inclusive of today) */
   trend7d: AnalyticsTrendDay[];
 }
+
+export interface AuditLogItem {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  actorUserId: string | null;
+  actorName: string | null;
+  before: unknown;
+  after: unknown;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+export interface AuditLogPage {
+  rows: AuditLogItem[];
+  nextCursor: string | null;
+}

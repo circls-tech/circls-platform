@@ -6,6 +6,7 @@ import { requireAdmin } from '../middleware/require_admin.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getAnalytics } from '../services/analytics_service.js';
+import { listAuditLog } from '../services/audit_log_service.js';
 import { createTenant, listAllTenants, listTenantsForUser } from '../services/tenant_service.js';
 
 const createTenantSchema = z.object({
@@ -53,5 +54,36 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
     return getAnalytics(tenantId);
+  });
+
+  // Partner: paged, filterable audit log for a tenant.
+  const auditLogQuerySchema = z.object({
+    from:       z.string().datetime({ offset: true }).optional(),
+    to:         z.string().datetime({ offset: true }).optional(),
+    action:     z.string().optional(),
+    entityType: z.string().optional(),
+    cursor:     z.string().optional(),
+    limit:      z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get('/v1/tenants/:tenantId/audit-log', { preHandler: requireAuth }, async (req) => {
+    const { tenantId } = req.params as { tenantId: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+
+    const parsed = auditLogQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid query parameters', 'bad_request', { issues: parsed.error.issues });
+    }
+
+    const { from, to, action, entityType, cursor, limit } = parsed.data;
+    return listAuditLog(tenantId, {
+      ...(from       !== undefined && { from }),
+      ...(to         !== undefined && { to }),
+      ...(action     !== undefined && { action }),
+      ...(entityType !== undefined && { entityType }),
+      ...(cursor     !== undefined && { cursor }),
+      ...(limit      !== undefined && { limit }),
+    });
   });
 };

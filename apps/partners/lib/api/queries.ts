@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Analytics, Arena, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
+import type { Analytics, Arena, AuditLogPage, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -239,5 +239,35 @@ export function useAnalytics(tenantId: string) {
     queryKey: ['analytics', tenantId],
     queryFn: () => apiFetch<Analytics>(`/v1/tenants/${tenantId}/analytics`),
     enabled: Boolean(tenantId),
+  });
+}
+
+// ── Audit log hooks ───────────────────────────────────────────────────────────
+
+export interface AuditLogParams {
+  action?: string;
+  entityType?: string;
+  from?: string;
+  to?: string;
+}
+
+export function useAuditLog(tenantId: string, params: AuditLogParams = {}) {
+  return useInfiniteQuery({
+    queryKey: ['audit-log', tenantId, params.action, params.entityType, params.from, params.to],
+    enabled: Boolean(tenantId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: AuditLogPage) => last.nextCursor ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      if (params.action)     qs.set('action',     params.action);
+      if (params.entityType) qs.set('entityType', params.entityType);
+      if (params.from)       qs.set('from',       params.from);
+      if (params.to)         qs.set('to',         params.to);
+      if (pageParam)         qs.set('cursor',     pageParam);
+      const query = qs.toString();
+      return apiFetch<AuditLogPage>(
+        `/v1/tenants/${tenantId}/audit-log${query ? `?${query}` : ''}`,
+      );
+    },
   });
 }
