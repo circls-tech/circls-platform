@@ -47,6 +47,7 @@ interface TemplateDef {
  *   kyc.verified       → tenantName
  *   kyc.rejected       → tenantName, reason
  *   otp.login          → code
+ *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
  */
 const TEMPLATES: Record<string, TemplateDef> = {
   'booking.confirmed': {
@@ -130,6 +131,19 @@ const TEMPLATES: Record<string, TemplateDef> = {
   'otp.login': {
     sms: {
       body: 'Your Circls login code is {{code}}. Valid for 10 minutes. Do not share.',
+    },
+  },
+
+  'tenant.invitation': {
+    email: {
+      subject: "You've been invited to {{tenantName}} on Circls",
+      body:
+        'Hello,\n\n' +
+        '{{inviterName}} has invited you to join {{tenantName}} on Circls as {{role}}.\n\n' +
+        'Accept the invitation and set up your account:\n' +
+        '{{inviteUrl}}\n\n' +
+        'This link expires on {{expiresAtIso}}. If you weren\'t expecting this email, you can safely ignore it.\n\n' +
+        '— Circls\n',
     },
   },
 };

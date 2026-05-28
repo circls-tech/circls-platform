@@ -23,6 +23,9 @@ import { tenantInvitations, type TenantInvitation } from '../db/schema/tenant_in
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
+import { env } from '../config/env.js';
+import { getNotifications } from '../lib/notifications/index.js';
+import { logger } from '../lib/logger.js';
 
 const INVITE_TTL_DAYS = 7;
 const BCRYPT_ROUNDS = 10;
@@ -166,6 +169,45 @@ export async function createInvitation(
     null,
     { email, role: input.role, expiresAt: inserted.expiresAt },
   );
+
+  // Resolve tenant name + inviter email for the email body.
+  const [tenantRow] = await db
+    .select({ name: tenants.name })
+    .from(tenants)
+    .where(eq(tenants.id, input.tenantId))
+    .limit(1);
+  const [inviterRow] = await db
+    .select({ displayName: users.displayName, email: users.email })
+    .from(users)
+    .where(eq(users.id, input.actorUserId))
+    .limit(1);
+  const tenantName = tenantRow?.name ?? 'your team';
+  const inviterName = inviterRow?.displayName ?? inviterRow?.email ?? 'A teammate';
+
+  const inviteUrl = `${env.PARTNERS_BASE_URL}/invite/${token}`;
+
+  // Fire-and-await the dispatch. The dispatcher writes a notifications row even
+  // in stub mode, so the audit + UI surface work.
+  try {
+    await getNotifications().dispatch({
+      tenantId: input.tenantId,
+      channel: 'email',
+      recipient: email,
+      templateKey: 'tenant.invitation',
+      payload: {
+        tenantName,
+        inviterName,
+        role: input.role,
+        inviteUrl,
+        expiresAtIso: expiresAt.toISOString(),
+      },
+    });
+  } catch (err) {
+    // Best-effort. The invitation + audit are already committed; we surface a
+    // log instead of failing the whole request so the caller can still see the
+    // invitation in /v1/tenants/:id/invitations and trigger a resend.
+    logger.warn({ err, invitationId: inserted.id }, 'invitation_dispatch_failed');
+  }
 
   return { invitation: toPublic(inserted), plaintextToken: token };
 }
@@ -335,7 +377,12 @@ export async function resendInvitation(
   const expiresAt = expiresInDays(input.ttlDays ?? INVITE_TTL_DAYS);
 
   const [previous] = await db
-    .select({ tokenPrefix: tenantInvitations.tokenPrefix, expiresAt: tenantInvitations.expiresAt })
+    .select({
+      tokenPrefix: tenantInvitations.tokenPrefix,
+      expiresAt: tenantInvitations.expiresAt,
+      email: tenantInvitations.email,
+      role: tenantInvitations.role,
+    })
     .from(tenantInvitations)
     .where(
       and(
@@ -370,6 +417,43 @@ export async function resendInvitation(
     { tokenPrefix: previous.tokenPrefix, expiresAt: previous.expiresAt },
     { tokenPrefix, expiresAt },
   );
+
+  // Resolve tenant name + inviter email for the resent email body.
+  const [resendTenantRow] = await db
+    .select({ name: tenants.name })
+    .from(tenants)
+    .where(eq(tenants.id, input.tenantId))
+    .limit(1);
+  const [resendInviterRow] = await db
+    .select({ displayName: users.displayName, email: users.email })
+    .from(users)
+    .where(eq(users.id, input.actorUserId))
+    .limit(1);
+  const resendTenantName = resendTenantRow?.name ?? 'your team';
+  const resendInviterName = resendInviterRow?.displayName ?? resendInviterRow?.email ?? 'A teammate';
+
+  const resendInviteUrl = `${env.PARTNERS_BASE_URL}/invite/${token}`;
+
+  try {
+    await getNotifications().dispatch({
+      tenantId: input.tenantId,
+      channel: 'email',
+      recipient: previous.email,
+      templateKey: 'tenant.invitation',
+      payload: {
+        tenantName: resendTenantName,
+        inviterName: resendInviterName,
+        role: previous.role,
+        inviteUrl: resendInviteUrl,
+        expiresAtIso: expiresAt.toISOString(),
+      },
+    });
+  } catch (err) {
+    // Best-effort. The invitation + audit are already committed; we surface a
+    // log instead of failing the whole request so the caller can still see the
+    // invitation in /v1/tenants/:id/invitations and trigger a resend.
+    logger.warn({ err, invitationId: updated.id }, 'invitation_dispatch_failed');
+  }
 
   return { invitation: toPublic(updated), plaintextToken: token };
 }

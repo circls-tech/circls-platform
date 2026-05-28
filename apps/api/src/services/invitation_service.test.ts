@@ -39,6 +39,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
   });
 
   afterAll(async () => {
+    await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_invitations where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);

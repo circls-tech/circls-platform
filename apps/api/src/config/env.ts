@@ -57,6 +57,9 @@ const envSchema = z.object({
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 
+  // Partner portal base URL (used to build invite acceptance links).
+  PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
+
   // Outbound webhooks. Phase 17.
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
