@@ -26,6 +26,9 @@ import { membershipRoutes } from './routes/memberships.js';
 import { apiKeyRoutes } from './routes/api_keys.js';
 import { webhookSubscriptionRoutes } from './routes/webhook_subscriptions.js';
 import { notificationRoutes } from './routes/notifications.js';
+// Phase 16 — platform-admin tooling.
+import { adminTenantRoutes } from './routes/admin_tenants.js';
+import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -121,6 +124,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(apiKeyRoutes);
   await app.register(webhookSubscriptionRoutes);
   await app.register(notificationRoutes);
+  // Phase 16: platform-admin endpoints (both gated by requirePlatformAdmin).
+  await app.register(adminTenantRoutes);
+  await app.register(adminAuditLogRoutes);
 
   return app;
 }

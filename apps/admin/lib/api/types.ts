@@ -1,0 +1,99 @@
+// Response shapes consumed by the Admin Console. Keep aligned with
+// apps/api/src/routes/admin_*.ts.
+
+export interface AdminStats {
+  tenantsTotal: number;
+  tenantsActive: number;
+  tenantsSuspended: number;
+  tenantsPendingKyc: number;
+  bookings24h: number;
+  bookings7d: number;
+}
+
+export interface AdminTenantListItem {
+  id: string;
+  name: string;
+  slug: string;
+  kycStatus: 'not_started' | 'submitted' | 'in_review' | 'verified' | 'rejected';
+  status: 'active' | 'suspended';
+  subscriptionStatus: string;
+  createdAt: string;
+  venueCount: number;
+  bookingCount30d: number;
+}
+
+export interface AdminTenantListPage {
+  rows: AdminTenantListItem[];
+  nextCursor: string | null;
+}
+
+export interface AdminTenantMember {
+  userId: string;
+  role: 'owner' | 'manager' | 'staff' | 'readonly';
+  email: string | null;
+  phoneE164: string | null;
+  displayName: string | null;
+  createdAt: string | null;
+}
+
+export interface AdminTenantDetail {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    legalEntityName: string | null;
+    gstin: string | null;
+    panNumber: string | null;
+    bankAccountNumber: string | null;
+    bankIfsc: string | null;
+    bankAccountHolderName: string | null;
+    addressJson: Record<string, unknown> | null;
+    kycStatus: AdminTenantListItem['kycStatus'];
+    kycSubmittedAt: string | null;
+    kycVerifiedAt: string | null;
+    kycRejectionReason: string | null;
+    razorpayLinkedAccountId: string | null;
+    subscriptionStatus: string;
+    status: AdminTenantListItem['status'];
+    createdAt: string;
+    updatedAt: string | null;
+  };
+  members: AdminTenantMember[];
+}
+
+export interface AdminAuditLogItem {
+  id: string;
+  tenantId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  actorUserId: string | null;
+  actorName: string | null;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+}
+
+export interface AdminAuditLogPage {
+  rows: AdminAuditLogItem[];
+  nextCursor: string | null;
+}
+
+// Tenant-scoped audit log (existing /v1/tenants/:id/audit-log) — no tenantId
+// field since it's implicit.
+export interface TenantAuditLogItem {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  actorUserId: string | null;
+  actorName: string | null;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+}
+
+export interface TenantAuditLogPage {
+  rows: TenantAuditLogItem[];
+  nextCursor: string | null;
+}
