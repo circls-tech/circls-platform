@@ -52,6 +52,19 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+
+  // Platform admin user IDs for out-of-policy refunds. Comma-separated list of
+  // user UUIDs. Until the Phase 16 admin console lands with proper role-based
+  // auth, this env var gates `/v1/admin/*` routes. Empty = nobody is platform
+  // admin (only tenant owners can act on their own tenant's payments).
+  ADMIN_USER_IDS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : [],
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

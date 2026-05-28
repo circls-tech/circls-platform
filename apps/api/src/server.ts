@@ -25,6 +25,8 @@ import { eventRoutes } from './routes/events.js';
 import { membershipRoutes } from './routes/memberships.js';
 import { apiKeyRoutes } from './routes/api_keys.js';
 import { webhookSubscriptionRoutes } from './routes/webhook_subscriptions.js';
+import { cancellationRoutes } from './routes/cancellations.js';
+import { adminRefundRoutes } from './routes/admin_refunds.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -119,6 +121,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(membershipRoutes);
   await app.register(apiKeyRoutes);
   await app.register(webhookSubscriptionRoutes);
+  await app.register(cancellationRoutes);
+  await app.register(adminRefundRoutes);
 
   return app;
 }

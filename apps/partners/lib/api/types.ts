@@ -143,3 +143,41 @@ export interface AuditLogPage {
   rows: AuditLogItem[];
   nextCursor: string | null;
 }
+
+// ── Phase 14: cancellations + payments ledger ────────────────────────────────
+
+export interface CancelResult {
+  bookingId: string;
+  status: 'cancelled';
+  refundPaise: number;
+  refundId?: string;
+  policy: 'full' | 'partial' | 'none' | 'override' | 'free' | 'external';
+}
+
+export type PaymentKind = 'charge' | 'refund' | 'adjustment';
+export type PaymentStatus =
+  | 'pending'
+  | 'authorized'
+  | 'captured'
+  | 'failed'
+  | 'refunded'
+  | 'partially_refunded';
+
+export interface Payment {
+  id: string;
+  bookingId: string;
+  tenantId: string;
+  provider: 'razorpay' | 'stub' | 'external';
+  providerOrderId: string | null;
+  providerPaymentId: string | null;
+  /** Signed: positive for charges, negative for refunds. Paise. */
+  amountPaise: number;
+  currency: string;
+  status: PaymentStatus;
+  kind: PaymentKind;
+  metadata: Record<string, unknown>;
+  settlementHoldUntil: string | null;
+  settlementReleasedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
