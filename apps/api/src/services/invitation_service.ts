@@ -27,6 +27,34 @@ import { Conflict, NotFound } from '../lib/errors.js';
 const INVITE_TTL_DAYS = 7;
 const BCRYPT_ROUNDS = 10;
 
+export interface PublicInvitation {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: TenantRole;
+  invitedByUserId: string;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  acceptedUserId: string | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
+function toPublic(row: TenantInvitation): PublicInvitation {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    email: row.email,
+    role: row.role,
+    invitedByUserId: row.invitedByUserId,
+    expiresAt: row.expiresAt,
+    acceptedAt: row.acceptedAt,
+    acceptedUserId: row.acceptedUserId,
+    revokedAt: row.revokedAt,
+    createdAt: row.createdAt,
+  };
+}
+
 function mintToken(): string {
   return crypto.randomBytes(24).toString('base64url');
 }
@@ -40,7 +68,7 @@ function normEmail(email: string): string {
 }
 
 export interface CreateInvitationResult {
-  invitation: TenantInvitation;
+  invitation: PublicInvitation;
   plaintextToken: string;
 }
 
@@ -139,7 +167,7 @@ export async function createInvitation(
     { email, role: input.role, expiresAt: inserted.expiresAt },
   );
 
-  return { invitation: inserted, plaintextToken: token };
+  return { invitation: toPublic(inserted), plaintextToken: token };
 }
 
 export interface InvitationLookupResult {
@@ -343,7 +371,7 @@ export async function resendInvitation(
     { tokenPrefix, expiresAt },
   );
 
-  return { invitation: updated, plaintextToken: token };
+  return { invitation: toPublic(updated), plaintextToken: token };
 }
 
 export interface RevokeInvitationInput {
@@ -353,37 +381,54 @@ export interface RevokeInvitationInput {
 }
 
 export async function revokeInvitation(input: RevokeInvitationInput): Promise<void> {
-  const [updated] = await db
-    .update(tenantInvitations)
-    .set({ revokedAt: new Date() })
+  // SELECT first to distinguish "not found" vs "already accepted/revoked".
+  const [existing] = await db
+    .select({
+      id: tenantInvitations.id,
+      acceptedAt: tenantInvitations.acceptedAt,
+      revokedAt: tenantInvitations.revokedAt,
+    })
+    .from(tenantInvitations)
     .where(
       and(
         eq(tenantInvitations.id, input.invitationId),
         eq(tenantInvitations.tenantId, input.tenantId),
-        isNull(tenantInvitations.revokedAt),
-        isNull(tenantInvitations.acceptedAt),
       ),
     )
-    .returning();
-  if (!updated) return;
+    .limit(1);
+  if (!existing) {
+    throw new NotFound('Invitation not found', 'invitation_not_found');
+  }
+  if (existing.acceptedAt !== null) {
+    throw new Conflict('Cannot revoke an accepted invitation', 'invitation_already_accepted');
+  }
+  // Already revoked — idempotent, return silently.
+  if (existing.revokedAt !== null) return;
+
+  const revokedAt = new Date();
+  await db
+    .update(tenantInvitations)
+    .set({ revokedAt })
+    .where(eq(tenantInvitations.id, input.invitationId));
 
   await writeAudit(
     db,
     { tenantId: input.tenantId, actorUserId: input.actorUserId },
     'tenant.invitation_revoked',
     'invitation',
-    updated.id,
+    existing.id,
     { revokedAt: null },
-    { revokedAt: updated.revokedAt },
+    { revokedAt },
   );
 }
 
 export async function listInvitations(
   tenantId: string,
   status?: 'pending' | 'accepted' | 'expired' | 'revoked',
-): Promise<TenantInvitation[]> {
+): Promise<PublicInvitation[]> {
+  let rows: TenantInvitation[];
   if (status === 'pending') {
-    return db
+    rows = await db
       .select()
       .from(tenantInvitations)
       .where(
@@ -394,9 +439,8 @@ export async function listInvitations(
           sql`${tenantInvitations.expiresAt} > now()`,
         ),
       );
-  }
-  if (status === 'accepted') {
-    return db
+  } else if (status === 'accepted') {
+    rows = await db
       .select()
       .from(tenantInvitations)
       .where(
@@ -405,9 +449,8 @@ export async function listInvitations(
           isNotNull(tenantInvitations.acceptedAt),
         ),
       );
-  }
-  if (status === 'expired') {
-    return db
+  } else if (status === 'expired') {
+    rows = await db
       .select()
       .from(tenantInvitations)
       .where(
@@ -418,9 +461,8 @@ export async function listInvitations(
           sql`${tenantInvitations.expiresAt} <= now()`,
         ),
       );
-  }
-  if (status === 'revoked') {
-    return db
+  } else if (status === 'revoked') {
+    rows = await db
       .select()
       .from(tenantInvitations)
       .where(
@@ -429,6 +471,11 @@ export async function listInvitations(
           isNotNull(tenantInvitations.revokedAt),
         ),
       );
+  } else {
+    rows = await db
+      .select()
+      .from(tenantInvitations)
+      .where(eq(tenantInvitations.tenantId, tenantId));
   }
-  return db.select().from(tenantInvitations).where(eq(tenantInvitations.tenantId, tenantId));
+  return rows.map(toPublic);
 }

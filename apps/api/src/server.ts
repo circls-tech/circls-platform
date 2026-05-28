@@ -36,6 +36,9 @@ import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 // Phase 17 — aggregator-facing public API surface.
 import { publicBookingRoutes } from './routes/public_bookings.js';
+// Team management (subproject D).
+import { invitationRoutes } from './routes/invitations.js';
+import { teamRoutes } from './routes/team.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -186,6 +189,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(apiKeyRoutes);
   await app.register(webhookSubscriptionRoutes);
   await app.register(notificationRoutes);
+  // Team management.
+  await app.register(invitationRoutes);
+  await app.register(teamRoutes);
   // Phase 14: cancellations + admin refunds.
   await app.register(cancellationRoutes);
   await app.register(adminRefundRoutes);
