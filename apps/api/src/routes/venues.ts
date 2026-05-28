@@ -12,6 +12,7 @@ const createVenueSchema = z.object({
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   addressJson: z.record(z.unknown()).optional(),
+  tags: z.array(z.string().min(1).max(40)).max(20).optional(),
 });
 const updateVenueSchema = createVenueSchema.partial().extend({
   status: z.enum(['active', 'suspended']).optional(),
@@ -26,13 +27,14 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     }
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
-    const { name, tzName, lat, lng, addressJson } = parsed.data;
+    const { name, tzName, lat, lng, addressJson, tags } = parsed.data;
     return createVenue(tenantId, {
       name,
       tzName: tzName ?? 'Asia/Kolkata',
       lat: lat ?? null,
       lng: lng ?? null,
       addressJson: addressJson ?? null,
+      tags: tags ?? [],
     });
   });
 

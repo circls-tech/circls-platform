@@ -12,3 +12,6 @@ export type { BadgeProps, BadgeTone } from './Badge';
 
 export { Modal } from './Modal';
 export type { ModalProps } from './Modal';
+
+export { TagsInput } from './TagsInput';
+export type { TagsInputProps } from './TagsInput';

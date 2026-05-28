@@ -26,6 +26,7 @@ export interface Venue {
   lat: number | null;
   lng: number | null;
   status: string;
+  tags: string[];
 }
 
 export interface Arena {
@@ -35,6 +36,7 @@ export interface Arena {
   sport: string | null;
   slotDurationMin: number;
   status: string;
+  tags: string[];
 }
 
 export interface Slot {

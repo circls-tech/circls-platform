@@ -9,6 +9,7 @@ export interface CreateVenueInput {
   lat?: number | null;
   lng?: number | null;
   addressJson?: Record<string, unknown> | null;
+  tags?: string[];
 }
 
 export interface UpdateVenueInput {
@@ -30,6 +31,7 @@ export async function createVenue(tenantId: string, input: CreateVenueInput): Pr
       lat: input.lat ?? null,
       lng: input.lng ?? null,
       addressJson: input.addressJson ?? null,
+      tags: input.tags ?? [],
     })
     .returning();
   if (!v) throw new Error('venue insert returned no row');

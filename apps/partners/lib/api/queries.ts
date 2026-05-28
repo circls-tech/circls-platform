@@ -41,7 +41,7 @@ export function useVenues(tenantId: string) {
 export function useCreateVenue(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; tzName?: string }) =>
+    mutationFn: (input: { name: string; tzName?: string; tags?: string[] }) =>
       apiFetch<Venue>(`/v1/tenants/${tenantId}/venues`, {
         method: 'POST',
         body: JSON.stringify(input),
@@ -69,7 +69,7 @@ export function useArena(arenaId: string | null) {
 export function useCreateArena(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; sport?: string; slotDurationMin?: number }) =>
+    mutationFn: (input: { name: string; sport?: string; slotDurationMin?: number; tags?: string[] }) =>
       apiFetch<Arena>(`/v1/venues/${venueId}/arenas`, {
         method: 'POST',
         body: JSON.stringify(input),

@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useArenas, useCreateArena } from '@/lib/api/queries';
+import { inferSport } from '@/lib/api/sport_inference';
+import { Badge, TagsInput } from '@/lib/ui';
 
 export default function VenuePage() {
   const { venueId } = useParams<{ venueId: string }>();
@@ -11,15 +13,19 @@ export default function VenuePage() {
   const createArena = useCreateArena(venueId);
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
+
+  const inferredSport = !sport ? inferSport(tags) : null;
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setErr(null);
     try {
-      await createArena.mutateAsync({ name, ...(sport ? { sport } : {}) });
+      await createArena.mutateAsync({ name, ...(sport ? { sport } : {}), tags });
       setName('');
       setSport('');
+      setTags([]);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -47,10 +53,19 @@ export default function VenuePage() {
               href={`/arenas/${a.id}?tenantId=${tenantId}`}
               className="block rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
             >
-              <span className="font-medium">{a.name}</span>
-              <span className="ml-2 text-xs text-gray-400">
-                {a.sport ?? 'sport n/a'} · {a.slotDurationMin}min slots
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{a.name}</span>
+                <span className="text-xs text-gray-400">
+                  {a.sport ?? 'sport n/a'} · {a.slotDurationMin}min slots
+                </span>
+              </div>
+              {a.tags && a.tags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {a.tags.map((tag) => (
+                    <Badge key={tag} tone="neutral" label={tag} />
+                  ))}
+                </div>
+              )}
             </Link>
           </li>
         ))}
@@ -58,25 +73,35 @@ export default function VenuePage() {
       </ul>
       <form
         onSubmit={onCreate}
-        className="flex max-w-md flex-col gap-2 rounded border border-gray-200 bg-white p-4"
+        className="flex max-w-md flex-col gap-3 rounded border border-gray-200 bg-white p-4"
       >
         <h2 className="font-medium">Add an arena</h2>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Court 1"
-          className="rounded border border-gray-300 px-3 py-2"
+          className="rounded border border-gray-300 px-3 py-2 text-sm"
         />
         <input
           value={sport}
           onChange={(e) => setSport(e.target.value)}
           placeholder="sport (optional)"
-          className="rounded border border-gray-300 px-3 py-2"
+          className="rounded border border-gray-300 px-3 py-2 text-sm"
         />
+        <TagsInput
+          value={tags}
+          onChange={setTags}
+          placeholder="e.g. indoor, nets…"
+        />
+        {inferredSport && (
+          <p className="text-xs text-slate-500">
+            Will be classified as: <span className="font-semibold text-slate-700">{inferredSport}</span>
+          </p>
+        )}
         <button
           type="submit"
           disabled={createArena.isPending}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
         >
           {createArena.isPending ? 'Adding…' : 'Add arena'}
         </button>

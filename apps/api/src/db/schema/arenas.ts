@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { integer, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { venues } from './venues.js';
@@ -15,6 +16,7 @@ export const arenas = pgTable('arenas', {
   capacity: integer('capacity'),
   slotDurationMin: integer('slot_duration_min').notNull().default(60),
   status: arenaStatus('status').notNull().default('active'),
+  tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
