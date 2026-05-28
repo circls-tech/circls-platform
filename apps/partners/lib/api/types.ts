@@ -143,3 +143,29 @@ export interface AuditLogPage {
   rows: AuditLogItem[];
   nextCursor: string | null;
 }
+
+// ── Notifications (Phase 13) ──────────────────────────────────────────────────
+
+export type NotificationChannel = 'sms' | 'email' | 'whatsapp';
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+export interface NotificationItem {
+  id: string;
+  channel: NotificationChannel;
+  status: NotificationStatus;
+  recipient: string;
+  templateKey: string;
+  providerMessageId: string | null;
+  error: string | null;
+  /** ISO-8601 — null when not scheduled (sent immediately). */
+  scheduledFor: string | null;
+  /** ISO-8601 — null while still pending or failed. */
+  sentAt: string | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+export interface NotificationsPage {
+  rows: NotificationItem[];
+  nextCursor: string | null;
+}
