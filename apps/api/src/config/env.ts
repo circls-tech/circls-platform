@@ -56,6 +56,11 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  // Slug of the Circls platform tenant. Used alongside is_platform=true for
+  // belt-and-suspenders lookup. Must match the row inserted by
+  // scripts/bootstrap_circls_tenant.ts.
+  CIRCLS_INTERNAL_TENANT_SLUG: z.string().default('circls-internal'),
+
   // Platform admin user IDs for out-of-policy refunds. Comma-separated list of
   // user UUIDs. Until the Phase 16 admin console lands with proper role-based
   // auth, this env var gates `/v1/admin/*` routes. Empty = nobody is platform

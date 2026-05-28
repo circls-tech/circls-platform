@@ -78,9 +78,14 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
   let tenantBId: string;
   let platformTenantId: string;
   const SUFFIX = Date.now();
-  const platformSlug = `circls-internal-test-al-${SUFFIX}`;
+  const PLATFORM_SLUG = `circls-internal-test-al-${SUFFIX}`;
+  let prevSlug: string | undefined;
 
   beforeAll(async () => {
+    // Override the env slug so getPlatformTenantId() finds the seeded row.
+    // Zod parses env at import time, so we mutate process.env directly here.
+    prevSlug = process.env['CIRCLS_INTERNAL_TENANT_SLUG'];
+    process.env['CIRCLS_INTERNAL_TENANT_SLUG'] = PLATFORM_SLUG;
     __resetPlatformTenantCacheForTesting();
 
     app = await buildServer();
@@ -90,10 +95,10 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
     expect(me.statusCode).toBe(200);
     adminUserId = (me.json() as { id: string }).id;
 
-    // Insert a platform tenant
+    // Insert a platform tenant whose slug matches the env override above
     const ptRows = await db.execute<{ id: string }>(sql`
       INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
-      VALUES ('Circls', ${platformSlug}, TRUE, 'active', 'trial', 'not_started')
+      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial', 'not_started')
       RETURNING id
     `);
     platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
@@ -121,6 +126,8 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
       await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
       await db.execute(sql`DELETE FROM tenants WHERE id = ${platformTenantId}::uuid`);
     }
+    // Restore the env slug override and flush the cache.
+    process.env['CIRCLS_INTERNAL_TENANT_SLUG'] = prevSlug ?? 'circls-internal';
     __resetPlatformTenantCacheForTesting();
     await app.close();
     await closeDb();
