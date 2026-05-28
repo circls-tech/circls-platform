@@ -11,3 +11,11 @@ export * from './idempotency.js';
 export * from './pricing_rules.js';
 export * from './slots.js';
 export * from './audit_log.js';
+// Track B additions (Phases 11–17).
+export * from './kyc_documents.js';
+export * from './payments.js';
+export * from './notifications.js';
+export * from './events.js';
+export * from './memberships.js';
+export * from './api_keys.js';
+export * from './webhooks.js';

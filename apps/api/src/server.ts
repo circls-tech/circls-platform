@@ -17,6 +17,14 @@ import { bookingRoutes } from './routes/bookings.js';
 import { pricingRoutes } from './routes/pricing.js';
 import { slotRoutes } from './routes/slots.js';
 import { venueRoutes } from './routes/venues.js';
+// Track B (Phases 11–17).
+import { kycRoutes } from './routes/kyc.js';
+import { paymentRoutes } from './routes/payments.js';
+import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
+import { eventRoutes } from './routes/events.js';
+import { membershipRoutes } from './routes/memberships.js';
+import { apiKeyRoutes } from './routes/api_keys.js';
+import { webhookSubscriptionRoutes } from './routes/webhook_subscriptions.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -102,6 +110,15 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(bookingRoutes);
   await app.register(slotRoutes);
   await app.register(pricingRoutes);
+  // Track B (Phases 11–17). Stubs throw at handler-time; routes mount so
+  // OpenAPI / route-existence probes pass.
+  await app.register(kycRoutes);
+  await app.register(paymentRoutes);
+  await app.register(razorpayWebhookRoutes);
+  await app.register(eventRoutes);
+  await app.register(membershipRoutes);
+  await app.register(apiKeyRoutes);
+  await app.register(webhookSubscriptionRoutes);
 
   return app;
 }
