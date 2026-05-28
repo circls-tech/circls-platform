@@ -10,6 +10,17 @@ export default function SettingsPage() {
         <p className="text-sm text-slate-500">Coming soon.</p>
       </Card>
       <Card
+        title="KYC"
+        subtitle="Submit business details and supporting documents for payment onboarding."
+      >
+        <Link
+          href="/settings/kyc"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          Manage KYC &rarr;
+        </Link>
+      </Card>
+      <Card
         title="Activity Log"
         subtitle="Review a full audit trail of changes made within your organization."
       >
