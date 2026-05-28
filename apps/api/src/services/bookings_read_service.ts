@@ -5,9 +5,13 @@ import type { Booking } from '../db/schema/index.js';
 
 /**
  * Read models for the tenant-facing bookings views. Walk-in bookings carry their
- * arena + times on the SLOTS (bookings.slotArenaId / bookings.timeRange are null);
- * the truth is `slots.bookingId = bookings.id`. Both reads therefore JOIN
- * bookings→slots (and slots→arenas for the name) and ignore soft-deleted slots.
+ * arena + times on BOTH the slots AND the booking row itself — `bookSlots`
+ * persists `slot_arena_id` + `time_range` after the atomic claim. `cancelBooking`
+ * nulls `slots.booking_id` (releasing the slots), so for cancelled bookings the
+ * slot-side join contributes nothing and the reads MUST fall back to the
+ * booking-side columns. Both reads therefore LEFT JOIN bookings→slots (ignoring
+ * soft-deleted slots) and LEFT JOIN arenas twice: once via `slots.arena_id`
+ * (active) and once via `bookings.slot_arena_id` (the cancelled fallback).
  *
  * Raw `db.execute` is used (mirroring slot_service.listSlots) so the tstzrange
  * lower/upper bounds can be extracted as ISO timestamps in SQL; bigint paise and
@@ -47,10 +51,14 @@ export async function listBookings(
 
   const window = sql`tstzrange(${fromIso}::timestamptz, ${toIso}::timestamptz, '[)')`;
 
-  // Optional filters folded into the WHERE; the slot-overlap requirement is
-  // enforced per-group via HAVING bool_or so that the aggregates still cover all
-  // of a booking's (non-deleted) slots.
-  const arenaClause = arenaId ? sql` and s.arena_id = ${arenaId}` : sql``;
+  // Optional filters folded into the WHERE. The arenaId filter must consult both
+  // the slot-side arena (active bookings) AND the booking-side fallback
+  // (cancelled bookings, which have no slots). The slot-overlap requirement is
+  // enforced per-group via HAVING bool_or — bookings with no remaining slots
+  // (cancelled) fall back to the booking's stored time_range for the window match.
+  const arenaClause = arenaId
+    ? sql` and (s.arena_id = ${arenaId} or b.slot_arena_id = ${arenaId})`
+    : sql``;
   const statusClause = status ? sql` and b.status = ${status}` : sql``;
   const qClause = q
     ? sql` and (b.customer_name ilike ${'%' + q + '%'} or b.customer_contact ilike ${'%' + q + '%'})`
@@ -66,19 +74,21 @@ export async function listBookings(
       b.channel                       as channel,
       b.total_paise                   as total_paise,
       b.created_at                    as created_at,
-      min(s.arena_id::text)           as arena_id,
-      min(a.name)                     as arena_name,
-      min(lower(s.time_range))        as first_start_at,
-      max(upper(s.time_range))        as last_end_at,
-      count(*)                        as slot_count
+      coalesce(min(s.arena_id::text), b.slot_arena_id::text)              as arena_id,
+      coalesce(min(a.name), max(a2.name))                                 as arena_name,
+      coalesce(min(lower(s.time_range)), lower(b.time_range))             as first_start_at,
+      coalesce(max(upper(s.time_range)), upper(b.time_range))             as last_end_at,
+      count(s.id)                                                          as slot_count
     from bookings b
-    join slots s on s.booking_id = b.id and s.deleted_at is null
-    join arenas a on a.id = s.arena_id
+    left join slots s on s.booking_id = b.id and s.deleted_at is null
+    left join arenas a on a.id = s.arena_id
+    left join arenas a2 on a2.id = b.slot_arena_id
     where b.tenant_id = ${tenantId}
       and b.venue_id = ${venueId}${arenaClause}${statusClause}${qClause}
-    group by b.id, b.customer_name, b.customer_contact, b.note, b.status, b.channel, b.total_paise, b.created_at
+    group by b.id, b.customer_name, b.customer_contact, b.note, b.status, b.channel, b.total_paise, b.created_at, b.slot_arena_id, b.time_range
     having bool_or(s.time_range && ${window})
-    order by min(lower(s.time_range))
+        or (count(s.id) = 0 and b.time_range && ${window})
+    order by coalesce(min(lower(s.time_range)), lower(b.time_range))
   `);
 
   return (rows as unknown as Record<string, unknown>[]).map((row) => ({
@@ -126,12 +136,26 @@ export async function getBookingDetail(
   tenantId: string,
   bookingId: string,
 ): Promise<BookingDetail> {
+  // LEFT JOIN against arenas via bookings.slot_arena_id so cancelled bookings
+  // (whose slots have been released) can still report their arena.
   const bookingRows = await db.execute<Record<string, unknown>>(sql`
-    select id, tenant_id, venue_id, status, channel, payment_method,
-           customer_name, customer_contact, note, total_paise, created_at
-    from bookings
-    where id = ${bookingId}
-    limit 1
+    select b.id                as id,
+           b.tenant_id          as tenant_id,
+           b.venue_id           as venue_id,
+           b.status             as status,
+           b.channel            as channel,
+           b.payment_method     as payment_method,
+           b.customer_name      as customer_name,
+           b.customer_contact   as customer_contact,
+           b.note               as note,
+           b.total_paise        as total_paise,
+           b.created_at         as created_at,
+           b.slot_arena_id      as booking_arena_id,
+           ab.name              as booking_arena_name
+      from bookings b
+      left join arenas ab on ab.id = b.slot_arena_id
+     where b.id = ${bookingId}
+     limit 1
   `);
   const bookingArr = bookingRows as unknown as Record<string, unknown>[];
   const booking = bookingArr[0];
@@ -165,9 +189,17 @@ export async function getBookingDetail(
     status: row['status'] as string,
   }));
 
-  // Walk-in slots all share one arena; take it from the first slot if present.
-  const arenaId = slotArr.length > 0 ? (slotArr[0]!['arena_id'] as string) : null;
-  const arenaName = slotArr.length > 0 ? (slotArr[0]!['arena_name'] as string) : null;
+  // Walk-in slots all share one arena; prefer the slot-side value when present
+  // (active bookings), otherwise fall back to the booking-side join (cancelled
+  // bookings, whose slots.booking_id has been nulled).
+  const arenaId =
+    slotArr.length > 0
+      ? (slotArr[0]!['arena_id'] as string)
+      : ((booking['booking_arena_id'] as string | null) ?? null);
+  const arenaName =
+    slotArr.length > 0
+      ? (slotArr[0]!['arena_name'] as string)
+      : ((booking['booking_arena_name'] as string | null) ?? null);
 
   return {
     id: booking['id'] as string,

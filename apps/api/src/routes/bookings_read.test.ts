@@ -354,6 +354,216 @@ describe.skipIf(!runIntegration)('bookings read endpoints', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Cancelled bookings remain visible: the read paths fall back to bookings.slot_arena_id
+// / bookings.time_range when no slots are linked (cancelBooking nulls slots.booking_id).
+// ---------------------------------------------------------------------------
+describe.skipIf(!runIntegration)('cancelled bookings remain visible', () => {
+  let app: FastifyInstance;
+  let venueId: string;
+  let arenaId: string;
+  let arenaName: string;
+  let activeBookingId: string;
+  let cancelledBookingId: string;
+  // Legacy walk-in: cancelled BEFORE the fix, so its slot_arena_id / time_range
+  // were never persisted. We simulate this by NULLing both columns directly.
+  let legacyCancelledBookingId: string;
+
+  // Tuesday 2032-06-01 in IST. Released window: 06/07/08 IST = 00:30/01:30/02:30 UTC.
+  const date = '2032-06-01';
+  const windowFrom = `${date}T00:00:00Z`;
+  const windowTo = `${date}T23:59:59Z`;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    const s = await setupArena(app, 'owner', {
+      slug: `rdcanc-${Date.now()}`,
+      date,
+      cells: [
+        { dayOfWeek: 2, startTimeMin: 360, durationMin: 60, price: 10000 }, // 06:00 IST
+        { dayOfWeek: 2, startTimeMin: 420, durationMin: 60, price: 12000 }, // 07:00 IST
+        { dayOfWeek: 2, startTimeMin: 480, durationMin: 60, price: 15000 }, // 08:00 IST
+      ],
+    });
+    venueId = s.venueId;
+    arenaId = s.arenaId;
+    expect(s.openSlotIds.length).toBeGreaterThanOrEqual(3);
+
+    const arenasRes = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('owner'),
+    });
+    arenaName = (arenasRes.json() as Array<{ id: string; name: string }>).find(
+      (ar) => ar.id === arenaId,
+    )!.name;
+
+    // (1) An active multi-slot booking that should still appear in the list.
+    const active = await book(app, 'owner', s.openSlotIds.slice(0, 2), {
+      name: 'Active Alice',
+      contact: '+91-9999911111',
+    });
+    activeBookingId = active.id;
+
+    // (2) A booking that we will cancel — it must remain visible.
+    const cancelled = await book(app, 'owner', [s.openSlotIds[2]!], {
+      name: 'Cancelled Carol',
+      contact: '+91-9999922222',
+      note: 'change of plans',
+    });
+    cancelledBookingId = cancelled.id;
+
+    const cancelRes = await app.inject({
+      method: 'POST',
+      url: `/v1/bookings/${cancelledBookingId}/cancel`,
+      headers: bearer('owner'),
+    });
+    expect(cancelRes.statusCode).toBe(200);
+    expect(cancelRes.json().status).toBe('cancelled');
+
+    // (3) Legacy walk-in: book + cancel, then NULL out the persisted fallback
+    // columns to simulate a booking created BEFORE this fix shipped.
+    // Use 08:30 IST = 03:00 UTC — released as an extra slot to avoid GIST overlap
+    // with the previously cancelled booking's 08:00–09:00 IST window.
+    const extraRel = await app.inject({
+      method: 'POST',
+      url: `/v1/arenas/${arenaId}/slots/release`,
+      headers: withKey('owner', `rd-relx-${Date.now()}`),
+      payload: {
+        startDate: '2032-06-08',
+        endDate: '2032-06-08',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 2, startTimeMin: 540, durationMin: 60, price: 9000 }],
+      },
+    });
+    expect(extraRel.statusCode).toBe(200);
+
+    const xSlotsRes = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaId}/slots?from=2032-06-08T00:00:00Z&to=2032-06-09T00:00:00Z`,
+      headers: bearer('owner'),
+    });
+    const xOpen = (xSlotsRes.json() as Array<{ id: string; status: string }>)
+      .find((sl) => sl.status === 'open')!.id;
+
+    const legacy = await book(app, 'owner', [xOpen], {
+      name: 'Legacy Larry',
+      contact: '+91-9999933333',
+    });
+    legacyCancelledBookingId = legacy.id;
+
+    const legacyCancelRes = await app.inject({
+      method: 'POST',
+      url: `/v1/bookings/${legacyCancelledBookingId}/cancel`,
+      headers: bearer('owner'),
+    });
+    expect(legacyCancelRes.statusCode).toBe(200);
+
+    // Simulate pre-fix state: scrub slot_arena_id + time_range from the legacy row.
+    const { db } = await import('../db/client.js');
+    const { sql } = await import('drizzle-orm');
+    await db.execute(sql`
+      update bookings
+         set slot_arena_id = null, time_range = null
+       where id = ${legacyCancelledBookingId}
+    `);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('list with status=cancelled returns the cancelled booking with fallback arena + window from the booking row', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/bookings?from=${windowFrom}&to=${windowTo}&status=cancelled`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const list = res.json() as ListItem[];
+    const item = list.find((b) => b.id === cancelledBookingId);
+    expect(item).toBeDefined();
+    expect(item!.status).toBe('cancelled');
+    // Arena info falls back to bookings.slot_arena_id / arenas.name via the booking-side join.
+    expect(item!.arenaId).toBe(arenaId);
+    expect(item!.arenaName).toBe(arenaName);
+    // 08:00 IST = 02:30 UTC; ends 09:00 IST = 03:30 UTC. Persisted on the booking row.
+    expect(item!.firstStartAt).toBe('2032-06-01T02:30:00.000Z');
+    expect(item!.lastEndAt).toBe('2032-06-01T03:30:00.000Z');
+    // No slots point at the booking anymore.
+    expect(item!.slotCount).toBe(0);
+  });
+
+  it('list without status filter surfaces both the active and cancelled bookings in the window', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/bookings?from=${windowFrom}&to=${windowTo}`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const list = res.json() as ListItem[];
+    const active = list.find((b) => b.id === activeBookingId);
+    const cancelled = list.find((b) => b.id === cancelledBookingId);
+    expect(active).toBeDefined();
+    expect(active!.status).toBe('confirmed');
+    // The active 06:00-08:00 IST window stays correct.
+    expect(active!.slotCount).toBe(2);
+    expect(active!.arenaId).toBe(arenaId);
+    expect(active!.arenaName).toBe(arenaName);
+    expect(cancelled).toBeDefined();
+    expect(cancelled!.status).toBe('cancelled');
+    expect(cancelled!.slotCount).toBe(0);
+  });
+
+  it('GET /v1/bookings/:id for a cancelled booking returns it with slots=[] but arenaId/arenaName populated', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/bookings/${cancelledBookingId}`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const d = res.json() as {
+      id: string;
+      status: string;
+      arenaId: string | null;
+      arenaName: string | null;
+      slots: Array<unknown>;
+    };
+    expect(d.id).toBe(cancelledBookingId);
+    expect(d.status).toBe('cancelled');
+    expect(d.arenaId).toBe(arenaId);
+    expect(d.arenaName).toBe(arenaName);
+    expect(d.slots).toEqual([]);
+  });
+
+  it('cancelled booking outside the requested window does not surface', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/bookings?from=2032-07-10T00:00:00Z&to=2032-07-11T00:00:00Z&status=cancelled`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const list = res.json() as ListItem[];
+    expect(list.find((b) => b.id === cancelledBookingId)).toBeUndefined();
+  });
+
+  it('legacy cancelled walk-in (slot_arena_id=NULL, time_range=NULL) does NOT appear in the list (acceptable fallback gap)', async () => {
+    // Pre-fix bookings never persisted the fallback columns; once cancelled, the
+    // window filter has nothing to match against and they stay hidden. This is
+    // documented behavior — future fix would be a one-time backfill if needed.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/bookings?from=2032-06-08T00:00:00Z&to=2032-06-09T00:00:00Z&status=cancelled`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const list = res.json() as ListItem[];
+    expect(list.find((b) => b.id === legacyCancelledBookingId)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tenant isolation: B's booking must never surface to A
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('bookings read tenant isolation', () => {
