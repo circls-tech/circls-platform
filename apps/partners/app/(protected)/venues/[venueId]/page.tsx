@@ -38,12 +38,20 @@ export default function VenuePage() {
       </Link>
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Arenas</h1>
-        <Link
-          href={`/venues/${venueId}/bookings${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-        >
-          View bookings →
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            Events →
+          </Link>
+          <Link
+            href={`/venues/${venueId}/bookings${tenantId ? `?tenantId=${tenantId}` : ''}`}
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            View bookings →
+          </Link>
+        </div>
       </div>
       {isLoading && <p className="text-gray-500">Loading…</p>}
       <ul className="flex flex-col gap-2">
