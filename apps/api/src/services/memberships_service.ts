@@ -17,7 +17,6 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { memberships, type Membership, userMemberships } from '../db/schema/memberships.js';
 import { bookings } from '../db/schema/bookings.js';
-import { payments } from '../db/schema/payments.js';
 import { tenants } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
@@ -119,7 +118,9 @@ export interface PurchaseMembershipResult {
 export async function purchaseMembership(
   input: PurchaseMembershipInput,
 ): Promise<PurchaseMembershipResult> {
-  return db.transaction(async (tx) => {
+  // Phase 1 — atomic reserve. Free memberships finish here; paid ones return
+  // their booking + user_membership ids for the Phase 2 createRouteOrder call.
+  const reserved = await db.transaction(async (tx) => {
     const [m] = await tx
       .select()
       .from(memberships)
@@ -154,7 +155,7 @@ export async function purchaseMembership(
         { membershipId: m.id, pricePaise: 0, free: true },
       );
 
-      return { userMembershipId: um.id };
+      return { kind: 'free' as const, userMembershipId: um.id };
     }
 
     // Paid path — require KYC + linked account.
@@ -171,7 +172,7 @@ export async function purchaseMembership(
       throw new Conflict('Tenant KYC not verified', 'kyc_required');
     }
 
-    // Create a `bookings` row to anchor the payment (payments.booking_id is NOT NULL).
+    // Synthetic bookings row anchors the payment (payments.booking_id NOT NULL).
     const [b] = await tx
       .insert(bookings)
       .values({
@@ -189,29 +190,12 @@ export async function purchaseMembership(
       .returning();
     if (!b) throw new Error('booking insert returned no row');
 
-    // Insert a pending payment row up-front so it's visible in ledger reads;
-    // the actual provider order is minted via payments_service.
-    const [p] = await tx
-      .insert(payments)
-      .values({
-        bookingId: b.id,
-        tenantId: m.tenantId,
-        provider: 'razorpay',
-        amountPaise: m.pricePaise,
-        currency: 'INR',
-        status: 'pending',
-        kind: 'charge',
-        metadata: { membershipId: m.id, userId: input.userId },
-      })
-      .returning();
-    if (!p) throw new Error('payment insert returned no row');
-
     const [um] = await tx
       .insert(userMemberships)
       .values({
         userId: input.userId,
         membershipId: m.id,
-        paymentId: p.id,
+        paymentId: null, // patched in Phase 2 once createRouteOrder returns
         startsAt: now,
         endsAt,
         status: 'active',
@@ -226,33 +210,56 @@ export async function purchaseMembership(
       'user_membership',
       um.id,
       null,
-      { membershipId: m.id, pricePaise: m.pricePaise, paymentId: p.id, free: false },
+      { membershipId: m.id, pricePaise: m.pricePaise, free: false, bookingId: b.id },
     );
 
-    // Call out to Phase 12's payment-order minting. Wrap so an unimplemented
-    // stub surfaces a friendly error code instead of a generic 500.
-    let orderId: string | undefined;
-    try {
-      const result = await paymentsService.createRouteOrder({
-        bookingId: b.id,
-        tenantId: m.tenantId,
-        amountPaise: m.pricePaise,
-        linkedAccountId: tenant.linkedAccountId,
-        platformFeePaise: 0,
-      });
-      orderId = result.providerOrderId;
-    } catch (err) {
-      // If Phase 12 isn't ready yet, surface a typed error rather than rolling
-      // back a successful purchase — but in fact roll back via thrown error so
-      // the user sees a clean state.
-      if (err instanceof Error && err.message.includes('not implemented')) {
-        throw new Conflict('Payments not yet enabled', 'payment_not_available');
-      }
-      throw err;
-    }
-
-    return { userMembershipId: um.id, paymentId: p.id, orderId };
+    return {
+      kind: 'paid' as const,
+      bookingId: b.id,
+      userMembershipId: um.id,
+      tenantId: m.tenantId,
+      linkedAccountId: tenant.linkedAccountId,
+      pricePaise: m.pricePaise,
+      membershipId: m.id,
+    };
   });
+
+  if (reserved.kind === 'free') {
+    return { userMembershipId: reserved.userMembershipId };
+  }
+
+  // Phase 2 — paid: createRouteOrder runs OUTSIDE the booking tx so the FK to
+  // bookings is satisfied (createRouteOrder inserts a payments row referencing
+  // bookingId). Mirrors the bookEvent / prepareOnlineBookingWithPayment split.
+  let orderId: string | undefined;
+  let paymentId: string | undefined;
+  try {
+    const result = await paymentsService.createRouteOrder({
+      bookingId: reserved.bookingId,
+      tenantId: reserved.tenantId,
+      amountPaise: reserved.pricePaise,
+      linkedAccountId: reserved.linkedAccountId,
+      platformFeePaise: 0,
+      actorUserId: input.userId,
+    });
+    orderId = result.providerOrderId;
+    paymentId = result.paymentId;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('not implemented')) {
+      throw new Conflict('Payments not yet enabled', 'payment_not_available');
+    }
+    throw err;
+  }
+
+  // Stitch the payment id onto the user_membership now that it exists.
+  if (paymentId) {
+    await db
+      .update(userMemberships)
+      .set({ paymentId })
+      .where(eq(userMemberships.id, reserved.userMembershipId));
+  }
+
+  return { userMembershipId: reserved.userMembershipId, paymentId, orderId };
 }
 
 export interface UserMembershipWithMembership {

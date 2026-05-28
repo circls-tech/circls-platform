@@ -1,15 +1,41 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// We need to mock the payments service so the paid path returns a stable
-// providerOrderId without depending on the Phase 12 implementation.
+// Mock payments_service so the paid path doesn't depend on the Phase 12
+// implementation. We INSERT a real payments row inside the mock so the
+// downstream `user_memberships.payment_id` patch satisfies its FK.
 vi.mock('./payments_service.js', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    createRouteOrder: vi.fn(async (input: { bookingId: string }) => ({
-      paymentId: `pm-stub-${input.bookingId}`,
-      providerOrderId: `order_stub_${input.bookingId}`,
-    })),
+    createRouteOrder: vi.fn(
+      async (input: {
+        bookingId: string;
+        tenantId: string;
+        amountPaise: number;
+      }) => {
+        // Lazy import to avoid module-load cycle inside the mock factory.
+        const { db } = await import('../db/client.js');
+        const { payments } = await import('../db/schema/index.js');
+        const [p] = await db
+          .insert(payments)
+          .values({
+            bookingId: input.bookingId,
+            tenantId: input.tenantId,
+            provider: 'stub',
+            amountPaise: input.amountPaise,
+            currency: 'INR',
+            status: 'pending',
+            kind: 'charge',
+            providerOrderId: `order_stub_${input.bookingId}`,
+            metadata: { mocked: true },
+          })
+          .returning();
+        return {
+          paymentId: p!.id,
+          providerOrderId: `order_stub_${input.bookingId}`,
+        };
+      },
+    ),
   };
 });
 

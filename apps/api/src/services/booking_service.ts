@@ -370,7 +370,9 @@ export async function bookEvent(
   eventId: string,
   customer: BookEventCustomer,
 ): Promise<BookEventResult> {
-  return db.transaction(async (tx) => {
+  // Phase 1 — atomic seat reservation. The booking row goes into the DB inside
+  // a transaction so capacity check + insert are race-safe.
+  const reserved = await db.transaction(async (tx) => {
     const [ev] = await tx
       .select()
       .from(events)
@@ -380,11 +382,8 @@ export async function bookEvent(
     if (ev.status !== 'published') {
       throw new Conflict('Event is not published', 'event_not_published');
     }
-    // Audit context: tenantId from the event, actor is the booking user.
     const ctx: AuditCtx = { tenantId: ev.tenantId, actorUserId: customer.userId };
 
-    // Capacity check pre-insert. Counted bookings exclude cancelled rows so
-    // freed seats can be resold.
     if (ev.capacity !== null) {
       const rows = await tx
         .select({ n: sql<number>`count(*)::int` })
@@ -441,9 +440,6 @@ export async function bookEvent(
       .returning();
     if (!b) throw new Error('booking insert returned no row');
 
-    // Post-insert capacity re-verification — handles the race where two
-    // transactions both pass the pre-check. Postgres serializes the COUNT
-    // against the inserted row inside the same transaction.
     if (ev.capacity !== null) {
       const rows2 = await tx
         .select({ n: sql<number>`count(*)::int` })
@@ -461,53 +457,41 @@ export async function bookEvent(
       }
     }
 
-    if (isFree) {
-      await writeAudit(tx, ctx, 'event.booked', 'booking', b.id, null, {
-        eventId: ev.id,
-        free: true,
-      });
-      return { booking: b };
-    }
-
-    // Paid path — create the payment ledger row.
-    const [p] = await tx
-      .insert(payments)
-      .values({
-        bookingId: b.id,
-        tenantId: ev.tenantId,
-        provider: 'razorpay',
-        amountPaise: ev.pricePaise,
-        currency: 'INR',
-        status: 'pending',
-        kind: 'charge',
-        metadata: { eventId: ev.id },
-      })
-      .returning();
-    if (!p) throw new Error('payment insert returned no row');
-
-    let providerOrderId: string | undefined;
-    try {
-      const result = await paymentsService.createRouteOrder({
-        bookingId: b.id,
-        tenantId: ev.tenantId,
-        amountPaise: ev.pricePaise,
-        linkedAccountId: linkedAccountId!,
-        platformFeePaise: 0,
-      });
-      providerOrderId = result.providerOrderId;
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('not implemented')) {
-        throw new Conflict('Payments not yet enabled', 'payment_not_available');
-      }
-      throw err;
-    }
-
     await writeAudit(tx, ctx, 'event.booked', 'booking', b.id, null, {
       eventId: ev.id,
-      free: false,
-      paymentId: p.id,
+      free: isFree,
     });
 
-    return { booking: b, paymentId: p.id, providerOrderId };
+    return { booking: b, isFree, linkedAccountId, tenantId: ev.tenantId, eventName: ev.name };
   });
+
+  if (reserved.isFree) {
+    return { booking: reserved.booking };
+  }
+
+  // Phase 2 — paid path: createRouteOrder runs OUTSIDE the booking tx so it can
+  // see the committed booking row (it inserts payments referencing it). Mirrors
+  // prepareOnlineBookingWithPayment's split-tx pattern; if Razorpay fails here,
+  // the abandoned-cart sweep cancels the pending booking after the grace window.
+  let providerOrderId: string | undefined;
+  let paymentId: string | undefined;
+  try {
+    const result = await paymentsService.createRouteOrder({
+      bookingId: reserved.booking.id,
+      tenantId: reserved.tenantId,
+      amountPaise: reserved.booking.pricePaise ?? 0,
+      linkedAccountId: reserved.linkedAccountId!,
+      platformFeePaise: 0,
+      actorUserId: customer.userId,
+    });
+    providerOrderId = result.providerOrderId;
+    paymentId = result.paymentId;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('not implemented')) {
+      throw new Conflict('Payments not yet enabled', 'payment_not_available');
+    }
+    throw err;
+  }
+
+  return { booking: reserved.booking, paymentId, providerOrderId };
 }

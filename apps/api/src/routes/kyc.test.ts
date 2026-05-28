@@ -6,10 +6,16 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// Unique-per-run UIDs so re-runs against the same dev DB don't collide on the
+// users.firebase_uid unique index.
+const RUN_SUFFIX = Date.now();
+const OWNER_UID = `fbuid_kyc_owner_${RUN_SUFFIX}`;
+const STRANGER_UID = `fbuid_kyc_stranger_${RUN_SUFFIX}`;
+
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
-    if (token === 'owner') return { uid: 'fbuid_kyc_owner', email: 'owner@kyc.com' };
-    if (token === 'stranger') return { uid: 'fbuid_kyc_stranger', email: 'stranger@kyc.com' };
+    if (token === 'owner') return { uid: OWNER_UID, email: `owner-${RUN_SUFFIX}@kyc.com` };
+    if (token === 'stranger') return { uid: STRANGER_UID, email: `stranger-${RUN_SUFFIX}@kyc.com` };
     throw new Error('bad token');
   }),
 }));
@@ -38,7 +44,7 @@ describe.skipIf(!runIntegration)('kyc routes', () => {
     // /v1/tenants here (that's tested elsewhere).
     const [u] = await db
       .insert(users)
-      .values({ firebaseUid: 'fbuid_kyc_owner', email: 'owner@kyc.com' })
+      .values({ firebaseUid: OWNER_UID, email: `owner-${RUN_SUFFIX}@kyc.com` })
       .returning();
     ownerUserId = u!.id;
     const [t] = await db

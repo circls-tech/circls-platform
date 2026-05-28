@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import {
   arenas,
@@ -65,6 +65,8 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    // notifications table joined by tenantId — drop before tenants FK.
+    await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`update slots set booking_id = null where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
@@ -136,13 +138,17 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     };
   }
 
-  beforeEach(() => {
-    __resetRazorpayForTesting();
-  });
+  // Note: do NOT reset the Razorpay stub between tests — its counter mints
+  // unique `stub_order_*` ids that we depend on for provider_order_id uniqueness.
+  // Resetting on every test would make later tests collide with rows from earlier
+  // tests (same order_id), and the webhook lookup `WHERE provider_order_id=…
+  // LIMIT 1` would then return the wrong payment. Reset once in beforeAll.
 
   describe('createRouteOrder', () => {
     it('inserts a pending charge row and patches provider_order_id', async () => {
-      const dateIso = `2031-08-${Math.floor(1 + Math.random() * 28)}T05:00:00.000Z`;
+      // Zero-pad the day so the ISO string parses on Node's strict Date.
+      const dd = String(Math.floor(1 + Math.random() * 28)).padStart(2, '0');
+      const dateIso = `2031-08-${dd}T05:00:00.000Z`;
       const seeded = await seedPendingBookingWithOrder(dateIso);
 
       const row = await db

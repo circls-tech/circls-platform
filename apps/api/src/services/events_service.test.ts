@@ -219,15 +219,17 @@ describe.skipIf(!runIntegration)('events_service', () => {
       bookEvent(ev.id, { userId: actorUserId, name: 'Payer' }),
     ).rejects.toMatchObject({ code: 'kyc_required' });
 
-    // After verifying KYC + linked account, the payment-service stub still
-    // throws not-implemented, which we surface as `payment_not_available`.
+    // After verifying KYC + linked account, the (now-wired) Phase 12 path
+    // succeeds against the stub Razorpay adapter — returns a booking +
+    // paymentId + providerOrderId. Test the integrated happy path.
     await db
       .update(tenants)
       .set({ kycStatus: 'verified', razorpayLinkedAccountId: 'acc_TEST' })
       .where(eq(tenants.id, tenantId));
-    await expect(
-      bookEvent(ev.id, { userId: actorUserId, name: 'Payer' }),
-    ).rejects.toMatchObject({ code: 'payment_not_available' });
+    const ok = await bookEvent(ev.id, { userId: actorUserId, name: 'Payer' });
+    expect(ok.booking.status).toBe('pending');
+    expect(ok.paymentId).toBeDefined();
+    expect(ok.providerOrderId).toBeDefined();
 
     // Reset for any later tests that assume not_started.
     await db
