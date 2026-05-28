@@ -1,4 +1,4 @@
-import { jsonb, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 
 /** The venue-owning business entity. Holds KYC, Razorpay, and subscription state. */
@@ -28,6 +28,9 @@ export const tenants = pgTable('tenants', {
   bankIfsc: text('bank_ifsc'),
   bankAccountHolderName: text('bank_account_holder_name'),
   addressJson: jsonb('address_json'),
+  /** Belt-and-suspenders next to the reserved slug. The Circls internal
+   *  tenant sets this true; authz reads this, not the slug. */
+  isPlatform: boolean('is_platform').notNull().default(false),
   kycStatus: kycStatus('kyc_status').notNull().default('not_started'),
   kycSubmittedAt: timestamp('kyc_submitted_at', { withTimezone: true }),
   kycVerifiedAt: timestamp('kyc_verified_at', { withTimezone: true }),
