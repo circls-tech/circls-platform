@@ -8,6 +8,7 @@ import {
   createMembership,
   getMembership,
   listMembershipsForTenant,
+  listUserMemberships,
   purchaseMembership,
 } from '../services/memberships_service.js';
 
@@ -37,7 +38,16 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid membership payload', 'bad_request', {
         issues: parsed.error.issues,
       });
-    return createMembership({ tenantId, ...parsed.data });
+    return createMembership({
+      tenantId,
+      actorUserId: user.id,
+      venueId: parsed.data.venueId,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      pricePaise: parsed.data.pricePaise,
+      durationDays: parsed.data.durationDays,
+      benefits: parsed.data.benefits,
+    });
   });
 
   app.get('/v1/tenants/:tenantId/memberships/:id', { preHandler: requireAuth }, async (req) => {
@@ -53,5 +63,11 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const { id } = req.params as { id: string };
     const user = await currentUser(req);
     return purchaseMembership({ membershipId: id, userId: user.id });
+  });
+
+  // Current user's active memberships (across tenants).
+  app.get('/v1/users/me/memberships', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    return listUserMemberships(user.id);
   });
 };

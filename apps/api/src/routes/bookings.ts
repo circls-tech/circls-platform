@@ -8,7 +8,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import { getBookingById } from '../services/inventory_service.js';
-import { bookSlots, cancelBooking } from '../services/booking_service.js';
+import { bookEvent, bookSlots, cancelBooking } from '../services/booking_service.js';
 import { getBookingDetail, listBookings } from '../services/bookings_read_service.js';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -21,6 +21,16 @@ const bookSlotsSchema = z.object({
     contact: z.string().min(1),
     note: z.string().optional(),
   }),
+});
+
+const bookEventSchema = z.object({
+  customer: z
+    .object({
+      name: z.string().optional(),
+      contact: z.string().optional(),
+      note: z.string().optional(),
+    })
+    .optional(),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -121,6 +131,25 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, booking.tenantId);
     return cancelBooking({ tenantId: booking.tenantId, actorUserId: user.id }, id);
+  });
+
+  // Book a published event (Phase 15). Open to any authenticated user — the
+  // tenant scope comes from the event row, not the caller.
+  app.post('/v1/events/:eventId/book', { preHandler: requireAuth }, async (req) => {
+    const { eventId } = req.params as { eventId: string };
+    const user = await currentUser(req);
+    const parsed = bookEventSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new BadRequest('Invalid event booking payload', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    return bookEvent(eventId, {
+      userId: user.id,
+      name: parsed.data.customer?.name ?? null,
+      contact: parsed.data.customer?.contact ?? null,
+      note: parsed.data.customer?.note ?? null,
+    });
   });
 
 };

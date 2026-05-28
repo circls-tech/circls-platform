@@ -143,3 +143,55 @@ export interface AuditLogPage {
   rows: AuditLogItem[];
   nextCursor: string | null;
 }
+
+// ── Events (Phase 15) ────────────────────────────────────────────────────────
+
+export type EventStatus = 'draft' | 'published' | 'cancelled';
+
+export interface VenueEvent {
+  id: string;
+  tenantId: string;
+  venueId: string;
+  name: string;
+  description: string | null;
+  /** ISO-8601 */
+  startsAt: string;
+  /** ISO-8601 */
+  endsAt: string;
+  pricePaise: number;
+  capacity: number | null;
+  status: EventStatus;
+}
+
+// ── Memberships (Phase 15) ───────────────────────────────────────────────────
+
+export interface Membership {
+  id: string;
+  tenantId: string;
+  venueId: string | null;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  durationDays: number;
+  benefits: Record<string, unknown>;
+  status: 'active' | 'inactive';
+}
+
+export interface UserMembership {
+  id: string;
+  userId: string;
+  membershipId: string;
+  paymentId: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: 'active' | 'expired' | 'cancelled';
+  membership: {
+    id: string;
+    tenantId: string;
+    venueId: string | null;
+    name: string;
+    description: string | null;
+    pricePaise: number;
+    durationDays: number;
+  };
+}

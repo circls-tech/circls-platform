@@ -23,6 +23,16 @@ const createEventSchema = z.object({
   arenaIds: z.array(z.string().uuid()).min(1),
 });
 
+const updateEventSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().nullable().optional(),
+  startsAt: z.string().datetime().optional(),
+  endsAt: z.string().datetime().optional(),
+  pricePaise: z.number().int().min(0).optional(),
+  capacity: z.number().int().min(1).nullable().optional(),
+  arenaIds: z.array(z.string().uuid()).min(1).optional(),
+});
+
 export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/venues/:venueId/events', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };
@@ -44,17 +54,20 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid event payload', 'bad_request', {
         issues: parsed.error.issues,
       });
-    return createEvent({
-      tenantId: venue.tenantId,
-      venueId,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      startsAt: new Date(parsed.data.startsAt),
-      endsAt: new Date(parsed.data.endsAt),
-      pricePaise: parsed.data.pricePaise,
-      capacity: parsed.data.capacity,
-      arenaIds: parsed.data.arenaIds,
-    });
+    return createEvent(
+      { tenantId: venue.tenantId, actorUserId: user.id },
+      {
+        tenantId: venue.tenantId,
+        venueId,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        startsAt: new Date(parsed.data.startsAt),
+        endsAt: new Date(parsed.data.endsAt),
+        pricePaise: parsed.data.pricePaise,
+        capacity: parsed.data.capacity,
+        arenaIds: parsed.data.arenaIds,
+      },
+    );
   });
 
   app.get('/v1/tenants/:tenantId/events/:id', { preHandler: requireAuth }, async (req) => {
@@ -70,7 +83,20 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
-    return updateEvent(id, req.body as Record<string, unknown>);
+    const parsed = updateEventSchema.safeParse(req.body);
+    if (!parsed.success)
+      throw new BadRequest('Invalid event patch', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    const patch: Parameters<typeof updateEvent>[2] = {};
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if (parsed.data.description !== undefined) patch.description = parsed.data.description;
+    if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
+    if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
+    if (parsed.data.pricePaise !== undefined) patch.pricePaise = parsed.data.pricePaise;
+    if (parsed.data.capacity !== undefined) patch.capacity = parsed.data.capacity;
+    if (parsed.data.arenaIds !== undefined) patch.arenaIds = parsed.data.arenaIds;
+    return updateEvent({ tenantId, actorUserId: user.id }, id, patch);
   });
 
   app.post(
@@ -80,7 +106,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
-      return publishEvent(id);
+      return publishEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
 };
