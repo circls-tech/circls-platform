@@ -7,6 +7,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   createSubscription,
   deleteSubscription,
+  listDeliveries,
   listSubscriptions,
 } from '../services/webhook_subscriptions_service.js';
 
@@ -52,6 +53,24 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
       await requireTenantMembership(user.id, tenantId);
       await deleteSubscription(id, tenantId);
       return reply.status(204).send();
+    },
+  );
+
+  // Recent delivery attempts for one subscription, paged by keyset cursor.
+  // Used by the partner-portal UI to debug delivery issues.
+  app.get(
+    '/v1/tenants/:tenantId/webhook-subscriptions/:subId/deliveries',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, subId } = req.params as { tenantId: string; subId: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      const q = req.query as { limit?: string; cursor?: string };
+      const limit = q.limit ? Math.min(Number(q.limit) || 50, 100) : 50;
+      return listDeliveries(subId, tenantId, {
+        limit,
+        ...(q.cursor ? { cursor: q.cursor } : {}),
+      });
     },
   );
 };

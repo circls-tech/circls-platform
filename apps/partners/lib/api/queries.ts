@@ -3,6 +3,8 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   Analytics,
+  ApiKey,
+  ApiKeyCreateResult,
   Arena,
   AuditLogPage,
   Booking,
@@ -13,6 +15,9 @@ import type {
   Tenant,
   User,
   Venue,
+  WebhookDeliveryPage,
+  WebhookSubscription,
+  WebhookSubscriptionCreateResult,
 } from './types';
 
 export function useMe() {
@@ -305,6 +310,88 @@ export function useNotifications(tenantId: string, params: NotificationsParams =
       const query = qs.toString();
       return apiFetch<NotificationsPage>(
         `/v1/tenants/${tenantId}/notifications${query ? `?${query}` : ''}`,
+      );
+    },
+  });
+}
+
+// ── Phase 17: API keys ────────────────────────────────────────────────────────
+
+export function useApiKeys(tenantId: string) {
+  return useQuery({
+    queryKey: ['api-keys', tenantId],
+    queryFn: () => apiFetch<ApiKey[]>(`/v1/tenants/${tenantId}/api-keys`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useCreateApiKey(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; role: 'read' | 'write' | 'admin'; scopes?: string[] }) =>
+      apiFetch<ApiKeyCreateResult>(`/v1/tenants/${tenantId}/api-keys`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['api-keys', tenantId] }),
+  });
+}
+
+export function useRevokeApiKey(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['api-keys', tenantId] }),
+  });
+}
+
+// ── Phase 17: Webhook subscriptions ──────────────────────────────────────────
+
+export function useWebhookSubscriptions(tenantId: string) {
+  return useQuery({
+    queryKey: ['webhook-subscriptions', tenantId],
+    queryFn: () =>
+      apiFetch<WebhookSubscription[]>(`/v1/tenants/${tenantId}/webhook-subscriptions`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useCreateWebhookSubscription(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { url: string; events: string[] }) =>
+      apiFetch<WebhookSubscriptionCreateResult>(
+        `/v1/tenants/${tenantId}/webhook-subscriptions`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['webhook-subscriptions', tenantId] }),
+  });
+}
+
+export function useDeleteWebhookSubscription(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/webhook-subscriptions/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['webhook-subscriptions', tenantId] }),
+  });
+}
+
+export function useWebhookDeliveries(tenantId: string, subId: string) {
+  return useInfiniteQuery({
+    queryKey: ['webhook-deliveries', tenantId, subId],
+    enabled: Boolean(tenantId && subId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: WebhookDeliveryPage) => last.nextCursor ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      if (pageParam) qs.set('cursor', pageParam);
+      const query = qs.toString();
+      return apiFetch<WebhookDeliveryPage>(
+        `/v1/tenants/${tenantId}/webhook-subscriptions/${subId}/deliveries${query ? `?${query}` : ''}`,
       );
     },
   });

@@ -7,6 +7,8 @@ import Fastify, {
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { env } from './config/env.js';
 import { AppError } from './lib/errors.js';
 import { healthRoutes } from './routes/health.js';
@@ -29,6 +31,8 @@ import { notificationRoutes } from './routes/notifications.js';
 // Phase 16 — platform-admin tooling.
 import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
+// Phase 17 — aggregator-facing public API surface.
+import { publicBookingRoutes } from './routes/public_bookings.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -56,6 +60,61 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(helmet, { global: true });
   await app.register(cors, { origin: true, credentials: true });
   await app.register(sensible);
+
+  // ── OpenAPI (Phase 17) ───────────────────────────────────────────────────
+  // Two auth schemes: Firebase ID token (internal portal/admin) and Bearer
+  // API key (aggregator-facing `/api/v1/*`). All routes are tagged so the
+  // generated client/spec splits the two surfaces clearly.
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.0.3',
+      info: {
+        title: 'Circls Platform API',
+        description:
+          'Circls public + internal API. `/v1/*` is the Firebase-auth internal API used by the admin/partners portals. `/api/v1/*` is the aggregator API authenticated with a Circls API key (Bearer ck_…).',
+        version: '0.1.0',
+      },
+      servers: [
+        { url: 'https://api.circls.app', description: 'production' },
+        { url: 'http://localhost:8080', description: 'local' },
+      ],
+      tags: [
+        { name: 'public', description: 'Aggregator-facing API key surface.' },
+        { name: 'bookings', description: 'Booking lifecycle (internal).' },
+        { name: 'venues', description: 'Venue + arena management.' },
+        { name: 'slots', description: 'Slot inventory + holds.' },
+        { name: 'tenants', description: 'Tenant + membership management.' },
+        { name: 'integration', description: 'API keys + outbound webhooks.' },
+        { name: 'meta', description: 'Auth / health / self.' },
+      ],
+      components: {
+        securitySchemes: {
+          firebaseAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'Firebase ID token',
+            description: 'Firebase ID token from the partner portal sign-in.',
+          },
+          apiKey: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'ck_… key',
+            description: 'Circls API key issued under /v1/tenants/:tenantId/api-keys.',
+          },
+        },
+      },
+    },
+  });
+  if (env.NODE_ENV !== 'production') {
+    await app.register(swaggerUi, { routePrefix: '/openapi/ui' });
+  }
+  // Mount the spec at a stable URL (in addition to the swagger-ui default).
+  app.get('/openapi.json', async () => app.swagger());
+
+  // Decorate request once for API-key auth (Fastify v5 requirement: declared
+  // properties must be initialized at build time, not per-request).
+  app.decorateRequest('apiKey', null);
+  app.decorateRequest('apiTenantId', null);
 
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
     if (err instanceof AppError) {
@@ -127,6 +186,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   // Phase 16: platform-admin endpoints (both gated by requirePlatformAdmin).
   await app.register(adminTenantRoutes);
   await app.register(adminAuditLogRoutes);
+  // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').
+  await app.register(publicBookingRoutes);
 
   return app;
 }

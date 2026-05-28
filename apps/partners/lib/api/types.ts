@@ -169,3 +169,57 @@ export interface NotificationsPage {
   rows: NotificationItem[];
   nextCursor: string | null;
 }
+
+// ── Phase 17: API keys + outbound webhooks ────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  tenantId: string | null;
+  name: string;
+  keyPrefix: string;
+  role: 'read' | 'write' | 'admin';
+  scopes: string[];
+  status: 'active' | 'revoked';
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiKeyCreateResult {
+  id: string;
+  /** Shown ONCE — partner must copy it now. */
+  plaintext: string;
+  prefix: string;
+}
+
+export interface WebhookSubscription {
+  id: string;
+  tenantId: string;
+  url: string;
+  events: string[];
+  status: 'active' | 'disabled';
+  createdAt: string;
+}
+
+export interface WebhookSubscriptionCreateResult {
+  id: string;
+  /** Shown ONCE — partner must copy it now. */
+  secret: string;
+}
+
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'expired';
+
+export interface WebhookDeliveryItem {
+  id: string;
+  eventType: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface WebhookDeliveryPage {
+  rows: WebhookDeliveryItem[];
+  nextCursor: string | null;
+}

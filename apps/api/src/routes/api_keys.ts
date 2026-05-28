@@ -29,7 +29,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid api-key payload', 'bad_request', {
         issues: parsed.error.issues,
       });
-    return createApiKey({ tenantId, ...parsed.data });
+    return createApiKey({ tenantId, actorUserId: user.id, ...parsed.data });
   });
 
   app.delete(
@@ -39,7 +39,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
-      await revokeApiKey(id, tenantId);
+      await revokeApiKey(id, tenantId, user.id);
       return reply.status(204).send();
     },
   );
