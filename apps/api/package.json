@@ -22,7 +22,8 @@
     "migrate:prod": "node dist/migrate.js",
     "db:studio": "drizzle-kit studio",
     "openapi:emit": "tsx scripts/emit_openapi.ts",
-    "bootstrap:circls": "tsx scripts/bootstrap_circls_tenant.ts"
+    "bootstrap:circls": "tsx scripts/bootstrap_circls_tenant.ts",
+    "migrate:platform-admins": "tsx scripts/migrate_platform_admin_users.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
