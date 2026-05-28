@@ -10,7 +10,9 @@ import type {
   Booking,
   BookingDetail,
   BookingListItem,
+  CancelResult,
   NotificationsPage,
+  Payment,
   Slot,
   Tenant,
   User,
@@ -188,8 +190,48 @@ export function useCancelBookingById(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (bookingId: string) =>
-      apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, { method: 'POST' }),
+      apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export interface CancelBookingInput {
+  bookingId: string;
+  reason: string;
+}
+
+/**
+ * Phase 14 cancellation flow. POSTs a reason and returns the refund decision
+ * from the cancellation engine.
+ */
+export function useCancelBookingWithReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, reason }: CancelBookingInput) =>
+      apiFetch<CancelResult>(`/v1/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['slots'] });
+      void qc.invalidateQueries({ queryKey: ['venue-bookings'] });
+      void qc.invalidateQueries({ queryKey: ['booking-detail'] });
+      void qc.invalidateQueries({ queryKey: ['booking-payments'] });
+    },
+  });
+}
+
+/**
+ * Payment ledger rows for a booking — charges, refunds, and adjustments.
+ */
+export function useBookingPayments(bookingId: string | null) {
+  return useQuery({
+    queryKey: ['booking-payments', bookingId],
+    queryFn: () => apiFetch<Payment[]>(`/v1/bookings/${bookingId}/payments`),
+    enabled: Boolean(bookingId),
   });
 }
 

@@ -11,7 +11,6 @@ import { getBookingById } from '../services/inventory_service.js';
 import {
   bookEvent,
   bookSlots,
-  cancelBooking,
   prepareOnlineBookingWithPayment,
 } from '../services/booking_service.js';
 import { getBookingDetail, listBookings } from '../services/bookings_read_service.js';
@@ -151,15 +150,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     return getBookingDetail(booking.tenantId, id);
   });
 
-  // Cancel — frees the slots back to open.
-  app.post('/v1/bookings/:id/cancel', { preHandler: requireAuth }, async (req) => {
-    const { id } = req.params as { id: string };
-    const booking = await getBookingById(id);
-    if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
-    const user = await currentUser(req);
-    await requireTenantMembership(user.id, booking.tenantId);
-    return cancelBooking({ tenantId: booking.tenantId, actorUserId: user.id }, id);
-  });
+  // Cancel route lives in routes/cancellations.ts (Phase 14) — handles both
+  // walk-in and paid bookings via the cancellation engine.
 
   // Book a published event (Phase 15). Open to any authenticated user — the
   // tenant scope comes from the event row, not the caller.
@@ -179,6 +171,5 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
       note: parsed.data.customer?.note ?? null,
     });
   });
-
 };
 

@@ -1,13 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useArenas, useBookingDetail, useCancelBookingById, useVenueBookings, useVenues } from '@/lib/api/queries';
-import type { BookingListItem, BookingStatus } from '@/lib/api/types';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useArenas, useBookingDetail, useBookingPayments, useVenueBookings, useVenues } from '@/lib/api/queries';
+import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useQueryClient } from '@tanstack/react-query';
 import { useOrg } from '@/lib/org_context';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -162,23 +160,18 @@ interface BookingDetailModalProps {
   onClose: () => void;
 }
 
-function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailModalProps) {
-  const qc = useQueryClient();
-  const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
-  const cancel = useCancelBookingById('');
-  const [confirmOpen, setConfirmOpen] = useState(false);
+function paymentRowTone(p: Payment): BadgeTone {
+  if (p.status === 'failed') return 'blocked';
+  if (p.kind === 'refund') return 'warning';
+  if (p.status === 'refunded' || p.status === 'partially_refunded') return 'warning';
+  if (p.status === 'captured') return 'success';
+  return 'open';
+}
 
-  const handleCancel = useCallback(() => {
-    if (!bookingId) return;
-    cancel.mutate(bookingId, {
-      onSuccess: () => {
-        void qc.invalidateQueries({ queryKey: ['venue-bookings', venueId] });
-        void qc.invalidateQueries({ queryKey: ['slots'] });
-        setConfirmOpen(false);
-        onClose();
-      },
-    });
-  }, [bookingId, cancel, qc, venueId, onClose]);
+function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailModalProps) {
+  const router = useRouter();
+  const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
+  const { data: paymentRows } = useBookingPayments(bookingId);
 
   const isCancellable = detail && detail.status !== 'cancelled';
 
@@ -264,14 +257,48 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
               </div>
             </div>
 
+            {/* Payments ledger (Phase 14) — charges, refunds, adjustments. */}
+            {paymentRows && paymentRows.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Payments ({paymentRows.length})
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {paymentRows.map((p) => {
+                    const sign = p.amountPaise < 0 ? '−' : '';
+                    const abs = Math.abs(p.amountPaise);
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium text-slate-700">
+                            {p.kind === 'refund' ? 'Refund' : p.kind === 'charge' ? 'Charge' : 'Adjustment'}
+                            <span className="ml-2 text-xs font-normal text-slate-400">{p.provider}</span>
+                          </span>
+                          <span className="text-xs text-slate-500">{fmtInTz(p.createdAt, tz)}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge tone={paymentRowTone(p)} label={p.status} />
+                          <span className={`font-medium ${p.amountPaise < 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                            {sign}₹{(abs / 100).toFixed(0)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             {isCancellable && (
               <div className="flex justify-end border-t border-slate-100 pt-4">
                 <Button
                   variant="danger"
                   size="sm"
-                  loading={cancel.isPending}
-                  onClick={() => setConfirmOpen(true)}
+                  onClick={() => bookingId && router.push(`/bookings/${bookingId}/cancel`)}
                 >
                   Cancel booking
                 </Button>
@@ -280,16 +307,6 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
           </div>
         )}
       </Modal>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Cancel booking?"
-        message="This frees the slot(s) and cannot be undone."
-        confirmLabel="Cancel booking"
-        danger
-        onConfirm={handleCancel}
-        onClose={() => setConfirmOpen(false)}
-      />
     </>
   );
 }
