@@ -24,3 +24,4 @@ export const tenantMembers = pgTable(
 
 export type TenantMember = typeof tenantMembers.$inferSelect;
 export type NewTenantMember = typeof tenantMembers.$inferInsert;
+export type TenantRole = (typeof tenantRole.enumValues)[number];
