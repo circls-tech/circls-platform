@@ -5,7 +5,8 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useState, useCallback } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { Button, Card, Input } from '@/lib/ui';
-import { useReleaseSlots, type ReleaseCell } from '@/lib/api/queries';
+import { useArena, useReleaseSlots, useVenues, type ReleaseCell } from '@/lib/api/queries';
+import { useOrg } from '@/lib/org_context';
 import type { Slot } from '@/lib/api/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -113,12 +114,19 @@ function buildReleaseCells(previewSlots: PreviewSlot[], quantizationMin: number)
 // Page
 // ──────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_TZ = 'Asia/Kolkata';
+/** Fallback tz while venue is resolving — prevents a crash on first render. */
+const FALLBACK_TZ = 'Asia/Kolkata';
 const today = new Date().toISOString().slice(0, 10);
 
 export default function ScheduleBuilderPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
+
+  // ── Resolve venue timezone ──
+  const { activeTenantId } = useOrg();
+  const { data: arena } = useArena(arenaId);
+  const { data: venues } = useVenues(activeTenantId ?? '');
+  const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
 
   // Form config state
   const [cfg, setCfg] = useState<BuilderConfig>({
@@ -129,8 +137,6 @@ export default function ScheduleBuilderPage() {
     quantizationMin: 60,
     defaultPriceRupees: 500,
   });
-
-  const tz = DEFAULT_TZ;
 
   // Preview grid state
   const [previewSlots, setPreviewSlots] = useState<PreviewSlot[] | null>(null);

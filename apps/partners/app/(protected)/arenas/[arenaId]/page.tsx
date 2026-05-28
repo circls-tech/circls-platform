@@ -6,14 +6,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useArenaSlots, useBulkSlots, useCancelBookingById } from '@/lib/api/queries';
+import { useArena, useArenaSlots, useBulkSlots, useCancelBookingById, useVenues } from '@/lib/api/queries';
+import { useOrg } from '@/lib/org_context';
 import { Card } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-const TZ = 'Asia/Kolkata';
+/** Fallback tz while venue is resolving — prevents a crash on first render. */
+const FALLBACK_TZ = 'Asia/Kolkata';
 
 /** Return the Sunday on/before today (browser local date). */
 function thisSunday(): Date {
@@ -36,6 +38,12 @@ function addDays(date: Date, n: number): Date {
 export default function ArenaReceptionPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
+
+  // ── Resolve venue timezone ──
+  const { activeTenantId } = useOrg();
+  const { data: arena } = useArena(arenaId);
+  const { data: venues } = useVenues(activeTenantId ?? '');
+  const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
 
   // ── Week state ──
   const [weekStart, setWeekStart] = useState<Date>(thisSunday);
@@ -173,7 +181,7 @@ export default function ArenaReceptionPage() {
           mode="reception"
           slots={slots}
           weekStart={weekStart}
-          tz={TZ}
+          tz={tz}
           now={now}
           onBulk={handleBulk}
           onBook={handleBook}
