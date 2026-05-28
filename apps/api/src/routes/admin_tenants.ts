@@ -4,14 +4,17 @@ import { z } from 'zod';
 import { db } from '../db/client.js';
 import { tenantMembers, tenants, users } from '../db/schema/index.js';
 import { writeAudit } from '../lib/audit.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
-import { requirePlatformAdmin } from '../middleware/require_platform_admin.js';
+import { currentUser } from '../middleware/current_user.js';
+import { requireTenantMembership } from '../middleware/tenant_context.js';
 
 /**
  * Platform-admin tenant management. Mounted under /v1/admin/tenants and
- * /v1/admin/stats. Every endpoint is gated by requirePlatformAdmin (env-driven
- * allowlist). Suspend/reactivate write to audit_log with action='tenant.*';
+ * /v1/admin/stats. Every endpoint is gated via assertCap + getPlatformTenantId.
+ * Suspend/reactivate write to audit_log with action='tenant.*';
  * audit rows carry tenantId so they also surface in the tenant-scoped log.
  */
 
@@ -56,8 +59,13 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /v1/admin/tenants — paginated list with counts ─────────────────────
   app.get(
     '/v1/admin/tenants',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
+    { preHandler: requireAuth },
     async (req): Promise<AdminTenantListPage> => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.read');
+
       const parsed = listQuerySchema.safeParse(req.query);
       if (!parsed.success) {
         throw new BadRequest('Invalid query parameters', 'bad_request', { issues: parsed.error.issues });
@@ -130,8 +138,13 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /v1/admin/tenants/:id — detail + members ───────────────────────────
   app.get(
     '/v1/admin/tenants/:id',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
+    { preHandler: requireAuth },
     async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.read');
+
       const parsed = tenantIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
         throw new BadRequest('Invalid tenant id', 'bad_request', { issues: parsed.error.issues });
@@ -170,14 +183,19 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /v1/admin/tenants/:id/suspend ─────────────────────────────────────
   app.post(
     '/v1/admin/tenants/:id/suspend',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
+    { preHandler: requireAuth },
     async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.suspend');
+
       const parsed = tenantIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
         throw new BadRequest('Invalid tenant id', 'bad_request', { issues: parsed.error.issues });
       }
       const { id } = parsed.data;
-      const actorUserId = req.platformAdmin!.userId;
+      const actorUserId = user.id;
 
       return db.transaction(async (tx) => {
         const before = await tx.query.tenants.findFirst({ where: eq(tenants.id, id) });
@@ -207,14 +225,19 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /v1/admin/tenants/:id/reactivate ──────────────────────────────────
   app.post(
     '/v1/admin/tenants/:id/reactivate',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
+    { preHandler: requireAuth },
     async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.suspend');
+
       const parsed = tenantIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
         throw new BadRequest('Invalid tenant id', 'bad_request', { issues: parsed.error.issues });
       }
       const { id } = parsed.data;
-      const actorUserId = req.platformAdmin!.userId;
+      const actorUserId = user.id;
 
       return db.transaction(async (tx) => {
         const before = await tx.query.tenants.findFirst({ where: eq(tenants.id, id) });
@@ -245,8 +268,12 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // Co-mounted here so the dashboard has a single fetch; documented in plan.
   app.get(
     '/v1/admin/stats',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
-    async () => {
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.read');
       const rows = await db.execute<Record<string, unknown>>(sql`
         SELECT
           (SELECT count(*) FROM tenants)                                                  AS tenants_total,

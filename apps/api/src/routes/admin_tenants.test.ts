@@ -16,6 +16,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -47,29 +48,50 @@ async function createTenantViaApi(app: FastifyInstance, token: string, slug: str
 describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
   let app: FastifyInstance;
   let adminUserId: string;
-  const originalAllowlist = process.env['PLATFORM_ADMIN_USER_IDS'];
-  const slugA = `admin-a-${Date.now()}`;
-  const slugB = `admin-b-${Date.now()}`;
+  const SUFFIX = Date.now();
+  const slugA = `admin-a-${SUFFIX}`;
+  const slugB = `admin-b-${SUFFIX}`;
+  const platformSlug = `circls-internal-test-${SUFFIX}`;
   let tenantAId: string;
   let tenantBId: string;
+  let platformTenantId: string;
 
   beforeAll(async () => {
+    __resetPlatformTenantCacheForTesting();
+
     app = await buildServer();
     await app.ready();
 
-    // provision admin user row
+    // Provision the padmin user row via /v1/me
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('padmin') });
     expect(me.statusCode).toBe(200);
     adminUserId = (me.json() as { id: string }).id;
-    process.env['PLATFORM_ADMIN_USER_IDS'] = adminUserId;
+
+    // Insert a platform tenant
+    const ptRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
+      VALUES ('Circls', ${platformSlug}, TRUE, 'active', 'trial', 'not_started')
+      RETURNING id
+    `);
+    platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
+
+    // Make padmin a manager of the platform tenant
+    await db.execute(sql`
+      INSERT INTO tenant_members (tenant_id, user_id, role)
+      VALUES (${platformTenantId}::uuid, ${adminUserId}::uuid, 'manager')
+    `);
 
     tenantAId = await createTenantViaApi(app, 'owner', slugA);
     tenantBId = await createTenantViaApi(app, 'owner', slugB);
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env['PLATFORM_ADMIN_USER_IDS'];
-    else process.env['PLATFORM_ADMIN_USER_IDS'] = originalAllowlist;
+    // Clean up platform tenant membership + tenant row
+    if (platformTenantId) {
+      await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
+      await db.execute(sql`DELETE FROM tenants WHERE id = ${platformTenantId}::uuid`);
+    }
+    __resetPlatformTenantCacheForTesting();
     await app.close();
     await closeDb();
   });
@@ -201,7 +223,7 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
   it('non-admin caller gets 403', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/admin/tenants', headers: bearer('owner') });
     expect(res.statusCode).toBe(403);
-    expect(res.json().error.code).toBe('platform_admin_required');
+    expect(res.json().error.code).toBe('tenant_forbidden');
   });
 
   // keep tenantB used so linter doesn't complain

@@ -11,21 +11,6 @@ const envSchema = z.object({
   // required at runtime once auth is exercised (GET /v1/me etc.).
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 
-  // Platform-admin allowlist (Phase 16). Comma-separated UUIDs of users.id rows
-  // that may call /v1/admin/** endpoints. Unset (or empty) means no platform
-  // admins — every admin endpoint is then 403. We avoid Firebase custom claims
-  // for this so platform-admin status is data, not auth-time state, and is easy
-  // to revoke with a DB update or env change.
-  PLATFORM_ADMIN_USER_IDS: z
-    .string()
-    .optional()
-    .transform((v) =>
-      (v ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    ),
-
   // ── Track B (Phases 11–17) ─────────────────────────────────────────────────
   // All optional. When unset, the corresponding adapter runs in STUB mode:
   //   - storage   → in-memory bucket (per-process; obviously not for prod).

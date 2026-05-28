@@ -195,7 +195,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // Phase 14: cancellations + admin refunds.
   await app.register(cancellationRoutes);
   await app.register(adminRefundRoutes);
-  // Phase 16: platform-admin endpoints (both gated by requirePlatformAdmin).
+  // Phase 16: platform-admin endpoints (gated via assertCap + getPlatformTenantId).
   await app.register(adminTenantRoutes);
   await app.register(adminAuditLogRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').

@@ -2,9 +2,12 @@ import type { FastifyPluginAsync } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest } from '../lib/errors.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
-import { requirePlatformAdmin } from '../middleware/require_platform_admin.js';
+import { currentUser } from '../middleware/current_user.js';
+import { requireTenantMembership } from '../middleware/tenant_context.js';
 
 /**
  * Platform-admin audit log search. Complements the tenant-scoped
@@ -60,8 +63,13 @@ const querySchema = z.object({
 export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
   app.get(
     '/v1/admin/audit-log',
-    { preHandler: [requireAuth, requirePlatformAdmin] },
+    { preHandler: requireAuth },
     async (req): Promise<AdminAuditLogPage> => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.audit.read');
+
       const parsed = querySchema.safeParse(req.query);
       if (!parsed.success) {
         throw new BadRequest('Invalid query parameters', 'bad_request', { issues: parsed.error.issues });

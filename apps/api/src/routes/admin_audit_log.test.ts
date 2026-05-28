@@ -16,6 +16,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -75,19 +76,36 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
   let adminUserId: string;
   let tenantAId: string;
   let tenantBId: string;
-  const originalAllowlist = process.env['PLATFORM_ADMIN_USER_IDS'];
+  let platformTenantId: string;
+  const SUFFIX = Date.now();
+  const platformSlug = `circls-internal-test-al-${SUFFIX}`;
 
   beforeAll(async () => {
+    __resetPlatformTenantCacheForTesting();
+
     app = await buildServer();
     await app.ready();
 
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('padmin') });
     expect(me.statusCode).toBe(200);
     adminUserId = (me.json() as { id: string }).id;
-    process.env['PLATFORM_ADMIN_USER_IDS'] = adminUserId;
 
-    tenantAId = await createTenantViaApi(app, 'owner', `adm-al-a-${Date.now()}`);
-    tenantBId = await createTenantViaApi(app, 'owner', `adm-al-b-${Date.now()}`);
+    // Insert a platform tenant
+    const ptRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
+      VALUES ('Circls', ${platformSlug}, TRUE, 'active', 'trial', 'not_started')
+      RETURNING id
+    `);
+    platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
+
+    // Make padmin a manager of the platform tenant
+    await db.execute(sql`
+      INSERT INTO tenant_members (tenant_id, user_id, role)
+      VALUES (${platformTenantId}::uuid, ${adminUserId}::uuid, 'manager')
+    `);
+
+    tenantAId = await createTenantViaApi(app, 'owner', `adm-al-a-${SUFFIX}`);
+    tenantBId = await createTenantViaApi(app, 'owner', `adm-al-b-${SUFFIX}`);
 
     // Seed audit rows across both tenants
     await insertAudit({ tenantId: tenantAId, action: 'create', entityType: 'slot',    offsetSec: -500 });
@@ -98,8 +116,12 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
   });
 
   afterAll(async () => {
-    if (originalAllowlist === undefined) delete process.env['PLATFORM_ADMIN_USER_IDS'];
-    else process.env['PLATFORM_ADMIN_USER_IDS'] = originalAllowlist;
+    // Clean up platform tenant membership + tenant row
+    if (platformTenantId) {
+      await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
+      await db.execute(sql`DELETE FROM tenants WHERE id = ${platformTenantId}::uuid`);
+    }
+    __resetPlatformTenantCacheForTesting();
     await app.close();
     await closeDb();
   });

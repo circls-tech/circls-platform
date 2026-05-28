@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/firebase_admin.js', () => ({
@@ -6,7 +7,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
     const map: Record<string, Record<string, unknown>> = {
       owner: { uid: 'fbuid_owner', email: 'owner@x.com' },
       other: { uid: 'fbuid_other', email: 'other@x.com' },
-      admin: { uid: 'fbuid_admin', email: 'admin@x.com', admin: true },
+      admin: { uid: 'fbuid_admin', email: 'admin@x.com' },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
@@ -14,20 +15,53 @@ vi.mock('../lib/firebase_admin.js', () => ({
   }),
 }));
 
-const { closeDb } = await import('../db/client.js');
+const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 
 describe.skipIf(!runIntegration)('tenants', () => {
   let app: FastifyInstance;
-  const slug = `acme-${Date.now()}`;
+  let adminUserId: string;
+  let platformTenantId: string;
+  const SUFFIX = Date.now();
+  const slug = `acme-${SUFFIX}`;
+  const platformSlug = `circls-internal-test-tenants-${SUFFIX}`;
+
   beforeAll(async () => {
+    __resetPlatformTenantCacheForTesting();
+
     app = await buildServer();
     await app.ready();
+
+    // Provision the admin user row
+    const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('admin') });
+    expect(me.statusCode).toBe(200);
+    adminUserId = (me.json() as { id: string }).id;
+
+    // Insert a platform tenant
+    const ptRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
+      VALUES ('Circls', ${platformSlug}, TRUE, 'active', 'trial', 'not_started')
+      RETURNING id
+    `);
+    platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
+
+    // Make admin a manager of the platform tenant (manager has admin.tenants.read)
+    await db.execute(sql`
+      INSERT INTO tenant_members (tenant_id, user_id, role)
+      VALUES (${platformTenantId}::uuid, ${adminUserId}::uuid, 'manager')
+    `);
   });
+
   afterAll(async () => {
+    if (platformTenantId) {
+      await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
+      await db.execute(sql`DELETE FROM tenants WHERE id = ${platformTenantId}::uuid`);
+    }
+    __resetPlatformTenantCacheForTesting();
     await app.close();
     await closeDb();
   });
@@ -65,7 +99,7 @@ describe.skipIf(!runIntegration)('tenants', () => {
     expect(res.json().error.code).toBe('slug_taken');
   });
 
-  it('GET /v1/tenants is admin-only', async () => {
+  it('GET /v1/tenants is admin-only (platform member gets 200, non-member gets 403)', async () => {
     const forbidden = await app.inject({ method: 'GET', url: '/v1/tenants', headers: bearer('owner') });
     expect(forbidden.statusCode).toBe(403);
     const ok = await app.inject({ method: 'GET', url: '/v1/tenants', headers: bearer('admin') });
