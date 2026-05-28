@@ -8,7 +8,11 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import { getBookingById } from '../services/inventory_service.js';
-import { bookSlots, cancelBooking } from '../services/booking_service.js';
+import {
+  bookSlots,
+  cancelBooking,
+  prepareOnlineBookingWithPayment,
+} from '../services/booking_service.js';
 import { getBookingDetail, listBookings } from '../services/bookings_read_service.js';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -21,6 +25,11 @@ const bookSlotsSchema = z.object({
     contact: z.string().min(1),
     note: z.string().optional(),
   }),
+  // Phase 12: when 'razorpay_route', the request creates a pending booking +
+  // Razorpay Route order and returns the order id for the client checkout.
+  // Default 'external' keeps the walk-in path the existing tests exercise.
+  paymentMethod: z.enum(['external', 'razorpay_route']).optional().default('external'),
+  platformFeePaise: z.number().int().min(0).optional(),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -43,7 +52,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid booking payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const { slotIds, customer } = parsed.data;
+    const { slotIds, customer, paymentMethod, platformFeePaise } = parsed.data;
 
     // Resolve venue/tenant from the first slot
     const firstSlotRows = await db
@@ -63,6 +72,24 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const { tenantId } = venue;
     await requireTenantMembership(user.id, tenantId);
+
+    if (paymentMethod === 'razorpay_route') {
+      const result = await withIdempotency(idemKey, tenantId, async () => ({
+        status: 201,
+        body: await prepareOnlineBookingWithPayment(
+          { tenantId, actorUserId: user.id },
+          venue.id,
+          {
+            slotIds,
+            customerName: customer.name,
+            customerContact: customer.contact,
+            note: customer.note ?? null,
+            ...(platformFeePaise !== undefined ? { platformFeePaise } : {}),
+          },
+        ),
+      }));
+      return reply.status(result.status).send(result.body);
+    }
 
     const result = await withIdempotency(idemKey, tenantId, async () => ({
       status: 201,
