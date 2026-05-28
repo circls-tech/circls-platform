@@ -25,6 +25,7 @@ import { eventRoutes } from './routes/events.js';
 import { membershipRoutes } from './routes/memberships.js';
 import { apiKeyRoutes } from './routes/api_keys.js';
 import { webhookSubscriptionRoutes } from './routes/webhook_subscriptions.js';
+import { notificationRoutes } from './routes/notifications.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -119,6 +120,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(membershipRoutes);
   await app.register(apiKeyRoutes);
   await app.register(webhookSubscriptionRoutes);
+  await app.register(notificationRoutes);
 
   return app;
 }

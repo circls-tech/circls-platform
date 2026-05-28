@@ -1,7 +1,19 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Analytics, Arena, AuditLogPage, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
+import type {
+  Analytics,
+  Arena,
+  AuditLogPage,
+  Booking,
+  BookingDetail,
+  BookingListItem,
+  NotificationsPage,
+  Slot,
+  Tenant,
+  User,
+  Venue,
+} from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -267,6 +279,32 @@ export function useAuditLog(tenantId: string, params: AuditLogParams = {}) {
       const query = qs.toString();
       return apiFetch<AuditLogPage>(
         `/v1/tenants/${tenantId}/audit-log${query ? `?${query}` : ''}`,
+      );
+    },
+  });
+}
+
+// ── Notifications (Phase 13) ──────────────────────────────────────────────────
+
+export interface NotificationsParams {
+  channel?: 'sms' | 'email' | 'whatsapp';
+  status?: 'pending' | 'sent' | 'failed' | 'skipped';
+}
+
+export function useNotifications(tenantId: string, params: NotificationsParams = {}) {
+  return useInfiniteQuery({
+    queryKey: ['notifications', tenantId, params.channel, params.status],
+    enabled: Boolean(tenantId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: NotificationsPage) => last.nextCursor ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      if (params.channel) qs.set('channel', params.channel);
+      if (params.status)  qs.set('status',  params.status);
+      if (pageParam)      qs.set('cursor',  pageParam);
+      const query = qs.toString();
+      return apiFetch<NotificationsPage>(
+        `/v1/tenants/${tenantId}/notifications${query ? `?${query}` : ''}`,
       );
     },
   });
