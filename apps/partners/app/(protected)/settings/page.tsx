@@ -10,6 +10,17 @@ export default function SettingsPage() {
         <p className="text-sm text-slate-500">Coming soon.</p>
       </Card>
       <Card
+        title="Team"
+        subtitle="Invite teammates, change roles, or remove members."
+      >
+        <Link
+          href="/settings/team"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          Manage team &rarr;
+        </Link>
+      </Card>
+      <Card
         title="KYC"
         subtitle="Submit business details and supporting documents for payment onboarding."
       >

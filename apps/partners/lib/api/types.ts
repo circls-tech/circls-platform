@@ -313,3 +313,32 @@ export interface WebhookDeliveryPage {
   rows: WebhookDeliveryItem[];
   nextCursor: string | null;
 }
+
+// Team management (subproject D).
+export type TenantRole = 'owner' | 'manager' | 'staff' | 'readonly';
+
+export interface TeamMember {
+  userId: string;
+  email: string | null;
+  displayName: string | null;
+  role: TenantRole;
+  createdAt: string;
+}
+
+export interface TenantInvitation {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: TenantRole;
+  invitedByUserId: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  acceptedUserId: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateInvitationResponse {
+  invitation: TenantInvitation;
+  token: string; // shown once for copy-link
+}
