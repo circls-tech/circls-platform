@@ -87,4 +87,27 @@ describe.skipIf(!runIntegration)('venues', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe('suspended');
   });
+
+  it('creates a venue with tags and returns them', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Tagged Venue', tags: ['indoor', 'premium', 'rooftop'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const v = res.json();
+    expect(v.tags).toEqual(['indoor', 'premium', 'rooftop']);
+  });
+
+  it('creates a venue without tags and returns empty array', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'No Tag Venue' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tags).toEqual([]);
+  });
 });

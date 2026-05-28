@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
 import { useVenues } from '@/lib/api/queries';
-import { Card } from '@/lib/ui';
+import { Badge, Card } from '@/lib/ui';
 
 function VenueList({ tenantId }: { tenantId: string }) {
   const { data: venues, isLoading } = useVenues(tenantId);
@@ -48,6 +48,13 @@ function VenueList({ tenantId }: { tenantId: string }) {
                 {v.status}
               </span>
             </div>
+            {v.tags && v.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {v.tags.map((tag) => (
+                  <Badge key={tag} tone="neutral" label={tag} />
+                ))}
+              </div>
+            )}
           </Link>
         </li>
       ))}

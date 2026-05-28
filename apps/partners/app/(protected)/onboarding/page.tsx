@@ -3,8 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useCreateArena, useCreateTenant, useCreateVenue } from '@/lib/api/queries';
+import { inferSport } from '@/lib/api/sport_inference';
 import { useOrg } from '@/lib/org_context';
-import { Badge, Button, Card, Input } from '@/lib/ui';
+import { Badge, Button, Card, Input, TagsInput } from '@/lib/ui';
 import type { Tenant } from '@/lib/api/types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -174,6 +175,7 @@ function Step2Venue({
   onSkip: () => void;
 }) {
   const [name, setName] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const createVenue = useCreateVenue(tenantId);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -187,7 +189,7 @@ function Step2Venue({
     setError(null);
     if (!name.trim()) { setError('Venue name is required.'); return; }
     try {
-      const venue = await createVenue.mutateAsync({ name: name.trim() });
+      const venue = await createVenue.mutateAsync({ name: name.trim(), tags });
       onDone(venue.id);
     } catch (err) {
       setError((err as Error).message ?? 'Could not create venue.');
@@ -210,6 +212,13 @@ function Step2Venue({
         value={name}
         onChange={(e) => setName(e.target.value)}
         error={error ?? undefined}
+      />
+
+      <TagsInput
+        label="Tags (optional)"
+        value={tags}
+        onChange={setTags}
+        placeholder="e.g. indoor, premium…"
       />
 
       <div className="flex items-center justify-between pt-2">
@@ -247,9 +256,12 @@ function Step3Arena({
 }) {
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const createArena = useCreateArena(venueId ?? '');
   const nameRef = useRef<HTMLInputElement>(null);
+
+  const inferredSport = !sport ? inferSport(tags) : null;
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -277,6 +289,7 @@ function Step3Arena({
       const arena = await createArena.mutateAsync({
         name: name.trim(),
         sport: sport.trim() || undefined,
+        tags,
       });
       onDone(arena.id);
     } catch (err) {
@@ -317,6 +330,19 @@ function Step3Arena({
           ))}
         </select>
       </div>
+
+      <TagsInput
+        label="Tags (optional)"
+        value={tags}
+        onChange={setTags}
+        placeholder="e.g. nets, indoor, 5-a-side…"
+      />
+
+      {inferredSport && (
+        <p className="text-xs text-slate-500">
+          Will be classified as: <span className="font-semibold text-slate-700">{inferredSport}</span>
+        </p>
+      )}
 
       <div className="flex items-center justify-between pt-2">
         <Button type="button" variant="ghost" onClick={onSkip}>

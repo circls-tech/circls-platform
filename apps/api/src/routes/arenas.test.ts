@@ -73,6 +73,45 @@ describe.skipIf(!runIntegration)('arenas + schedule', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('creates arena with tags only → sport inferred from tags', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Cricket Net', tags: ['nets', 'outdoor'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const a = res.json();
+    expect(a.tags).toEqual(['nets', 'outdoor']);
+    expect(a.sport).toBe('cricket');
+  });
+
+  it('creates arena with explicit sport + tags → explicit sport wins', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Tennis Court A', sport: 'tennis', tags: ['nets', 'indoor'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const a = res.json();
+    expect(a.sport).toBe('tennis');
+    expect(a.tags).toEqual(['nets', 'indoor']);
+  });
+
+  it('creates arena with neither sport nor tags → sport null, tags empty', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Mystery Court' },
+    });
+    expect(res.statusCode).toBe(200);
+    const a = res.json();
+    expect(a.sport).toBeNull();
+    expect(a.tags).toEqual([]);
+  });
+
   it('sets and reads the weekly schedule', async () => {
     const put = await app.inject({
       method: 'PUT',

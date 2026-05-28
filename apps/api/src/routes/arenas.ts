@@ -13,6 +13,7 @@ const createArenaSchema = z.object({
   sport: z.string().max(80).optional(),
   capacity: z.number().int().positive().optional(),
   slotDurationMin: z.number().int().min(5).max(1440).optional(),
+  tags: z.array(z.string().min(1).max(40)).max(20).optional(),
 });
 const timeRe = /^\d{2}:\d{2}(:\d{2})?$/;
 const scheduleSchema = z.object({
@@ -48,11 +49,12 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
-    const { name, sport, capacity, slotDurationMin } = parsed.data;
+    const { name, sport, capacity, slotDurationMin, tags } = parsed.data;
     return createArena(venueId, {
       name,
       sport: sport ?? null,
       capacity: capacity ?? null,
+      tags: tags ?? [],
       ...(slotDurationMin !== undefined ? { slotDurationMin } : {}),
     });
   });

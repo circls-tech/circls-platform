@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { doublePrecision, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
@@ -17,6 +18,7 @@ export const venues = pgTable('venues', {
   // IANA tz for rendering slots in venue-local time on the frontend.
   tzName: text('tz_name').notNull().default('Asia/Kolkata'),
   status: venueStatus('status').notNull().default('active'),
+  tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
