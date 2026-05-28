@@ -1,0 +1,579 @@
+openapi: 3.0.3
+info:
+  title: Circls Platform API
+  description: >-
+    Circls public + internal API. `/v1/*` is the Firebase-auth internal API used by the admin/partners portals.
+    `/api/v1/*` is the aggregator API authenticated with a Circls API key (Bearer ck_…).
+  version: 0.1.0
+components:
+  securitySchemes:
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
+      description: Firebase ID token from the partner portal sign-in.
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ck_… key
+      description: Circls API key issued under /v1/tenants/:tenantId/api-keys.
+  schemas: {}
+paths:
+  /openapi.json:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/health:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/health/live:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/me:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants:
+    post:
+      responses:
+        '200':
+          description: Default Response
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/me/tenants:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/analytics:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/audit-log:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/venues:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{venueId}/arenas:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: venueId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: venueId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/schedule:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{venueId}/bookings:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: venueId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings/{id}/cancel:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/slots/release:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/slots:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/slots/bulk:
+    patch:
+      responses:
+        '200':
+          description: Default Response
+  /v1/slots/hold:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/slots/release-hold:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/pricing-rules:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/pricing-rules/{ruleId}:
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: ruleId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/kyc:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings/{bookingId}/payments:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: bookingId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/payments/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /webhooks/razorpay:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{venueId}/events:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: venueId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: venueId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/publish:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/memberships/{id}/purchase:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/api-keys:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/api-keys/{id}:
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/webhook-subscriptions:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/webhook-subscriptions/{id}:
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/webhook-subscriptions/{subId}/deliveries:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: subId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /api/v1/venues/{id}/availability:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /api/v1/bookings:
+    post:
+      responses:
+        '200':
+          description: Default Response
+servers:
+  - url: https://api.circls.app
+    description: production
+  - url: http://localhost:8080
+    description: local
+tags:
+  - name: public
+    description: Aggregator-facing API key surface.
+  - name: bookings
+    description: Booking lifecycle (internal).
+  - name: venues
+    description: Venue + arena management.
+  - name: slots
+    description: Slot inventory + holds.
+  - name: tenants
+    description: Tenant + membership management.
+  - name: integration
+    description: API keys + outbound webhooks.
+  - name: meta
+    description: Auth / health / self.

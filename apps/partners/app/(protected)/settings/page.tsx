@@ -20,6 +20,28 @@ export default function SettingsPage() {
           View activity log &rarr;
         </Link>
       </Card>
+      <Card
+        title="API keys"
+        subtitle="Issue and revoke Circls API keys for aggregator integrations."
+      >
+        <Link
+          href="/settings/api-keys"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          Manage API keys &rarr;
+        </Link>
+      </Card>
+      <Card
+        title="Outbound webhooks"
+        subtitle="Subscribe a URL to booking and payment events for real-time syncing."
+      >
+        <Link
+          href="/settings/webhooks"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          Manage webhooks &rarr;
+        </Link>
+      </Card>
     </div>
   );
 }
