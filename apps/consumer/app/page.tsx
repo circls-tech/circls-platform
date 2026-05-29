@@ -1,58 +1,63 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
 import { Header } from '@/components/Header';
-import { useVenues } from '@/lib/api/consumer';
-import { Badge, Card, Input } from '@/lib/ui';
+import { HScroll } from '@/components/HScroll';
+import { VenueCard } from '@/components/cards/VenueCard';
+import { EventCard } from '@/components/cards/EventCard';
+import { MembershipCard } from '@/components/cards/MembershipCard';
+import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
+import { Button } from '@/lib/ui';
 
-export default function HomePage() {
-  const [search, setSearch] = useState('');
-  const venues = useVenues(search);
+const MOTIF: React.CSSProperties = {
+  backgroundImage:
+    'linear-gradient(var(--color-gold-500) 2px, transparent 2px), linear-gradient(90deg, var(--color-gold-500) 2px, transparent 2px)',
+  backgroundSize: '46px 46px',
+};
+
+export default function LandingPage() {
+  const venues = useVenues('', 10);
+  const events = useUpcomingEvents(10);
+  const memberships = useAllMemberships(10);
 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-8 max-w-xl">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Find a venue</h1>
-          <p className="mt-1 text-sm text-[#475569]">
-            Book courts and turfs, join events, and buy memberships near you.
+
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-ink-deep to-ink-soft text-white">
+        <div className="absolute inset-0 opacity-10" style={MOTIF} />
+        <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-20">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-gold-500">Welcome to Circls</p>
+          <h1 className="max-w-2xl font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">
+            Find your circle. <span className="text-gold-500">Book your spot.</span>
+          </h1>
+          <p className="mt-3 max-w-lg text-base text-white/80">
+            Because &ldquo;we should do this sometime&rdquo; deserves an actual time.
           </p>
-          <div className="mt-4">
-            <Input
-              placeholder="Search by name or sport…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search venues"
-            />
+          <div className="mt-6 flex gap-3">
+            <Link href="/venues"><Button variant="accent">Browse venues</Button></Link>
+            <Link href="/events"><Button variant="secondary">See what&apos;s on →</Button></Link>
           </div>
         </div>
+      </section>
 
-        {venues.isLoading ? (
-          <p className="text-sm text-[#475569]">Loading venues…</p>
-        ) : venues.isError ? (
-          <p className="text-sm text-red-600">
-            {venues.error instanceof Error ? venues.error.message : 'Failed to load venues'}
-          </p>
-        ) : !venues.data || venues.data.length === 0 ? (
-          <p className="text-sm text-[#475569]">No venues found.</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {venues.data.map((v) => (
-              <Link key={v.id} href={`/venues/${v.id}`} className="block">
-                <Card className="h-full transition-shadow hover:shadow-md">
-                  <h2 className="text-base font-semibold text-[#0f172a]">{v.name}</h2>
-                  {v.tags.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {v.tags.slice(0, 6).map((tag) => (
-                        <Badge key={tag} tone="neutral" label={tag} />
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </Link>
-            ))}
-          </div>
+      <main className="py-6">
+        {(venues.data?.length ?? 0) > 0 && (
+          <HScroll title="Venues near you" viewAllHref="/venues">
+            {venues.data!.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
+        )}
+
+        {(events.data?.length ?? 0) > 0 && (
+          <HScroll title="Upcoming events" viewAllHref="/events">
+            {events.data!.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
+        )}
+
+        {(memberships.data?.length ?? 0) > 0 && (
+          <HScroll title="Memberships">
+            {memberships.data!.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
         )}
       </main>
     </div>
