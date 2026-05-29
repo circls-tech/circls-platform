@@ -26,7 +26,6 @@ export interface CreateEventInput {
   endsAt: string;
   pricePaise: number;
   capacity?: number;
-  arenaIds: string[];
 }
 
 export function useCreateEvent(venueId: string) {
@@ -41,6 +40,32 @@ export function useCreateEvent(venueId: string) {
   });
 }
 
+export interface UpdateEventInput {
+  name?: string;
+  description?: string;
+  /** ISO-8601, with tz. */
+  startsAt?: string;
+  endsAt?: string;
+  pricePaise?: number;
+  capacity?: number;
+}
+
+/** PATCH an event (draft only — API returns 409 event_not_draft otherwise). */
+export function useUpdateEvent(tenantId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, input }: { eventId: string; input: UpdateEventInput }) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['venue-events', venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
 export function usePublishEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -48,6 +73,24 @@ export function usePublishEvent(tenantId: string, venueId: string) {
       apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
         method: 'POST',
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-events', venueId] }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['venue-events', venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** Cancel an event (API returns 409 event_not_cancellable if already cancelled/rejected). */
+export function useCancelEvent(tenantId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['venue-events', venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
   });
 }

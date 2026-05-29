@@ -86,6 +86,113 @@ export async function createMembership(input: CreateMembershipInput): Promise<Me
   });
 }
 
+export interface UpdateMembershipPatch {
+  name?: string;
+  description?: string | null;
+  pricePaise?: number;
+  durationDays?: number;
+  venueId?: string | null;
+  benefits?: Record<string, unknown>;
+}
+
+/**
+ * Edit a membership's fields. Allowed only when it's not consumer-live
+ * (pending_review or inactive) — a live (`active`) one must be deactivated
+ * first, so its public price/terms don't change underneath buyers.
+ */
+export async function updateMembership(
+  ctx: { tenantId: string; actorUserId: string },
+  membershipId: string,
+  patch: UpdateMembershipPatch,
+): Promise<Membership> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
+    if (existing.status !== 'pending_review' && existing.status !== 'inactive') {
+      throw new Conflict(
+        `A ${existing.status} membership can't be edited — deactivate it first`,
+        'membership_not_editable',
+        { status: existing.status },
+      );
+    }
+
+    const set: Partial<typeof memberships.$inferInsert> = {};
+    if (patch.name !== undefined) set.name = patch.name;
+    if (patch.description !== undefined) set.description = patch.description;
+    if (patch.pricePaise !== undefined) set.pricePaise = patch.pricePaise;
+    if (patch.durationDays !== undefined) set.durationDays = patch.durationDays;
+    if (patch.venueId !== undefined) set.venueId = patch.venueId;
+    if (patch.benefits !== undefined) set.benefits = patch.benefits;
+    if (Object.keys(set).length > 0) {
+      await tx.update(memberships).set(set).where(eq(memberships.id, membershipId));
+    }
+
+    const [updated] = await tx
+      .select()
+      .from(memberships)
+      .where(eq(memberships.id, membershipId))
+      .limit(1);
+    await writeAudit(
+      tx,
+      ctx,
+      'membership.updated',
+      'membership',
+      membershipId,
+      existing as unknown as Record<string, unknown>,
+      set,
+    );
+    return updated!;
+  });
+}
+
+/**
+ * Toggle an approved membership between active (live) and inactive. The
+ * approval states (pending_review/rejected) are admin-controlled and can't be
+ * toggled here.
+ */
+export async function setMembershipActive(
+  ctx: { tenantId: string; actorUserId: string },
+  membershipId: string,
+  active: boolean,
+): Promise<Membership> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
+    const from = active ? 'inactive' : 'active';
+    const to = active ? 'active' : 'inactive';
+    if (existing.status !== from) {
+      throw new Conflict(
+        `Cannot ${active ? 'activate' : 'deactivate'} a ${existing.status} membership`,
+        'membership_bad_transition',
+        { status: existing.status },
+      );
+    }
+    const [updated] = await tx
+      .update(memberships)
+      .set({ status: to })
+      .where(eq(memberships.id, membershipId))
+      .returning();
+    await writeAudit(
+      tx,
+      ctx,
+      active ? 'membership.activated' : 'membership.deactivated',
+      'membership',
+      membershipId,
+      { status: from },
+      { status: to },
+    );
+    return updated!;
+  });
+}
+
 export interface PurchaseMembershipInput {
   membershipId: string;
   userId: string;

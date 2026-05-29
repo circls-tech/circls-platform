@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
-import { useArenas } from '@/lib/api/queries';
 import { useCreateEvent } from '@/lib/api/events';
 import { Button, Card, Input } from '@/lib/ui';
 
@@ -40,7 +39,6 @@ export default function NewEventPage() {
   const router = useRouter();
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
-  const { data: arenas } = useArenas(venueId);
   const createEvent = useCreateEvent(venueId);
 
   const [name, setName] = useState('');
@@ -49,14 +47,7 @@ export default function NewEventPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [priceRupees, setPriceRupees] = useState('0');
   const [capacityRaw, setCapacityRaw] = useState('');
-  const [selectedArenaIds, setSelectedArenaIds] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
-
-  function toggleArena(id: string) {
-    setSelectedArenaIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
 
   // Best-effort tz; the venue row owns the source of truth but we keep this
   // page tz-pinned to IST for now (matches the rest of the app's IST UI).
@@ -65,10 +56,6 @@ export default function NewEventPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (selectedArenaIds.length === 0) {
-      setErr('Pick at least one arena.');
-      return;
-    }
     if (!startsAtLocal || !endsAtLocal) {
       setErr('Set a start and end time.');
       return;
@@ -83,7 +70,6 @@ export default function NewEventPage() {
         endsAt: localToVenueTzIso(endsAtLocal, tz),
         pricePaise,
         ...(capacityNum !== undefined ? { capacity: capacityNum } : {}),
-        arenaIds: selectedArenaIds,
       });
       router.push(`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`);
     } catch (e) {
@@ -158,37 +144,6 @@ export default function NewEventPage() {
               onChange={(e) => setCapacityRaw(e.target.value)}
               hint="Maximum seats. Leave blank for unlimited."
             />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-              Arenas (select one or more)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {arenas?.map((a) => {
-                const on = selectedArenaIds.includes(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => toggleArena(a.id)}
-                    className={[
-                      'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                      on
-                        ? 'border-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-[#e5e7eb] bg-white text-slate-600 hover:bg-slate-50',
-                    ].join(' ')}
-                  >
-                    {a.name}
-                  </button>
-                );
-              })}
-              {arenas?.length === 0 && (
-                <p className="text-xs text-slate-400">
-                  No arenas yet — create one on the venue page first.
-                </p>
-              )}
-            </div>
           </div>
 
           {err && <p className="text-sm text-red-600">{err}</p>}

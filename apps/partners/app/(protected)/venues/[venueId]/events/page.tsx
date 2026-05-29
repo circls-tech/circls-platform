@@ -86,7 +86,14 @@ export default function VenueEventsPage() {
               <tbody className="divide-y divide-[#f1f5f9]">
                 {events.map((ev) => (
                   <tr key={ev.id} className="align-top">
-                    <td className="py-2.5 pr-4 text-slate-700 font-medium">{ev.name}</td>
+                    <td className="py-2.5 pr-4 font-medium">
+                      <Link
+                        href={`/venues/${venueId}/events/${ev.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
+                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        {ev.name}
+                      </Link>
+                    </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
                       {fmt(ev.startsAt)} → {fmt(ev.endsAt)}
                     </td>

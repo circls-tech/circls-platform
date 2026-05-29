@@ -5,6 +5,7 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
+  cancelEvent,
   createEvent,
   getEvent,
   listEventsForVenue,
@@ -20,7 +21,6 @@ const createEventSchema = z.object({
   endsAt: z.string().datetime(),
   pricePaise: z.number().int().min(0),
   capacity: z.number().int().min(1).optional(),
-  arenaIds: z.array(z.string().uuid()).min(1),
 });
 
 const updateEventSchema = z.object({
@@ -30,7 +30,6 @@ const updateEventSchema = z.object({
   endsAt: z.string().datetime().optional(),
   pricePaise: z.number().int().min(0).optional(),
   capacity: z.number().int().min(1).nullable().optional(),
-  arenaIds: z.array(z.string().uuid()).min(1).optional(),
 });
 
 export const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -65,7 +64,6 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         endsAt: new Date(parsed.data.endsAt),
         pricePaise: parsed.data.pricePaise,
         capacity: parsed.data.capacity,
-        arenaIds: parsed.data.arenaIds,
       },
     );
   });
@@ -95,7 +93,6 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
     if (parsed.data.pricePaise !== undefined) patch.pricePaise = parsed.data.pricePaise;
     if (parsed.data.capacity !== undefined) patch.capacity = parsed.data.capacity;
-    if (parsed.data.arenaIds !== undefined) patch.arenaIds = parsed.data.arenaIds;
     return updateEvent({ tenantId, actorUserId: user.id }, id, patch);
   });
 
@@ -107,6 +104,17 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return publishEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/cancel',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return cancelEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
 };
