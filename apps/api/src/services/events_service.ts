@@ -1,18 +1,18 @@
 /**
- * Events service — Phase 15.
+ * Events service — Phase 15 (venue-scoped, subproject C).
  *
- * An event occupies one or more arenas during a single window. Booking an event
- * creates `bookings` rows with `item_type='event'`; capacity is enforced at
- * service level (events are seat-based, not slot-based).
+ * An event is a venue-level offering during a single window (no arena binding —
+ * the `event_arenas` join was dropped in C). Booking an event creates
+ * `bookings` rows with `item_type='event'`; capacity is enforced at service
+ * level (events are seat-based, not slot-based) and is independent of arena slot
+ * inventory.
  *
- * Authz: routes are responsible for resolving and asserting the actor's tenant
- * membership before reaching this layer. The service trusts its inputs but
- * still validates relational integrity (arenas must belong to the same venue).
+ * Authz: routes resolve and assert the actor's tenant membership before reaching
+ * this layer.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { arenas } from '../db/schema/arenas.js';
-import { eventArenas, events, type Event, type NewEvent } from '../db/schema/events.js';
+import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 
@@ -29,15 +29,6 @@ export async function getEvent(eventId: string, tenantId: string): Promise<Event
   return row ?? null;
 }
 
-/** Resolve the arena ids attached to an event. */
-export async function getEventArenaIds(eventId: string): Promise<string[]> {
-  const rows = await db
-    .select({ arenaId: eventArenas.arenaId })
-    .from(eventArenas)
-    .where(eq(eventArenas.eventId, eventId));
-  return rows.map((r) => r.arenaId);
-}
-
 export interface CreateEventInput {
   tenantId: string;
   venueId: string;
@@ -47,40 +38,15 @@ export interface CreateEventInput {
   endsAt: Date;
   pricePaise: number;
   capacity?: number | undefined;
-  arenaIds: string[];
 }
 
-/**
- * Create a draft Event with its arenas in a single transaction.
- *
- * Validates:
- *  - startsAt < endsAt
- *  - at least one arenaId
- *  - every arena belongs to the event's venue (and therefore tenant)
- */
+/** Create a draft, venue-scoped Event. Validates startsAt < endsAt. */
 export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
   if (input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
   }
-  if (input.arenaIds.length === 0) {
-    throw new BadRequest('At least one arena is required', 'no_arenas');
-  }
 
   return db.transaction(async (tx) => {
-    // Verify every arena belongs to this event's venue. A mismatched arenaId
-    // (deleted, cross-venue, cross-tenant) is rejected before we insert.
-    const arenaRows = await tx
-      .select({ id: arenas.id, venueId: arenas.venueId })
-      .from(arenas)
-      .where(inArray(arenas.id, input.arenaIds));
-
-    if (arenaRows.length !== input.arenaIds.length) {
-      throw new BadRequest('Unknown arena id', 'unknown_arena');
-    }
-    if (arenaRows.some((a) => a.venueId !== input.venueId)) {
-      throw new BadRequest('Arena does not belong to venue', 'arena_venue_mismatch');
-    }
-
     const [row] = await tx
       .insert(events)
       .values({
@@ -95,17 +61,11 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
         status: 'draft',
       })
       .returning();
-
     if (!row) throw new Error('event insert returned no row');
-
-    await tx
-      .insert(eventArenas)
-      .values(input.arenaIds.map((arenaId) => ({ eventId: row.id, arenaId })));
 
     await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
       venueId: row.venueId,
       name: row.name,
-      arenaIds: input.arenaIds,
       pricePaise: row.pricePaise,
     });
 
@@ -120,13 +80,11 @@ export interface UpdateEventPatch {
   endsAt?: Date;
   pricePaise?: number;
   capacity?: number | null;
-  arenaIds?: string[];
 }
 
 /**
- * Update a draft Event. Only allowed when status='draft' — published events
- * are immutable from this surface (cancellation goes through a separate flow).
- * When `arenaIds` is provided, the join rows are replaced atomically.
+ * Update a draft Event. Only allowed when status='draft' — once submitted for
+ * review or published the event is immutable from this surface.
  */
 export async function updateEvent(
   ctx: AuditCtx,
@@ -145,7 +103,6 @@ export async function updateEvent(
       throw new Conflict('Only draft events can be edited', 'event_not_draft');
     }
 
-    // Validate the (possibly patched) window.
     const startsAt = patch.startsAt ?? existing.startsAt;
     const endsAt = patch.endsAt ?? existing.endsAt;
     if (startsAt >= endsAt) {
@@ -164,36 +121,21 @@ export async function updateEvent(
       await tx.update(events).set(set).where(eq(events.id, eventId));
     }
 
-    if (patch.arenaIds !== undefined) {
-      if (patch.arenaIds.length === 0) {
-        throw new BadRequest('At least one arena is required', 'no_arenas');
-      }
-      const arenaRows = await tx
-        .select({ id: arenas.id, venueId: arenas.venueId })
-        .from(arenas)
-        .where(inArray(arenas.id, patch.arenaIds));
-      if (arenaRows.length !== patch.arenaIds.length) {
-        throw new BadRequest('Unknown arena id', 'unknown_arena');
-      }
-      if (arenaRows.some((a) => a.venueId !== existing.venueId)) {
-        throw new BadRequest('Arena does not belong to venue', 'arena_venue_mismatch');
-      }
-      await tx.delete(eventArenas).where(eq(eventArenas.eventId, eventId));
-      await tx
-        .insert(eventArenas)
-        .values(patch.arenaIds.map((arenaId) => ({ eventId, arenaId })));
-    }
-
     const [updated] = await tx
       .select()
       .from(events)
       .where(eq(events.id, eventId))
       .limit(1);
 
-    await writeAudit(tx, ctx, 'event.updated', 'event', eventId, existing as unknown as Record<string, unknown>, {
-      ...set,
-      ...(patch.arenaIds !== undefined ? { arenaIds: patch.arenaIds } : {}),
-    });
+    await writeAudit(
+      tx,
+      ctx,
+      'event.updated',
+      'event',
+      eventId,
+      existing as unknown as Record<string, unknown>,
+      set,
+    );
 
     return updated!;
   });
@@ -201,10 +143,8 @@ export async function updateEvent(
 
 /**
  * Submit a draft event for Circls review: draft → pending_review. (Listing
- * approval, subproject B — the partner's "publish" action now hands off to ops,
- * who approve pending_review → published via the admin listings workflow.)
- * Requires at least one arena row in event_arenas; otherwise the event has no
- * inventory to attach bookings to.
+ * approval, subproject B — the partner's "publish" action hands off to ops, who
+ * approve pending_review → published via the admin listings workflow.)
  */
 export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
   return db.transaction(async (tx) => {
@@ -218,14 +158,6 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       throw new Conflict('Only draft events can be submitted for review', 'event_not_draft');
     }
 
-    const arenaRows = await tx
-      .select({ arenaId: eventArenas.arenaId })
-      .from(eventArenas)
-      .where(eq(eventArenas.eventId, eventId));
-    if (arenaRows.length === 0) {
-      throw new Conflict('Event has no arenas', 'no_arenas');
-    }
-
     const [updated] = await tx
       .update(events)
       .set({ status: 'pending_review' })
@@ -233,6 +165,36 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       .returning();
 
     await writeAudit(tx, ctx, 'event.submitted_for_review', 'event', eventId, { status: 'draft' }, { status: 'pending_review' });
+
+    return updated!;
+  });
+}
+
+/**
+ * Cancel an event (any non-terminal state → cancelled). Idempotent-ish: already
+ * cancelled/rejected events are rejected with a 409.
+ */
+export async function cancelEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Event not found', 'event_not_found');
+    if (existing.status === 'cancelled' || existing.status === 'rejected') {
+      throw new Conflict(`Event is already ${existing.status}`, 'event_not_cancellable', {
+        status: existing.status,
+      });
+    }
+
+    const [updated] = await tx
+      .update(events)
+      .set({ status: 'cancelled' })
+      .where(eq(events.id, eventId))
+      .returning();
+
+    await writeAudit(tx, ctx, 'event.cancelled', 'event', eventId, { status: existing.status }, { status: 'cancelled' });
 
     return updated!;
   });

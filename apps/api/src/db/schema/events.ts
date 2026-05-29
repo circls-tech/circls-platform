@@ -1,12 +1,13 @@
-import { integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { arenas } from './arenas.js';
+import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
 import { venues } from './venues.js';
 
 /**
- * Venue-level Events (Phase 15). An Event uses one or more Arenas during a
- * single window. Bookings of `item_type='event'` reference it via item_data.
+ * Venue-level Events (Phase 15, venue-scoped per subproject C). An Event is an
+ * offering at a venue during a single window — NOT bound to specific arenas (the
+ * `event_arenas` join was dropped in C). Bookings of `item_type='event'`
+ * reference it via item_data; capacity is a seat count enforced at booking time.
  */
 // Listing-approval lifecycle: `draft` → (partner submits) `pending_review` →
 // (admin) `published` (approved + live) / `rejected`; `cancelled` is terminal.
@@ -39,22 +40,3 @@ export const events = pgTable('events', {
 
 export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
-
-/** Many-to-many: an event may occupy several arenas during its window. */
-export const eventArenas = pgTable(
-  'event_arenas',
-  {
-    eventId: uuid('event_id')
-      .notNull()
-      .references(() => events.id, { onDelete: 'cascade' }),
-    arenaId: uuid('arena_id')
-      .notNull()
-      .references(() => arenas.id, { onDelete: 'cascade' }),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.eventId, t.arenaId] }),
-  })
-);
-
-export type EventArena = typeof eventArenas.$inferSelect;
-export type NewEventArena = typeof eventArenas.$inferInsert;
