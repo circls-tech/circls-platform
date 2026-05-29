@@ -7,8 +7,6 @@ import { Conflict } from '../lib/errors.js';
 export interface CreateTenantInput {
   name: string;
   slug: string;
-  legalEntityName?: string | null;
-  gstin?: string | null;
 }
 
 /** Create a tenant and make the creator its owner, atomically. */
@@ -20,8 +18,6 @@ export async function createTenant(ownerUserId: string, input: CreateTenantInput
         .values({
           name: input.name,
           slug: input.slug,
-          legalEntityName: input.legalEntityName ?? null,
-          gstin: input.gstin ?? null,
         })
         .returning();
       if (!tenant) throw new Error('tenant insert returned no row');

@@ -103,8 +103,7 @@ export interface PurchaseMembershipResult {
  *   - No KYC required, no payment row.
  *
  * Paid path:
- *   - Tenant must have kyc_status='verified'; otherwise `kyc_required`.
- *   - Tenant must have a Razorpay Linked Account id; otherwise `kyc_required`.
+ *   - Circls is the merchant — no per-tenant KYC / Linked Account gate.
  *   - We synthesize a `bookings` row (item_type='membership', status='pending')
  *     because `payments.booking_id` is NOT NULL — payments hangs off bookings
  *     across the system, and memberships reuse that ledger to keep refund /
@@ -158,20 +157,7 @@ export async function purchaseMembership(
       return { kind: 'free' as const, userMembershipId: um.id };
     }
 
-    // Paid path — require KYC + linked account.
-    const [tenant] = await tx
-      .select({
-        kycStatus: tenants.kycStatus,
-        linkedAccountId: tenants.razorpayLinkedAccountId,
-      })
-      .from(tenants)
-      .where(eq(tenants.id, m.tenantId))
-      .limit(1);
-    if (!tenant) throw new NotFound('Tenant not found', 'tenant_not_found');
-    if (tenant.kycStatus !== 'verified' || !tenant.linkedAccountId) {
-      throw new Conflict('Tenant KYC not verified', 'kyc_required');
-    }
-
+    // Paid path — Circls is the merchant, no per-tenant KYC / Linked Account.
     // Synthetic bookings row anchors the payment (payments.booking_id NOT NULL).
     const [b] = await tx
       .insert(bookings)
@@ -218,7 +204,6 @@ export async function purchaseMembership(
       bookingId: b.id,
       userMembershipId: um.id,
       tenantId: m.tenantId,
-      linkedAccountId: tenant.linkedAccountId,
       pricePaise: m.pricePaise,
       membershipId: m.id,
     };
@@ -238,8 +223,6 @@ export async function purchaseMembership(
       bookingId: reserved.bookingId,
       tenantId: reserved.tenantId,
       amountPaise: reserved.pricePaise,
-      linkedAccountId: reserved.linkedAccountId,
-      platformFeePaise: 0,
       actorUserId: input.userId,
     });
     orderId = result.providerOrderId;

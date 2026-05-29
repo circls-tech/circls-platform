@@ -20,7 +20,6 @@ import { pricingRoutes } from './routes/pricing.js';
 import { slotRoutes } from './routes/slots.js';
 import { venueRoutes } from './routes/venues.js';
 // Track B (Phases 11–17).
-import { kycRoutes } from './routes/kyc.js';
 import { paymentRoutes } from './routes/payments.js';
 import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
 import { eventRoutes } from './routes/events.js';
@@ -33,6 +32,7 @@ import { cancellationRoutes } from './routes/cancellations.js';
 import { adminRefundRoutes } from './routes/admin_refunds.js';
 // Phase 16 — platform-admin tooling.
 import { adminTenantRoutes } from './routes/admin_tenants.js';
+import { adminPayoutRoutes } from './routes/admin_payouts.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 // Phase 17 — aggregator-facing public API surface.
 import { publicBookingRoutes } from './routes/public_bookings.js';
@@ -181,7 +181,6 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(pricingRoutes);
   // Track B (Phases 11–17). Stubs throw at handler-time; routes mount so
   // OpenAPI / route-existence probes pass.
-  await app.register(kycRoutes);
   await app.register(paymentRoutes);
   await app.register(razorpayWebhookRoutes);
   await app.register(eventRoutes);
@@ -197,6 +196,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminRefundRoutes);
   // Phase 16: platform-admin endpoints (gated via assertCap + getPlatformTenantId).
   await app.register(adminTenantRoutes);
+  await app.register(adminPayoutRoutes);
   await app.register(adminAuditLogRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').
   await app.register(publicBookingRoutes);

@@ -48,8 +48,8 @@ describe.skipIf(!runIntegration)('tenants', () => {
 
     // Insert a platform tenant whose slug matches the env override above
     const ptRows = await db.execute<{ id: string }>(sql`
-      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
-      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial', 'not_started')
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status)
+      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
       RETURNING id
     `);
     platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
@@ -84,7 +84,6 @@ describe.skipIf(!runIntegration)('tenants', () => {
     const t = res.json();
     expect(t.slug).toBe(slug);
     expect(t.status).toBe('active');
-    expect(t.kycStatus).toBe('not_started');
 
     const mine = await app.inject({ method: 'GET', url: '/v1/me/tenants', headers: bearer('owner') });
     expect(mine.json().some((x: { slug: string }) => x.slug === slug)).toBe(true);

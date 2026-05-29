@@ -86,6 +86,13 @@
       "when": 1780080000000,
       "tag": "0011_team_management",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780160000000,
+      "tag": "0012_payouts_circls_merchant",
+      "breakpoints": true
     }
   ]
 }

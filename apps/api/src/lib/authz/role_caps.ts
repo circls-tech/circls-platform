@@ -51,7 +51,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   owner: [
     ...PARTNER_CAPS.owner,
     'admin.tenants.read', 'admin.tenants.suspend',
-    'admin.listings.review', 'admin.payouts.execute',
+    'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
   ],
   // Ops lead: every admin power; no team mgmt of Circls itself.
@@ -59,22 +59,24 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'tenant.read', 'tenant.update',
     'members.read',
     'admin.tenants.read', 'admin.tenants.suspend',
-    'admin.listings.review', 'admin.payouts.execute',
+    'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
   ],
-  // Ops IC: tenant + listing review + audit, no payout execution, no suspend.
+  // Ops IC: tenant + listing review + audit + payout visibility, no execution.
   staff: [
     'tenant.read',
     'members.read',
     'admin.tenants.read',
     'admin.listings.review',
+    'admin.payouts.read',
     'admin.audit.read',
   ],
-  // Read-only audit / accountant for Circls.
+  // Read-only audit / accountant for Circls — sees payouts, can't execute them.
   readonly: [
     'tenant.read',
     'members.read',
     'admin.tenants.read',
+    'admin.payouts.read',
     'admin.audit.read',
   ],
 } as const;

@@ -13,7 +13,6 @@ export * from './slots.js';
 export * from './audit_log.js';
 export * from './tenant_invitations.js';
 // Track B additions (Phases 11–17).
-export * from './kyc_documents.js';
 export * from './payments.js';
 export * from './notifications.js';
 export * from './events.js';

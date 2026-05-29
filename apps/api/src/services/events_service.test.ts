@@ -200,7 +200,7 @@ describe.skipIf(!runIntegration)('events_service', () => {
     ).rejects.toMatchObject({ code: 'event_not_published' });
   });
 
-  it('bookEvent (paid) requires KYC=verified', async () => {
+  it('bookEvent (paid) creates a pending booking + order — Circls is merchant', async () => {
     const ev = await createEvent(
       { tenantId, actorUserId },
       {
@@ -214,28 +214,13 @@ describe.skipIf(!runIntegration)('events_service', () => {
       },
     );
     await publishEvent({ tenantId, actorUserId }, ev.id);
-    // Tenant has kycStatus='not_started' by default.
-    await expect(
-      bookEvent(ev.id, { userId: actorUserId, name: 'Payer' }),
-    ).rejects.toMatchObject({ code: 'kyc_required' });
 
-    // After verifying KYC + linked account, the (now-wired) Phase 12 path
-    // succeeds against the stub Razorpay adapter — returns a booking +
-    // paymentId + providerOrderId. Test the integrated happy path.
-    await db
-      .update(tenants)
-      .set({ kycStatus: 'verified', razorpayLinkedAccountId: 'acc_TEST' })
-      .where(eq(tenants.id, tenantId));
+    // No KYC / Linked Account gate — the payment lands in Circls's account and
+    // the stub Razorpay adapter mints an order directly.
     const ok = await bookEvent(ev.id, { userId: actorUserId, name: 'Payer' });
     expect(ok.booking.status).toBe('pending');
     expect(ok.paymentId).toBeDefined();
     expect(ok.providerOrderId).toBeDefined();
-
-    // Reset for any later tests that assume not_started.
-    await db
-      .update(tenants)
-      .set({ kycStatus: 'not_started', razorpayLinkedAccountId: null })
-      .where(eq(tenants.id, tenantId));
   });
 });
 

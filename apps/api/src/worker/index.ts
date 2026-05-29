@@ -3,10 +3,9 @@ import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { sweepExpiredHolds } from '../services/slot_service.js';
 import { processPendingNotifications } from '../services/notification_service.js';
-import { pollKycStatuses } from '../services/kyc_service.js';
 import { releaseDueSettlements } from '../services/settlement_hold_service.js';
 import { sweepAbandonedCarts } from '../services/booking_service_track_b.js';
-import { reconcilePayouts } from '../services/refund_service.js';
+import { reconcileWeeklyPayouts } from '../services/payout_service.js';
 import { deliverPendingOutboundWebhooks } from '../services/webhook_subscriptions_service.js';
 
 /**
@@ -43,14 +42,6 @@ const JOBS: ScheduledJob[] = [
     },
   },
   {
-    queue: 'kyc-status-poll',
-    cron: '*/30 * * * *',
-    run: async () => {
-      const polled = await pollKycStatuses();
-      if (polled > 0) logger.info({ polled }, 'kyc_status_poll_complete');
-    },
-  },
-  {
     queue: 'settlement-release-ticker',
     cron: '*/5 * * * *',
     run: async () => {
@@ -68,9 +59,9 @@ const JOBS: ScheduledJob[] = [
   },
   {
     queue: 'payout-reconciliation',
-    cron: '15 2 * * *', // 02:15 UTC daily
+    cron: '0 3 * * 1', // 03:00 UTC every Monday — settle the prior week.
     run: async () => {
-      const reconciled = await reconcilePayouts();
+      const reconciled = await reconcileWeeklyPayouts();
       logger.info({ reconciled }, 'payout_reconciliation_complete');
     },
   },

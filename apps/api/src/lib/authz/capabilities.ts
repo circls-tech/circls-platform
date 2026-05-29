@@ -35,6 +35,7 @@ export type Capability =
   | 'admin.tenants.read'
   | 'admin.tenants.suspend'
   | 'admin.listings.review'
+  | 'admin.payouts.read'
   | 'admin.payouts.execute'
   | 'admin.audit.read';
 
@@ -51,6 +52,6 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'events.read', 'events.write',
   'memberships.read', 'memberships.write',
   'admin.tenants.read', 'admin.tenants.suspend',
-  'admin.listings.review', 'admin.payouts.execute',
+  'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
   'admin.audit.read',
 ] as const;

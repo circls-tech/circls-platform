@@ -34,16 +34,6 @@ describe('renderTemplate (pure)', () => {
     expect(out.body).toContain('abc-123');
   });
 
-  it('renders kyc.rejected with reason', () => {
-    const out = renderTemplate('email', 'kyc.rejected', {
-      tenantName: 'Acme Sports',
-      reason: 'PAN does not match company name',
-    });
-    expect(out.subject).toContain('Acme Sports');
-    expect(out.body).toContain('Acme Sports');
-    expect(out.body).toContain('PAN does not match company name');
-  });
-
   it('substitutes missing vars with empty string', () => {
     const out = renderTemplate('sms', 'otp.login', { code: '' });
     // Should NOT keep the literal {{code}} — render should produce an empty hole.
@@ -56,8 +46,8 @@ describe('renderTemplate (pure)', () => {
   });
 
   it('throws when the channel is not supported for that key', () => {
-    // kyc.verified is email-only; asking for SMS should throw.
-    expect(() => renderTemplate('sms', 'kyc.verified', { tenantName: 'X' })).toThrow(
+    // otp.login is sms-only; asking for email should throw.
+    expect(() => renderTemplate('email', 'otp.login', { code: '123456' })).toThrow(
       /channel_not_supported/,
     );
   });

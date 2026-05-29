@@ -6,15 +6,11 @@
  *   - stub      → no provider call; status='processed' instantly.
  *   - external  → no provider call; cash refund handled offline at the venue.
  *
- * Plus `reconcilePayouts()` — daily worker that joins Razorpay settlements to
- * our `payments` rows. The real Razorpay implementation is queued behind a
- * TODO; the stub path inserts one payouts row per tenant per released day so
- * downstream reports and tests have data to chew on.
+ * Weekly payout reconciliation lives in `payout_service.ts`.
  */
-import { and, eq, gte, isNotNull, isNull, sql, sum } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { payments, payouts } from '../db/schema/payments.js';
-import { bookings } from '../db/schema/bookings.js';
+import { payments } from '../db/schema/payments.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { getRazorpay } from '../lib/razorpay.js';
@@ -201,76 +197,4 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
     ...(providerRefundId !== undefined ? { providerRefundId } : {}),
     status: resultStatus,
   };
-}
-
-/**
- * Daily worker handler. Runs at 02:15 UTC (registered in worker/index.ts).
- *
- * Real implementation (TODO when LiveRazorpay.refundPayment lands):
- *   - razorpay.fetchSettlements(dateRange) for yesterday.
- *   - Match each settlement entry to our payments rows by provider_payment_id.
- *   - INSERT one payouts row per Razorpay settlement (provider='razorpay',
- *     providerPayoutId set, status='reconciled').
- *
- * Stub mode (current): SELECT all unreconciled `payments` whose
- * `settlement_released_at` falls into the window, group by tenant, and write
- * one payouts row per tenant summing the released amounts.
- */
-export async function reconcilePayouts(): Promise<number> {
-  // Yesterday in UTC. Real settlements show up T+1 from Razorpay.
-  const now = new Date();
-  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const yesterdayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
-
-  // TODO(razorpay-live): when LiveRazorpay implements settlements, branch on
-  // razorpay.mode === 'live' and call fetchSettlements({ from: yesterdayStart,
-  // to: dayStart }). Then INSERT payouts rows with provider='razorpay' and
-  // providerPayoutId from the settlement payload.
-
-  // Stub branch — group released charges by tenant for the window. We use the
-  // bookings join to confirm tenant scoping (payments.tenant_id is already
-  // there but the join would catch any future denormalisation drift).
-  const rows = await db
-    .select({
-      tenantId: payments.tenantId,
-      totalPaise: sum(payments.amountPaise).mapWith(Number),
-    })
-    .from(payments)
-    .innerJoin(bookings, eq(bookings.id, payments.bookingId))
-    .where(
-      and(
-        eq(payments.kind, 'charge'),
-        eq(payments.status, 'captured'),
-        isNotNull(payments.settlementReleasedAt),
-        gte(payments.settlementReleasedAt, yesterdayStart),
-        // Stub-mode charges have no provider_order_id (the live Razorpay path
-        // populates it). This filter doubles as "skip anything that already
-        // reconciled through the real provider".
-        isNull(payments.providerOrderId),
-      ),
-    )
-    .groupBy(payments.tenantId);
-
-  if (rows.length === 0) {
-    logger.debug('payout_reconciliation_stub_no_rows');
-    return 0;
-  }
-
-  await db.insert(payouts).values(
-    rows.map((r) => ({
-      tenantId: r.tenantId,
-      provider: 'stub' as const,
-      amountPaise: r.totalPaise,
-      status: 'reconciled',
-      reconciledAt: new Date(),
-      metadata: {
-        windowStart: yesterdayStart.toISOString(),
-        windowEnd: dayStart.toISOString(),
-        note: 'stub-mode aggregate; real Razorpay settlements pending',
-      },
-    })),
-  );
-
-  logger.info({ count: rows.length }, 'payout_reconciliation_stub_done');
-  return rows.length;
 }
