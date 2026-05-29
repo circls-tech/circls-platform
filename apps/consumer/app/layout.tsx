@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'sw
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'Circls — Find your circle. Book your spot.',
+  title: 'circls — Find your circle. Book your spot.',
   description: 'Discover and book venues, events and memberships near you.',
 };
 

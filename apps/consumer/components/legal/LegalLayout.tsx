@@ -14,12 +14,12 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
         <p className="text-[11px] font-bold uppercase tracking-widest text-gold-600">
-          Circls · Gibbous Technologies Private Limited
+          circls · Gibbous Technologies Private Limited
         </p>
         <h1 className="mt-1 font-display text-3xl font-semibold text-ink">{doc.title}</h1>
         <p className="mt-1 text-sm text-text-secondary">Last updated {doc.updated}</p>
         <p className="mt-1 text-sm text-text-secondary">
-          Contact: Contact@gibbous.io · Jurisdiction: Nagpur, Maharashtra, India
+          Contact: contact@gibbous.io · Jurisdiction: Nagpur, Maharashtra, India
         </p>
 
         <nav aria-label="Policies" className="mt-5 flex gap-2">
@@ -63,7 +63,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
         </div>
 
         <div className="mt-10 rounded-card border border-border bg-gold-100/40 p-5 text-sm text-ink">
-          Questions? Reach us at <a className="font-semibold underline" href="mailto:Contact@gibbous.io">Contact@gibbous.io</a>.
+          Questions? Reach us at <a className="font-semibold underline" href="mailto:contact@gibbous.io">contact@gibbous.io</a>.
         </div>
       </main>
     </div>

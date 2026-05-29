@@ -460,7 +460,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Welcome to Circls</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to circls</h1>
           <p className="mt-1 text-sm text-slate-500">
             Let&apos;s get your account set up in a few quick steps.
           </p>

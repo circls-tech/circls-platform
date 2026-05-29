@@ -27,7 +27,7 @@ export default function LandingPage() {
       <section className="relative overflow-hidden bg-gradient-to-br from-ink-deep to-ink-soft text-white">
         <div className="absolute inset-0 opacity-10" style={MOTIF} />
         <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-20">
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-gold-500">Welcome to Circls</p>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-gold-500">Welcome to circls</p>
           <h1 className="max-w-2xl font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">
             Find your circle. <span className="text-gold-500">Book your spot.</span>
           </h1>

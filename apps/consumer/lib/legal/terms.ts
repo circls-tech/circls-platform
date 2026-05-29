@@ -137,7 +137,7 @@ export const TERMS: LegalDoc = {
       number: 17,
       title: 'Marketing Communication Consent',
       paragraphs: [
-        'By providing your information on circls.app, you agree to receive event updates, notifications, and promotional communications from Circls. You may opt out at any time by emailing Contact@gibbous.io.',
+        'By providing your information on circls.app, you agree to receive event updates, notifications, and promotional communications from Circls. You may opt out at any time by emailing contact@gibbous.io.',
       ],
     },
     {

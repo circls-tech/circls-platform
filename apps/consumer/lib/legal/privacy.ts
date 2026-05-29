@@ -29,7 +29,7 @@ export const PRIVACY: LegalDoc = {
       title: 'Cookies',
       paragraphs: [
         'We use standard analytics cookies to understand how users interact with circls.app. By continuing to use the platform, you consent to the use of these cookies. You may disable cookies through your browser settings, though this may affect certain features of the platform.',
-        'Users who wish to opt out of analytics tracking may do so via their browser\'s privacy settings or by contacting us at Contact@gibbous.io.',
+        'Users who wish to opt out of analytics tracking may do so via their browser\'s privacy settings or by contacting us at contact@gibbous.io.',
       ],
     },
     {
@@ -53,7 +53,7 @@ export const PRIVACY: LegalDoc = {
       title: 'Data Access & Deletion Rights',
       paragraphs: [
         'In accordance with India\'s Digital Personal Data Protection (DPDP) Act, you have the right to access the personal data we hold about you, and to request its correction or deletion.',
-        'To request access to or deletion of your personal data, please email Contact@gibbous.io with the subject line "Data Request". We will respond within 30 days.',
+        'To request access to or deletion of your personal data, please email contact@gibbous.io with the subject line "Data Request". We will respond within 30 days.',
       ],
     },
     {
@@ -96,7 +96,7 @@ export const PRIVACY: LegalDoc = {
       number: 12,
       title: 'Copyright Infringement',
       paragraphs: [
-        'If you believe any content on circls.app infringes your copyright, please notify us in writing at Contact@gibbous.io with the following:',
+        'If you believe any content on circls.app infringes your copyright, please notify us in writing at contact@gibbous.io with the following:',
       ],
       bullets: [
         'A description of the copyrighted work you claim has been infringed.',
