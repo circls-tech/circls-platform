@@ -15,18 +15,30 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Non-fatal boot sanity check: warn if the platform tenant is missing.
+  // Non-fatal boot sanity check: warn if the platform tenant is missing OR
+  // if the schema isn't ready yet (e.g. first deploy before migrations land).
   // Read slug via process.env so override in tests works post-module-load.
+  // NOTE: this must NEVER crash the server. Migrations may not have applied
+  // yet (Coolify's post-deploy `node dist/migrate.js` hook can race the server
+  // boot), so a missing `is_platform` column is a transient pre-migrate state,
+  // not a hard error. We log loudly and continue.
   {
     const slug = process.env['CIRCLS_INTERNAL_TENANT_SLUG'] ?? env.CIRCLS_INTERNAL_TENANT_SLUG;
-    const [platform] = await db
-      .select({ id: tenants.id })
-      .from(tenants)
-      .where(and(eq(tenants.slug, slug), eq(tenants.isPlatform, true)));
-    if (!platform) {
+    try {
+      const [platform] = await db
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(and(eq(tenants.slug, slug), eq(tenants.isPlatform, true)));
+      if (!platform) {
+        logger.warn(
+          { slug },
+          'circls_internal_tenant_missing — run scripts/bootstrap_circls_tenant.ts',
+        );
+      }
+    } catch (err) {
       logger.warn(
-        { slug },
-        'circls_internal_tenant_missing — run scripts/bootstrap_circls_tenant.ts',
+        { err, slug },
+        'platform_tenant_check_failed — schema may not be migrated yet (run db:migrate)',
       );
     }
   }
