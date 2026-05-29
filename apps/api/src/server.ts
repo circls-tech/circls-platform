@@ -37,6 +37,7 @@ import { adminListingRoutes } from './routes/admin_listings.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 // Phase 17 — aggregator-facing public API surface.
 import { publicBookingRoutes } from './routes/public_bookings.js';
+import { consumerRoutes } from './routes/consumer.js';
 // Team management (subproject D).
 import { invitationRoutes } from './routes/invitations.js';
 import { teamRoutes } from './routes/team.js';
@@ -202,6 +203,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminAuditLogRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').
   await app.register(publicBookingRoutes);
+  // Subproject E: consumer portal API (public browse + authed consumer booking).
+  await app.register(consumerRoutes);
 
   return app;
 }
