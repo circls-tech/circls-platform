@@ -2,19 +2,24 @@
  * One-shot bootstrap of the Circls internal tenant + the founder's invitation.
  *
  * Usage:
- *   DATABASE_URL=… pnpm bootstrap:circls vedant@gibbous.io "Vedant S"
+ *   Dev:  DATABASE_URL=… pnpm bootstrap:circls vedant@gibbous.io "Vedant S"
+ *   Prod: node dist/scripts/bootstrap_circls_tenant.js vedant@gibbous.io "Vedant S"
+ *
+ * Lives under src/ (not a top-level scripts/ dir) so `tsc` compiles it into
+ * dist/scripts/ and `pnpm deploy --prod` ships it inside the runtime image —
+ * making it runnable in the production container, which has only node + dist/.
  *
  * Prints the invite URL on success; the operator opens it on admin.circls.app,
  * sets a password, and becomes the owning Circls member. Idempotent: re-running
  * after success is a no-op.
  */
 import { eq } from 'drizzle-orm';
-import { closeDb, db } from '../src/db/client.js';
-import { env } from '../src/config/env.js';
-import { tenants } from '../src/db/schema/tenants.js';
-import { users } from '../src/db/schema/users.js';
-import { createInvitation } from '../src/services/invitation_service.js';
-import { logger } from '../src/lib/logger.js';
+import { closeDb, db } from '../db/client.js';
+import { env } from '../config/env.js';
+import { tenants } from '../db/schema/tenants.js';
+import { users } from '../db/schema/users.js';
+import { createInvitation } from '../services/invitation_service.js';
+import { logger } from '../lib/logger.js';
 
 async function main(): Promise<void> {
   const [, , emailArg, nameArg] = process.argv;

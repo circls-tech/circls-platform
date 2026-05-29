@@ -32,7 +32,7 @@ async function main(): Promise<void> {
       if (!platform) {
         logger.warn(
           { slug },
-          'circls_internal_tenant_missing — run scripts/bootstrap_circls_tenant.ts',
+          'circls_internal_tenant_missing — run `node dist/scripts/bootstrap_circls_tenant.js` (prod) or `pnpm bootstrap:circls` (dev)',
         );
       }
     } catch (err) {
