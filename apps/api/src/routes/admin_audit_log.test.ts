@@ -97,8 +97,8 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
 
     // Insert a platform tenant whose slug matches the env override above
     const ptRows = await db.execute<{ id: string }>(sql`
-      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
-      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial', 'not_started')
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status)
+      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
       RETURNING id
     `);
     platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;

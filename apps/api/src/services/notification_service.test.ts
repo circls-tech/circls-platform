@@ -12,7 +12,6 @@ import {
 import {
   notifyBookingCancelled,
   notifyBookingConfirmed,
-  notifyKycStateChange,
 } from './notification_service.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { __resetNotificationsForTesting } from '../lib/notifications/index.js';
@@ -171,59 +170,6 @@ describe.skipIf(!runIntegration)('notification_service integration', () => {
     expect(rows).toHaveLength(2);
     const tplKeys = rows.map((r) => `${r.channel}:${r.templateKey}`).sort();
     expect(tplKeys).toEqual(['email:booking.cancelled', 'sms:booking.cancelled']);
-  });
-
-  it('notifyKycStateChange emails the tenant owner on verified', async () => {
-    await notifyKycStateChange(tenantId, 'verified');
-
-    const rows = await db
-      .select()
-      .from(notifications)
-      .where(
-        sql`tenant_id = ${tenantId} and template_key = 'kyc.verified'`,
-      );
-
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    const row = rows[0]!;
-    expect(row.channel).toBe('email');
-    // The owner's email matches what we inserted in beforeAll.
-    expect(row.recipient).toMatch(/notif-owner-.+@test\.x/);
-    expect(row.userId).toBe(ownerUserId);
-  });
-
-  it('notifyKycStateChange emails owner with reason on rejected', async () => {
-    await notifyKycStateChange(tenantId, 'rejected', {
-      rejectionReason: 'PAN does not match',
-    });
-
-    const rows = await db
-      .select()
-      .from(notifications)
-      .where(sql`tenant_id = ${tenantId} and template_key = 'kyc.rejected'`);
-
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    const row = rows[0]!;
-    expect(row.channel).toBe('email');
-    expect(row.payload).toMatchObject({ reason: 'PAN does not match' });
-  });
-
-  it('notifyKycStateChange is a no-op for non-terminal statuses', async () => {
-    const before = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(notifications)
-      .where(sql`tenant_id = ${tenantId} and template_key like 'kyc.%'`);
-    const beforeCount = Number(before[0]?.count ?? 0);
-
-    await notifyKycStateChange(tenantId, 'in_review');
-    await notifyKycStateChange(tenantId, 'submitted');
-
-    const after = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(notifications)
-      .where(sql`tenant_id = ${tenantId} and template_key like 'kyc.%'`);
-    const afterCount = Number(after[0]?.count ?? 0);
-
-    expect(afterCount).toBe(beforeCount);
   });
 
   it('notifyBookingConfirmed without contacts is a silent no-op (no rows for that booking)', async () => {

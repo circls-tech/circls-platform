@@ -131,10 +131,10 @@ export async function bookSlots(
  *     colliding), but with `status='booked'` and `booking_id` pointing at the
  *     pending booking — abandoned-cart sweep frees them again if no capture
  *     arrives within `ABANDONED_CART_GRACE_MIN`.
- *   - a Razorpay Route order is created via `payments_service.createRouteOrder`
- *     and its id is returned so the frontend can hand off to Razorpay's
- *     checkout. The platform fee is configurable (default = 0 here; phase 16
- *     wires per-tenant commission).
+ *   - a Razorpay order (Circls as merchant) is created via
+ *     `payments_service.createRouteOrder` and its id is returned so the frontend
+ *     can hand off to Razorpay's checkout. Commission is taken at payout time,
+ *     not at order time.
  *
  * Returns `{ bookingId, payment: { orderId, keyId } }` so the partner-portal /
  * consumer app has the minimum payload to open Razorpay's checkout widget.
@@ -144,8 +144,6 @@ export interface PrepareOnlineBookingInput {
   customerName: string;
   customerContact: string;
   note?: string | null;
-  /** Optional override; defaults to 0 (Phase 16 owns tenant-level commission). */
-  platformFeePaise?: number;
 }
 
 export interface PrepareOnlineBookingResult {
@@ -167,7 +165,7 @@ export async function prepareOnlineBookingWithPayment(
 
   // Same claim flow as walk-in, but staged: bookings.status='pending', and we
   // capture the price total so the Razorpay order has the right paise amount.
-  const { bookingId, totalPaise, linkedAccountId } = await db.transaction(async (tx) => {
+  const { bookingId, totalPaise } = await db.transaction(async (tx) => {
     const sel = await tx
       .select({
         ...getTableColumns(slots),
@@ -191,22 +189,9 @@ export async function prepareOnlineBookingWithPayment(
 
     const total = sel.reduce((s, r) => s + r.pricePaise, 0);
 
-    // We require the tenant to be KYC-verified (i.e. has a Linked Account)
-    // before we can route a payment to them. Phase 11 owns the KYC flow.
-    const [tenantRow] = await tx
-      .select({
-        razorpayLinkedAccountId: tenants.razorpayLinkedAccountId,
-      })
-      .from(tenants)
-      .where(eq(tenants.id, ctx.tenantId))
-      .limit(1);
-    if (!tenantRow?.razorpayLinkedAccountId) {
-      throw new BadRequest(
-        'Tenant has no Razorpay Linked Account',
-        'tenant_not_payments_ready',
-      );
-    }
-
+    // Circls is the merchant — the customer's payment lands in Circls's account.
+    // No per-tenant KYC / Linked Account gate; the venue is paid out weekly,
+    // net of commission, via the payouts workflow.
     const [booking] = await tx
       .insert(bookings)
       .values({
@@ -272,20 +257,17 @@ export async function prepareOnlineBookingWithPayment(
     return {
       bookingId: booking!.id,
       totalPaise: total,
-      linkedAccountId: tenantRow.razorpayLinkedAccountId,
     };
   });
 
-  // Create the Route order outside the booking transaction so a network blip
-  // talking to Razorpay doesn't roll back the pending booking + slot claim.
-  // If Razorpay createRouteOrder ultimately fails, the abandoned-cart sweep
-  // will clean the pending booking after the grace window.
+  // Create the order outside the booking transaction so a network blip talking
+  // to Razorpay doesn't roll back the pending booking + slot claim. If
+  // createRouteOrder ultimately fails, the abandoned-cart sweep will clean the
+  // pending booking after the grace window.
   const { paymentId: _paymentId, providerOrderId } = await createRouteOrder({
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
-    linkedAccountId,
-    platformFeePaise: input.platformFeePaise ?? 0,
     actorUserId: ctx.actorUserId,
   });
 
@@ -361,7 +343,7 @@ export interface BookEventResult {
  * Free path  (pricePaise === 0): inserts booking with status='confirmed',
  *   paymentMethod='free'. No KYC check.
  *
- * Paid path: tenant.kyc_status='verified' required; otherwise `kyc_required`.
+ * Paid path: Circls is the merchant (no per-tenant KYC / Linked Account).
  *   Inserts booking status='pending' + payments row kind='charge', then calls
  *   `payments_service.createRouteOrder`. If Phase 12 isn't ready, surfaces a
  *   `payment_not_available` Conflict (the wrapping transaction rolls back).
@@ -402,22 +384,7 @@ export async function bookEvent(
     }
 
     const isFree = ev.pricePaise === 0;
-
-    let linkedAccountId: string | null = null;
-    if (!isFree) {
-      const [tenant] = await tx
-        .select({
-          kycStatus: tenants.kycStatus,
-          linkedAccountId: tenants.razorpayLinkedAccountId,
-        })
-        .from(tenants)
-        .where(eq(tenants.id, ev.tenantId))
-        .limit(1);
-      if (!tenant) throw new NotFound('Tenant not found', 'tenant_not_found');
-      const ok = tenant.kycStatus === 'verified' && Boolean(tenant.linkedAccountId);
-      if (!ok) throw new Conflict('Tenant KYC not verified', 'kyc_required');
-      linkedAccountId = tenant.linkedAccountId ?? null;
-    }
+    // Circls is the merchant — no per-tenant KYC / Linked Account gate.
 
     const [b] = await tx
       .insert(bookings)
@@ -462,7 +429,7 @@ export async function bookEvent(
       free: isFree,
     });
 
-    return { booking: b, isFree, linkedAccountId, tenantId: ev.tenantId, eventName: ev.name };
+    return { booking: b, isFree, tenantId: ev.tenantId, eventName: ev.name };
   });
 
   if (reserved.isFree) {
@@ -480,8 +447,6 @@ export async function bookEvent(
       bookingId: reserved.booking.id,
       tenantId: reserved.tenantId,
       amountPaise: reserved.booking.pricePaise ?? 0,
-      linkedAccountId: reserved.linkedAccountId!,
-      platformFeePaise: 0,
       actorUserId: customer.userId,
     });
     providerOrderId = result.providerOrderId;

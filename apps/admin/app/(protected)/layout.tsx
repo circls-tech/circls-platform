@@ -9,6 +9,7 @@ import type { MeTenant } from '@/lib/api/types';
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/tenants', label: 'Tenants' },
+  { href: '/payouts', label: 'Payouts' },
   { href: '/audit-log', label: 'Audit log' },
 ] as const;
 

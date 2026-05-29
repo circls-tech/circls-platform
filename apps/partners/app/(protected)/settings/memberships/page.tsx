@@ -49,7 +49,7 @@ export default function MembershipsPage() {
         <h1 className="text-xl font-semibold text-[#0f172a]">Memberships</h1>
       </div>
 
-      <Card title="Plans" subtitle="Time-bound passes your customers can buy. Free plans skip KYC.">
+      <Card title="Plans" subtitle="Time-bound passes your customers can buy.">
         {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading…</p>}
         {!isLoading && memberships?.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-400">
@@ -126,7 +126,7 @@ export default function MembershipsPage() {
               step="0.01"
               value={priceRupees}
               onChange={(e) => setPriceRupees(e.target.value)}
-              hint="0 = free (no KYC needed to purchase)."
+              hint="0 = free."
             />
             <Input
               label="Duration (days)"

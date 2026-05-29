@@ -25,7 +25,6 @@ interface TenantListItem {
   id: string;
   name: string;
   slug: string;
-  kycStatus: string;
   status: string;
   subscriptionStatus: string;
   createdAt: string;
@@ -74,8 +73,8 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
 
     // Insert a platform tenant whose slug matches the env override above
     const ptRows = await db.execute<{ id: string }>(sql`
-      INSERT INTO tenants (name, slug, is_platform, status, subscription_status, kyc_status)
-      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial', 'not_started')
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status)
+      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
       RETURNING id
     `);
     platformTenantId = ((ptRows as unknown as { id: string }[])[0]!).id;
@@ -221,7 +220,6 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(typeof body['tenantsTotal']).toBe('number');
     expect(typeof body['tenantsActive']).toBe('number');
     expect(typeof body['tenantsSuspended']).toBe('number');
-    expect(typeof body['tenantsPendingKyc']).toBe('number');
     expect(typeof body['bookings24h']).toBe('number');
     expect(typeof body['bookings7d']).toBe('number');
     expect(body['tenantsTotal']).toBeGreaterThanOrEqual(2);

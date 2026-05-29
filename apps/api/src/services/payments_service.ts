@@ -29,10 +29,6 @@ export interface CreateRouteOrderInput {
   bookingId: string;
   tenantId: string;
   amountPaise: number;
-  /** Razorpay Linked Account on the tenant. */
-  linkedAccountId: string;
-  /** Platform commission in paise. */
-  platformFeePaise: number;
   /** Audit actor — usually the customer (or the admin impersonating them). */
   actorUserId: string;
 }
@@ -65,10 +61,7 @@ export async function createRouteOrder(
       currency: 'INR',
       status: 'pending',
       kind: 'charge',
-      metadata: {
-        linkedAccountId: input.linkedAccountId,
-        platformFeePaise: input.platformFeePaise,
-      },
+      metadata: {},
     })
     .returning();
   if (!row) throw new Error('payments insert returned no row');
@@ -76,8 +69,6 @@ export async function createRouteOrder(
   const order = await adapter.createRouteOrder({
     amountPaise: input.amountPaise,
     currency: 'INR',
-    linkedAccountId: input.linkedAccountId,
-    platformFeePaise: input.platformFeePaise,
     reference: input.bookingId,
   });
 

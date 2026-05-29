@@ -13,7 +13,6 @@ import { logger } from '../lib/logger.js';
 import {
   notifyBookingCancelled,
   notifyBookingConfirmed,
-  notifyKycStateChange,
 } from './notification_service.js';
 
 /**
@@ -34,18 +33,5 @@ export async function onBookingCancelled(bookingId: string): Promise<void> {
     await notifyBookingCancelled(bookingId);
   } catch (err) {
     logger.warn({ err, bookingId }, 'on_booking_cancelled_hook_failed');
-  }
-}
-
-/** Call after KYC state transition lands. Never throws. */
-export async function onKycStateChange(
-  tenantId: string,
-  newStatus: string,
-  opts: { rejectionReason?: string | null } = {},
-): Promise<void> {
-  try {
-    await notifyKycStateChange(tenantId, newStatus, opts);
-  } catch (err) {
-    logger.warn({ err, tenantId, newStatus }, 'on_kyc_state_change_hook_failed');
   }
 }

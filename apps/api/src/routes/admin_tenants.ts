@@ -22,7 +22,6 @@ interface AdminTenantListItem {
   id: string;
   name: string;
   slug: string;
-  kycStatus: string;
   status: string;
   subscriptionStatus: string;
   createdAt: string;
@@ -93,7 +92,6 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           t.id,
           t.name,
           t.slug,
-          t.kyc_status,
           t.status,
           t.subscription_status,
           t.created_at,
@@ -115,7 +113,6 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         id: r['id'] as string,
         name: r['name'] as string,
         slug: r['slug'] as string,
-        kycStatus: r['kyc_status'] as string,
         status: r['status'] as string,
         subscriptionStatus: r['subscription_status'] as string,
         createdAt: new Date(r['created_at'] as string).toISOString(),
@@ -279,8 +276,6 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           (SELECT count(*) FROM tenants)                                                  AS tenants_total,
           (SELECT count(*) FROM tenants WHERE status = 'active')                          AS tenants_active,
           (SELECT count(*) FROM tenants WHERE status = 'suspended')                       AS tenants_suspended,
-          (SELECT count(*) FROM tenants
-             WHERE kyc_status IN ('submitted', 'in_review'))                              AS tenants_pending_kyc,
           (SELECT count(*) FROM bookings
              WHERE created_at >= now() - interval '24 hours')                             AS bookings_24h,
           (SELECT count(*) FROM bookings
@@ -291,7 +286,6 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         tenantsTotal: Number(r['tenants_total'] ?? 0),
         tenantsActive: Number(r['tenants_active'] ?? 0),
         tenantsSuspended: Number(r['tenants_suspended'] ?? 0),
-        tenantsPendingKyc: Number(r['tenants_pending_kyc'] ?? 0),
         bookings24h: Number(r['bookings_24h'] ?? 0),
         bookings7d: Number(r['bookings_7d'] ?? 0),
       };

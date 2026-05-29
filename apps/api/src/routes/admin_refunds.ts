@@ -1,12 +1,14 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { payments, tenantMembers } from '../db/schema/index.js';
-import { env } from '../config/env.js';
+import { payments } from '../db/schema/index.js';
+import { can } from '../lib/authz/can.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { issueRefund } from '../services/refund_service.js';
 
 const refundBodySchema = z.object({
@@ -22,9 +24,10 @@ const refundBodySchema = z.object({
  * `computeRefundPolicy()` entirely; `issueRefund()` still validates that the
  * requested amount doesn't exceed the remaining-to-refund balance.
  *
- * Authorisation, until Phase 16 lands proper RBAC:
- *   1. User id is in env.ADMIN_USER_IDS  (platform-staff backdoor), OR
- *   2. User is an 'owner' of the tenant the payment belongs to.
+ * Authorisation (capability-based):
+ *   1. Platform admin with `admin.payouts.execute` (owner/manager of the Circls
+ *      platform tenant), OR
+ *   2. An 'owner' of the tenant the payment belongs to (self-service refund).
  *
  * `bySelf=false` audit semantics apply implicitly: this is always a staff
  * override.
@@ -54,23 +57,25 @@ export const adminRefundRoutes: FastifyPluginAsync = async (app) => {
 
       const user = await currentUser(req);
 
-      const isPlatformAdmin = env.ADMIN_USER_IDS.includes(user.id);
-      let isTenantOwner = false;
-      if (!isPlatformAdmin) {
-        const [member] = await db
-          .select()
-          .from(tenantMembers)
-          .where(
-            and(
-              eq(tenantMembers.userId, user.id),
-              eq(tenantMembers.tenantId, payment.tenantId),
-              eq(tenantMembers.role, 'owner'),
-            ),
-          )
-          .limit(1);
-        isTenantOwner = Boolean(member);
+      // 1. Platform admin with refund/payout power?
+      let allowed = false;
+      const platformTenantId = await getPlatformTenantId();
+      try {
+        const platformCtx = await requireTenantMembership(user.id, platformTenantId);
+        allowed = can(platformCtx, 'admin.payouts.execute');
+      } catch {
+        // Not a member of the platform tenant — fall through to the owner check.
       }
-      if (!isPlatformAdmin && !isTenantOwner) {
+      // 2. Otherwise, an owner of the payment's own tenant.
+      if (!allowed) {
+        try {
+          const tenantCtx = await requireTenantMembership(user.id, payment.tenantId);
+          allowed = tenantCtx.role === 'owner';
+        } catch {
+          // Not a member of the payment's tenant either.
+        }
+      }
+      if (!allowed) {
         throw new Forbidden('Admin refund requires platform-admin or tenant-owner', 'admin_required');
       }
 

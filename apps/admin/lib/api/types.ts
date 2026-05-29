@@ -13,7 +13,6 @@ export interface AdminStats {
   tenantsTotal: number;
   tenantsActive: number;
   tenantsSuspended: number;
-  tenantsPendingKyc: number;
   bookings24h: number;
   bookings7d: number;
 }
@@ -22,7 +21,6 @@ export interface AdminTenantListItem {
   id: string;
   name: string;
   slug: string;
-  kycStatus: 'not_started' | 'submitted' | 'in_review' | 'verified' | 'rejected';
   status: 'active' | 'suspended';
   subscriptionStatus: string;
   createdAt: string;
@@ -56,10 +54,6 @@ export interface AdminTenantDetail {
     bankIfsc: string | null;
     bankAccountHolderName: string | null;
     addressJson: Record<string, unknown> | null;
-    kycStatus: AdminTenantListItem['kycStatus'];
-    kycSubmittedAt: string | null;
-    kycVerifiedAt: string | null;
-    kycRejectionReason: string | null;
     razorpayLinkedAccountId: string | null;
     subscriptionStatus: string;
     status: AdminTenantListItem['status'];
@@ -103,5 +97,27 @@ export interface TenantAuditLogItem {
 
 export interface TenantAuditLogPage {
   rows: TenantAuditLogItem[];
+  nextCursor: string | null;
+}
+
+export interface AdminPayoutRow {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  periodStart: string;
+  periodEnd: string;
+  grossPaise: number;
+  refundsPaise: number;
+  commissionPaise: number;
+  amountPaise: number;
+  currency: string;
+  status: 'pending' | 'paid';
+  paidAt: string | null;
+  paidReference: string | null;
+  createdAt: string;
+}
+
+export interface AdminPayoutListPage {
+  rows: AdminPayoutRow[];
   nextCursor: string | null;
 }

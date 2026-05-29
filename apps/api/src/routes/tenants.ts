@@ -17,8 +17,6 @@ const createTenantSchema = z.object({
     .min(2)
     .max(80)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug must be lowercase alphanumeric with dashes'),
-  legalEntityName: z.string().max(200).optional(),
-  gstin: z.string().max(20).optional(),
 });
 
 export const tenantRoutes: FastifyPluginAsync = async (app) => {
@@ -29,13 +27,8 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid tenant payload', 'bad_request', { issues: parsed.error.issues });
     }
     const user = await currentUser(req);
-    const { name, slug, legalEntityName, gstin } = parsed.data;
-    return createTenant(user.id, {
-      name,
-      slug,
-      legalEntityName: legalEntityName ?? null,
-      gstin: gstin ?? null,
-    });
+    const { name, slug } = parsed.data;
+    return createTenant(user.id, { name, slug });
   });
 
   // Partner: tenants the caller belongs to.

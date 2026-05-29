@@ -45,8 +45,6 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       .values({
         name: 'Pay Co',
         slug: `payco-${Date.now()}`,
-        // Stub a Linked Account so the booking flow's KYC gate passes.
-        razorpayLinkedAccountId: 'stub_acc_test',
       })
       .returning();
     tenantId = t!.id;
@@ -126,8 +124,6 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       bookingId: booking!.id,
       tenantId,
       amountPaise: 50000,
-      linkedAccountId: 'stub_acc_test',
-      platformFeePaise: 1000,
       actorUserId: userId,
     });
 

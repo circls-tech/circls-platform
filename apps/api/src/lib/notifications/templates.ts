@@ -44,8 +44,6 @@ interface TemplateDef {
  *   booking.confirmed  → venueName, arenaName, when, totalRupees, bookingId
  *   booking.cancelled  → venueName, when, refundRupees? (omit when free)
  *   booking.reminder_* → venueName, arenaName, when
- *   kyc.verified       → tenantName
- *   kyc.rejected       → tenantName, reason
  *   otp.login          → code
  *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
  */
@@ -102,29 +100,6 @@ const TEMPLATES: Record<string, TemplateDef> = {
     },
     whatsapp: {
       body: 'Starting in 1 hour: *{{venueName}}* ({{arenaName}}) — {{when}}.',
-    },
-  },
-
-  'kyc.verified': {
-    email: {
-      subject: 'KYC verified — welcome to Circls',
-      body:
-        'Hi,\n\n' +
-        'Your organisation {{tenantName}} is now KYC-verified. ' +
-        'You can start accepting bookings and payouts.\n\n' +
-        '— Circls',
-    },
-  },
-
-  'kyc.rejected': {
-    email: {
-      subject: 'KYC needs attention — {{tenantName}}',
-      body:
-        'Hi,\n\n' +
-        'Your KYC submission for {{tenantName}} could not be verified.\n\n' +
-        'Reason: {{reason}}\n\n' +
-        'Please update your documents from the Partner portal and resubmit.\n\n' +
-        '— Circls',
     },
   },
 

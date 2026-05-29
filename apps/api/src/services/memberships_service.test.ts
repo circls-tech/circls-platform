@@ -119,26 +119,7 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
     expect(found?.paymentId).toBeNull();
   });
 
-  it('purchaseMembership (paid) requires kyc_status=verified', async () => {
-    const m = await createMembership({
-      tenantId,
-      actorUserId,
-      name: 'Pro',
-      pricePaise: 199900,
-      durationDays: 30,
-    });
-    // Tenant is not_started by default → kyc_required.
-    await expect(
-      purchaseMembership({ membershipId: m.id, userId: buyerId }),
-    ).rejects.toMatchObject({ code: 'kyc_required' });
-  });
-
-  it('purchaseMembership (paid) succeeds when KYC is verified — payment-service mocked', async () => {
-    await db
-      .update(tenants)
-      .set({ kycStatus: 'verified', razorpayLinkedAccountId: 'acc_MEM_TEST' })
-      .where(eq(tenants.id, tenantId));
-
+  it('purchaseMembership (paid) succeeds — Circls is merchant, no KYC gate', async () => {
     const m = await createMembership({
       tenantId,
       actorUserId,
@@ -150,11 +131,5 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
     expect(result.userMembershipId).toBeTruthy();
     expect(result.paymentId).toBeTruthy();
     expect(result.orderId).toMatch(/^order_stub_/);
-
-    // Restore so other tests in the file see the default state.
-    await db
-      .update(tenants)
-      .set({ kycStatus: 'not_started', razorpayLinkedAccountId: null })
-      .where(eq(tenants.id, tenantId));
   });
 });
