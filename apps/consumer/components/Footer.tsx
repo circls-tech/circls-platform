@@ -16,7 +16,7 @@ export function Footer() {
           <Link href="/" className="font-display text-xl text-white">
             Cir<span className="text-gold-500">cls</span>
           </Link>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
             {LINKS.map((l) => (
               <Link key={l.href} href={l.href} className="text-white/80 hover:text-white">{l.label}</Link>
             ))}

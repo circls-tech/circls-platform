@@ -22,11 +22,12 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           Contact: Contact@gibbous.io · Jurisdiction: Nagpur, Maharashtra, India
         </p>
 
-        <nav className="mt-5 flex gap-2">
+        <nav aria-label="Policies" className="mt-5 flex gap-2">
           {TABS.map((t) => (
             <Link
               key={t.slug}
               href={`/${t.slug}`}
+              aria-current={t.slug === doc.slug ? 'page' : undefined}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                 t.slug === doc.slug ? 'bg-ink text-white' : 'bg-gold-100 text-gold-text hover:bg-gold-100/70'
               }`}
