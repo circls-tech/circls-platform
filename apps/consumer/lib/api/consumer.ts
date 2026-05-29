@@ -6,7 +6,9 @@ import type {
   MembershipPurchaseResult,
   MyBooking,
   PublicEvent,
+  PublicEventWithVenue,
   PublicMembership,
+  PublicMembershipWithScope,
   PublicSlot,
   PublicVenue,
   SlotBookingResult,
@@ -15,14 +17,14 @@ import type {
 
 // ── Browse (public, no auth) ──────────────────────────────────────────────────
 
-export function useVenues(search: string) {
+export function useVenues(search: string, limit = 50) {
   const trimmed = search.trim();
   return useQuery({
-    queryKey: ['venues', trimmed],
+    queryKey: ['venues', trimmed, limit],
     queryFn: () => {
       const qs = new URLSearchParams();
       if (trimmed) qs.set('search', trimmed);
-      qs.set('limit', '50');
+      qs.set('limit', String(limit));
       return apiFetch<{ rows: PublicVenue[] }>(`/v1/consumer/venues?${qs.toString()}`);
     },
     select: (data) => data.rows,
@@ -52,6 +54,26 @@ export function useVenueMemberships(venueId: string) {
     queryFn: () =>
       apiFetch<{ rows: PublicMembership[] }>(`/v1/consumer/venues/${venueId}/memberships`),
     enabled: Boolean(venueId),
+    select: (data) => data.rows,
+  });
+}
+
+/** All upcoming events across venues (server hides past + sorts ascending). */
+export function useUpcomingEvents(limit = 50) {
+  return useQuery({
+    queryKey: ['events', limit],
+    queryFn: () =>
+      apiFetch<{ rows: PublicEventWithVenue[] }>(`/v1/consumer/events?limit=${limit}`),
+    select: (data) => data.rows,
+  });
+}
+
+/** All active memberships across venues. */
+export function useAllMemberships(limit = 50) {
+  return useQuery({
+    queryKey: ['memberships', limit],
+    queryFn: () =>
+      apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/memberships?limit=${limit}`),
     select: (data) => data.rows,
   });
 }
