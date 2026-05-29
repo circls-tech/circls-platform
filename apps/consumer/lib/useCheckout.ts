@@ -98,9 +98,9 @@ export function useCheckout() {
           return;
         }
         const result = await openRazorpayCheckout({
-          keyId: RAZORPAY_KEY_ID,
+          keyId: res.keyId || RAZORPAY_KEY_ID,
           orderId: res.providerOrderId,
-          amountPaise,
+          amountPaise: res.amountPaise ?? amountPaise,
           currency: 'INR',
           description: 'Event registration',
           ...(prefill ? { prefill } : {}),
@@ -130,9 +130,9 @@ export function useCheckout() {
           return;
         }
         const result = await openRazorpayCheckout({
-          keyId: RAZORPAY_KEY_ID,
+          keyId: res.keyId || RAZORPAY_KEY_ID,
           orderId: res.orderId,
-          amountPaise,
+          amountPaise: res.amountPaise ?? amountPaise,
           currency: 'INR',
           description: 'Membership',
           ...(prefill ? { prefill } : {}),

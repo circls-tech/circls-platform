@@ -15,6 +15,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { env } from '../config/env.js';
 import { memberships, type Membership, userMemberships } from '../db/schema/memberships.js';
 import { bookings } from '../db/schema/bookings.js';
 import { tenants } from '../db/schema/tenants.js';
@@ -202,6 +203,9 @@ export interface PurchaseMembershipResult {
   userMembershipId: string;
   paymentId?: string;
   orderId?: string;
+  /** Razorpay publishable key + amount, so the client can open checkout. */
+  keyId?: string;
+  amountPaise?: number;
 }
 
 /**
@@ -351,7 +355,13 @@ export async function purchaseMembership(
       .where(eq(userMemberships.id, reserved.userMembershipId));
   }
 
-  return { userMembershipId: reserved.userMembershipId, paymentId, orderId };
+  return {
+    userMembershipId: reserved.userMembershipId,
+    paymentId,
+    orderId,
+    keyId: env.RAZORPAY_KEY_ID ?? '',
+    amountPaise: reserved.pricePaise,
+  };
 }
 
 export interface UserMembershipWithMembership {

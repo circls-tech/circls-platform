@@ -87,6 +87,9 @@ export interface EventBookingResult {
   paymentId?: string;
   /** Present only for paid events; free events return a confirmed booking and no order. */
   providerOrderId?: string;
+  /** Razorpay publishable key + amount for opening checkout (paid only). */
+  keyId?: string;
+  amountPaise?: number;
 }
 
 export interface MembershipPurchaseResult {
@@ -94,6 +97,9 @@ export interface MembershipPurchaseResult {
   paymentId?: string;
   /** Present only for paid memberships; free ones activate immediately. */
   orderId?: string;
+  /** Razorpay publishable key + amount for opening checkout (paid only). */
+  keyId?: string;
+  amountPaise?: number;
 }
 
 export interface MyBooking {
