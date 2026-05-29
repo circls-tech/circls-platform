@@ -36,14 +36,11 @@ class ResendEmail implements EmailProvider {
   readonly mode = 'resend' as const;
   constructor(
     private readonly apiKey: string,
-    private readonly from: string | undefined,
+    private readonly from: string,
   ) {}
 
   async send(input: ProviderSendInput): Promise<ProviderSendResult> {
     const rendered = renderTemplate('email', input.templateKey, input.payload);
-    if (!this.from) {
-      throw new Error('resend_send_failed:RESEND_FROM not configured');
-    }
 
     const body = {
       from: this.from,
@@ -72,6 +69,32 @@ class ResendEmail implements EmailProvider {
 }
 
 export function getEmailProvider(): EmailProvider {
-  if (env.RESEND_API_KEY) return new ResendEmail(env.RESEND_API_KEY, env.RESEND_FROM);
+  const { RESEND_API_KEY, RESEND_FROM } = env;
+
+  // Fully configured → real delivery.
+  if (RESEND_API_KEY && RESEND_FROM) {
+    return new ResendEmail(RESEND_API_KEY, RESEND_FROM);
+  }
+
+  // Partially configured → exactly one of the two is set. This is almost
+  // certainly an operator mistake (they meant to enable email but missed a
+  // var). Falling through to the stub silently is the original trap that made
+  // email "not work" with no signal.
+  if (RESEND_API_KEY || RESEND_FROM) {
+    logger.warn(
+      { hasKey: Boolean(RESEND_API_KEY), hasFrom: Boolean(RESEND_FROM) },
+      'resend_partial_config — set BOTH RESEND_API_KEY and RESEND_FROM to enable real email',
+    );
+    // Fail fast in prod: a half-configured sender is an operator mistake and
+    // we'd rather crash the deploy than silently swallow every email. Dev/test
+    // stay forgiving and fall through to the stub below.
+    if (env.NODE_ENV === 'production') {
+      throw new Error(
+        'resend_partial_config: both RESEND_API_KEY and RESEND_FROM are required in production',
+      );
+    }
+  }
+
+  // Nothing configured → stub (expected in dev/test).
   return new StubEmail();
 }

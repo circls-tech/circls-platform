@@ -181,6 +181,19 @@ export function getNotifications(): NotificationsAdapter {
   return cached;
 }
 
+/**
+ * Boot-time introspection: which provider each channel resolved to. Logged once
+ * at startup (`notification_providers`) so "email doesn't work" is answerable
+ * from the first lines of the log — a `stub` mode means no real delivery.
+ */
+export function notificationModes(): { sms: string; email: string; whatsapp: string } {
+  return {
+    sms: getSmsProvider().mode,
+    email: getEmailProvider().mode,
+    whatsapp: getWhatsappProvider().mode,
+  };
+}
+
 /** Test-only reset. */
 export function __resetNotificationsForTesting(): void {
   cached = undefined;

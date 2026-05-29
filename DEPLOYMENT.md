@@ -48,6 +48,8 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `PORT` | no | 8080 | |
 | `LOG_LEVEL` | no | info | |
 | `NODE_ENV` | no | development | set `production` in prod |
+| `RESEND_API_KEY` | for email | — | Resend server key (`re_…`). Unset ⇒ email runs in stub mode. See `docs/EMAIL_SETUP.md`. |
+| `RESEND_FROM` | with key | — | verified sender, e.g. `Circls <no-reply@circls.app>`. Required alongside the key. |
 
 ## Gotchas captured this session
 

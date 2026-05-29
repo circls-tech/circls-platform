@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { closeDb, db, pingDb } from './db/client.js';
 import { tenants } from './db/schema/tenants.js';
 import { logger } from './lib/logger.js';
+import { notificationModes } from './lib/notifications/index.js';
 import { buildServer } from './server.js';
 import { startWorker, stopWorker } from './worker/index.js';
 
@@ -42,6 +43,11 @@ async function main(): Promise<void> {
       );
     }
   }
+
+  // Surface which notification providers are live vs stub. A `stub` here means
+  // that channel writes a ledger row but never delivers — the first thing to
+  // check when "email/SMS doesn't work". See docs/EMAIL_SETUP.md.
+  logger.info(notificationModes(), 'notification_providers');
 
   const app = await buildServer();
 
