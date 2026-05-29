@@ -18,7 +18,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {label != null && (
         <label
           htmlFor={id}
-          className="text-xs font-medium uppercase tracking-wide text-[#475569]"
+          className="text-xs font-medium uppercase tracking-wide text-text-secondary"
         >
           {label}
         </label>
@@ -32,7 +32,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           'transition-colors duration-150',
           error
             ? 'border-red-400 bg-red-50'
-            : 'border-[#e5e7eb] bg-white hover:border-slate-300',
+            : 'border-border bg-white hover:border-gold-500',
           className,
         ].join(' ')}
         aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
