@@ -17,6 +17,10 @@ describe('matchSport', () => {
     expect(matchSport([])).toBeNull();
     expect(matchSport(undefined)).toBeNull();
   });
+  it('returns the first matching tag in order', () => {
+    expect(matchSport(['yoga', 'tennis'])).toBe('tennis');
+    expect(matchSport(['tennis', 'badminton'])).toBe('tennis');
+  });
 });
 
 describe('resolveImage', () => {
@@ -31,5 +35,8 @@ describe('resolveImage', () => {
   it('falls back to the motif when no tag matches and no upload', () => {
     expect(resolveImage({ tags: ['yoga'] })).toEqual({ kind: 'motif' });
     expect(resolveImage({})).toEqual({ kind: 'motif' });
+  });
+  it('uses the uploaded imageUrl even when no tag matches (no sport field)', () => {
+    expect(resolveImage({ imageUrl: 'https://cdn/x.jpg' })).toEqual({ kind: 'photo', src: 'https://cdn/x.jpg' });
   });
 });

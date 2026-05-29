@@ -20,8 +20,13 @@ export function SportImage({
   className?: string;
 }) {
   const r = resolveImage(input);
+  const isMotif = r.kind === 'motif';
   return (
-    <div className={`relative overflow-hidden bg-ink ${className}`}>
+    <div
+      className={`relative overflow-hidden bg-ink ${className}`}
+      role={isMotif ? 'img' : undefined}
+      aria-label={isMotif ? alt : undefined}
+    >
       {r.kind === 'photo' ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
