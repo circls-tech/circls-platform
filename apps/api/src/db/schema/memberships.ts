@@ -30,7 +30,8 @@ export const memberships = pgTable('memberships', {
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   durationDays: integer('duration_days').notNull(),
   benefits: jsonb('benefits').$type<Record<string, unknown>>().notNull().default({}),
-  status: membershipStatus('status').notNull().default('pending_review'),
+  // DB default stays 'active'; create service sets 'pending_review' (B).
+  status: membershipStatus('status').notNull().default('active'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

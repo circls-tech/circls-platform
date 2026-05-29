@@ -61,6 +61,8 @@ export async function createMembership(input: CreateMembershipInput): Promise<Me
         pricePaise: input.pricePaise,
         durationDays: input.durationDays,
         benefits: input.benefits ?? {},
+        // New listings await Circls review before going live (subproject B).
+        status: 'pending_review',
       })
       .returning();
     if (!row) throw new Error('membership insert returned no row');

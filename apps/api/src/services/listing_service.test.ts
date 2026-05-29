@@ -47,7 +47,12 @@ describe.skipIf(!runIntegration)('listing approval — integration', () => {
   });
 
   async function newVenue(name: string): Promise<string> {
-    const [v] = await db.insert(venues).values({ tenantId, name }).returning();
+    // Insert directly (bypassing the create service), so set the submitted
+    // state explicitly — the DB default is the legacy 'active'.
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId, name, status: 'pending_review' })
+      .returning();
     return v!.id;
   }
 

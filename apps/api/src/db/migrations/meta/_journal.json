@@ -100,13 +100,6 @@
       "when": 1780240000000,
       "tag": "0013_listing_approval_states",
       "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1780240000001,
-      "tag": "0014_listing_approval_defaults",
-      "breakpoints": true
     }
   ]
 }
