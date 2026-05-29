@@ -10,6 +10,72 @@ const envSchema = z.object({
   // Firebase Admin service-account JSON (raw or base64). Optional in dev/test;
   // required at runtime once auth is exercised (GET /v1/me etc.).
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+
+  // ── Track B (Phases 11–17) ─────────────────────────────────────────────────
+  // All optional. When unset, the corresponding adapter runs in STUB mode:
+  //   - storage   → in-memory bucket (per-process; obviously not for prod).
+  //   - razorpay  → no HTTP, deterministic stub orders / refunds.
+  //   - SMS/email → ledger row written, no provider call.
+  // This keeps tests hermetic and lets the build go green before creds exist.
+
+  // R2 / S3 (KYC docs, venue media). Phase 11.
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  R2_PUBLIC_BASE_URL: z.string().url().optional(),
+
+  // Razorpay (Linked Accounts + Route + Refunds). Phases 11/12/14.
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  // Settlement-hold buffer after a slot's end (minutes). Default = 60.
+  SETTLEMENT_HOLD_BUFFER_MIN: z.coerce.number().int().min(0).default(60),
+  // pending → cancelled grace period for unpaid carts (minutes).
+  ABANDONED_CART_GRACE_MIN: z.coerce.number().int().min(1).default(15),
+
+  // Notifications. Phase 13. SMS = MSG91, email = Resend, WA = AiSensy/Gupshup.
+  MSG91_AUTH_KEY: z.string().optional(),
+  MSG91_SENDER_ID: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().optional(),
+  WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
+  WHATSAPP_API_KEY: z.string().optional(),
+
+  // Partner portal base URL (used to build invite acceptance links).
+  PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
+
+  // Admin portal base URL (used to build Circls-internal invite links).
+  ADMIN_BASE_URL: z.string().url().default('https://admin.circls.app'),
+
+  // Outbound webhooks. Phase 17.
+  WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
+  WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
+
+  // Worker process toggle (the partner-portal API container runs both web + in-proc
+  // worker; if we ever split to a second Coolify service this flips false there).
+  RUN_WORKER: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  // Slug of the Circls platform tenant. Used alongside is_platform=true for
+  // belt-and-suspenders lookup. Must match the row inserted by
+  // scripts/bootstrap_circls_tenant.ts.
+  CIRCLS_INTERNAL_TENANT_SLUG: z.string().default('circls-internal'),
+
+  // Platform admin user IDs for out-of-policy refunds. Comma-separated list of
+  // user UUIDs. Until the Phase 16 admin console lands with proper role-based
+  // auth, this env var gates `/v1/admin/*` routes. Empty = nobody is platform
+  // admin (only tenant owners can act on their own tenant's payments).
+  ADMIN_USER_IDS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : [],
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

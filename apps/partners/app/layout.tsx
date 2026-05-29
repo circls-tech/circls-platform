@@ -12,8 +12,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
-        {/* invisible reCAPTCHA target for Firebase phone auth */}
-        <div id="recaptcha-container" />
       </body>
     </html>
   );

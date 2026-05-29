@@ -13,6 +13,7 @@ export interface Tenant {
   id: string;
   name: string;
   slug: string;
+  isPlatform?: boolean;
   kycStatus: string;
   subscriptionStatus: string;
   status: string;
@@ -142,4 +143,203 @@ export interface AuditLogItem {
 export interface AuditLogPage {
   rows: AuditLogItem[];
   nextCursor: string | null;
+}
+
+// ── Notifications (Phase 13) ──────────────────────────────────────────────────
+
+export type NotificationChannel = 'sms' | 'email' | 'whatsapp';
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+export interface NotificationItem {
+  id: string;
+  channel: NotificationChannel;
+  status: NotificationStatus;
+  recipient: string;
+  templateKey: string;
+  providerMessageId: string | null;
+  error: string | null;
+  /** ISO-8601 — null when not scheduled (sent immediately). */
+  scheduledFor: string | null;
+  /** ISO-8601 — null while still pending or failed. */
+  sentAt: string | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+export interface NotificationsPage {
+  rows: NotificationItem[];
+  nextCursor: string | null;
+}
+
+// ── Phase 14: cancellations + payments ledger ────────────────────────────────
+
+export interface CancelResult {
+  bookingId: string;
+  status: 'cancelled';
+  refundPaise: number;
+  refundId?: string;
+  policy: 'full' | 'partial' | 'none' | 'override' | 'free' | 'external';
+}
+
+export type PaymentKind = 'charge' | 'refund' | 'adjustment';
+export type PaymentStatus =
+  | 'pending'
+  | 'authorized'
+  | 'captured'
+  | 'failed'
+  | 'refunded'
+  | 'partially_refunded';
+
+export interface Payment {
+  id: string;
+  bookingId: string;
+  tenantId: string;
+  provider: 'razorpay' | 'stub' | 'external';
+  providerOrderId: string | null;
+  providerPaymentId: string | null;
+  /** Signed: positive for charges, negative for refunds. Paise. */
+  amountPaise: number;
+  currency: string;
+  status: PaymentStatus;
+  kind: PaymentKind;
+  metadata: Record<string, unknown>;
+  settlementHoldUntil: string | null;
+  settlementReleasedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Events (Phase 15) ────────────────────────────────────────────────────────
+
+export type EventStatus = 'draft' | 'published' | 'cancelled';
+
+export interface VenueEvent {
+  id: string;
+  tenantId: string;
+  venueId: string;
+  name: string;
+  description: string | null;
+  /** ISO-8601 */
+  startsAt: string;
+  /** ISO-8601 */
+  endsAt: string;
+  pricePaise: number;
+  capacity: number | null;
+  status: EventStatus;
+}
+
+// ── Memberships (Phase 15) ───────────────────────────────────────────────────
+
+export interface Membership {
+  id: string;
+  tenantId: string;
+  venueId: string | null;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  durationDays: number;
+  benefits: Record<string, unknown>;
+  status: 'active' | 'inactive';
+}
+
+export interface UserMembership {
+  id: string;
+  userId: string;
+  membershipId: string;
+  paymentId: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: 'active' | 'expired' | 'cancelled';
+  membership: {
+    id: string;
+    tenantId: string;
+    venueId: string | null;
+    name: string;
+    description: string | null;
+    pricePaise: number;
+    durationDays: number;
+  };
+}
+
+// ── Phase 17: API keys + outbound webhooks ────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  tenantId: string | null;
+  name: string;
+  keyPrefix: string;
+  role: 'read' | 'write' | 'admin';
+  scopes: string[];
+  status: 'active' | 'revoked';
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiKeyCreateResult {
+  id: string;
+  /** Shown ONCE — partner must copy it now. */
+  plaintext: string;
+  prefix: string;
+}
+
+export interface WebhookSubscription {
+  id: string;
+  tenantId: string;
+  url: string;
+  events: string[];
+  status: 'active' | 'disabled';
+  createdAt: string;
+}
+
+export interface WebhookSubscriptionCreateResult {
+  id: string;
+  /** Shown ONCE — partner must copy it now. */
+  secret: string;
+}
+
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'expired';
+
+export interface WebhookDeliveryItem {
+  id: string;
+  eventType: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface WebhookDeliveryPage {
+  rows: WebhookDeliveryItem[];
+  nextCursor: string | null;
+}
+
+// Team management (subproject D).
+export type TenantRole = 'owner' | 'manager' | 'staff' | 'readonly';
+
+export interface TeamMember {
+  userId: string;
+  email: string | null;
+  displayName: string | null;
+  role: TenantRole;
+  createdAt: string;
+}
+
+export interface TenantInvitation {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: TenantRole;
+  invitedByUserId: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  acceptedUserId: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateInvitationResponse {
+  invitation: TenantInvitation;
+  token: string; // shown once for copy-link
 }

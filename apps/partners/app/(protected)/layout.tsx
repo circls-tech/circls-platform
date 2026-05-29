@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useMyTenants } from '@/lib/api/queries';
 import { OrgProvider } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
 import { Button } from '@/lib/ui';
@@ -57,12 +58,21 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { data: tenants, isLoading: tenantsLoading } = useMyTenants();
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && user && !tenantsLoading) {
+      if ((tenants?.length ?? 0) === 0 && pathname !== '/no-tenants') {
+        router.replace('/no-tenants');
+      }
+    }
+  }, [loading, user, tenantsLoading, tenants, pathname, router]);
+
+  if (loading || (user && tenantsLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <span className="block h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
@@ -70,6 +80,10 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     );
   }
   if (!user) return null;
+
+  // No-tenants page: render without chrome (OrgProvider / Sidebar would crash
+  // or redirect in a loop if there is no tenant to select).
+  if (pathname === '/no-tenants') return <>{children}</>;
 
   return (
     <OrgProvider>

@@ -1,5 +1,7 @@
+import { and, eq } from 'drizzle-orm';
 import { env } from './config/env.js';
-import { closeDb, pingDb } from './db/client.js';
+import { closeDb, db, pingDb } from './db/client.js';
+import { tenants } from './db/schema/tenants.js';
 import { logger } from './lib/logger.js';
 import { buildServer } from './server.js';
 import { startWorker, stopWorker } from './worker/index.js';
@@ -11,6 +13,22 @@ async function main(): Promise<void> {
   } catch (err) {
     logger.fatal({ err }, 'db_connection_failed');
     process.exit(1);
+  }
+
+  // Non-fatal boot sanity check: warn if the platform tenant is missing.
+  // Read slug via process.env so override in tests works post-module-load.
+  {
+    const slug = process.env['CIRCLS_INTERNAL_TENANT_SLUG'] ?? env.CIRCLS_INTERNAL_TENANT_SLUG;
+    const [platform] = await db
+      .select({ id: tenants.id })
+      .from(tenants)
+      .where(and(eq(tenants.slug, slug), eq(tenants.isPlatform, true)));
+    if (!platform) {
+      logger.warn(
+        { slug },
+        'circls_internal_tenant_missing — run scripts/bootstrap_circls_tenant.ts',
+      );
+    }
   }
 
   const app = await buildServer();

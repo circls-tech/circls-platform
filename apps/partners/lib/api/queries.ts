@@ -1,7 +1,30 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Analytics, Arena, AuditLogPage, Booking, BookingDetail, BookingListItem, Slot, Tenant, User, Venue } from './types';
+import type {
+  Analytics,
+  ApiKey,
+  ApiKeyCreateResult,
+  Arena,
+  AuditLogPage,
+  Booking,
+  BookingDetail,
+  BookingListItem,
+  CancelResult,
+  CreateInvitationResponse,
+  NotificationsPage,
+  Payment,
+  Slot,
+  TeamMember,
+  Tenant,
+  TenantInvitation,
+  TenantRole,
+  User,
+  Venue,
+  WebhookDeliveryPage,
+  WebhookSubscription,
+  WebhookSubscriptionCreateResult,
+} from './types';
 
 export function useMe() {
   const { user } = useAuth();
@@ -171,8 +194,48 @@ export function useCancelBookingById(arenaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (bookingId: string) =>
-      apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, { method: 'POST' }),
+      apiFetch<Booking>(`/v1/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+  });
+}
+
+export interface CancelBookingInput {
+  bookingId: string;
+  reason: string;
+}
+
+/**
+ * Phase 14 cancellation flow. POSTs a reason and returns the refund decision
+ * from the cancellation engine.
+ */
+export function useCancelBookingWithReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, reason }: CancelBookingInput) =>
+      apiFetch<CancelResult>(`/v1/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['slots'] });
+      void qc.invalidateQueries({ queryKey: ['venue-bookings'] });
+      void qc.invalidateQueries({ queryKey: ['booking-detail'] });
+      void qc.invalidateQueries({ queryKey: ['booking-payments'] });
+    },
+  });
+}
+
+/**
+ * Payment ledger rows for a booking — charges, refunds, and adjustments.
+ */
+export function useBookingPayments(bookingId: string | null) {
+  return useQuery({
+    queryKey: ['booking-payments', bookingId],
+    queryFn: () => apiFetch<Payment[]>(`/v1/bookings/${bookingId}/payments`),
+    enabled: Boolean(bookingId),
   });
 }
 
@@ -269,5 +332,191 @@ export function useAuditLog(tenantId: string, params: AuditLogParams = {}) {
         `/v1/tenants/${tenantId}/audit-log${query ? `?${query}` : ''}`,
       );
     },
+  });
+}
+
+// ── Notifications (Phase 13) ──────────────────────────────────────────────────
+
+export interface NotificationsParams {
+  channel?: 'sms' | 'email' | 'whatsapp';
+  status?: 'pending' | 'sent' | 'failed' | 'skipped';
+}
+
+export function useNotifications(tenantId: string, params: NotificationsParams = {}) {
+  return useInfiniteQuery({
+    queryKey: ['notifications', tenantId, params.channel, params.status],
+    enabled: Boolean(tenantId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: NotificationsPage) => last.nextCursor ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      if (params.channel) qs.set('channel', params.channel);
+      if (params.status)  qs.set('status',  params.status);
+      if (pageParam)      qs.set('cursor',  pageParam);
+      const query = qs.toString();
+      return apiFetch<NotificationsPage>(
+        `/v1/tenants/${tenantId}/notifications${query ? `?${query}` : ''}`,
+      );
+    },
+  });
+}
+
+// ── Phase 17: API keys ────────────────────────────────────────────────────────
+
+export function useApiKeys(tenantId: string) {
+  return useQuery({
+    queryKey: ['api-keys', tenantId],
+    queryFn: () => apiFetch<ApiKey[]>(`/v1/tenants/${tenantId}/api-keys`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useCreateApiKey(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; role: 'read' | 'write' | 'admin'; scopes?: string[] }) =>
+      apiFetch<ApiKeyCreateResult>(`/v1/tenants/${tenantId}/api-keys`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['api-keys', tenantId] }),
+  });
+}
+
+export function useRevokeApiKey(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['api-keys', tenantId] }),
+  });
+}
+
+// ── Phase 17: Webhook subscriptions ──────────────────────────────────────────
+
+export function useWebhookSubscriptions(tenantId: string) {
+  return useQuery({
+    queryKey: ['webhook-subscriptions', tenantId],
+    queryFn: () =>
+      apiFetch<WebhookSubscription[]>(`/v1/tenants/${tenantId}/webhook-subscriptions`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useCreateWebhookSubscription(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { url: string; events: string[] }) =>
+      apiFetch<WebhookSubscriptionCreateResult>(
+        `/v1/tenants/${tenantId}/webhook-subscriptions`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['webhook-subscriptions', tenantId] }),
+  });
+}
+
+export function useDeleteWebhookSubscription(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/webhook-subscriptions/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['webhook-subscriptions', tenantId] }),
+  });
+}
+
+export function useWebhookDeliveries(tenantId: string, subId: string) {
+  return useInfiniteQuery({
+    queryKey: ['webhook-deliveries', tenantId, subId],
+    enabled: Boolean(tenantId && subId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: WebhookDeliveryPage) => last.nextCursor ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams();
+      if (pageParam) qs.set('cursor', pageParam);
+      const query = qs.toString();
+      return apiFetch<WebhookDeliveryPage>(
+        `/v1/tenants/${tenantId}/webhook-subscriptions/${subId}/deliveries${query ? `?${query}` : ''}`,
+      );
+    },
+  });
+}
+
+// ── Team management (subproject D) ───────────────────────────────────────────
+
+export function useTeamMembers(tenantId: string) {
+  return useQuery({
+    queryKey: ['team-members', tenantId],
+    queryFn: () => apiFetch<TeamMember[]>(`/v1/tenants/${tenantId}/members`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useUpdateMemberRole(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: TenantRole }) =>
+      apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+  });
+}
+
+export function useRemoveMember(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/members/${userId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+  });
+}
+
+export function useTeamInvitations(
+  tenantId: string,
+  status?: 'pending' | 'accepted' | 'expired' | 'revoked',
+) {
+  return useQuery({
+    queryKey: ['team-invitations', tenantId, status],
+    queryFn: () => {
+      const qs = status ? `?status=${status}` : '';
+      return apiFetch<TenantInvitation[]>(`/v1/tenants/${tenantId}/invitations${qs}`);
+    },
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useCreateInvitation(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { email: string; role: TenantRole }) =>
+      apiFetch<CreateInvitationResponse>(`/v1/tenants/${tenantId}/invitations`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-invitations', tenantId] }),
+  });
+}
+
+export function useResendInvitation(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      apiFetch<CreateInvitationResponse>(
+        `/v1/tenants/${tenantId}/invitations/${invitationId}/resend`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-invitations', tenantId] }),
+  });
+}
+
+export function useRevokeInvitation(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      apiFetch<void>(`/v1/tenants/${tenantId}/invitations/${invitationId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-invitations', tenantId] }),
   });
 }

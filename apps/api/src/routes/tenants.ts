@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest } from '../lib/errors.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
-import { requireAdmin } from '../middleware/require_admin.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getAnalytics } from '../services/analytics_service.js';
@@ -44,7 +45,11 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Admin: every tenant on the platform.
-  app.get('/v1/tenants', { preHandler: [requireAuth, requireAdmin] }, async () => {
+  app.get('/v1/tenants', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.tenants.read');
     return listAllTenants();
   });
 
