@@ -26,7 +26,7 @@ export async function getPlatformTenantId(): Promise<string> {
     .limit(1);
   if (!row) {
     throw new Error(
-      'circls_internal_tenant_not_bootstrapped — run scripts/bootstrap_circls_tenant.ts',
+      'circls_internal_tenant_not_bootstrapped — run `node dist/scripts/bootstrap_circls_tenant.js` (prod) or `pnpm bootstrap:circls` (dev)',
     );
   }
   cachedId = row.id;

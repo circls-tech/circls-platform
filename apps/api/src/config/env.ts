@@ -61,7 +61,7 @@ const envSchema = z.object({
 
   // Slug of the Circls platform tenant. Used alongside is_platform=true for
   // belt-and-suspenders lookup. Must match the row inserted by
-  // scripts/bootstrap_circls_tenant.ts.
+  // src/scripts/bootstrap_circls_tenant.ts.
   CIRCLS_INTERNAL_TENANT_SLUG: z.string().default('circls-internal'),
 
   // Platform admin user IDs for out-of-policy refunds. Comma-separated list of
