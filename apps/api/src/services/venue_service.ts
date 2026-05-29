@@ -32,6 +32,8 @@ export async function createVenue(tenantId: string, input: CreateVenueInput): Pr
       lng: input.lng ?? null,
       addressJson: input.addressJson ?? null,
       tags: input.tags ?? [],
+      // New listings await Circls review before going live (subproject B).
+      status: 'pending_review',
     })
     .returning();
   if (!v) throw new Error('venue insert returned no row');

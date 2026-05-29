@@ -25,6 +25,8 @@ export async function createArena(venueId: string, input: CreateArenaInput): Pro
       capacity: input.capacity ?? null,
       slotDurationMin: input.slotDurationMin ?? 60,
       tags,
+      // New listings await Circls review before going live (subproject B).
+      status: 'pending_review',
     })
     .returning();
   if (!a) throw new Error('arena insert returned no row');

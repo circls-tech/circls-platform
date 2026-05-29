@@ -25,7 +25,8 @@ export const arenas = pgTable('arenas', {
   sport: text('sport'),
   capacity: integer('capacity'),
   slotDurationMin: integer('slot_duration_min').notNull().default(60),
-  status: arenaStatus('status').notNull().default('pending_review'),
+  // DB default stays 'active'; create service sets 'pending_review' (B).
+  status: arenaStatus('status').notNull().default('active'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

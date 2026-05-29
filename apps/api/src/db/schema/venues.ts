@@ -28,7 +28,9 @@ export const venues = pgTable('venues', {
   lng: doublePrecision('lng'),
   // IANA tz for rendering slots in venue-local time on the frontend.
   tzName: text('tz_name').notNull().default('Asia/Kolkata'),
-  status: venueStatus('status').notNull().default('pending_review'),
+  // DB default stays the legacy 'active' (matches grandfathered rows); the
+  // create service sets 'pending_review' explicitly for new listings (B).
+  status: venueStatus('status').notNull().default('active'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
