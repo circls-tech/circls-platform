@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
 import { useVenues } from '@/lib/api/queries';
-import { Badge, Card } from '@/lib/ui';
+import { Badge, Card, StatusPill } from '@/lib/ui';
 
 function VenueList({ tenantId }: { tenantId: string }) {
   const { data: venues, isLoading } = useVenues(tenantId);
@@ -37,16 +37,7 @@ function VenueList({ tenantId }: { tenantId: string }) {
                     : ''}
                 </p>
               </div>
-              <span
-                className={[
-                  'rounded-full px-2.5 py-0.5 text-xs font-medium',
-                  v.status === 'active'
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-slate-100 text-slate-500',
-                ].join(' ')}
-              >
-                {v.status}
-              </span>
+              <StatusPill status={v.status} />
             </div>
             {v.tags && v.tags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">

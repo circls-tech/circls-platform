@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useArenas, useCreateArena } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
-import { Badge, TagsInput } from '@/lib/ui';
+import { Badge, StatusPill, TagsInput } from '@/lib/ui';
 
 export default function VenuePage() {
   const { venueId } = useParams<{ venueId: string }>();
@@ -15,17 +15,20 @@ export default function VenuePage() {
   const [sport, setSport] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState(false);
 
   const inferredSport = !sport ? inferSport(tags) : null;
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setErr(null);
+    setCreated(false);
     try {
       await createArena.mutateAsync({ name, ...(sport ? { sport } : {}), tags });
       setName('');
       setSport('');
       setTags([]);
+      setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -65,6 +68,9 @@ export default function VenuePage() {
                 <span className="font-medium">{a.name}</span>
                 <span className="text-xs text-gray-400">
                   {a.sport ?? 'sport n/a'} · {a.slotDurationMin}min slots
+                </span>
+                <span className="ml-auto">
+                  <StatusPill status={a.status} />
                 </span>
               </div>
               {a.tags && a.tags.length > 0 && (
@@ -113,6 +119,11 @@ export default function VenuePage() {
         >
           {createArena.isPending ? 'Adding…' : 'Add arena'}
         </button>
+        {created && (
+          <p className="text-sm text-amber-700">
+            Arena created. It’s now pending review by Circls before it goes live.
+          </p>
+        )}
         {err && <p className="text-sm text-red-600">{err}</p>}
       </form>
     </div>

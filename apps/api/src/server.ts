@@ -33,6 +33,7 @@ import { adminRefundRoutes } from './routes/admin_refunds.js';
 // Phase 16 — platform-admin tooling.
 import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminPayoutRoutes } from './routes/admin_payouts.js';
+import { adminListingRoutes } from './routes/admin_listings.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 // Phase 17 — aggregator-facing public API surface.
 import { publicBookingRoutes } from './routes/public_bookings.js';
@@ -197,6 +198,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // Phase 16: platform-admin endpoints (gated via assertCap + getPlatformTenantId).
   await app.register(adminTenantRoutes);
   await app.register(adminPayoutRoutes);
+  await app.register(adminListingRoutes);
   await app.register(adminAuditLogRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').
   await app.register(publicBookingRoutes);

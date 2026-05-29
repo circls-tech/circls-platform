@@ -94,7 +94,8 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
       durationDays: 30,
     });
     expect(m.tenantId).toBe(tenantId);
-    expect(m.status).toBe('active');
+    // New memberships await Circls review (subproject B).
+    expect(m.status).toBe('pending_review');
     const list = await listMembershipsForTenant(tenantId);
     expect(list.find((r) => r.id === m.id)).toBeTruthy();
   });

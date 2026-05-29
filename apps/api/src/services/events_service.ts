@@ -200,8 +200,11 @@ export async function updateEvent(
 }
 
 /**
- * Transition draft → published. Requires at least one arena row in
- * event_arenas; otherwise the event has no inventory to attach bookings to.
+ * Submit a draft event for Circls review: draft → pending_review. (Listing
+ * approval, subproject B — the partner's "publish" action now hands off to ops,
+ * who approve pending_review → published via the admin listings workflow.)
+ * Requires at least one arena row in event_arenas; otherwise the event has no
+ * inventory to attach bookings to.
  */
 export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
   return db.transaction(async (tx) => {
@@ -212,7 +215,7 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       .limit(1);
     if (!existing) throw new NotFound('Event not found', 'event_not_found');
     if (existing.status !== 'draft') {
-      throw new Conflict('Only draft events can be published', 'event_not_draft');
+      throw new Conflict('Only draft events can be submitted for review', 'event_not_draft');
     }
 
     const arenaRows = await tx
@@ -225,11 +228,11 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
 
     const [updated] = await tx
       .update(events)
-      .set({ status: 'published' })
+      .set({ status: 'pending_review' })
       .where(eq(events.id, eventId))
       .returning();
 
-    await writeAudit(tx, ctx, 'event.published', 'event', eventId, { status: 'draft' }, { status: 'published' });
+    await writeAudit(tx, ctx, 'event.submitted_for_review', 'event', eventId, { status: 'draft' }, { status: 'pending_review' });
 
     return updated!;
   });

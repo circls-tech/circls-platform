@@ -9,6 +9,7 @@ import {
   publishEvent,
   updateEvent,
 } from './events_service.js';
+import { approveListing } from './listing_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -129,9 +130,10 @@ describe.skipIf(!runIntegration)('events_service', () => {
         arenaIds: [arenaA],
       },
     );
+    // Publish now submits for review: draft → pending_review.
     const pub = await publishEvent({ tenantId, actorUserId }, ev.id);
-    expect(pub.status).toBe('published');
-    // Re-publishing a published event is a 409.
+    expect(pub.status).toBe('pending_review');
+    // Re-submitting a non-draft event is a 409.
     await expect(
       publishEvent({ tenantId, actorUserId }, ev.id),
     ).rejects.toMatchObject({ code: 'event_not_draft' });
@@ -171,6 +173,7 @@ describe.skipIf(!runIntegration)('events_service', () => {
       },
     );
     await publishEvent({ tenantId, actorUserId }, ev.id);
+    await approveListing({ type: 'event', id: ev.id, actorUserId }); // pending_review → published
 
     const first = await bookEvent(ev.id, { userId: actorUserId, name: 'Alice' });
     expect(first.booking.status).toBe('confirmed');
@@ -214,6 +217,7 @@ describe.skipIf(!runIntegration)('events_service', () => {
       },
     );
     await publishEvent({ tenantId, actorUserId }, ev.id);
+    await approveListing({ type: 'event', id: ev.id, actorUserId }); // pending_review → published
 
     // No KYC / Linked Account gate — the payment lands in Circls's account and
     // the stub Razorpay adapter mints an order directly.

@@ -52,7 +52,8 @@ describe.skipIf(!runIntegration)('venues', () => {
     venueId = v.id;
     expect(v.tenantId).toBe(tenantId);
     expect(v.tzName).toBe('Asia/Kolkata');
-    expect(v.status).toBe('active');
+    // New venues await Circls review before going live (subproject B).
+    expect(v.status).toBe('pending_review');
   });
 
   it('blocks a non-member from creating or reading venues', async () => {

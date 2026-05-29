@@ -18,6 +18,18 @@ export interface Tenant {
   status: string;
 }
 
+/**
+ * Listing lifecycle status (subproject B). New venues/arenas are created as
+ * `pending_review` and must be approved by Circls before they go live; admins
+ * may also `reject` them. Partners only view these here.
+ */
+export type ListingStatus =
+  | 'pending_review'
+  | 'active'
+  | 'rejected'
+  | 'suspended'
+  | 'inactive';
+
 export interface Venue {
   id: string;
   tenantId: string;
@@ -25,7 +37,7 @@ export interface Venue {
   tzName: string;
   lat: number | null;
   lng: number | null;
-  status: string;
+  status: ListingStatus;
   tags: string[];
 }
 
@@ -35,7 +47,7 @@ export interface Arena {
   name: string;
   sport: string | null;
   slotDurationMin: number;
-  status: string;
+  status: ListingStatus;
   tags: string[];
 }
 
@@ -210,7 +222,12 @@ export interface Payment {
 
 // ── Events (Phase 15) ────────────────────────────────────────────────────────
 
-export type EventStatus = 'draft' | 'published' | 'cancelled';
+export type EventStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'published'
+  | 'rejected'
+  | 'cancelled';
 
 export interface VenueEvent {
   id: string;
@@ -238,7 +255,7 @@ export interface Membership {
   pricePaise: number;
   durationDays: number;
   benefits: Record<string, unknown>;
-  status: 'active' | 'inactive';
+  status: 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
 }
 
 export interface UserMembership {

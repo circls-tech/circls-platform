@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useVenueEvents, usePublishEvent } from '@/lib/api/events';
-import { Badge, Button, Card } from '@/lib/ui';
+import { Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
@@ -18,13 +18,6 @@ const IST_FMT = new Intl.DateTimeFormat('en-IN', {
 
 function fmt(iso: string) {
   return IST_FMT.format(new Date(iso));
-}
-
-function statusTone(status: string): 'success' | 'warning' | 'open' | 'neutral' {
-  if (status === 'published') return 'success';
-  if (status === 'cancelled') return 'warning';
-  if (status === 'draft') return 'open';
-  return 'neutral';
 }
 
 export default function VenueEventsPage() {
@@ -67,7 +60,10 @@ export default function VenueEventsPage() {
         </p>
       )}
 
-      <Card title="All events" subtitle="Tournaments, classes, and other venue-level happenings.">
+      <Card
+        title="All events"
+        subtitle="Tournaments, classes, and other venue-level happenings. Submitting an event for review sends it to Circls; once approved it goes live for consumers."
+      >
         {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading…</p>}
         {!isLoading && events?.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-400">
@@ -105,7 +101,7 @@ export default function VenueEventsPage() {
                       {ev.capacity ?? <span className="text-slate-400">∞</span>}
                     </td>
                     <td className="py-2.5 pr-4">
-                      <Badge tone={statusTone(ev.status)} label={ev.status} />
+                      <StatusPill status={ev.status} />
                     </td>
                     <td className="py-2.5">
                       {ev.status === 'draft' && (
@@ -115,8 +111,11 @@ export default function VenueEventsPage() {
                           loading={publish.isPending}
                           onClick={() => handlePublish(ev.id)}
                         >
-                          Publish
+                          Submit for review
                         </Button>
+                      )}
+                      {ev.status === 'pending_review' && (
+                        <span className="text-xs text-slate-400">Awaiting Circls review</span>
                       )}
                     </td>
                   </tr>

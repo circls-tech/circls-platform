@@ -121,3 +121,19 @@ export interface AdminPayoutListPage {
   rows: AdminPayoutRow[];
   nextCursor: string | null;
 }
+
+export type AdminListingType = 'venue' | 'arena' | 'event' | 'membership';
+
+export interface AdminListingRow {
+  type: AdminListingType;
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  name: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface AdminListingListResponse {
+  rows: AdminListingRow[];
+}
