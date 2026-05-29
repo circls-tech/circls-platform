@@ -4,8 +4,23 @@ import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 
-export default function LoginPage() {
-  const { signInWithEmail } = useAuth();
+/** Friendly copy for the Firebase signup error codes we expect. */
+function signupErrorMessage(err: unknown): string {
+  const code = (err as { code?: string } | undefined)?.code ?? '';
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists — sign in instead.';
+    case 'auth/invalid-email':
+      return 'That email address looks invalid.';
+    case 'auth/weak-password':
+      return 'Password is too weak — use at least 8 characters.';
+    default:
+      return err instanceof Error ? err.message : 'Sign-up failed';
+  }
+}
+
+export default function SignupPage() {
+  const { signUpWithEmail } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,18 +32,23 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await signInWithEmail(email, password);
-      router.replace('/dashboard');
+      await signUpWithEmail(email, password);
+      // New account has no org yet — drop them into the onboarding wizard.
+      router.replace('/onboarding');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed');
-    } finally {
+      setError(signupErrorMessage(err));
       setBusy(false);
     }
   }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Circls Partner Portal</h1>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold">Create your Circls account</h1>
+        <p className="text-sm text-slate-500">
+          Set up your organisation and list your venues in a few steps.
+        </p>
+      </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="email">Email</label>
         <input
@@ -46,8 +66,9 @@ export default function LoginPage() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
+          autoComplete="new-password"
           required
+          minLength={8}
           className="rounded border border-gray-300 px-3 py-2"
         />
         <button
@@ -55,17 +76,12 @@ export default function LoginPage() {
           disabled={busy}
           className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
         >
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? 'Creating account…' : 'Create account'}
         </button>
       </form>
-      <div className="flex flex-col gap-2 text-center text-sm">
-        <Link href="/forgot-password" className="text-blue-700 hover:underline">
-          Forgot password?
-        </Link>
-        <Link href="/signup" className="text-blue-700 hover:underline">
-          New to Circls? Create an account
-        </Link>
-      </div>
+      <Link href="/login" className="text-center text-sm text-blue-700 hover:underline">
+        Already have an account? Sign in
+      </Link>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </main>
   );
