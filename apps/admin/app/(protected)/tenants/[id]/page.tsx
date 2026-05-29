@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   useAdminTenantDetail,
   useReactivateTenant,
@@ -39,22 +39,6 @@ function StatusPill({ status }: { status: string }) {
       : status === 'suspended'
         ? 'bg-rose-100 text-rose-800'
         : 'bg-slate-100 text-slate-700';
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>
-      {status}
-    </span>
-  );
-}
-
-function KycPill({ status }: { status: string }) {
-  const tone =
-    status === 'verified'
-      ? 'bg-emerald-100 text-emerald-800'
-      : status === 'submitted' || status === 'in_review'
-        ? 'bg-amber-100 text-amber-800'
-        : status === 'rejected'
-          ? 'bg-rose-100 text-rose-800'
-          : 'bg-slate-100 text-slate-700';
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>
       {status}
@@ -103,7 +87,6 @@ export default function TenantDetailPage() {
           <h1 className="text-2xl font-semibold text-slate-900">{t.name}</h1>
           <span className="font-mono text-xs text-slate-500">{t.slug}</span>
           <StatusPill status={t.status} />
-          <KycPill status={t.kycStatus} />
         </div>
       </div>
 
@@ -197,16 +180,6 @@ function OverviewTab({ data }: { data: AdminTenantDetail }) {
         )}
       </Card>
 
-      <Card title="KYC">
-        <Field label="Status" value={t.kycStatus} />
-        <Field label="Submitted" value={fmtIST(t.kycSubmittedAt)} />
-        <Field label="Verified" value={fmtIST(t.kycVerifiedAt)} />
-        {t.kycRejectionReason && (
-          <Field label="Rejection reason" value={t.kycRejectionReason} />
-        )}
-        <KycDocumentsList tenantId={t.id} />
-      </Card>
-
       <Card title="Banking">
         <Field label="Account holder" value={t.bankAccountHolderName} />
         <Field label="Account number" value={t.bankAccountNumber} mono />
@@ -297,87 +270,6 @@ function AuditTab({ tenantId }: { tenantId: string }) {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * KYC docs: the Phase 11 presign-download endpoint may not exist yet.
- * Render-best-effort: try `/v1/tenants/:id/kyc/documents` and fall back to a
- * "not available" notice. We don't wedge the page on a 404.
- */
-function KycDocumentsList({ tenantId }: { tenantId: string }) {
-  const [state, setState] = useState<
-    | { status: 'idle' }
-    | { status: 'loading' }
-    | { status: 'unavailable'; reason: string }
-    | { status: 'ready'; docs: Array<{ id: string; kind?: string; url?: string }> }
-  >({ status: 'idle' });
-
-  // Lazy-fetch on first render
-  useEffect(() => {
-    let cancel = false;
-    setState({ status: 'loading' });
-    (async () => {
-      try {
-        const { apiFetch } = await import('@/lib/api/client');
-        const docs = await apiFetch<Array<{ id: string; kind?: string; url?: string }>>(
-          `/v1/tenants/${tenantId}/kyc/documents`,
-        );
-        if (!cancel) setState({ status: 'ready', docs });
-      } catch (err) {
-        if (cancel) return;
-        const msg = err instanceof Error ? err.message : 'unknown error';
-        setState({ status: 'unavailable', reason: msg });
-      }
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, [tenantId]);
-
-  if (state.status === 'idle' || state.status === 'loading') {
-    return (
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        <p className="text-xs text-slate-400">Loading documents…</p>
-      </div>
-    );
-  }
-  if (state.status === 'unavailable') {
-    return (
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        <p className="text-xs text-slate-400">KYC documents viewer is not available yet (Phase 11).</p>
-      </div>
-    );
-  }
-  if (state.docs.length === 0) {
-    return (
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        <p className="text-xs text-slate-400">No KYC documents uploaded.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-3 border-t border-slate-100 pt-3">
-      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Documents</p>
-      <ul className="space-y-1">
-        {state.docs.map((d) => (
-          <li key={d.id} className="text-xs">
-            {d.url ? (
-              <a
-                href={d.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-700 hover:underline"
-              >
-                {d.kind ?? d.id}
-              </a>
-            ) : (
-              <span className="text-slate-600">{d.kind ?? d.id}</span>
-            )}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

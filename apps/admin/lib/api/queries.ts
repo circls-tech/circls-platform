@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
+  AdminPayoutListPage,
   AdminStats,
   AdminTenantDetail,
   AdminTenantListPage,
@@ -96,6 +97,34 @@ export function useAdminAuditLog(filters: AdminAuditLogFilters) {
         `/v1/admin/audit-log${qs({ limit: 50, cursor: pageParam, ...filters })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useAdminPayouts(status?: 'pending' | 'paid') {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'payouts', status ?? ''],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminPayoutListPage>(
+        `/v1/admin/payouts${qs({ limit: 50, cursor: pageParam, status })}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useExecutePayout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; reference: string; note?: string }) =>
+      apiFetch<unknown>(`/v1/admin/payouts/${args.id}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ reference: args.reference, note: args.note }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+    },
   });
 }
 

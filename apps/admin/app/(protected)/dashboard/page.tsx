@@ -94,13 +94,6 @@ export default function AdminDashboard() {
             tone={data.tenantsSuspended > 0 ? 'warn' : 'default'}
             href="/tenants"
           />
-          <Tile
-            label="Pending KYC"
-            value={data.tenantsPendingKyc}
-            sub="submitted / in_review"
-            tone={data.tenantsPendingKyc > 0 ? 'warn' : 'default'}
-            href="/tenants"
-          />
         </div>
       </section>
 

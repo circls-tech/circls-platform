@@ -6,13 +6,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAdminTenants } from '@/lib/api/queries';
 import type { AdminTenantListItem } from '@/lib/api/types';
 
-const KYC_TONE: Record<AdminTenantListItem['kycStatus'], string> = {
-  not_started: 'bg-slate-100 text-slate-600',
-  submitted:   'bg-amber-100 text-amber-800',
-  in_review:   'bg-amber-100 text-amber-800',
-  verified:    'bg-emerald-100 text-emerald-800',
-  rejected:    'bg-rose-100 text-rose-800',
-};
 const STATUS_TONE: Record<AdminTenantListItem['status'], string> = {
   active: 'bg-emerald-100 text-emerald-800',
   suspended: 'bg-rose-100 text-rose-800',
@@ -85,7 +78,6 @@ export default function TenantsPage() {
             <tr>
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Slug</th>
-              <th className="px-4 py-2 font-medium">KYC</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 text-right font-medium">Venues</th>
               <th className="px-4 py-2 text-right font-medium">Bookings (30d)</th>
@@ -95,21 +87,21 @@ export default function TenantsPage() {
           <tbody className="divide-y divide-slate-100">
             {isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
                   Loading…
                 </td>
               </tr>
             )}
             {isError && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-600">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
                   Failed to load: {error instanceof Error ? error.message : 'unknown error'}
                 </td>
               </tr>
             )}
             {!isLoading && !isError && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
                   No tenants found.
                 </td>
               </tr>
@@ -130,9 +122,6 @@ export default function TenantsPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{t.slug}</td>
-                <td className="px-4 py-2.5">
-                  <Pill tone={KYC_TONE[t.kycStatus] ?? 'bg-slate-100 text-slate-600'} label={t.kycStatus} />
-                </td>
                 <td className="px-4 py-2.5">
                   <Pill tone={STATUS_TONE[t.status] ?? 'bg-slate-100 text-slate-600'} label={t.status} />
                 </td>

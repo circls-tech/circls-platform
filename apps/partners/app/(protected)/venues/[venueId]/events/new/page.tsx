@@ -148,7 +148,7 @@ export default function NewEventPage() {
               step="0.01"
               value={priceRupees}
               onChange={(e) => setPriceRupees(e.target.value)}
-              hint="Leave 0 for a free event (no KYC required to book)."
+              hint="Leave 0 for a free event."
             />
             <Input
               label="Capacity"
