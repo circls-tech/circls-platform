@@ -8,7 +8,15 @@ import { venues } from './venues.js';
  * Venue-level Events (Phase 15). An Event uses one or more Arenas during a
  * single window. Bookings of `item_type='event'` reference it via item_data.
  */
-export const eventStatus = pgEnum('event_status', ['draft', 'published', 'cancelled']);
+// Listing-approval lifecycle: `draft` → (partner submits) `pending_review` →
+// (admin) `published` (approved + live) / `rejected`; `cancelled` is terminal.
+export const eventStatus = pgEnum('event_status', [
+  'draft',
+  'pending_review',
+  'published',
+  'cancelled',
+  'rejected',
+]);
 
 export const events = pgTable('events', {
   id: uuidPk(),

@@ -3,8 +3,19 @@ import { doublePrecision, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
 
-/** Physical location belonging to a Tenant. Geopoint as lat/lng (no PostGIS). */
-export const venueStatus = pgEnum('venue_status', ['active', 'suspended']);
+/**
+ * Physical location belonging to a Tenant. Geopoint as lat/lng (no PostGIS).
+ *
+ * Listing-approval lifecycle: created `pending_review` → admin `active`
+ * (approved + live) ⇄ `suspended` (operational); or `rejected`. Consumers
+ * only see `active` venues whose tenant is not suspended.
+ */
+export const venueStatus = pgEnum('venue_status', [
+  'pending_review',
+  'active',
+  'suspended',
+  'rejected',
+]);
 
 export const venues = pgTable('venues', {
   id: uuidPk(),
@@ -17,7 +28,7 @@ export const venues = pgTable('venues', {
   lng: doublePrecision('lng'),
   // IANA tz for rendering slots in venue-local time on the frontend.
   tzName: text('tz_name').notNull().default('Asia/Kolkata'),
-  status: venueStatus('status').notNull().default('active'),
+  status: venueStatus('status').notNull().default('pending_review'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

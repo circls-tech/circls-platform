@@ -10,7 +10,13 @@ import { venues } from './venues.js';
  * or a specific venue. Users buy them and gain time-bound benefits (e.g. priority
  * booking, free slots/month). Free memberships skip KYC; paid ones require it.
  */
-export const membershipStatus = pgEnum('membership_status', ['active', 'inactive']);
+// Listing-approval lifecycle: `pending_review` → `active` ⇄ `inactive`; or `rejected`.
+export const membershipStatus = pgEnum('membership_status', [
+  'pending_review',
+  'active',
+  'inactive',
+  'rejected',
+]);
 
 export const memberships = pgTable('memberships', {
   id: uuidPk(),
@@ -24,7 +30,7 @@ export const memberships = pgTable('memberships', {
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   durationDays: integer('duration_days').notNull(),
   benefits: jsonb('benefits').$type<Record<string, unknown>>().notNull().default({}),
-  status: membershipStatus('status').notNull().default('active'),
+  status: membershipStatus('status').notNull().default('pending_review'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
