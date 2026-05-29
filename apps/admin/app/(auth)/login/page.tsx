@@ -27,7 +27,7 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Circls Admin</h1>
+      <h1 className="text-2xl font-bold tracking-tight">circls Admin</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="email">
           Email

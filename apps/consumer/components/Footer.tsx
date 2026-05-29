@@ -20,13 +20,13 @@ export function Footer() {
             {LINKS.map((l) => (
               <Link key={l.href} href={l.href} className="text-white/80 hover:text-white">{l.label}</Link>
             ))}
-            <a href="mailto:support@gibbous.io" className="text-white/80 hover:text-white">Contact</a>
+            <a href="mailto:contact@gibbous.io" className="text-white/80 hover:text-white">Contact</a>
           </nav>
         </div>
         <div className="mt-5 border-t border-white/10 pt-4 text-xs leading-relaxed">
           <p className="text-white/80">© 2026 Gibbous.io. All rights reserved.</p>
           <p className="mt-1">
-            Gibbous Technologies Private Limited · GSTIN 27AALCG2506R1Z3 · Pune, Maharashtra, India · support@gibbous.io
+            Gibbous Technologies Private Limited · GSTIN 27AALCG2506R1Z3 · Pune, Maharashtra, India · contact@gibbous.io
           </p>
         </div>
       </div>

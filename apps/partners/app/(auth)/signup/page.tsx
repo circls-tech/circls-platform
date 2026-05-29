@@ -44,7 +44,7 @@ export default function SignupPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Create your Circls account</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Create your circls account</h1>
         <p className="text-sm text-slate-500">
           Set up your organisation and list your venues in a few steps.
         </p>

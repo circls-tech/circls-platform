@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Circls Admin',
+  title: 'circls Admin',
   robots: { index: false, follow: false },
 };
 

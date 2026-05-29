@@ -28,7 +28,7 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Circls Partner Portal</h1>
+      <h1 className="text-2xl font-bold tracking-tight">circls Partner Portal</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="email">Email</label>
         <input
@@ -63,7 +63,7 @@ export default function LoginPage() {
           Forgot password?
         </Link>
         <Link href="/signup" className="text-blue-700 hover:underline">
-          New to Circls? Create an account
+          New to circls? Create an account
         </Link>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
