@@ -58,7 +58,11 @@ export function useVenueMemberships(venueId: string) {
   });
 }
 
-/** All upcoming events across venues (server hides past + sorts ascending). */
+/**
+ * All upcoming events across venues (server hides past + sorts ascending).
+ * Depends on the GET /v1/consumer/events endpoint from spec §12.3 (handed off to
+ * the API agent). Until that ships this query errors and callers show empty rows.
+ */
 export function useUpcomingEvents(limit = 50) {
   return useQuery({
     queryKey: ['events', limit],
@@ -68,7 +72,11 @@ export function useUpcomingEvents(limit = 50) {
   });
 }
 
-/** All active memberships across venues. */
+/**
+ * All active memberships across venues.
+ * Depends on the GET /v1/consumer/memberships endpoint from spec §12.4 (handed off
+ * to the API agent). Until that ships this query errors and callers show empty rows.
+ */
 export function useAllMemberships(limit = 50) {
   return useQuery({
     queryKey: ['memberships', limit],
