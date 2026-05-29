@@ -36,8 +36,9 @@ COPY --from=build /repo/apps/consumer/.next/standalone ./
 # Static assets must be copied manually — they are not included in standalone.
 COPY --from=build /repo/apps/consumer/.next/static ./apps/consumer/.next/static
 
-# public/ is optional; this app currently has none but guard for the future.
-# COPY --from=build /repo/apps/consumer/public ./apps/consumer/public
+# Static public assets (sport card images, etc.) are also excluded from
+# standalone output and must be copied in, same as .next/static above.
+COPY --from=build /repo/apps/consumer/public ./apps/consumer/public
 
 USER node
 EXPOSE 3003
