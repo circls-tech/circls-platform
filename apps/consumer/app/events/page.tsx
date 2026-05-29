@@ -46,7 +46,7 @@ export default function EventsPage() {
         ) : (
           <div className="space-y-8">
             {groups.map((g) => (
-              <div key={g.label}>
+              <div key={g.events[0]!.id}>
                 <h2 className="mb-3 font-display text-lg font-semibold text-ink">{g.label}</h2>
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {g.events.map((e) => <EventCard key={e.id} event={e} />)}
