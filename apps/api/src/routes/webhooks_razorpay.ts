@@ -1,22 +1,26 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { BadRequest, Unauthorized } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getRazorpay } from '../lib/razorpay.js';
 import { handleRazorpayWebhook } from '../services/payments_service.js';
 
+/** Request augmented with the exact bytes we received, for HMAC verification. */
+type RawBodyRequest = FastifyRequest & { rawBody?: string };
+
 /**
- * Razorpay webhook receiver — Phase 12. We read the raw body, verify the HMAC
- * signature, and hand off to the service handler. Note: Fastify by default
- * parses JSON bodies; we register a raw-body content parser locally so the
- * signature math is done over exact bytes.
+ * Razorpay webhook receiver — Phase 12. Razorpay signs the EXACT bytes it sent,
+ * so we stash the raw request string in a content parser and verify the HMAC
+ * against that — never a re-stringified copy (key order / escaping / whitespace
+ * differences would break the signature).
  */
 export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
-  // Capture raw body for this route so the HMAC over the original bytes matches
-  // what Razorpay computed. parseAs:'string' keeps us out of stream-handling land.
+  // parseAs:'string' hands us the raw body; we keep it on the request for the
+  // signature check, and still parse JSON so the handler gets a typed object.
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
-    (_req, body, done) => {
+    (req, body, done) => {
+      (req as RawBodyRequest).rawBody = body as string;
       try {
         const parsed = body ? (JSON.parse(body as string) as unknown) : {};
         done(null, parsed);
@@ -31,11 +35,8 @@ export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
     if (typeof signature !== 'string') {
       throw new Unauthorized('Missing signature', 'missing_signature');
     }
-    // Body was JSON.parse'd above — re-stringify in canonical form for the
-    // signature check. Razorpay signs the exact string they sent; we trust
-    // their JSON encoding is stable. The Phase 12 owner should switch to
-    // capturing the raw string and avoid the re-stringify.
-    const raw = JSON.stringify(req.body ?? {});
+    // Verify the HMAC over the exact bytes Razorpay sent.
+    const raw = (req as RawBodyRequest).rawBody ?? '';
     const ok = getRazorpay().verifyWebhookSignature(raw, signature);
     if (!ok) throw new Unauthorized('Bad signature', 'bad_signature');
 
