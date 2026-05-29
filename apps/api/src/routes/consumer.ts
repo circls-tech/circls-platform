@@ -13,6 +13,8 @@ import {
   listPublicArenaSlots,
   listPublicEvents,
   listPublicMemberships,
+  listPublicMembershipsAcrossVenues,
+  listPublicUpcomingEvents,
   listPublicVenues,
 } from '../services/consumer_service.js';
 
@@ -35,6 +37,25 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.search ? { search: parsed.data.search } : {}),
       ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
     });
+    return { rows };
+  });
+
+  // Cross-venue browse: all upcoming events / all memberships (landing rows + /events).
+  const limitQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get('/v1/consumer/events', async (req) => {
+    const parsed = limitQuery.safeParse(req.query);
+    if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
+    const rows = await listPublicUpcomingEvents({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
+    return { rows };
+  });
+
+  app.get('/v1/consumer/memberships', async (req) => {
+    const parsed = limitQuery.safeParse(req.query);
+    if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
+    const rows = await listPublicMembershipsAcrossVenues({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
     return { rows };
   });
 
