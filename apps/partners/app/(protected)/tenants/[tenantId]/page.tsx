@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useCreateVenue, useVenues } from '@/lib/api/queries';
+import { StatusPill } from '@/lib/ui';
 
 export default function TenantPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -10,13 +11,16 @@ export default function TenantPage() {
   const createVenue = useCreateVenue(tenantId);
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState(false);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setErr(null);
+    setCreated(false);
     try {
       await createVenue.mutateAsync({ name });
       setName('');
+      setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -34,12 +38,13 @@ export default function TenantPage() {
           <li key={v.id}>
             <Link
               href={`/venues/${v.id}?tenantId=${tenantId}`}
-              className="block rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
+              className="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
             >
-              <span className="font-medium">{v.name}</span>
-              <span className="ml-2 text-xs text-gray-400">
-                {v.tzName} · {v.status}
+              <span>
+                <span className="font-medium">{v.name}</span>
+                <span className="ml-2 text-xs text-gray-400">{v.tzName}</span>
               </span>
+              <StatusPill status={v.status} />
             </Link>
           </li>
         ))}
@@ -63,6 +68,11 @@ export default function TenantPage() {
         >
           {createVenue.isPending ? 'Adding…' : 'Add venue'}
         </button>
+        {created && (
+          <p className="text-sm text-amber-700">
+            Venue created. It’s now pending review by Circls before it goes live.
+          </p>
+        )}
         {err && <p className="text-sm text-red-600">{err}</p>}
       </form>
     </div>

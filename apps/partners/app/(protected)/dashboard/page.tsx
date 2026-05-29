@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
-import { Badge, Card } from '@/lib/ui';
+import { Card, StatusPill } from '@/lib/ui';
 import type { AnalyticsTrendDay } from '@/lib/api/types';
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
@@ -123,12 +123,6 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
     );
   }
 
-  const statusTone = (s: string): 'success' | 'warning' | 'neutral' => {
-    if (s === 'active') return 'success';
-    if (s === 'inactive' || s === 'suspended') return 'warning';
-    return 'neutral';
-  };
-
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -140,7 +134,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
           >
             <div className="flex items-start justify-between gap-2">
               <span className="font-semibold text-slate-900">{venue.name}</span>
-              <Badge tone={statusTone(venue.status)} label={venue.status} />
+              <StatusPill status={venue.status} />
             </div>
             {venue.tzName && (
               <p className="mt-1 text-xs text-slate-400">{venue.tzName}</p>

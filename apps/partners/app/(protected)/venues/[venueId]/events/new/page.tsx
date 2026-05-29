@@ -101,7 +101,7 @@ export default function NewEventPage() {
       </Link>
       <h1 className="text-xl font-semibold text-[#0f172a]">New event</h1>
 
-      <Card title="Details" subtitle="Events are created as drafts. Publish when you're ready to accept bookings.">
+      <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <Input
             label="Name"

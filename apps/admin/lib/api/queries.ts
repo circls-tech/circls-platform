@@ -3,6 +3,8 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
+  AdminListingListResponse,
+  AdminListingType,
   AdminPayoutListPage,
   AdminStats,
   AdminTenantDetail,
@@ -124,6 +126,49 @@ export function useExecutePayout() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+    },
+  });
+}
+
+/**
+ * Listing review queue (subproject B). `type` is required by the backend;
+ * `status` defaults to pending_review server-side. No cursor pagination —
+ * the endpoint returns up to 200 rows, so a plain useQuery is enough.
+ */
+export function useAdminListings(type: AdminListingType, status?: string) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'listings', type, status ?? ''],
+    enabled: Boolean(user),
+    queryFn: () =>
+      apiFetch<AdminListingListResponse>(`/v1/admin/listings${qs({ type, status })}`),
+  });
+}
+
+export function useApproveListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { type: AdminListingType; id: string }) =>
+      apiFetch<{ id: string; status: string }>(
+        `/v1/admin/listings/${args.type}/${args.id}/approve`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+export function useRejectListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { type: AdminListingType; id: string; reason?: string }) =>
+      apiFetch<{ id: string; status: string }>(
+        `/v1/admin/listings/${args.type}/${args.id}/reject`,
+        { method: 'POST', body: JSON.stringify({ reason: args.reason }) },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'listings'] });
     },
   });
 }

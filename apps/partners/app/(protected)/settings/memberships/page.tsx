@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useCreateMembership, useMemberships } from '@/lib/api/memberships';
-import { Badge, Button, Card, Input } from '@/lib/ui';
+import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
 export default function MembershipsPage() {
   const { activeTenantId } = useOrg();
@@ -17,10 +17,12 @@ export default function MembershipsPage() {
   const [priceRupees, setPriceRupees] = useState('0');
   const [durationDays, setDurationDays] = useState('30');
   const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState(false);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setErr(null);
+    setCreated(false);
     try {
       await createMembership.mutateAsync({
         name,
@@ -32,6 +34,7 @@ export default function MembershipsPage() {
       setDescription('');
       setPriceRupees('0');
       setDurationDays('30');
+      setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -81,10 +84,7 @@ export default function MembershipsPage() {
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">{m.durationDays}d</td>
                     <td className="py-2.5 pr-4">
-                      <Badge
-                        tone={m.status === 'active' ? 'success' : 'neutral'}
-                        label={m.status}
-                      />
+                      <StatusPill status={m.status} />
                     </td>
                     <td className="py-2.5 text-xs text-slate-500">
                       {m.description ?? <span className="text-slate-400">—</span>}
@@ -137,6 +137,11 @@ export default function MembershipsPage() {
               required
             />
           </div>
+          {created && (
+            <p className="text-sm text-amber-700">
+              Membership created. It’s now pending review by Circls before it goes live.
+            </p>
+          )}
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex justify-end">
             <Button type="submit" loading={createMembership.isPending} disabled={!tenantId}>

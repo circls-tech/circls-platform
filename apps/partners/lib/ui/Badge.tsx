@@ -7,7 +7,8 @@ export type BadgeTone =
   | 'booked'
   | 'neutral'
   | 'success'
-  | 'warning';
+  | 'warning'
+  | 'danger';
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone;
@@ -22,6 +23,7 @@ const toneClasses: Record<BadgeTone, string> = {
   neutral: 'bg-slate-100 text-slate-500',
   success: 'bg-green-100 text-green-800',
   warning: 'bg-yellow-100 text-yellow-800',
+  danger:  'bg-red-100 text-red-700',
 };
 
 export function Badge({ tone = 'neutral', label, className = '', ...rest }: BadgeProps) {
