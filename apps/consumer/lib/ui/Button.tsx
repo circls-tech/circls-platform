@@ -1,6 +1,6 @@
 import { ButtonHTMLAttributes, forwardRef } from 'react';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -10,14 +10,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:
-    'bg-brand-600 text-white hover:bg-brand-700 border-transparent',
-  secondary:
-    'bg-white text-slate-700 border-[#e5e7eb] hover:bg-slate-50',
-  ghost:
-    'bg-transparent text-slate-600 border-transparent hover:bg-slate-100',
-  danger:
-    'bg-red-600 text-white hover:bg-red-700 border-transparent',
+  primary:   'bg-ink text-white hover:bg-ink-soft border-transparent',
+  accent:    'bg-gold-500 text-ink hover:bg-gold-600 border-transparent font-semibold',
+  secondary: 'bg-white text-ink border-border hover:bg-gold-100',
+  ghost:     'bg-transparent text-text-secondary border-transparent hover:bg-gold-100',
+  danger:    'bg-red-600 text-white hover:bg-red-700 border-transparent',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

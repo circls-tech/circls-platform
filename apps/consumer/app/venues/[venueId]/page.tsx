@@ -1,6 +1,8 @@
 'use client';
 import { use, useState } from 'react';
 import { Header } from '@/components/Header';
+import { SportImage } from '@/components/SportImage';
+import { matchSport } from '@/lib/sportImages';
 import {
   useArenaSlots,
   useVenue,
@@ -23,36 +25,44 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 py-8">
         {venueQ.isLoading ? (
-          <p className="text-sm text-[#475569]">Loading venue…</p>
+          <p className="text-sm text-text-secondary">Loading venue…</p>
         ) : venueQ.isError ? (
           <p className="text-sm text-red-600">
             {venueQ.error instanceof Error ? venueQ.error.message : 'Failed to load venue'}
           </p>
         ) : !venueQ.data ? (
-          <p className="text-sm text-[#475569]">Venue not found.</p>
+          <p className="text-sm text-text-secondary">Venue not found.</p>
         ) : (
           <>
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold text-[#0f172a]">{venueQ.data.venue.name}</h1>
-              {venueQ.data.venue.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {venueQ.data.venue.tags.map((tag) => (
-                    <Badge key={tag} tone="neutral" label={tag} />
-                  ))}
-                </div>
-              )}
-              <AddressLine addressJson={venueQ.data.venue.addressJson} />
+            <div className="mb-6 overflow-hidden rounded-card border border-border">
+              <SportImage
+                input={{ imageUrl: venueQ.data.venue.imageUrl, tags: venueQ.data.venue.tags }}
+                alt={venueQ.data.venue.name}
+                label={matchSport(venueQ.data.venue.tags) ?? undefined}
+                className="h-44 sm:h-56"
+              />
+              <div className="bg-white p-5">
+                <h1 className="font-display text-3xl font-semibold text-ink">{venueQ.data.venue.name}</h1>
+                {venueQ.data.venue.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {venueQ.data.venue.tags.map((tag) => (
+                      <Badge key={tag} tone="sport" label={tag} />
+                    ))}
+                  </div>
+                )}
+                <AddressLine addressJson={venueQ.data.venue.addressJson} />
+              </div>
             </div>
 
             <CheckoutBanner state={checkout.state} onDismiss={checkout.reset} />
 
             {/* Arenas */}
             <section className="mb-8">
-              <h2 className="mb-3 text-lg font-semibold text-[#0f172a]">Courts &amp; turfs</h2>
+              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Courts &amp; turfs</h2>
               {venueQ.data.arenas.length === 0 ? (
-                <Card><p className="text-sm text-[#475569]">No bookable arenas yet.</p></Card>
+                <Card><p className="text-sm text-text-secondary">No bookable arenas yet.</p></Card>
               ) : (
                 <div className="flex flex-col gap-4">
                   {venueQ.data.arenas.map((arena) => (
@@ -64,11 +74,11 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
             {/* Events */}
             <section className="mb-8">
-              <h2 className="mb-3 text-lg font-semibold text-[#0f172a]">Events</h2>
+              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Events</h2>
               {eventsQ.isLoading ? (
-                <p className="text-sm text-[#475569]">Loading events…</p>
+                <p className="text-sm text-text-secondary">Loading events…</p>
               ) : !eventsQ.data || eventsQ.data.length === 0 ? (
-                <Card><p className="text-sm text-[#475569]">No upcoming events.</p></Card>
+                <Card><p className="text-sm text-text-secondary">No upcoming events.</p></Card>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {eventsQ.data.map((ev) => (
@@ -80,11 +90,11 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
             {/* Memberships */}
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-[#0f172a]">Memberships</h2>
+              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Memberships</h2>
               {membershipsQ.isLoading ? (
-                <p className="text-sm text-[#475569]">Loading memberships…</p>
+                <p className="text-sm text-text-secondary">Loading memberships…</p>
               ) : !membershipsQ.data || membershipsQ.data.length === 0 ? (
-                <Card><p className="text-sm text-[#475569]">No memberships available.</p></Card>
+                <Card><p className="text-sm text-text-secondary">No memberships available.</p></Card>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {membershipsQ.data.map((m) => (
@@ -108,7 +118,7 @@ function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | n
     .map((k) => addressJson[k])
     .filter((v): v is string => typeof v === 'string' && v.length > 0);
   if (parts.length === 0) return null;
-  return <p className="mt-2 text-sm text-[#475569]">{parts.join(', ')}</p>;
+  return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
 }
 
 function CheckoutBanner({ state, onDismiss }: { state: CheckoutState; onDismiss: () => void }) {
@@ -160,33 +170,33 @@ function ArenaCard({ arena, checkout }: { arena: PublicArena; checkout: Checkout
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-[#0f172a]">{arena.name}</h3>
-          <p className="mt-0.5 text-sm text-[#475569]">
+          <h3 className="text-base font-semibold text-ink">{arena.name}</h3>
+          <p className="mt-0.5 text-sm text-text-secondary">
             {arena.sport ?? 'General'} · {arena.slotDurationMin} min slots
             {arena.capacity != null ? ` · up to ${arena.capacity}` : ''}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-[#475569]">
+        <label className="flex items-center gap-2 text-sm text-text-secondary">
           Date
           <input
             type="date"
             value={date}
             min={todayLocal()}
             onChange={(e) => setDate(e.target.value)}
-            className="rounded-[var(--radius)] border border-[#e5e7eb] px-2 py-1 text-sm text-[#0f172a]"
+            className="rounded-[var(--radius)] border border-border px-2 py-1 text-sm text-ink"
           />
         </label>
       </div>
 
       <div className="mt-4">
         {slotsQ.isLoading ? (
-          <p className="text-sm text-[#475569]">Loading slots…</p>
+          <p className="text-sm text-text-secondary">Loading slots…</p>
         ) : slotsQ.isError ? (
           <p className="text-sm text-red-600">
             {slotsQ.error instanceof Error ? slotsQ.error.message : 'Failed to load slots'}
           </p>
         ) : !slotsQ.data || slotsQ.data.length === 0 ? (
-          <p className="text-sm text-[#475569]">No open slots for this day.</p>
+          <p className="text-sm text-text-secondary">No open slots for this day.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {slotsQ.data.map((slot) => (
@@ -195,12 +205,12 @@ function ArenaCard({ arena, checkout }: { arena: PublicArena; checkout: Checkout
                 type="button"
                 disabled={checkout.busy}
                 onClick={() => handleBook(slot.id)}
-                className="flex flex-col items-start rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-left transition-colors hover:border-brand-400 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex flex-col items-start rounded-[var(--radius)] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-gold-500 hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <span className="text-sm font-medium text-[#0f172a]">
+                <span className="text-sm font-medium text-ink">
                   {formatTime(slot.startAt)} – {formatTime(slot.endAt)}
                 </span>
-                <span className="text-xs text-[#475569]">{formatPaise(slot.pricePaise)}</span>
+                <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
               </button>
             ))}
           </div>
@@ -215,13 +225,13 @@ function EventCard({ event, checkout }: { event: PublicEvent; checkout: Checkout
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
-      <h3 className="text-base font-semibold text-[#0f172a]">{event.name}</h3>
-      <p className="mt-0.5 text-sm text-[#475569]">{formatDateTime(event.startsAt)}</p>
+      <h3 className="text-base font-semibold text-ink">{event.name}</h3>
+      <p className="mt-0.5 text-sm text-text-secondary">{formatDateTime(event.startsAt)}</p>
       {event.description && (
-        <p className="mt-2 text-sm text-[#475569] line-clamp-3">{event.description}</p>
+        <p className="mt-2 text-sm text-text-secondary line-clamp-3">{event.description}</p>
       )}
-      <div className="mt-3 flex items-center gap-2 text-sm text-[#475569]">
-        <span className="font-medium text-[#0f172a]">{formatPaise(event.pricePaise)}</span>
+      <div className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
+        <span className="font-medium text-ink">{formatPaise(event.pricePaise)}</span>
         {event.capacity != null && <span>· {event.capacity} seats</span>}
       </div>
       <div className="mt-auto pt-4">
@@ -246,12 +256,12 @@ function MembershipCard({ membership, checkout }: { membership: PublicMembership
   const { user } = useAuth();
   return (
     <Card className="flex h-full flex-col">
-      <h3 className="text-base font-semibold text-[#0f172a]">{membership.name}</h3>
+      <h3 className="text-base font-semibold text-ink">{membership.name}</h3>
       {membership.description && (
-        <p className="mt-1 text-sm text-[#475569] line-clamp-3">{membership.description}</p>
+        <p className="mt-1 text-sm text-text-secondary line-clamp-3">{membership.description}</p>
       )}
-      <div className="mt-3 flex items-center gap-2 text-sm text-[#475569]">
-        <span className="font-medium text-[#0f172a]">{formatPaise(membership.pricePaise)}</span>
+      <div className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
+        <span className="font-medium text-ink">{formatPaise(membership.pricePaise)}</span>
         <span>· {membership.durationDays} days</span>
       </div>
       <div className="mt-auto pt-4">

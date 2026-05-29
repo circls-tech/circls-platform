@@ -1,62 +1,67 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand blue scale */
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  /* Brand — navy ink */
+  --color-ink:       #0f1c2e;
+  --color-ink-deep:  #0b1424;
+  --color-ink-soft:  #1e3a5f;
 
-  /* Neutrals — slate */
-  --color-surface:        #f8fafc;
-  --color-surface-card:   #ffffff;
-  --color-border:         #e5e7eb;
-  --color-text-primary:   #0f172a;
-  --color-text-secondary: #475569;
+  /* Accent — gold */
+  --color-gold-500:  #e7c87d;
+  --color-gold-600:  #c79a3a;
+  --color-gold-100:  #f3ead3;
+  --color-gold-text: #7a5b1e;
+
+  /* Neutrals — warm */
+  --color-surface:      #fbf9f4;
+  --color-surface-card: #ffffff;
+  --color-border:       #ece3d0;
+  --color-text-primary:   #0f1c2e;
+  --color-text-secondary: #64748b;
   --color-text-muted:     #94a3b8;
 
-  /* Status tones */
-  --color-tone-open-bg:    #f1f5f9;
-  --color-tone-open-text:  #475569;
-  --color-tone-held-bg:    #fef3c7;
-  --color-tone-held-text:  #92400e;
-  --color-tone-blocked-bg: #f4f4f5;
-  --color-tone-blocked-text: #52525b;
-  --color-tone-booked-bg:  #dbeafe;
-  --color-tone-booked-text: #1e40af;
-  --color-tone-success-bg: #dcfce7;
-  --color-tone-success-text: #166534;
-  --color-tone-warning-bg: #fef9c3;
-  --color-tone-warning-text: #854d0e;
-  --color-tone-neutral-bg: #f1f5f9;
-  --color-tone-neutral-text: #64748b;
+  /* Status tones (retained for booking states) */
+  --color-tone-success-bg: #dcfce7; --color-tone-success-text: #166534;
+  --color-tone-warning-bg: #fef9c3; --color-tone-warning-text: #854d0e;
+  --color-tone-danger-bg:  #fee2e2; --color-tone-danger-text:  #991b1b;
+  --color-tone-neutral-bg: #f1f5f9; --color-tone-neutral-text: #64748b;
+  --color-tone-booked-bg:  #dbeafe; --color-tone-booked-text:  #1e40af;
 
-  /* Border radius */
-  --radius: 0.5rem;
+  /* Fonts (variables injected by next/font in layout.tsx) */
+  --font-sans:    var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  /* Shape */
+  --radius:      0.5rem;
+  --radius-card: 1rem;
 }
 
-html,
-body {
-  height: 100%;
-}
+html, body { height: 100%; }
 
 body {
   background: var(--color-surface);
   color: var(--color-text-primary);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
 }
 
 *:focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--color-gold-600);
   outline-offset: 2px;
   border-radius: var(--radius);
+}
+
+/* Shimmer for skeleton loaders */
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.shimmer { position: relative; overflow: hidden; }
+.shimmer::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after { animation: none; }
+  * { transition: none !important; }
 }

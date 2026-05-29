@@ -44,3 +44,21 @@ const dateFmt = new Intl.DateTimeFormat('en-IN', {
 export function formatDate(iso: string): string {
   return dateFmt.format(new Date(iso));
 }
+
+const dayFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric' });
+const monthFmt = new Intl.DateTimeFormat('en-IN', { month: 'short' });
+
+/** Split an ISO date into a date-badge pair, e.g. { day: "14", month: "Jun" }. */
+export function formatDayMonth(iso: string): { day: string; month: string } {
+  const d = new Date(iso);
+  return { day: dayFmt.format(d), month: monthFmt.format(d) };
+}
+
+const weekdayFmt = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'long', day: 'numeric', month: 'short',
+});
+
+/** A day divider label, e.g. "Saturday, 14 Jun". */
+export function formatDayLabel(iso: string): string {
+  return weekdayFmt.format(new Date(iso));
+}
