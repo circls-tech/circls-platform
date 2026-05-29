@@ -1,6 +1,7 @@
 'use client';
 import {
   type User,
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
   sendPasswordResetEmail as fbSendReset,
   signInWithEmailAndPassword,
@@ -13,6 +14,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signInWithEmail: (email: string, password: string) => Promise<User>;
+  signUpWithEmail: (email: string, password: string) => Promise<User>;
   sendPasswordReset: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -36,6 +38,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       async signInWithEmail(email, password) {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        return cred.user;
+      },
+      async signUpWithEmail(email, password) {
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         return cred.user;
       },
       async sendPasswordReset(email) {

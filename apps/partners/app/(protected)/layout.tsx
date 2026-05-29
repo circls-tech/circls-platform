@@ -64,13 +64,16 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
 
+  // A signed-in user with no org belongs in the onboarding wizard (self-serve
+  // org creation). Allow them to sit on /onboarding or /no-tenants; bounce them
+  // there from anywhere else.
+  const tenantLess = (tenants?.length ?? 0) === 0;
+  const onboardingPaths = pathname === '/onboarding' || pathname === '/no-tenants';
   useEffect(() => {
-    if (!loading && user && !tenantsLoading) {
-      if ((tenants?.length ?? 0) === 0 && pathname !== '/no-tenants') {
-        router.replace('/no-tenants');
-      }
+    if (!loading && user && !tenantsLoading && tenantLess && !onboardingPaths) {
+      router.replace('/onboarding');
     }
-  }, [loading, user, tenantsLoading, tenants, pathname, router]);
+  }, [loading, user, tenantsLoading, tenantLess, onboardingPaths, router]);
 
   if (loading || (user && tenantsLoading)) {
     return (
@@ -81,9 +84,14 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   }
   if (!user) return null;
 
-  // No-tenants page: render without chrome (OrgProvider / Sidebar would crash
-  // or redirect in a loop if there is no tenant to select).
+  // No-tenants page: render without chrome (Sidebar/ContextBar assume a
+  // selected tenant).
   if (pathname === '/no-tenants') return <>{children}</>;
+
+  // Onboarding wizard: full-screen, no sidebar, but wrapped in OrgProvider —
+  // Step 1 calls useOrg().setActiveTenantId after creating the org. OrgProvider
+  // tolerates zero tenants (it no-ops until tenants load).
+  if (pathname === '/onboarding') return <OrgProvider>{children}</OrgProvider>;
 
   return (
     <OrgProvider>
