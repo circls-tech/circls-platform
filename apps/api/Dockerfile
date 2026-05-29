@@ -25,6 +25,10 @@ FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out ./
+# Build commit SHA → runtime ENV, surfaced on /v1/health. Coolify passes
+# SOURCE_COMMIT as a build arg automatically; defaults to 'unknown' otherwise.
+ARG SOURCE_COMMIT=unknown
+ENV SOURCE_COMMIT=$SOURCE_COMMIT
 USER node
 EXPOSE 8080
 CMD ["node", "dist/index.js"]
