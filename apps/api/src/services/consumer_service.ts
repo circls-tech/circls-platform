@@ -242,30 +242,36 @@ export interface MyBookingItem {
   createdAt: string;
 }
 
-/** A consumer's own bookings (as creator or named customer), newest first. */
+/**
+ * A consumer's own bookings (slots, events, memberships), newest first. LEFT
+ * JOINs venues so tenant-wide membership bookings (venue_id NULL) still appear,
+ * and falls back to the membership name as the title for those.
+ */
 export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
-  const rows = await db
-    .select({
-      id: bookings.id,
-      venueId: bookings.venueId,
-      venueName: venues.name,
-      itemType: bookings.itemType,
-      status: bookings.status,
-      totalPaise: bookings.totalPaise,
-      createdAt: bookings.createdAt,
-    })
-    .from(bookings)
-    .innerJoin(venues, eq(venues.id, bookings.venueId))
-    .where(sql`${bookings.createdByUserId} = ${userId} or ${bookings.customerUserId} = ${userId}`)
-    .orderBy(sql`${bookings.createdAt} desc`)
-    .limit(100);
+  const raw = await db.execute<Record<string, unknown>>(sql`
+    select
+      b.id,
+      b.venue_id,
+      coalesce(v.name, mm.name, 'Booking') as title,
+      b.item_type,
+      b.status,
+      b.total_paise,
+      b.created_at
+    from bookings b
+    left join venues v on v.id = b.venue_id
+    left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
+    where b.created_by_user_id = ${userId} or b.customer_user_id = ${userId}
+    order by b.created_at desc
+    limit 100
+  `);
+  const rows = raw as unknown as Record<string, unknown>[];
   return rows.map((r) => ({
-    id: r.id,
-    venueId: r.venueId,
-    venueName: r.venueName,
-    itemType: r.itemType,
-    status: r.status,
-    totalPaise: Number(r.totalPaise),
-    createdAt: new Date(r.createdAt as unknown as string).toISOString(),
+    id: r['id'] as string,
+    venueId: (r['venue_id'] as string | null) ?? null,
+    venueName: r['title'] as string,
+    itemType: r['item_type'] as string,
+    status: r['status'] as string,
+    totalPaise: Number(r['total_paise']),
+    createdAt: new Date(r['created_at'] as string).toISOString(),
   }));
 }

@@ -10,11 +10,50 @@
  * Authz: routes resolve and assert the actor's tenant membership before reaching
  * this layer.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+
+export interface EventBookingRow {
+  id: string;
+  customerName: string | null;
+  customerContact: string | null;
+  status: string;
+  totalPaise: number;
+  createdAt: string;
+}
+
+/**
+ * Registrations for an event (partner-facing). Event bookings live in the
+ * `bookings` table with item_type='event' and item_data->>'eventId' = the id —
+ * they don't appear in the slot/time-window bookings grid, so this is their
+ * dedicated read.
+ */
+export async function listEventBookings(
+  tenantId: string,
+  eventId: string,
+): Promise<EventBookingRow[]> {
+  const raw = await db.execute<Record<string, unknown>>(sql`
+    select id, customer_name, customer_contact, status, total_paise, created_at
+    from bookings
+    where tenant_id = ${tenantId}
+      and item_type = 'event'
+      and item_data->>'eventId' = ${eventId}
+    order by created_at desc
+    limit 500
+  `);
+  const rows = raw as unknown as Record<string, unknown>[];
+  return rows.map((r) => ({
+    id: r['id'] as string,
+    customerName: (r['customer_name'] as string | null) ?? null,
+    customerContact: (r['customer_contact'] as string | null) ?? null,
+    status: r['status'] as string,
+    totalPaise: Number(r['total_paise']),
+    createdAt: new Date(r['created_at'] as string).toISOString(),
+  }));
+}
 
 export async function listEventsForVenue(venueId: string): Promise<Event[]> {
   return db.select().from(events).where(eq(events.venueId, venueId));

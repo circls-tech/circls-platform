@@ -8,6 +8,7 @@ import {
   cancelEvent,
   createEvent,
   getEvent,
+  listEventBookings,
   listEventsForVenue,
   publishEvent,
   updateEvent,
@@ -117,4 +118,12 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       return cancelEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
+
+  // Partner-facing: registrations for an event.
+  app.get('/v1/tenants/:tenantId/events/:id/bookings', { preHandler: requireAuth }, async (req) => {
+    const { tenantId, id } = req.params as { tenantId: string; id: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+    return { rows: await listEventBookings(tenantId, id) };
+  });
 };

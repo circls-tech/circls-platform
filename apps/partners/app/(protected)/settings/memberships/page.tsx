@@ -8,12 +8,24 @@ import {
   useActivateMembership,
   useCreateMembership,
   useDeactivateMembership,
+  useMembershipPurchases,
   useMemberships,
   useUpdateMembership,
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 import type { Membership } from '@/lib/api/types';
+
+const IST_DATE_FMT = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
+
+function fmtDate(iso: string) {
+  return IST_DATE_FMT.format(new Date(iso));
+}
 
 export default function MembershipsPage() {
   const { activeTenantId } = useOrg();
@@ -39,6 +51,7 @@ export default function MembershipsPage() {
 
   // Row-level edit/toggle state.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingBuyersId, setViewingBuyersId] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<string | null>(null);
 
   function venueName(id: string | null) {
@@ -168,6 +181,16 @@ export default function MembershipsPage() {
                           >
                             {editingId === m.id ? 'Close' : 'Edit'}
                           </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setRowErr(null);
+                              setViewingBuyersId(viewingBuyersId === m.id ? null : m.id);
+                            }}
+                          >
+                            {viewingBuyersId === m.id ? 'Hide buyers' : 'View buyers'}
+                          </Button>
                           {m.status === 'active' && (
                             <Button
                               variant="secondary"
@@ -206,6 +229,9 @@ export default function MembershipsPage() {
                               }
                             }}
                           />
+                        )}
+                        {viewingBuyersId === m.id && (
+                          <MembershipBuyers tenantId={tenantId} membershipId={m.id} />
                         )}
                       </td>
                     </tr>
@@ -394,5 +420,61 @@ function EditMembershipForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+interface MembershipBuyersProps {
+  tenantId: string;
+  membershipId: string;
+}
+
+function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
+  const { data, isLoading, error } = useMembershipPurchases(tenantId, membershipId);
+
+  return (
+    <div className="mt-3 max-w-2xl rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4">
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#475569]">
+        Buyers{data ? ` (${data.rows.length})` : ''}
+      </h3>
+      {isLoading && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
+      {error && (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {(error as Error).message}
+        </p>
+      )}
+      {!isLoading && !error && data && data.rows.length === 0 && (
+        <p className="py-4 text-center text-sm text-slate-400">No purchases yet.</p>
+      )}
+      {!isLoading && !error && data && data.rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#e5e7eb] text-left">
+                <th className="pb-2 pr-4 font-medium text-slate-500">Buyer</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Valid</th>
+                <th className="pb-2 font-medium text-slate-500">Purchased</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f1f5f9]">
+              {data.rows.map((p) => (
+                <tr key={p.userMembershipId}>
+                  <td className="py-2.5 pr-4 font-medium text-slate-700">{p.buyerName}</td>
+                  <td className="py-2.5 pr-4 text-slate-700">{p.buyerContact}</td>
+                  <td className="py-2.5 pr-4">
+                    <StatusPill status={p.status} />
+                  </td>
+                  <td className="py-2.5 pr-4 text-slate-700">
+                    {fmtDate(p.startsAt)} → {fmtDate(p.endsAt)}
+                  </td>
+                  <td className="py-2.5 text-slate-700">{fmtDate(p.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

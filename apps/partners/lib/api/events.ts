@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { VenueEvent } from './types';
+import type { EventBooking, VenueEvent } from './types';
 
 export function useVenueEvents(venueId: string) {
   return useQuery({
@@ -15,6 +16,17 @@ export function useEvent(tenantId: string, eventId: string | null) {
     queryKey: ['event', tenantId, eventId],
     queryFn: () => apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}`),
     enabled: Boolean(tenantId && eventId),
+  });
+}
+
+/** Consumer registrations for an event (partner-facing). */
+export function useEventBookings(tenantId: string, eventId: string) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['event-bookings', tenantId, eventId],
+    queryFn: () =>
+      apiFetch<{ rows: EventBooking[] }>(`/v1/tenants/${tenantId}/events/${eventId}/bookings`),
+    enabled: Boolean(user) && Boolean(tenantId) && Boolean(eventId),
   });
 }
 

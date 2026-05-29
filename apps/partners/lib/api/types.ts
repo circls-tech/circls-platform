@@ -244,6 +244,17 @@ export interface VenueEvent {
   status: EventStatus;
 }
 
+/** A consumer registration for an event (partner-facing). */
+export interface EventBooking {
+  id: string;
+  customerName: string;
+  customerContact: string;
+  status: string;
+  totalPaise: number;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
 // ── Memberships (Phase 15) ───────────────────────────────────────────────────
 
 export interface Membership {
@@ -275,6 +286,20 @@ export interface UserMembership {
     pricePaise: number;
     durationDays: number;
   };
+}
+
+/** A consumer purchase of a membership plan (partner-facing). */
+export interface MembershipPurchase {
+  userMembershipId: string;
+  buyerName: string;
+  buyerContact: string;
+  status: string;
+  /** ISO-8601 */
+  startsAt: string;
+  /** ISO-8601 */
+  endsAt: string;
+  /** ISO-8601 */
+  createdAt: string;
 }
 
 // ── Phase 17: API keys + outbound webhooks ────────────────────────────────────
