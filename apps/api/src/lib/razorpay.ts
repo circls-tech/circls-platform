@@ -75,22 +75,73 @@ class StubRazorpay implements RazorpayAdapter {
   }
 }
 
-// ── Live adapter (Phase 12 will fill these in) ──────────────────────────────
+// ── Live adapter ────────────────────────────────────────────────────────────
+const RAZORPAY_API = 'https://api.razorpay.com/v1';
+
 class LiveRazorpay implements RazorpayAdapter {
   readonly mode = 'live' as const;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   constructor(
     private readonly keyId: string,
     private readonly keySecret: string,
     private readonly webhookSecret: string | undefined,
   ) {}
 
-  async createRouteOrder(_input: RouteOrderInput): Promise<RouteOrder> {
-    throw new Error('LiveRazorpay.createRouteOrder not implemented — phase 12');
+  private authHeader(): string {
+    return `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`;
   }
 
-  async refundPayment(_input: RefundInput): Promise<RefundResult> {
-    throw new Error('LiveRazorpay.refundPayment not implemented — phase 14');
+  private async call<T>(method: 'POST', path: string, body: Record<string, unknown>): Promise<T> {
+    const res = await fetch(`${RAZORPAY_API}${path}`, {
+      method,
+      headers: { Authorization: this.authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let message = text;
+      try {
+        message = (JSON.parse(text) as { error?: { description?: string } }).error?.description ?? text;
+      } catch {
+        /* keep raw text */
+      }
+      logger.error({ status: res.status, path, message }, 'razorpay_api_error');
+      throw new Error(`Razorpay ${path} failed (${res.status}): ${message}`);
+    }
+    return JSON.parse(text) as T;
+  }
+
+  // Circls is the merchant — a plain Orders API order (no Route/transfers).
+  // https://razorpay.com/docs/api/orders/create/
+  async createRouteOrder(input: RouteOrderInput): Promise<RouteOrder> {
+    const order = await this.call<{ id: string; status: string; amount: number }>(
+      'POST',
+      '/orders',
+      {
+        amount: input.amountPaise,
+        currency: input.currency ?? 'INR',
+        receipt: input.reference,
+        ...(input.notes ? { notes: input.notes } : {}),
+      },
+    );
+    const status: RouteOrder['status'] =
+      order.status === 'paid' ? 'paid' : order.status === 'attempted' ? 'attempted' : 'created';
+    return { id: order.id, status, amountPaise: Number(order.amount) };
+  }
+
+  // https://razorpay.com/docs/api/refunds/create-normal/
+  async refundPayment(input: RefundInput): Promise<RefundResult> {
+    const refund = await this.call<{ id: string; status: string; amount: number }>(
+      'POST',
+      `/payments/${encodeURIComponent(input.paymentId)}/refund`,
+      {
+        amount: input.amountPaise,
+        ...(input.reason ? { notes: { reason: input.reason } } : {}),
+        ...(input.reference ? { receipt: input.reference } : {}),
+      },
+    );
+    const status: RefundResult['status'] =
+      refund.status === 'processed' ? 'processed' : refund.status === 'failed' ? 'failed' : 'pending';
+    return { id: refund.id, status, amountPaise: Number(refund.amount) };
   }
 
   verifyWebhookSignature(rawBody: string, signature: string): boolean {

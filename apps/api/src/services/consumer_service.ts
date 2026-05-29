@@ -11,7 +11,7 @@
  * bookEvent, purchaseMembership) but first re-check public visibility so a
  * consumer can't book against an unapproved venue by guessing ids.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
@@ -182,7 +182,7 @@ export async function consumerBookSlots(
     .select({ id: slots.id, tenantId: slots.tenantId, venueId: arenas.venueId })
     .from(slots)
     .innerJoin(arenas, eq(arenas.id, slots.arenaId))
-    .where(sql`${slots.id} = any(${input.slotIds})`);
+    .where(inArray(slots.id, input.slotIds));
   if (slotRows.length !== input.slotIds.length) {
     throw new NotFound('Slot not found', 'slot_not_found');
   }

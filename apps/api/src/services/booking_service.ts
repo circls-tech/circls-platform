@@ -325,6 +325,9 @@ export interface BookEventResult {
   booking: Booking;
   paymentId?: string;
   providerOrderId?: string;
+  /** Razorpay publishable key + amount, so the client can open checkout. */
+  keyId?: string;
+  amountPaise?: number;
 }
 
 /**
@@ -458,5 +461,11 @@ export async function bookEvent(
     throw err;
   }
 
-  return { booking: reserved.booking, paymentId, providerOrderId };
+  return {
+    booking: reserved.booking,
+    paymentId,
+    providerOrderId,
+    keyId: env.RAZORPAY_KEY_ID ?? '',
+    amountPaise: reserved.booking.pricePaise ?? 0,
+  };
 }
