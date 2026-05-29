@@ -9,6 +9,8 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** Future uploaded cover photo (backend deferred); undefined until then. */
+  imageUrl?: string | null;
 }
 
 export interface PublicArena {
@@ -111,4 +113,17 @@ export interface MyBooking {
   totalPaise: number;
   /** ISO-8601 */
   createdAt: string;
+}
+
+/** An event plus its owning venue's name + tags (for the card image). */
+export interface PublicEventWithVenue extends PublicEvent {
+  venueName: string;
+  venueTags: string[];
+}
+
+/** A membership plus the scope it applies to (venue name, or brand name for
+ *  tenant-wide) and the venue tags used to resolve its card image. */
+export interface PublicMembershipWithScope extends PublicMembership {
+  scopeName: string;
+  venueTags: string[];
 }
