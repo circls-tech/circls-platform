@@ -2,8 +2,7 @@ import type { Metadata } from 'next';
 import { Fraunces, Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-// TODO(Task 5.1): restore Footer
-// import { Footer } from '@/components/Footer';
+import { Footer } from '@/components/Footer';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
@@ -19,8 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-full flex-col">
         <Providers>
           <div className="flex-1">{children}</div>
-          {/* TODO(Task 5.1): restore Footer */}
-          {/* <Footer /> */}
+          <Footer />
         </Providers>
       </body>
     </html>
