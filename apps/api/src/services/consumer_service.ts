@@ -11,7 +11,7 @@
  * bookEvent, purchaseMembership) but first re-check public visibility so a
  * consumer can't book against an unapproved venue by guessing ids.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
@@ -49,10 +49,15 @@ function toPublicVenue(v: Venue): PublicVenue {
   };
 }
 
-/** Approved + tenant-active venues, optional name/tag search. */
+/** Approved + tenant-active venues that have ≥1 bookable arena; optional name/tag search. */
 export async function listPublicVenues(opts: { search?: string; limit?: number }): Promise<PublicVenue[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
-  const conds = [eq(venues.status, 'active'), eq(tenants.status, 'active')];
+  const conds = [
+    eq(venues.status, 'active'),
+    eq(tenants.status, 'active'),
+    // Only surface venues a consumer can actually book at (§12.1).
+    sql`exists (select 1 from ${arenas} a where a.venue_id = ${venues.id} and a.status = 'active')`,
+  ];
   if (opts.search) {
     const like = `%${opts.search.toLowerCase()}%`;
     conds.push(sql`(lower(${venues.name}) like ${like} or exists (
@@ -132,13 +137,53 @@ export async function listPublicArenaSlots(
   return all.filter((s) => s.status === 'open');
 }
 
-/** Published events for an approved + tenant-active venue. */
+/** Published, upcoming events for an approved + tenant-active venue, soonest first. */
 export async function listPublicEvents(venueId: string): Promise<Event[]> {
   await assertVenueVisible(venueId);
   return db
     .select()
     .from(events)
-    .where(and(eq(events.venueId, venueId), eq(events.status, 'published')));
+    .where(
+      and(
+        eq(events.venueId, venueId),
+        eq(events.status, 'published'),
+        // Hide events that have already ended (§12.2).
+        sql`${events.endsAt} >= now()`,
+      ),
+    )
+    .orderBy(sql`${events.startsAt} asc`);
+}
+
+/** A public event enriched with its owning venue's name + tags (for cross-venue cards). */
+export interface PublicEventWithVenue extends Event {
+  venueName: string;
+  venueTags: string[];
+}
+
+/**
+ * All published, upcoming events across every visible venue, soonest first.
+ * Drives the landing "Upcoming events" row + the /events listing page (§12.3).
+ * Each row carries the owning venue's name + tags (events have no tags of their
+ * own — the card image resolves off the venue's tags).
+ */
+export async function listPublicUpcomingEvents(opts: { limit?: number }): Promise<PublicEventWithVenue[]> {
+  const limit = Math.min(opts.limit ?? 50, 100);
+  const rows = await db
+    .select({ e: events, venueName: venues.name, venueTags: venues.tags })
+    .from(events)
+    .innerJoin(venues, eq(venues.id, events.venueId))
+    .innerJoin(tenants, eq(tenants.id, events.tenantId))
+    .where(
+      and(
+        eq(events.status, 'published'),
+        eq(venues.status, 'active'),
+        eq(tenants.status, 'active'),
+        sql`${events.endsAt} >= now()`,
+      ),
+    )
+    .orderBy(sql`${events.startsAt} asc`)
+    .limit(limit);
+  return rows.map((r) => ({ ...r.e, venueName: r.venueName, venueTags: r.venueTags }));
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */
@@ -154,6 +199,51 @@ export async function listPublicMemberships(venueId: string): Promise<Membership
         sql`(${memberships.venueId} is null or ${memberships.venueId} = ${venueId})`,
       ),
     );
+}
+
+/** A public membership enriched with its scope (venue or tenant) for cross-venue cards. */
+export interface PublicMembershipWithScope extends Membership {
+  /** The owning venue id, or null for tenant-wide memberships. */
+  venueId: string | null;
+  /** Venue name for venue-scoped; tenant/brand name for tenant-wide. */
+  scopeName: string;
+  /** Owning venue's tags; empty for tenant-wide (card falls back to motif). */
+  venueTags: string[];
+}
+
+/**
+ * All active memberships across every visible tenant, for the landing
+ * "Memberships" row (§12.4). Tenant-wide memberships (venue_id NULL) are kept
+ * and labelled with the tenant/brand name; venue-scoped ones require their
+ * venue to be active. LEFT JOINs venues so tenant-wide rows survive the join.
+ */
+export async function listPublicMembershipsAcrossVenues(
+  opts: { limit?: number },
+): Promise<PublicMembershipWithScope[]> {
+  const limit = Math.min(opts.limit ?? 50, 100);
+  // Visibility (§12.4): active membership, active tenant, and — only for
+  // venue-scoped memberships — an active venue. Tenant-wide rows (venue_id NULL)
+  // skip the venue gate; the LEFT JOIN leaves venues.status NULL there, so a bare
+  // eq(venues.status,'active') would wrongly drop every tenant-wide membership.
+  const conds: SQL[] = [
+    eq(memberships.status, 'active'),
+    eq(tenants.status, 'active'),
+    sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
+  ];
+  const rows = await db
+    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
+    .from(memberships)
+    .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+    .leftJoin(venues, eq(venues.id, memberships.venueId))
+    .where(and(...conds))
+    .orderBy(sql`${memberships.createdAt} desc`)
+    .limit(limit);
+  return rows.map((r) => ({
+    ...r.m,
+    venueId: r.m.venueId,
+    scopeName: r.venueName ?? r.tenantName,
+    venueTags: r.venueTags ?? [],
+  }));
 }
 
 // ── Book / purchase ────────────────────────────────────────────────────────
