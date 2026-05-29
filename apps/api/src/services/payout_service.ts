@@ -32,16 +32,13 @@ export function computeCommissionPaise(
   refundsPaise: number,
   commissionBps: number,
 ): number {
-  // TODO(human): compute the per-tenant commission in paise.
-  //
-  // Decisions to make:
-  //  - Base: commission on gross, or on net-of-refunds (gross − refunds)?
-  //    (If a customer is refunded, did Circls still earn its cut on that sale?)
-  //  - Rounding: bps math gives fractional paise — floor, round, or ceil?
-  //    Paise are integers; the venue gets net = gross − refunds − commission,
-  //    so rounding direction decides who absorbs the sub-paise remainder.
-  //  - Clamp: never return negative, never exceed the (gross − refunds) base.
-  return 0;
+  // Policy: commission is charged on GROSS — a customer refund does not claw
+  // back Circls's cut on that sale. Floored to whole paise, so the sub-paise
+  // remainder stays with the venue.
+  const raw = Math.floor((grossPaise * commissionBps) / 10_000);
+  // Clamp so net (= gross − refunds − commission) can never go negative from
+  // the commission alone, and never below zero.
+  return Math.max(0, Math.min(raw, grossPaise - refundsPaise));
 }
 
 /** A settlement week [start, end) in UTC. `end` is exclusive. */
