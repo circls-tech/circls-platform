@@ -1,12 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Membership, UserMembership } from './types';
+import type { Membership, MembershipPurchase, UserMembership } from './types';
 
 export function useMemberships(tenantId: string) {
   return useQuery({
     queryKey: ['memberships', tenantId],
     queryFn: () => apiFetch<Membership[]>(`/v1/tenants/${tenantId}/memberships`),
     enabled: Boolean(tenantId),
+  });
+}
+
+/** Consumer purchases of a membership plan (partner-facing). */
+export function useMembershipPurchases(tenantId: string, membershipId: string) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['membership-purchases', tenantId, membershipId],
+    queryFn: () =>
+      apiFetch<{ rows: MembershipPurchase[] }>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/purchases`,
+      ),
+    enabled: Boolean(user) && Boolean(tenantId) && Boolean(membershipId),
   });
 }
 

@@ -7,6 +7,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   createMembership,
   getMembership,
+  listMembershipPurchases,
   listMembershipsForTenant,
   listUserMemberships,
   purchaseMembership,
@@ -99,6 +100,14 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
     return setMembershipActive({ tenantId, actorUserId: user.id }, id, false);
+  });
+
+  // Partner-facing: buyers of a membership.
+  app.get('/v1/tenants/:tenantId/memberships/:id/purchases', { preHandler: requireAuth }, async (req) => {
+    const { tenantId, id } = req.params as { tenantId: string; id: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+    return { rows: await listMembershipPurchases(tenantId, id) };
   });
 
   app.post('/v1/memberships/:id/purchase', { preHandler: requireAuth }, async (req) => {

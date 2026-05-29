@@ -13,7 +13,7 @@
  * webhook can flip it to 'active'. For the walk-in/MVP flow this is good
  * enough; the consumer Flutter app will gate access via payment status.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { env } from '../config/env.js';
 import { memberships, type Membership, userMemberships } from '../db/schema/memberships.js';
@@ -37,6 +37,47 @@ export async function getMembership(
     .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, tenantId)))
     .limit(1);
   return row ?? null;
+}
+
+export interface MembershipPurchaseRow {
+  userMembershipId: string;
+  buyerName: string | null;
+  buyerContact: string | null;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+}
+
+/**
+ * Buyers of a membership (partner-facing). Joins user_memberships → users; the
+ * buyer's display name / phone / email are surfaced for the partner's records.
+ * Tenant-scoped via the parent membership.
+ */
+export async function listMembershipPurchases(
+  tenantId: string,
+  membershipId: string,
+): Promise<MembershipPurchaseRow[]> {
+  const raw = await db.execute<Record<string, unknown>>(sql`
+    select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
+           u.display_name, u.phone_e164, u.email
+    from user_memberships um
+    join memberships m on m.id = um.membership_id
+    join users u on u.id = um.user_id
+    where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
+    order by um.created_at desc
+    limit 500
+  `);
+  const rows = raw as unknown as Record<string, unknown>[];
+  return rows.map((r) => ({
+    userMembershipId: r['id'] as string,
+    buyerName: (r['display_name'] as string | null) ?? null,
+    buyerContact: ((r['phone_e164'] as string | null) ?? (r['email'] as string | null)) ?? null,
+    status: r['status'] as string,
+    startsAt: new Date(r['starts_at'] as string).toISOString(),
+    endsAt: new Date(r['ends_at'] as string).toISOString(),
+    createdAt: new Date(r['created_at'] as string).toISOString(),
+  }));
 }
 
 export interface CreateMembershipInput {

@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import {
   useCancelEvent,
   useEvent,
+  useEventBookings,
   usePublishEvent,
   useUpdateEvent,
 } from '@/lib/api/events';
@@ -76,6 +77,7 @@ export default function EventDetailPage() {
   const authed = Boolean(user);
 
   const { data: ev, isLoading } = useEvent(tenantId, eventId);
+  const { data: bookings, isLoading: bookingsLoading } = useEventBookings(tenantId, eventId);
   const publish = usePublishEvent(tenantId, venueId);
   const cancel = useCancelEvent(tenantId, venueId);
   const update = useUpdateEvent(tenantId, venueId);
@@ -352,6 +354,51 @@ export default function EventDetailPage() {
               </form>
             </Card>
           )}
+
+          <Card title={`Registrations${bookings ? ` (${bookings.rows.length})` : ''}`}>
+            {bookingsLoading && (
+              <p className="py-6 text-center text-sm text-slate-400">Loading…</p>
+            )}
+            {!bookingsLoading && bookings && bookings.rows.length === 0 && (
+              <p className="py-6 text-center text-sm text-slate-400">No registrations yet.</p>
+            )}
+            {!bookingsLoading && bookings && bookings.rows.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#e5e7eb] text-left">
+                      <th className="pb-2 pr-4 font-medium text-slate-500">Customer</th>
+                      <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
+                      <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
+                      <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
+                      <th className="pb-2 font-medium text-slate-500">Registered (IST)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f5f9]">
+                    {bookings.rows.map((b) => (
+                      <tr key={b.id}>
+                        <td className="py-2.5 pr-4 font-medium text-slate-700">
+                          {b.customerName}
+                        </td>
+                        <td className="py-2.5 pr-4 text-slate-700">{b.customerContact}</td>
+                        <td className="py-2.5 pr-4">
+                          <StatusPill status={b.status} />
+                        </td>
+                        <td className="py-2.5 pr-4 text-slate-700">
+                          {b.totalPaise === 0 ? (
+                            <span className="text-emerald-600">Free</span>
+                          ) : (
+                            `₹${(b.totalPaise / 100).toFixed(2)}`
+                          )}
+                        </td>
+                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </>
       )}
     </div>
