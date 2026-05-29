@@ -1,0 +1,77 @@
+'use client';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { Header } from '@/components/Header';
+import { useMyBookings } from '@/lib/api/consumer';
+import { useAuth } from '@/lib/firebase/auth_context';
+import { formatDate, formatPaise } from '@/lib/format';
+import { Card, StatusPill } from '@/lib/ui';
+
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  slot: 'Court booking',
+  event: 'Event',
+  membership: 'Membership',
+};
+
+export default function MyBookingsPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const bookings = useMyBookings();
+
+  useEffect(() => {
+    if (!loading && !user) router.replace('/login?redirect=/me/bookings');
+  }, [loading, user, router]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen">
+        <Header />
+        <main className="mx-auto max-w-3xl px-4 py-8">
+          <p className="text-sm text-[#475569]">Loading…</p>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <Header />
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <h1 className="mb-6 text-2xl font-semibold text-[#0f172a]">My bookings</h1>
+
+        {bookings.isLoading ? (
+          <p className="text-sm text-[#475569]">Loading your bookings…</p>
+        ) : bookings.isError ? (
+          <p className="text-sm text-red-600">
+            {bookings.error instanceof Error ? bookings.error.message : 'Failed to load bookings'}
+          </p>
+        ) : !bookings.data || bookings.data.length === 0 ? (
+          <Card>
+            <p className="text-sm text-[#475569]">You have no bookings yet.</p>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {bookings.data.map((b) => (
+              <Card key={b.id}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-[#0f172a]">{b.venueName}</h2>
+                    <p className="mt-0.5 text-sm text-[#475569]">
+                      {ITEM_TYPE_LABELS[b.itemType] ?? b.itemType} · {formatDate(b.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <StatusPill status={b.status} />
+                    <span className="text-sm font-medium text-[#0f172a]">
+                      {formatPaise(b.totalPaise)}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
