@@ -151,6 +151,45 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
     expect(mem?.role).toBe('manager');
   });
 
+  it('acceptInvitation adopts a stale user row sharing the invitee email (no email-unique 500)', async () => {
+    const email = `adopt-${SUFFIX}@x.test`;
+    // The invitee already has a row under an OLD firebase_uid (signed in via a
+    // different provider before accepting). Insert it directly.
+    const [stale] = await db
+      .insert(users)
+      .values({ firebaseUid: `adopt-old-fb-${SUFFIX}`, email })
+      .returning();
+    createdUserIds.push(stale!.id);
+
+    const r = await createInvitation({
+      tenantId,
+      actorUserId: ownerUserId,
+      email,
+      role: 'staff',
+    });
+
+    // Accept with a BRAND-NEW firebase_uid carrying the same email. Before the
+    // fix this hit users_email_unique inside the tx and 500'd.
+    const accepted = await acceptInvitation({
+      token: r.plaintextToken,
+      firebaseUid: `adopt-new-fb-${SUFFIX}`,
+      email,
+    });
+
+    // Same person, migrated onto the new uid, and now a member.
+    expect(accepted.userId).toBe(stale!.id);
+    const [migrated] = await db
+      .select({ firebaseUid: users.firebaseUid })
+      .from(users)
+      .where(sql`id = ${stale!.id}`);
+    expect(migrated?.firebaseUid).toBe(`adopt-new-fb-${SUFFIX}`);
+    const [mem] = await db
+      .select()
+      .from(tenantMembers)
+      .where(sql`tenant_id = ${tenantId} and user_id = ${stale!.id}`);
+    expect(mem?.role).toBe('staff');
+  });
+
   it('acceptInvitation rejects email mismatch', async () => {
     const r = await createInvitation({
       tenantId,

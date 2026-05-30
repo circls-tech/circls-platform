@@ -296,20 +296,40 @@ export async function acceptInvitation(
       .where(eq(users.firebaseUid, input.firebaseUid))
       .limit(1);
     if (!existing) {
-      const [created] = await tx
-        .insert(users)
-        .values({ firebaseUid: input.firebaseUid, email: tokenEmail })
-        .onConflictDoNothing({ target: users.firebaseUid })
-        .returning();
-      if (created) {
-        existing = { id: created.id };
+      // The invitee may already have a `users` row under tokenEmail but a
+      // different firebase_uid (signed in via another provider before accepting).
+      // Adopt that row onto the new uid rather than tripping users_email_unique
+      // on the insert below — the firebase_uid lookup above came back empty, so
+      // the new uid is free.
+      const [byEmail] = await tx
+        .select({ id: users.id, firebaseUid: users.firebaseUid })
+        .from(users)
+        .where(eq(users.email, tokenEmail))
+        .limit(1);
+      if (byEmail) {
+        if (byEmail.firebaseUid !== input.firebaseUid) {
+          await tx
+            .update(users)
+            .set({ firebaseUid: input.firebaseUid })
+            .where(eq(users.id, byEmail.id));
+        }
+        existing = { id: byEmail.id };
       } else {
-        const [refetch] = await tx
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.firebaseUid, input.firebaseUid))
-          .limit(1);
-        existing = refetch!;
+        const [created] = await tx
+          .insert(users)
+          .values({ firebaseUid: input.firebaseUid, email: tokenEmail })
+          .onConflictDoNothing({ target: users.firebaseUid })
+          .returning();
+        if (created) {
+          existing = { id: created.id };
+        } else {
+          const [refetch] = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.firebaseUid, input.firebaseUid))
+            .limit(1);
+          existing = refetch!;
+        }
       }
     }
 
