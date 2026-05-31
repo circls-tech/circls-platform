@@ -115,10 +115,20 @@ export interface MyBooking {
   createdAt: string;
 }
 
-/** An event plus its owning venue's name + tags (for the card image). */
-export interface PublicEventWithVenue extends PublicEvent {
-  venueName: string;
+/**
+ * A public event with a resolved location. `venueId` is null for org-scoped
+ * (venue-less) events; `locationName` is the venue name or the org name.
+ */
+export interface PublicEventWithVenue extends Omit<PublicEvent, 'venueId'> {
+  venueId: string | null;
+  venueName: string | null;
   venueTags: string[];
+  isStandalone: boolean;
+  locationName: string;
+  locLat: number | null;
+  locLng: number | null;
+  locTzName: string;
+  locAddressJson: Record<string, unknown> | null;
 }
 
 /** A membership plus the scope it applies to (venue name, or brand name for
