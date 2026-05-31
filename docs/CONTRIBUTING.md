@@ -1,7 +1,13 @@
 # Contributing & Development Workflow
 
-`main` is protected. **You cannot push to it directly** — every change lands via a pull
-request that passes CI.
+**Every change to `main` goes through a PR that passes CI. Do not push to `main` directly.**
+
+> **Enforcement status:** hard server-side blocking (the `protect-main` ruleset) needs
+> GitHub Pro for this private repo. Until that's enabled, enforcement is **soft**:
+> `.github/workflows/guard-main.yml` runs on every push to `main` and opens a loud
+> `main-guard` alert issue if a commit lands without a PR. CI also runs on every push to
+> `main`, so a bad direct push turns `main` red immediately. Treat a direct push as a
+> process violation — open a retroactive PR or revert.
 
 ## The loop
 1. Branch off `main` (or use a git worktree).
@@ -24,7 +30,9 @@ skipped); **duplicates are not**. Because parallel branches can each grab the sa
 number, treat your migration number as tentative and renumber at merge if needed. CI's
 migration-numbering check (`scripts/release/check-migrations.mjs`) enforces this.
 
-## Enabling branch protection (one-time, admin)
-Run `bash scripts/release/protect-main.sh` as a repo admin (active gh account `VedantS01`).
-Idempotent — safe to re-run. This requires `ci.yml` to be present on the default branch so
-the `verify`/`db` checks are registered.
+## Enabling hard branch protection (one-time, admin — needs GitHub Pro)
+Once the repo is on GitHub Pro (required for rulesets/branch protection on private repos),
+run `bash scripts/release/protect-main.sh` as a repo admin (active gh account `VedantS01`).
+It creates/updates the `protect-main` ruleset: PR required, `verify`/`db` checks must pass,
+no direct/force push, no bypass (applies to admins too). Idempotent — safe to re-run. On the
+free plan it returns HTTP 403; the `guard-main.yml` soft check covers the gap until then.
