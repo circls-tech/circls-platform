@@ -11,6 +11,8 @@ import { Button } from '@/lib/ui';
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/venues', label: 'Venues' },
+  { href: '/events', label: 'Events' },
+  { href: '/memberships', label: 'Memberships' },
   { href: '/settings', label: 'Settings' },
 ] as const;
 

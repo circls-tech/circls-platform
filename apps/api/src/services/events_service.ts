@@ -59,6 +59,15 @@ export async function listEventsForVenue(venueId: string): Promise<Event[]> {
   return db.select().from(events).where(eq(events.venueId, venueId));
 }
 
+/** All events for a tenant (venue-scoped + org-scoped), newest first. */
+export async function listEventsForTenant(tenantId: string): Promise<Event[]> {
+  return db
+    .select()
+    .from(events)
+    .where(eq(events.tenantId, tenantId))
+    .orderBy(sql`${events.createdAt} desc`);
+}
+
 export async function getEvent(eventId: string, tenantId: string): Promise<Event | null> {
   const [row] = await db
     .select()
@@ -70,7 +79,13 @@ export async function getEvent(eventId: string, tenantId: string): Promise<Event
 
 export interface CreateEventInput {
   tenantId: string;
-  venueId: string;
+  /** Omit for an org-scoped (venue-less) event. */
+  venueId?: string | undefined;
+  /** Standalone location — required when venueId is omitted. */
+  addressJson?: Record<string, unknown> | undefined;
+  lat?: number | undefined;
+  lng?: number | undefined;
+  tzName?: string | undefined;
   name: string;
   description?: string | undefined;
   startsAt: Date;
@@ -79,10 +94,23 @@ export interface CreateEventInput {
   capacity?: number | undefined;
 }
 
-/** Create a draft, venue-scoped Event. Validates startsAt < endsAt. */
+/**
+ * Create a draft Event. Venue-scoped when `venueId` is given (location read from
+ * the venue); org-scoped when omitted, in which case `addressJson` + `tzName`
+ * are required and stored on the event. Validates startsAt < endsAt.
+ */
 export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
   if (input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
+  }
+  const isStandalone = !input.venueId;
+  if (isStandalone) {
+    if (!input.addressJson) {
+      throw new BadRequest('Org-scoped events require an address', 'event_address_required');
+    }
+    if (!input.tzName) {
+      throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
+    }
   }
 
   return db.transaction(async (tx) => {
@@ -90,7 +118,11 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
       .insert(events)
       .values({
         tenantId: input.tenantId,
-        venueId: input.venueId,
+        venueId: input.venueId ?? null,
+        addressJson: isStandalone ? (input.addressJson ?? null) : null,
+        lat: isStandalone ? (input.lat ?? null) : null,
+        lng: isStandalone ? (input.lng ?? null) : null,
+        tzName: isStandalone ? (input.tzName ?? null) : null,
         name: input.name,
         description: input.description ?? null,
         startsAt: input.startsAt,
@@ -104,6 +136,7 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
 
     await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
       venueId: row.venueId,
+      isStandalone,
       name: row.name,
       pricePaise: row.pricePaise,
     });

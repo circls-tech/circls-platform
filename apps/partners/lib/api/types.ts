@@ -232,7 +232,11 @@ export type EventStatus =
 export interface VenueEvent {
   id: string;
   tenantId: string;
-  venueId: string;
+  venueId: string | null;
+  addressJson: Record<string, unknown> | null;
+  lat: number | null;
+  lng: number | null;
+  tzName: string | null;
   name: string;
   description: string | null;
   /** ISO-8601 */

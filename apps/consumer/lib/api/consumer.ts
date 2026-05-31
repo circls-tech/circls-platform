@@ -72,6 +72,15 @@ export function useUpcomingEvents(limit = 50) {
   });
 }
 
+/** A single public event (venue or standalone) by id. */
+export function useEvent(eventId: string) {
+  return useQuery({
+    queryKey: ['event', eventId],
+    queryFn: () => apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`),
+    enabled: Boolean(eventId),
+  });
+}
+
 /**
  * All active memberships across venues.
  * Depends on the GET /v1/consumer/memberships endpoint from spec §12.4 (handed off
