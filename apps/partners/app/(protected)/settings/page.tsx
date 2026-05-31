@@ -47,7 +47,7 @@ export default function SettingsPage() {
         subtitle="Create time-bound passes your customers can purchase."
       >
         <Link
-          href="/settings/memberships"
+          href="/memberships"
           className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
         >
           Manage memberships &rarr;
