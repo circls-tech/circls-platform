@@ -17,8 +17,6 @@ every push to `main`** and auto-runs migrations. There is:
 - **No database backups / DR** — a bad migration or droplet loss = total data loss.
 - **No rollback procedure** — Coolify keeps prior deploys but there's no tracked
   "last known good" or tested recovery path.
-- **No deploy verification** — `/v1/health` doesn't expose the build SHA, so you can't
-  confirm *what* is live.
 - **Test data in prod** and **known authz debt** (e.g. `admin_refunds.ts`
   `ADMIN_USER_IDS` backdoor, `computeCommissionPaise()` TODO).
 
@@ -122,9 +120,11 @@ feature branch ──PR──▶ main (protected, CI-gated, never auto-deploys)
      forward; the affected migration is named and the operator decides on any DB action.
      The tool never silently attempts to reverse a forward migration.
 
-6. **`/v1/health` build SHA** (backlog #51): the API health response includes the build
-   commit SHA, injected at Docker build time (build arg → env → health payload). This is
-   what makes deploy verification and rollback real rather than route-existence probing.
+6. **`/v1/health` build SHA — already in place.** `apps/api/src/routes/health.ts`
+   returns `{ ok: true, commit: <SOURCE_COMMIT> }`, injected at Docker build time (Coolify
+   sets the `SOURCE_COMMIT` build arg; the Dockerfile promotes it to a runtime env). This
+   is what makes deploy verification and rollback real rather than route-existence probing.
+   The release tool consumes it; no work needed here.
 
 7. **`scripts/release/`** — small Node/TS CLI shared by the workflows and usable locally:
    - `release-notes` (diff `release..main`, migration list),
@@ -190,13 +190,13 @@ Everything scriptable (restore drill, freshness monitor, verification) is script
 ## Rollout / sequencing
 
 1. **Backups/DR** (launch-blocker) — set up, run a restore drill, confirm freshness.
-2. **`/v1/health` build SHA** (#51) — prerequisite for verifiable deploys.
-3. **CI** (`ci.yml`) + **branch protection** on `main`.
-4. **`release` branch** created from current `main`; **repoint Coolify** to watch it.
-5. **`release.yml` / `rollback.yml` / `release-candidate.yml`** + `scripts/release/`.
-6. **Security review** + fixes through the new pipeline.
-7. **Test-data cleanup** (post-verified-backup).
-8. Documentation: `docs/RELEASE.md` runbook (daily flow, rollback, restore drill).
+2. **CI** (`ci.yml`) + **branch protection** on `main`.
+3. **`release` branch** created from current `main`; **repoint Coolify** to watch it.
+4. **`release.yml` / `rollback.yml` / `release-candidate.yml`** + `scripts/release/`
+   (deploy verification consumes the existing `/v1/health` build SHA).
+5. **Security review** + fixes through the new pipeline.
+6. **Test-data cleanup** (post-verified-backup).
+7. Documentation: `docs/RELEASE.md` runbook (daily flow, rollback, restore drill).
 
 Step 4 (repoint Coolify) and the backups console wiring are the operator/browser actions;
 everything else is automated or scripted. The cutover is ordered so that backups exist
