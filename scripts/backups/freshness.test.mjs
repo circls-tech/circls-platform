@@ -32,3 +32,13 @@ test('parseNewest: empty bucket yields null', () => {
   assert.equal(parseNewest(JSON.stringify({})), null);
   assert.equal(parseNewest(JSON.stringify({ Contents: [] })), null);
 });
+
+test('isStale: backup exactly at threshold age is not stale', () => {
+  const now = Date.parse('2026-05-31T03:00:00Z');
+  assert.equal(isStale('2026-05-30T03:00:00Z', now, 24), false);
+});
+
+test('isStale: unparseable timestamp is treated as stale', () => {
+  const now = Date.parse('2026-05-31T03:00:00Z');
+  assert.equal(isStale('not-a-date', now, 24), true);
+});

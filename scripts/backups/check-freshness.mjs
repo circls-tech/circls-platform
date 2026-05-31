@@ -5,12 +5,22 @@
 import { isStale, parseNewest } from './freshness.mjs';
 
 const MAX_AGE_HOURS = Number(process.env.MAX_AGE_HOURS ?? '24');
+if (!Number.isFinite(MAX_AGE_HOURS) || MAX_AGE_HOURS <= 0) {
+  console.error(`CONFIG ERROR: MAX_AGE_HOURS must be a positive number, got: ${process.env.MAX_AGE_HOURS}`);
+  process.exit(2);
+}
 
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
 
-const newest = parseNewest(input || '{}');
+let newest;
+try {
+  newest = parseNewest(input || '{}');
+} catch (e) {
+  console.error(`ERROR: could not parse S3 response: ${e.message}`);
+  process.exit(2);
+}
 const now = Date.now();
 
 if (isStale(newest, now, MAX_AGE_HOURS)) {

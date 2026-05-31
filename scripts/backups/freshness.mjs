@@ -17,6 +17,7 @@ export function parseNewest(jsonText) {
   return contents
     .map((o) => o.LastModified)
     .filter(Boolean)
+    // ISO 8601 UTC strings sort lexicographically = chronologically; assumes Z suffix (S3 output).
     .sort()
     .at(-1) ?? null;
 }
