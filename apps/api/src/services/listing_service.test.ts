@@ -6,7 +6,7 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { tenants, users, venues } from '../db/schema/index.js';
+import { events, tenants, users, venues } from '../db/schema/index.js';
 import { approveListing, approvedStatus, listListingsForReview, rejectListing } from './listing_service.js';
 
 describe('approvedStatus', () => {
@@ -40,6 +40,7 @@ describe.skipIf(!runIntegration)('listing approval — integration', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await db.execute(sql`delete from users where id = ${actorUserId}`);
@@ -73,6 +74,29 @@ describe.skipIf(!runIntegration)('listing approval — integration', () => {
     const id = await newVenue('Reject Me');
     const res = await rejectListing({ type: 'venue', id, actorUserId, reason: 'incomplete photos' });
     expect(res.status).toBe('rejected');
+  });
+
+  it('org-scoped (venue-less) events appear in the review queue and approve', async () => {
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId: null,
+        addressJson: { line1: '3 Lake Rd', city: 'Pune' },
+        tzName: 'Asia/Kolkata',
+        name: 'Org Review Event',
+        startsAt: new Date('2031-01-01T10:00:00Z'),
+        endsAt: new Date('2031-01-01T12:00:00Z'),
+        pricePaise: 0,
+        status: 'pending_review',
+      })
+      .returning();
+
+    const queue = await listListingsForReview({ type: 'event', status: 'pending_review' });
+    expect(queue.some((q) => q.id === ev!.id && q.tenantName === 'ListingSvc')).toBe(true);
+
+    const result = await approveListing({ type: 'event', id: ev!.id, actorUserId });
+    expect(result.status).toBe('published');
   });
 
   it('cannot approve a listing that is not pending_review', async () => {
