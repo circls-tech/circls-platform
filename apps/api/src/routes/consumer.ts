@@ -140,6 +140,32 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return consumerPurchaseMembership(membershipId, user.id);
   });
 
+  app.get('/v1/consumer/me', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    return { profile: await getMyProfile(user.id) };
+  });
+
+  const updateProfileBody = z.object({
+    displayName: z.string().min(1).max(120).optional(),
+    email: z.string().email().optional(),
+    interests: z.array(z.string()).optional(),
+  });
+  app.patch('/v1/consumer/me', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const parsed = updateProfileBody.safeParse(req.body);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid profile payload', 'bad_request', { issues: parsed.error.issues });
+    }
+    // Only forward keys that were actually provided — satisfies the service's
+    // exactOptional UpdateMyProfileInput (no `undefined`-valued properties).
+    const input = {
+      ...(parsed.data.displayName !== undefined && { displayName: parsed.data.displayName }),
+      ...(parsed.data.email !== undefined && { email: parsed.data.email }),
+      ...(parsed.data.interests !== undefined && { interests: parsed.data.interests }),
+    };
+    return { profile: await updateMyProfile(user.id, input) };
+  });
+
   app.get('/v1/consumer/me/bookings', { preHandler: requireAuth }, async (req) => {
     const user = await currentUser(req);
     return { rows: await listMyBookings(user.id) };
