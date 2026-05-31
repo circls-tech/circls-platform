@@ -29,12 +29,18 @@ jobs:
               repo: context.repo.repo,
               commit_sha: sha,
             });
-            if (prs.length > 0) {
-              core.info(`OK: ${sha.slice(0, 7)} arrived via PR #${prs[0].number}.`);
+            const head = context.payload.head_commit || {};
+            const message = head.message || '';
+            // The "PRs associated with a commit" API covers squash/rebase merges (the
+            // landed commit belongs to the PR), but returns EMPTY for a merge-commit
+            // strategy (the merge commit isn't part of the PR branch). GitHub formats
+            // those as "Merge pull request #N from …", so accept that as a PR signal too.
+            const isPrMergeCommit = /^Merge pull request #\d+ /.test(message);
+            if (prs.length > 0 || isPrMergeCommit) {
+              core.info(`OK: ${sha.slice(0, 7)} arrived via PR${prs.length ? ` #${prs[0].number}` : ' (merge commit)'}.`);
               return;
             }
-            const head = context.payload.head_commit || {};
-            const firstLine = (head.message || '').split('\n')[0];
+            const firstLine = message.split('\n')[0];
             core.warning(`Direct push to main detected: ${sha.slice(0, 7)} has no associated PR.`);
             const title = `🔴 Direct push to main detected (${sha.slice(0, 7)})`;
             const body = [
