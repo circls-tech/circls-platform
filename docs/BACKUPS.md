@@ -3,7 +3,8 @@
 ## What's backed up, where
 - **Postgres (prod):** Coolify managed-PG scheduled backup → Cloudflare R2 bucket
   `circls-backups`, daily at 02:00 server time, retention 14 days.
-  Key prefix: `<R2_BACKUP_PREFIX from Task 2>`. Format: `<custom|plain, gzip?>`.
+  Key prefix (set this as the `R2_BACKUP_PREFIX` secret): `data/coolify/backups/databases/circls-0/postgresql-database-bev8a85f34i04zuf6a1duj1p-bev8a85f34i04zuf6a1duj1p/`
+  Format: `pg_dump` **custom** (`.dmp`) — restore with `pg_restore`; internally zlib-compressed (not gzip). Filenames are `pg-dump-postgres-<unixtime>.dmp`.
 - **Whole droplet:** DigitalOcean weekly Backups add-on (coarse second layer).
 
 ## Monitoring
