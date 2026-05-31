@@ -121,6 +121,54 @@ export interface MyBooking {
   createdAt: string;
 }
 
+/** One booked slot within a court (slot) booking. */
+export interface MyBookingSlot {
+  id: string;
+  /** ISO-8601 */
+  startAt: string;
+  /** ISO-8601 */
+  endAt: string;
+  pricePaise: number;
+  arenaName: string;
+}
+
+/**
+ * The full view of a single booking (GET /v1/consumer/me/bookings/:id). Only the
+ * block matching `itemType` is populated: `slots` for court bookings, `event`
+ * for event bookings, `membership` for membership purchases.
+ */
+export interface MyBookingDetail {
+  id: string;
+  venueId: string | null;
+  venueName: string;
+  itemType: string;
+  status: string;
+  channel: string;
+  paymentMethod: string;
+  totalPaise: number;
+  note: string | null;
+  customerName: string | null;
+  customerContact: string | null;
+  /** ISO-8601 */
+  createdAt: string;
+  slots: MyBookingSlot[];
+  event: {
+    id: string;
+    name: string;
+    /** ISO-8601 */
+    startsAt: string;
+    /** ISO-8601 */
+    endsAt: string;
+    description: string | null;
+  } | null;
+  membership: {
+    id: string;
+    name: string;
+    durationDays: number;
+    description: string | null;
+  } | null;
+}
+
 /**
  * A public event with a resolved location. `venueId` is null for org-scoped
  * (venue-less) events; `locationName` is the venue name or the org name.

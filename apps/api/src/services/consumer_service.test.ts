@@ -5,8 +5,9 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { arenas, events, memberships, tenants, venues } from '../db/schema/index.js';
+import { arenas, bookings, events, memberships, slots, tenants, users, venues } from '../db/schema/index.js';
 import {
+  getMyBookingDetail,
   getPublicVenue,
   listPublicArenas,
   listPublicEvents,
@@ -251,5 +252,188 @@ describe.skipIf(!runIntegration)('consumer memberships across venues', () => {
     expect(ids.has(inactiveId)).toBe(false); // status != active
     expect(ids.has(pendingVenueMembId)).toBe(false); // owning venue not active
     expect(ids.has(suspMembId)).toBe(false); // owning tenant suspended
+  });
+});
+
+// getMyBookingDetail: a consumer's own booking, resolved per item type, scoped
+// to the requesting user (created_by OR customer_user_id) so other users 404.
+describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)', () => {
+  const tag = `bkdetail-${Date.now()}`;
+  let tenantId: string;
+  let venueId: string;
+  let arenaId: string;
+  let userA: string;
+  let userB: string;
+  let membershipId: string;
+  let eventId: string;
+  let slotBookingId: string;
+  let eventBookingId: string;
+  let membershipBookingId: string;
+  let customerBookingId: string;
+
+  beforeAll(async () => {
+    await pingDb();
+    const [t] = await db.insert(tenants).values({ name: 'BkDetail', slug: tag }).returning();
+    tenantId = t!.id;
+    const [v] = await db.insert(venues).values({ tenantId, name: `BkD Venue ${tag}`, status: 'active' }).returning();
+    venueId = v!.id;
+    const [a] = await db.insert(arenas).values({ venueId, name: 'Center Court', status: 'active' }).returning();
+    arenaId = a!.id;
+
+    const [ua] = await db.insert(users).values({ firebaseUid: `${tag}-a` }).returning({ id: users.id });
+    userA = ua!.id;
+    const [ub] = await db.insert(users).values({ firebaseUid: `${tag}-b` }).returning({ id: users.id });
+    userB = ub!.id;
+
+    const [m] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Gold Plan', durationDays: 90, pricePaise: 500000, status: 'active' })
+      .returning({ id: memberships.id });
+    membershipId = m!.id;
+
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId,
+        name: 'Sunday Smash',
+        description: 'A friendly tournament',
+        startsAt: new Date(Date.now() + DAY),
+        endsAt: new Date(Date.now() + DAY + 2 * HOUR),
+        pricePaise: 30000,
+        status: 'published',
+      })
+      .returning({ id: events.id });
+    eventId = ev!.id;
+
+    // Slot booking + one booked slot pointing at it.
+    const [sb] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'slot',
+        slotArenaId: arenaId,
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 80000,
+        createdByUserId: userA,
+        customerUserId: userA,
+      })
+      .returning({ id: bookings.id });
+    slotBookingId = sb!.id;
+    await db.insert(slots).values({
+      tenantId,
+      arenaId,
+      timeRange: '[2026-06-10T10:00:00Z,2026-06-10T11:00:00Z)',
+      pricePaise: 80000,
+      status: 'booked',
+      bookingId: slotBookingId,
+    });
+
+    const [eb] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'event',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 30000,
+        itemData: { eventId, eventName: 'Sunday Smash' },
+        createdByUserId: userA,
+        customerUserId: userA,
+      })
+      .returning({ id: bookings.id });
+    eventBookingId = eb!.id;
+
+    const [mb] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        itemType: 'membership',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 500000,
+        itemData: { membershipId },
+        createdByUserId: userA,
+        customerUserId: userA,
+      })
+      .returning({ id: bookings.id });
+    membershipBookingId = mb!.id;
+
+    // Booked BY user A FOR user B — must be visible to B via customer_user_id.
+    const [cb] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        itemType: 'membership',
+        channel: 'circls',
+        paymentMethod: 'free',
+        status: 'confirmed',
+        totalPaise: 0,
+        itemData: { membershipId },
+        createdByUserId: userA,
+        customerUserId: userB,
+      })
+      .returning({ id: bookings.id });
+    customerBookingId = cb!.id;
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from memberships where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from arenas where venue_id = ${venueId}`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from users where id in (${userA}, ${userB})`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+  });
+
+  it('resolves a slot booking with its booked slots', async () => {
+    const d = await getMyBookingDetail(userA, slotBookingId);
+    expect(d.itemType).toBe('slot');
+    expect(d.venueName).toBe(`BkD Venue ${tag}`);
+    expect(d.paymentMethod).toBe('razorpay_route');
+    expect(d.event).toBeNull();
+    expect(d.membership).toBeNull();
+    expect(d.slots).toHaveLength(1);
+    expect(d.slots[0]!.arenaName).toBe('Center Court');
+    expect(d.slots[0]!.pricePaise).toBe(80000);
+  });
+
+  it('resolves an event booking with the event block', async () => {
+    const d = await getMyBookingDetail(userA, eventBookingId);
+    expect(d.itemType).toBe('event');
+    expect(d.event?.name).toBe('Sunday Smash');
+    expect(d.event?.description).toBe('A friendly tournament');
+    expect(d.slots).toHaveLength(0);
+    expect(d.membership).toBeNull();
+  });
+
+  it('resolves a membership booking with the membership block (title = plan name)', async () => {
+    const d = await getMyBookingDetail(userA, membershipBookingId);
+    expect(d.itemType).toBe('membership');
+    expect(d.venueName).toBe('Gold Plan');
+    expect(d.membership?.name).toBe('Gold Plan');
+    expect(d.membership?.durationDays).toBe(90);
+    expect(d.event).toBeNull();
+    expect(d.slots).toHaveLength(0);
+  });
+
+  it('is visible to the customer it was booked for (customer_user_id path)', async () => {
+    const d = await getMyBookingDetail(userB, customerBookingId);
+    expect(d.id).toBe(customerBookingId);
+    expect(d.totalPaise).toBe(0);
+  });
+
+  it('404s when a different user requests a booking that is not theirs', async () => {
+    await expect(getMyBookingDetail(userB, membershipBookingId)).rejects.toMatchObject({
+      code: 'booking_not_found',
+    });
   });
 });

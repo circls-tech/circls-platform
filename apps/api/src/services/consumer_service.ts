@@ -466,6 +466,166 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
   }));
 }
 
+/** One booked slot within a court (slot) booking, oldest-first. */
+export interface MyBookingSlot {
+  id: string;
+  startAt: string;
+  endAt: string;
+  pricePaise: number;
+  arenaName: string;
+}
+
+/**
+ * The full view of one of the consumer's own bookings, returned by
+ * GET /v1/consumer/me/bookings/:id. Carries the shared header fields plus
+ * type-specific blocks: `slots` (court bookings), `event` (event bookings), and
+ * `membership` (membership purchases). Only the block matching `itemType` is
+ * populated; the others are empty/null.
+ */
+export interface MyBookingDetail {
+  id: string;
+  venueId: string | null;
+  venueName: string;
+  itemType: string;
+  status: string;
+  channel: string;
+  paymentMethod: string;
+  totalPaise: number;
+  note: string | null;
+  customerName: string | null;
+  customerContact: string | null;
+  createdAt: string;
+  /** Court bookings: the booked slots, oldest-first (empty for other types). */
+  slots: MyBookingSlot[];
+  /** Event bookings: the event details (null otherwise). */
+  event: {
+    id: string;
+    name: string;
+    startsAt: string;
+    endsAt: string;
+    description: string | null;
+  } | null;
+  /** Membership purchases: the plan details (null otherwise). */
+  membership: {
+    id: string;
+    name: string;
+    durationDays: number;
+    description: string | null;
+  } | null;
+}
+
+/**
+ * Load one of the consumer's own bookings in full. Scoped to the requesting user
+ * (either the actor who created it or the customer it's for) so guessing another
+ * user's booking id returns a 404 — mirroring the tenant-scoping in
+ * `bookings_read_service.getBookingDetail`. LEFT JOINs venues / memberships /
+ * events to resolve a title and the type-specific block; the slot rows are
+ * loaded separately (only court bookings have them).
+ */
+export async function getMyBookingDetail(
+  userId: string,
+  bookingId: string,
+): Promise<MyBookingDetail> {
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    select
+      b.id                       as id,
+      b.venue_id                 as venue_id,
+      coalesce(v.name, mm.name, ev.name, 'Booking') as title,
+      b.item_type                as item_type,
+      b.status                   as status,
+      b.channel                  as channel,
+      b.payment_method           as payment_method,
+      b.total_paise              as total_paise,
+      b.note                     as note,
+      b.customer_name            as customer_name,
+      b.customer_contact         as customer_contact,
+      b.created_at               as created_at,
+      ev.id                      as event_id,
+      ev.name                    as event_name,
+      ev.description             as event_description,
+      ev.starts_at               as event_starts_at,
+      ev.ends_at                 as event_ends_at,
+      mm.id                      as membership_id,
+      mm.name                    as membership_name,
+      mm.description             as membership_description,
+      mm.duration_days           as membership_duration_days
+    from bookings b
+    left join venues v on v.id = b.venue_id
+    left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
+    left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
+    where b.id = ${bookingId}
+      and (b.created_by_user_id = ${userId} or b.customer_user_id = ${userId})
+    limit 1
+  `);
+  const arr = rows as unknown as Record<string, unknown>[];
+  const r = arr[0];
+  if (!r) throw new NotFound('Booking not found', 'booking_not_found');
+
+  const itemType = r['item_type'] as string;
+
+  let bookingSlots: MyBookingSlot[] = [];
+  if (itemType === 'slot') {
+    const slotRows = await db.execute<Record<string, unknown>>(sql`
+      select s.id              as id,
+             lower(s.time_range) as start_at,
+             upper(s.time_range) as end_at,
+             s.price_paise      as price_paise,
+             a.name             as arena_name
+      from slots s
+      join arenas a on a.id = s.arena_id
+      where s.booking_id = ${bookingId}
+        and s.deleted_at is null
+      order by lower(s.time_range)
+    `);
+    bookingSlots = (slotRows as unknown as Record<string, unknown>[]).map((s) => ({
+      id: s['id'] as string,
+      startAt: new Date(s['start_at'] as string).toISOString(),
+      endAt: new Date(s['end_at'] as string).toISOString(),
+      pricePaise: Number(s['price_paise']),
+      arenaName: s['arena_name'] as string,
+    }));
+  }
+
+  const event =
+    itemType === 'event' && r['event_id'] != null
+      ? {
+          id: r['event_id'] as string,
+          name: r['event_name'] as string,
+          startsAt: new Date(r['event_starts_at'] as string).toISOString(),
+          endsAt: new Date(r['event_ends_at'] as string).toISOString(),
+          description: (r['event_description'] as string | null) ?? null,
+        }
+      : null;
+
+  const membership =
+    itemType === 'membership' && r['membership_id'] != null
+      ? {
+          id: r['membership_id'] as string,
+          name: r['membership_name'] as string,
+          durationDays: Number(r['membership_duration_days']),
+          description: (r['membership_description'] as string | null) ?? null,
+        }
+      : null;
+
+  return {
+    id: r['id'] as string,
+    venueId: (r['venue_id'] as string | null) ?? null,
+    venueName: r['title'] as string,
+    itemType,
+    status: r['status'] as string,
+    channel: r['channel'] as string,
+    paymentMethod: r['payment_method'] as string,
+    totalPaise: Number(r['total_paise']),
+    note: (r['note'] as string | null) ?? null,
+    customerName: (r['customer_name'] as string | null) ?? null,
+    customerContact: (r['customer_contact'] as string | null) ?? null,
+    createdAt: new Date(r['created_at'] as string).toISOString(),
+    slots: bookingSlots,
+    event,
+    membership,
+  };
+}
+
 // ── Consumer profile (M2) ────────────────────────────────────────────────────
 
 /** The consumer's own profile, as returned by GET /v1/consumer/me. */
