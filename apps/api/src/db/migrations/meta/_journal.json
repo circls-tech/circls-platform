@@ -129,6 +129,13 @@
       "when": 1780480000000,
       "tag": "0018_venue_images",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780560000000,
+      "tag": "0019_event_images",
+      "breakpoints": true
     }
   ]
 }

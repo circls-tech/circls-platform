@@ -24,6 +24,7 @@ import { venueImageRoutes } from './routes/venue_images.js';
 import { paymentRoutes } from './routes/payments.js';
 import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
 import { eventRoutes } from './routes/events.js';
+import { eventImageRoutes } from './routes/event_images.js';
 import { membershipRoutes } from './routes/memberships.js';
 import { apiKeyRoutes } from './routes/api_keys.js';
 import { webhookSubscriptionRoutes } from './routes/webhook_subscriptions.js';
@@ -188,6 +189,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(paymentRoutes);
   await app.register(razorpayWebhookRoutes);
   await app.register(eventRoutes);
+  await app.register(eventImageRoutes);
   await app.register(membershipRoutes);
   await app.register(apiKeyRoutes);
   await app.register(webhookSubscriptionRoutes);

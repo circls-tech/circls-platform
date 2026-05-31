@@ -12,6 +12,7 @@ import type {
   BookingListItem,
   CancelResult,
   CreateInvitationResponse,
+  EventImage,
   NotificationsPage,
   Payment,
   PresignedUpload,
@@ -129,6 +130,55 @@ export function useDeleteVenueImage(venueId: string) {
     mutationFn: (imageId: string) =>
       apiFetch<{ ok: true }>(`/v1/venues/${venueId}/images/${imageId}`, { method: 'DELETE' }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
+  });
+}
+
+// ── Event images (R2) ─────────────────────────────────────────────────────────
+// Same flow/limits as venue images, against /v1/events/:id/images.
+
+export function useEventImages(eventId: string) {
+  return useQuery({
+    queryKey: ['event-images', eventId],
+    queryFn: () => apiFetch<EventImage[]>(`/v1/events/${eventId}/images`),
+    enabled: Boolean(eventId),
+  });
+}
+
+export function useUploadEventImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File): Promise<EventImage> => {
+      if (!VENUE_IMAGE_TYPES.includes(file.type)) {
+        throw new Error('Use a JPEG, PNG, or WebP image.');
+      }
+      if (file.size > VENUE_IMAGE_MAX_BYTES) {
+        throw new Error('Image is too large (max 10 MB).');
+      }
+      const presign = await apiFetch<PresignedUpload>(
+        `/v1/events/${eventId}/images/upload-presign`,
+        { method: 'POST', body: JSON.stringify({ contentType: file.type }) },
+      );
+      const put = await fetch(presign.uploadUrl, {
+        method: 'PUT',
+        headers: presign.headers,
+        body: file,
+      });
+      if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+      return apiFetch<EventImage>(`/v1/events/${eventId}/images`, {
+        method: 'POST',
+        body: JSON.stringify({ storageKey: presign.storageKey }),
+      });
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
+  });
+}
+
+export function useDeleteEventImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) =>
+      apiFetch<{ ok: true }>(`/v1/events/${eventId}/images/${imageId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
   });
 }
 

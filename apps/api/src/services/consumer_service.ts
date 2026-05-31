@@ -26,7 +26,9 @@ import { prepareOnlineBookingWithPayment, bookEvent } from './booking_service.js
 import type { PrepareOnlineBookingResult, BookEventResult } from './booking_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
+import { imagesForEvents } from './event_image_service.js';
 import { listSlots, type SlotWithBounds } from './slot_service.js';
+import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
 
 // ── Browse ───────────────────────────────────────────────────────────────────
 
@@ -37,9 +39,11 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** Uploaded venue photos (public R2 URLs), ordered by position; [] if none. */
+  images: PublicImageRef[];
 }
 
-function toPublicVenue(v: Venue): PublicVenue {
+function toPublicVenue(v: Venue, images: PublicImageRef[] = []): PublicVenue {
   return {
     id: v.id,
     name: v.name,
@@ -47,6 +51,7 @@ function toPublicVenue(v: Venue): PublicVenue {
     lat: v.lat,
     lng: v.lng,
     addressJson: v.addressJson ?? null,
+    images,
   };
 }
 
@@ -72,7 +77,16 @@ export async function listPublicVenues(opts: { search?: string; limit?: number }
     .where(and(...conds))
     .orderBy(sql`${venues.createdAt} desc`)
     .limit(limit);
-  return rows.map((r) => toPublicVenue(r.v));
+  const imagesByVenue = await imagesForVenues(rows.map((r) => r.v.id));
+  return rows.map((r) => toPublicVenue(r.v, imagesByVenue.get(r.v.id) ?? []));
+}
+
+/** A single approved + tenant-active venue in card shape (with images), or null. */
+export async function getPublicVenueWithImages(venueId: string): Promise<PublicVenue | null> {
+  const v = await getPublicVenue(venueId);
+  if (!v) return null;
+  const imagesByVenue = await imagesForVenues([v.id]);
+  return toPublicVenue(v, imagesByVenue.get(v.id) ?? []);
 }
 
 /** A single approved + tenant-active venue, or null. */
@@ -169,6 +183,8 @@ export interface PublicEventWithVenue extends Event {
   locLng: number | null;
   locTzName: string;
   locAddressJson: Record<string, unknown> | null;
+  /** Uploaded event photos (public R2 URLs), ordered by position; [] if none. */
+  images: PublicImageRef[];
 }
 
 interface EventJoinRow {
@@ -182,7 +198,7 @@ interface EventJoinRow {
   tenantName: string;
 }
 
-function toPublicEvent(r: EventJoinRow): PublicEventWithVenue {
+function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
   return {
     ...r.e,
@@ -194,6 +210,7 @@ function toPublicEvent(r: EventJoinRow): PublicEventWithVenue {
     locLng: isStandalone ? r.e.lng : r.venueLng,
     locTzName: (isStandalone ? r.e.tzName : r.venueTz) ?? 'Asia/Kolkata',
     locAddressJson: isStandalone ? (r.e.addressJson ?? null) : r.venueAddr,
+    images,
   };
 }
 
@@ -230,7 +247,9 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
     )
     .orderBy(sql`${events.startsAt} asc`)
     .limit(limit);
-  return (rows as EventJoinRow[]).map(toPublicEvent);
+  const joinRows = rows as EventJoinRow[];
+  const imagesByEvent = await imagesForEvents(joinRows.map((r) => r.e.id));
+  return joinRows.map((r) => toPublicEvent(r, imagesByEvent.get(r.e.id) ?? []));
 }
 
 /** A single published, upcoming event (venue or standalone) by id, or null. */
@@ -250,7 +269,10 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
       ),
     )
     .limit(1);
-  return row ? toPublicEvent(row as EventJoinRow) : null;
+  if (!row) return null;
+  const joinRow = row as EventJoinRow;
+  const imagesByEvent = await imagesForEvents([joinRow.e.id]);
+  return toPublicEvent(joinRow, imagesByEvent.get(joinRow.e.id) ?? []);
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */

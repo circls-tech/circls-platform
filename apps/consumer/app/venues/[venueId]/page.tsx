@@ -1,6 +1,7 @@
 'use client';
 import { use, useState } from 'react';
 import { Header } from '@/components/Header';
+import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { matchSport } from '@/lib/sportImages';
 import {
@@ -37,11 +38,19 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
         ) : (
           <>
             <div className="mb-6 overflow-hidden rounded-card border border-border">
-              <SportImage
-                input={{ imageUrl: venueQ.data.venue.imageUrl, tags: venueQ.data.venue.tags }}
+              <ImageCarousel
+                images={venueQ.data.venue.images}
                 alt={venueQ.data.venue.name}
                 label={matchSport(venueQ.data.venue.tags) ?? undefined}
                 className="h-44 sm:h-56"
+                fallback={
+                  <SportImage
+                    input={{ tags: venueQ.data.venue.tags }}
+                    alt={venueQ.data.venue.name}
+                    label={matchSport(venueQ.data.venue.tags) ?? undefined}
+                    className="h-44 sm:h-56"
+                  />
+                }
               />
               <div className="bg-white p-5">
                 <h1 className="font-display text-3xl font-semibold text-ink">{venueQ.data.venue.name}</h1>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { Badge } from '@/lib/ui';
 import { matchSport } from '@/lib/sportImages';
@@ -17,11 +18,19 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
       href={`/venues/${venue.id}`}
       className={`block overflow-hidden rounded-card border border-border bg-white transition-all hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(15,28,46,0.16)] ${className}`}
     >
-      <SportImage
-        input={{ imageUrl: venue.imageUrl, tags: venue.tags }}
+      <ImageCarousel
+        images={venue.images}
         alt={`${venue.name}${sport ? ` — ${sport}` : ''}`}
         label={sport ?? undefined}
         className="h-[140px]"
+        fallback={
+          <SportImage
+            input={{ tags: venue.tags }}
+            alt={`${venue.name}${sport ? ` — ${sport}` : ''}`}
+            label={sport ?? undefined}
+            className="h-[140px]"
+          />
+        }
       />
       <div className="p-4">
         <h3 className="font-display text-[19px] font-semibold text-ink">{venue.name}</h3>
