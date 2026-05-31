@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type VenueImage, venueImages } from '../db/schema/index.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
@@ -142,6 +142,35 @@ export async function listVenueImages(venueId: string): Promise<VenueImageDTO[]>
     .where(eq(venueImages.venueId, venueId))
     .orderBy(asc(venueImages.position), asc(venueImages.createdAt));
   return rows.map(toDTO);
+}
+
+/** Public image reference embedded in consumer-facing responses. */
+export interface PublicImageRef {
+  url: string;
+  position: number;
+}
+
+/**
+ * Batch-fetch public image refs for many venues at once (one query), ordered by
+ * position. Returns a Map keyed by venueId; venues with no images are absent
+ * (callers treat that as []). Lets the consumer endpoints enrich a whole list
+ * without an N+1.
+ */
+export async function imagesForVenues(venueIds: string[]): Promise<Map<string, PublicImageRef[]>> {
+  const out = new Map<string, PublicImageRef[]>();
+  if (venueIds.length === 0) return out;
+  const rows = await db
+    .select()
+    .from(venueImages)
+    .where(inArray(venueImages.venueId, venueIds))
+    .orderBy(asc(venueImages.position), asc(venueImages.createdAt));
+  const storage = getStorage();
+  for (const r of rows) {
+    const list = out.get(r.venueId) ?? [];
+    list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
+    out.set(r.venueId, list);
+  }
+  return out;
 }
 
 /** Delete the DB row and the underlying object. Scoped to the venue. */

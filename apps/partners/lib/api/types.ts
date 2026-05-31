@@ -63,6 +63,18 @@ export interface VenueImage {
   createdAt: string;
 }
 
+/** An event photo. `url` is the public, CDN-cacheable R2 URL to render. */
+export interface EventImage {
+  id: string;
+  eventId: string;
+  storageKey: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  position: number;
+  createdAt: string;
+}
+
 /** Response from the upload-presign endpoint — the client PUTs to `uploadUrl`. */
 export interface PresignedUpload {
   uploadUrl: string;

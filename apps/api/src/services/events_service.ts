@@ -77,6 +77,12 @@ export async function getEvent(eventId: string, tenantId: string): Promise<Event
   return row ?? null;
 }
 
+/** Unscoped lookup — callers must then assert tenant membership on event.tenantId. */
+export async function getEventById(eventId: string): Promise<Event | null> {
+  const [row] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
+  return row ?? null;
+}
+
 export interface CreateEventInput {
   tenantId: string;
   /** Omit for an org-scoped (venue-less) event. */

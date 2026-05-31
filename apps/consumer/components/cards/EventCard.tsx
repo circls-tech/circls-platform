@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { formatDayMonth, formatTime, formatPaise } from '@/lib/format';
 import type { PublicEventWithVenue } from '@/lib/api/types';
@@ -11,12 +12,19 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
       className={`block overflow-hidden rounded-card border border-border bg-white transition-all hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(15,28,46,0.16)] ${className}`}
     >
       <div className="relative">
-        <SportImage
-          input={{ tags: event.venueTags }}
+        <ImageCarousel
+          images={event.images}
           alt={`${event.name} at ${event.locationName}`}
           className="h-[140px]"
+          fallback={
+            <SportImage
+              input={{ tags: event.venueTags }}
+              alt={`${event.name} at ${event.locationName}`}
+              className="h-[140px]"
+            />
+          }
         />
-        <div className="absolute left-2.5 top-2.5 rounded-lg bg-white px-2.5 py-1 text-center leading-none shadow-md">
+        <div className="absolute left-2.5 top-2.5 z-10 rounded-lg bg-white px-2.5 py-1 text-center leading-none shadow-md">
           <div className="font-display text-lg font-bold text-ink">{day}</div>
           <div className="text-[9px] font-bold uppercase tracking-widest text-gold-600">{month}</div>
         </div>

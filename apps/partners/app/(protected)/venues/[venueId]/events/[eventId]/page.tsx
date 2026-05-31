@@ -11,6 +11,7 @@ import {
   usePublishEvent,
   useUpdateEvent,
 } from '@/lib/api/events';
+import { EventImages } from '@/components/EventImages';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
@@ -354,6 +355,8 @@ export default function EventDetailPage() {
               </form>
             </Card>
           )}
+
+          <EventImages eventId={eventId} />
 
           <Card title={`Registrations${bookings ? ` (${bookings.rows.length})` : ''}`}>
             {bookingsLoading && (

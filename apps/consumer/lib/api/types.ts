@@ -2,6 +2,12 @@
 // Mirrors the partner portal's convention of keeping a local types file rather
 // than sharing a package across apps.
 
+/** An uploaded photo reference (public R2 URL), ordered by position (0 = cover). */
+export interface ImageRef {
+  url: string;
+  position: number;
+}
+
 export interface PublicVenue {
   id: string;
   name: string;
@@ -9,8 +15,8 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
-  /** Future uploaded cover photo (backend deferred); undefined until then. */
-  imageUrl?: string | null;
+  /** Uploaded venue photos, ordered by position; [] when none (card falls back). */
+  images: ImageRef[];
 }
 
 export interface PublicArena {
@@ -129,6 +135,8 @@ export interface PublicEventWithVenue extends Omit<PublicEvent, 'venueId'> {
   locLng: number | null;
   locTzName: string;
   locAddressJson: Record<string, unknown> | null;
+  /** Uploaded event photos, ordered by position; [] when none (card falls back). */
+  images: ImageRef[];
 }
 
 /** A membership plus the scope it applies to (venue name, or brand name for

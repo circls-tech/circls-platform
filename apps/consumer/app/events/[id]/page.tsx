@@ -2,6 +2,7 @@
 import { use } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { useEvent } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -63,7 +64,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         ) : (
           <>
             <div className="mb-6 overflow-hidden rounded-card border border-border">
-              <SportImage input={{ tags: ev.venueTags }} alt={ev.name} className="h-44 sm:h-56" />
+              <ImageCarousel
+                images={ev.images}
+                alt={ev.name}
+                className="h-44 sm:h-56"
+                fallback={
+                  <SportImage input={{ tags: ev.venueTags }} alt={ev.name} className="h-44 sm:h-56" />
+                }
+              />
               <div className="bg-white p-5">
                 <div className="flex items-center gap-2">
                   <h1 className="font-display text-3xl font-semibold text-ink">{ev.name}</h1>

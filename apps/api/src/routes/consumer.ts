@@ -9,7 +9,7 @@ import {
   consumerPurchaseMembership,
   getMyProfile,
   getPublicEventById,
-  getPublicVenue,
+  getPublicVenueWithImages,
   listMyBookings,
   listPublicArenas,
   listPublicArenaSlots,
@@ -71,7 +71,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/venues/:venueId', async (req) => {
     const { venueId } = req.params as { venueId: string };
-    const venue = await getPublicVenue(venueId);
+    const venue = await getPublicVenueWithImages(venueId);
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const arenas = await listPublicArenas(venueId);
     return { venue, arenas };
