@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
+import { VenueImages } from '@/components/VenueImages';
 import { useArenas, useCreateArena } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import { Badge, StatusPill, TagsInput } from '@/lib/ui';
@@ -39,6 +40,7 @@ export default function VenuePage() {
       <Link href={`/tenants/${tenantId}`} className="text-sm text-gray-500">
         ← Venues
       </Link>
+      <VenueImages venueId={venueId} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Arenas</h1>
         <div className="flex gap-2">

@@ -19,6 +19,7 @@ import { bookingRoutes } from './routes/bookings.js';
 import { pricingRoutes } from './routes/pricing.js';
 import { slotRoutes } from './routes/slots.js';
 import { venueRoutes } from './routes/venues.js';
+import { venueImageRoutes } from './routes/venue_images.js';
 // Track B (Phases 11–17).
 import { paymentRoutes } from './routes/payments.js';
 import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
@@ -177,6 +178,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(meRoutes);
   await app.register(tenantRoutes);
   await app.register(venueRoutes);
+  await app.register(venueImageRoutes);
   await app.register(arenaRoutes);
   await app.register(bookingRoutes);
   await app.register(slotRoutes);
