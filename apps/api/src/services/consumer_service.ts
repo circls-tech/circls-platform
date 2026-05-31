@@ -303,7 +303,18 @@ export async function consumerBookEvent(
 ): Promise<BookEventResult> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!ev || ev.status !== 'published') throw new NotFound('Event not found', 'event_not_found');
-  await assertVenueVisible(ev.venueId);
+  // Venue-scoped events gate on venue visibility; org-scoped events have no
+  // venue, so gate on the owning tenant being live (mirrors membership purchase).
+  if (ev.venueId != null) {
+    await assertVenueVisible(ev.venueId);
+  } else {
+    const [t] = await db
+      .select({ status: tenants.status })
+      .from(tenants)
+      .where(eq(tenants.id, ev.tenantId))
+      .limit(1);
+    if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
+  }
   return bookEvent(eventId, customer);
 }
 

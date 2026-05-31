@@ -1,4 +1,13 @@
-import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  doublePrecision,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
 import { venues } from './venues.js';
@@ -24,9 +33,14 @@ export const events = pgTable('events', {
   tenantId: uuid('tenant_id')
     .notNull()
     .references(() => tenants.id),
-  venueId: uuid('venue_id')
-    .notNull()
-    .references(() => venues.id),
+  /** Null = org-scoped (venue-less). Mirrors memberships' nullable venue_id. */
+  venueId: uuid('venue_id').references(() => venues.id),
+  // Standalone-event location (set only when venueId is null; venue events read
+  // their location from the venue). DB CHECK `events_scope_chk` enforces this.
+  addressJson: jsonb('address_json').$type<Record<string, unknown>>(),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  tzName: text('tz_name'),
   name: text('name').notNull(),
   description: text('description'),
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
