@@ -45,7 +45,12 @@ const createTenantEventSchema = z
   })
   .refine((d) => Boolean(d.venueId) || Boolean(d.tzName), {
     message: 'Standalone events require tzName',
-  });
+  })
+  // A standalone scope must carry a real address, not just `{}`.
+  .refine(
+    (d) => Boolean(d.venueId) || (d.addressJson != null && Object.keys(d.addressJson).length > 0),
+    { message: 'Standalone events require a non-empty address' },
+  );
 
 const updateEventSchema = z.object({
   name: z.string().min(1).max(200).optional(),

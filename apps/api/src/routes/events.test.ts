@@ -87,6 +87,38 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('rejects a payload with neither venueId nor addressJson', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        name: 'Neither',
+        startsAt: '2030-05-01T10:00:00.000Z',
+        endsAt: '2030-05-01T12:00:00.000Z',
+        pricePaise: 0,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a standalone payload with an empty address object', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: {},
+        tzName: 'Asia/Kolkata',
+        name: 'Empty Address',
+        startsAt: '2030-05-01T10:00:00.000Z',
+        endsAt: '2030-05-01T12:00:00.000Z',
+        pricePaise: 0,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('lists tenant events via GET /v1/tenants/:tenantId/events', async () => {
     const res = await app.inject({
       method: 'GET',
