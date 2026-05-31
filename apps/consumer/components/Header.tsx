@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { Button } from '@/lib/ui';
+import { Button, BrandMark } from '@/lib/ui';
 
 export function Header() {
   const { user, loading, signOut } = useAuth();
@@ -11,8 +11,9 @@ export function Header() {
   return (
     <header className="bg-ink text-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <Link href="/" className="text-xl font-bold tracking-tight text-white">
-          cir<span className="text-gold-500">cls</span>
+        <Link href="/" className="flex items-center gap-2 text-xl font-bold tracking-tight text-white">
+          <BrandMark className="h-7 w-7" />
+          <span>circls</span>
         </Link>
         <nav className="flex items-center gap-2 sm:gap-4">
           <Link href="/venues" className="hidden text-sm text-white/80 hover:text-white sm:inline">Venues</Link>

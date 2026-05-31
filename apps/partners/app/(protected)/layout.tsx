@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyTenants } from '@/lib/api/queries';
 import { OrgProvider } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
-import { Button } from '@/lib/ui';
+import { Button, BrandMark } from '@/lib/ui';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -23,10 +23,9 @@ function Sidebar({ pathname }: { pathname: string }) {
       style={{ zIndex: 40 }}
     >
       {/* Wordmark */}
-      <div className="flex h-14 items-center px-6">
-        <span className="text-lg font-bold tracking-tight text-white">
-          circls
-        </span>
+      <div className="flex h-14 items-center gap-2 px-6">
+        <BrandMark className="h-7 w-7" />
+        <span className="text-lg font-bold tracking-tight text-white">circls</span>
       </div>
 
       {/* Nav */}
