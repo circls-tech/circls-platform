@@ -7,6 +7,7 @@ import {
   consumerBookEvent,
   consumerBookSlots,
   consumerPurchaseMembership,
+  getMyProfile,
   getPublicEventById,
   getPublicVenue,
   listMyBookings,
@@ -17,6 +18,7 @@ import {
   listPublicMembershipsAcrossVenues,
   listPublicUpcomingEvents,
   listPublicVenues,
+  updateMyProfile,
 } from '../services/consumer_service.js';
 
 /**

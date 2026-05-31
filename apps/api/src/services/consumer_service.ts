@@ -19,6 +19,7 @@ import { events, type Event } from '../db/schema/events.js';
 import { memberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
+import { users, type User } from '../db/schema/users.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { prepareOnlineBookingWithPayment, bookEvent } from './booking_service.js';
@@ -441,4 +442,59 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     totalPaise: Number(r['total_paise']),
     createdAt: new Date(r['created_at'] as string).toISOString(),
   }));
+}
+
+// ── Consumer profile (M2) ────────────────────────────────────────────────────
+
+/** The consumer's own profile, as returned by GET /v1/consumer/me. */
+export interface MyProfile {
+  id: string;
+  phoneE164: string | null;
+  email: string | null;
+  displayName: string | null;
+  interests: string[];
+}
+
+function toMyProfile(u: User): MyProfile {
+  return {
+    id: u.id,
+    phoneE164: u.phoneE164,
+    email: u.email,
+    displayName: u.displayName,
+    interests: u.interests,
+  };
+}
+
+/** Load the current user's profile by their resolved user id. */
+export async function getMyProfile(userId: string): Promise<MyProfile> {
+  const row = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!row) throw new NotFound('User not found', 'user_not_found');
+  return toMyProfile(row);
+}
+
+/** Patch fields a consumer is allowed to set on their own profile. */
+export interface UpdateMyProfileInput {
+  displayName?: string;
+  email?: string;
+  interests?: string[];
+}
+
+export async function updateMyProfile(
+  userId: string,
+  input: UpdateMyProfileInput,
+): Promise<MyProfile> {
+  const patch: Partial<typeof users.$inferInsert> = {};
+  if (input.displayName !== undefined) patch.displayName = input.displayName;
+  if (input.email !== undefined) patch.email = input.email;
+  if (input.interests !== undefined) patch.interests = input.interests;
+  if (Object.keys(patch).length === 0) return getMyProfile(userId);
+
+  const updated = await db
+    .update(users)
+    .set(patch)
+    .where(eq(users.id, userId))
+    .returning();
+  const row = updated[0];
+  if (!row) throw new NotFound('User not found', 'user_not_found');
+  return toMyProfile(row);
 }
