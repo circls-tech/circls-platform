@@ -9,6 +9,7 @@ import {
   createEvent,
   getEvent,
   listEventBookings,
+  listEventsForTenant,
   listEventsForVenue,
   publishEvent,
   updateEvent,
@@ -23,6 +24,28 @@ const createEventSchema = z.object({
   pricePaise: z.number().int().min(0),
   capacity: z.number().int().min(1).optional(),
 });
+
+const createTenantEventSchema = z
+  .object({
+    venueId: z.string().uuid().optional(),
+    addressJson: z.record(z.unknown()).optional(),
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+    tzName: z.string().min(1).optional(),
+    name: z.string().min(1).max(200),
+    description: z.string().optional(),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime(),
+    pricePaise: z.number().int().min(0),
+    capacity: z.number().int().min(1).optional(),
+  })
+  // Exactly one scope: a venue OR a standalone address (never both, never neither).
+  .refine((d) => Boolean(d.venueId) !== Boolean(d.addressJson), {
+    message: 'Provide exactly one of venueId or addressJson',
+  })
+  .refine((d) => Boolean(d.venueId) || Boolean(d.tzName), {
+    message: 'Standalone events require tzName',
+  });
 
 const updateEventSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -76,6 +99,49 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     const row = await getEvent(id, tenantId);
     if (!row) throw new NotFound('Event not found', 'event_not_found');
     return row;
+  });
+
+  app.get('/v1/tenants/:tenantId/events', { preHandler: requireAuth }, async (req) => {
+    const { tenantId } = req.params as { tenantId: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+    return listEventsForTenant(tenantId);
+  });
+
+  app.post('/v1/tenants/:tenantId/events', { preHandler: requireAuth }, async (req) => {
+    const { tenantId } = req.params as { tenantId: string };
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, tenantId);
+    const parsed = createTenantEventSchema.safeParse(req.body);
+    if (!parsed.success)
+      throw new BadRequest('Invalid event payload', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+
+    // Venue-scoped: the venue must belong to this tenant.
+    if (parsed.data.venueId) {
+      const venue = await getVenueById(parsed.data.venueId);
+      if (!venue || venue.tenantId !== tenantId)
+        throw new NotFound('Venue not found', 'venue_not_found');
+    }
+
+    return createEvent(
+      { tenantId, actorUserId: user.id },
+      {
+        tenantId,
+        venueId: parsed.data.venueId,
+        addressJson: parsed.data.addressJson,
+        lat: parsed.data.lat,
+        lng: parsed.data.lng,
+        tzName: parsed.data.tzName,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        startsAt: new Date(parsed.data.startsAt),
+        endsAt: new Date(parsed.data.endsAt),
+        pricePaise: parsed.data.pricePaise,
+        capacity: parsed.data.capacity,
+      },
+    );
   });
 
   app.patch('/v1/tenants/:tenantId/events/:id', { preHandler: requireAuth }, async (req) => {
