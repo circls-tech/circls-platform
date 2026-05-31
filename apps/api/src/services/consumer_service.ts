@@ -154,36 +154,102 @@ export async function listPublicEvents(venueId: string): Promise<Event[]> {
     .orderBy(sql`${events.startsAt} asc`);
 }
 
-/** A public event enriched with its owning venue's name + tags (for cross-venue cards). */
+/**
+ * A public event with a resolved ("effective") location: a venue event reads
+ * its location from the venue; a standalone (venue-less) event uses its own
+ * columns and the tenant/org name. `loc*` fields are what the UI renders.
+ */
 export interface PublicEventWithVenue extends Event {
-  venueName: string;
+  venueName: string | null;
   venueTags: string[];
+  isStandalone: boolean;
+  locationName: string;
+  locLat: number | null;
+  locLng: number | null;
+  locTzName: string;
+  locAddressJson: Record<string, unknown> | null;
 }
 
+interface EventJoinRow {
+  e: Event;
+  venueName: string | null;
+  venueTags: string[] | null;
+  venueLat: number | null;
+  venueLng: number | null;
+  venueTz: string | null;
+  venueAddr: Record<string, unknown> | null;
+  tenantName: string;
+}
+
+function toPublicEvent(r: EventJoinRow): PublicEventWithVenue {
+  const isStandalone = r.e.venueId === null;
+  return {
+    ...r.e,
+    venueName: r.venueName,
+    venueTags: r.venueTags ?? [],
+    isStandalone,
+    locationName: r.venueName ?? r.tenantName,
+    locLat: isStandalone ? r.e.lat : r.venueLat,
+    locLng: isStandalone ? r.e.lng : r.venueLng,
+    locTzName: (isStandalone ? r.e.tzName : r.venueTz) ?? 'Asia/Kolkata',
+    locAddressJson: isStandalone ? (r.e.addressJson ?? null) : r.venueAddr,
+  };
+}
+
+const PUBLIC_EVENT_COLUMNS = {
+  e: events,
+  venueName: venues.name,
+  venueTags: venues.tags,
+  venueLat: venues.lat,
+  venueLng: venues.lng,
+  venueTz: venues.tzName,
+  venueAddr: venues.addressJson,
+  tenantName: tenants.name,
+} as const;
+
 /**
- * All published, upcoming events across every visible venue, soonest first.
- * Drives the landing "Upcoming events" row + the /events listing page (§12.3).
- * Each row carries the owning venue's name + tags (events have no tags of their
- * own — the card image resolves off the venue's tags).
+ * All published, upcoming events across every visible tenant, soonest first.
+ * Venue events require an active venue; org-scoped events have none. Each row
+ * carries a resolved location (see toPublicEvent).
  */
 export async function listPublicUpcomingEvents(opts: { limit?: number }): Promise<PublicEventWithVenue[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
   const rows = await db
-    .select({ e: events, venueName: venues.name, venueTags: venues.tags })
+    .select(PUBLIC_EVENT_COLUMNS)
     .from(events)
-    .innerJoin(venues, eq(venues.id, events.venueId))
+    .leftJoin(venues, eq(venues.id, events.venueId))
     .innerJoin(tenants, eq(tenants.id, events.tenantId))
     .where(
       and(
         eq(events.status, 'published'),
-        eq(venues.status, 'active'),
         eq(tenants.status, 'active'),
+        sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
     )
     .orderBy(sql`${events.startsAt} asc`)
     .limit(limit);
-  return rows.map((r) => ({ ...r.e, venueName: r.venueName, venueTags: r.venueTags }));
+  return (rows as EventJoinRow[]).map(toPublicEvent);
+}
+
+/** A single published, upcoming event (venue or standalone) by id, or null. */
+export async function getPublicEventById(id: string): Promise<PublicEventWithVenue | null> {
+  const [row] = await db
+    .select(PUBLIC_EVENT_COLUMNS)
+    .from(events)
+    .leftJoin(venues, eq(venues.id, events.venueId))
+    .innerJoin(tenants, eq(tenants.id, events.tenantId))
+    .where(
+      and(
+        eq(events.id, id),
+        eq(events.status, 'published'),
+        eq(tenants.status, 'active'),
+        sql`(${events.venueId} is null or ${venues.status} = 'active')`,
+        sql`${events.endsAt} >= now()`,
+      ),
+    )
+    .limit(1);
+  return row ? toPublicEvent(row as EventJoinRow) : null;
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */
