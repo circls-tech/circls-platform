@@ -12,3 +12,5 @@ export type { BadgeProps, BadgeTone } from './Badge';
 
 export { StatusPill } from './StatusPill';
 export type { StatusPillProps } from './StatusPill';
+
+export { BrandMark } from './BrandMark';

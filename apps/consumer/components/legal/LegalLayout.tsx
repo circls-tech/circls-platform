@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { BrandMark } from '@/lib/ui';
 import type { LegalDoc } from '@/lib/legal/types';
 
 const TABS: { slug: string; label: string }[] = [
@@ -13,9 +14,10 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-gold-600">
-          circls · Gibbous Technologies Private Limited
-        </p>
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gold-600">
+          <BrandMark className="h-4 w-4" />
+          <span>circls · Gibbous Technologies Private Limited</span>
+        </div>
         <h1 className="mt-1 font-display text-3xl font-semibold text-ink">{doc.title}</h1>
         <p className="mt-1 text-sm text-text-secondary">Last updated {doc.updated}</p>
         <p className="mt-1 text-sm text-text-secondary">
