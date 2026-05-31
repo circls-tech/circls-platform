@@ -14,6 +14,7 @@ import type {
   CreateInvitationResponse,
   NotificationsPage,
   Payment,
+  PresignedUpload,
   Slot,
   TeamMember,
   Tenant,
@@ -21,6 +22,7 @@ import type {
   TenantRole,
   User,
   Venue,
+  VenueImage,
   WebhookDeliveryPage,
   WebhookSubscription,
   WebhookSubscriptionCreateResult,
@@ -70,6 +72,63 @@ export function useCreateVenue(tenantId: string) {
         body: JSON.stringify(input),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['venues', tenantId] }),
+  });
+}
+
+// ── Venue images (R2) ─────────────────────────────────────────────────────────
+
+/** Allowed image types + per-file size cap — mirror the API's server-side rules. */
+export const VENUE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const VENUE_IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB
+
+export function useVenueImages(venueId: string) {
+  return useQuery({
+    queryKey: ['venue-images', venueId],
+    queryFn: () => apiFetch<VenueImage[]>(`/v1/venues/${venueId}/images`),
+    enabled: Boolean(venueId),
+  });
+}
+
+/**
+ * Three-step upload: (1) ask the API for a presigned PUT, (2) PUT the file
+ * straight to R2 (raw fetch — NOT apiFetch, so no auth header and the exact
+ * presigned Content-Type), (3) finalize so the API records the row.
+ */
+export function useUploadVenueImage(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File): Promise<VenueImage> => {
+      if (!VENUE_IMAGE_TYPES.includes(file.type)) {
+        throw new Error('Use a JPEG, PNG, or WebP image.');
+      }
+      if (file.size > VENUE_IMAGE_MAX_BYTES) {
+        throw new Error('Image is too large (max 10 MB).');
+      }
+      const presign = await apiFetch<PresignedUpload>(
+        `/v1/venues/${venueId}/images/upload-presign`,
+        { method: 'POST', body: JSON.stringify({ contentType: file.type }) },
+      );
+      const put = await fetch(presign.uploadUrl, {
+        method: 'PUT',
+        headers: presign.headers,
+        body: file,
+      });
+      if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+      return apiFetch<VenueImage>(`/v1/venues/${venueId}/images`, {
+        method: 'POST',
+        body: JSON.stringify({ storageKey: presign.storageKey }),
+      });
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
+  });
+}
+
+export function useDeleteVenueImage(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) =>
+      apiFetch<{ ok: true }>(`/v1/venues/${venueId}/images/${imageId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
   });
 }
 

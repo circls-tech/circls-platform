@@ -122,6 +122,13 @@
       "when": 1780400000000,
       "tag": "0017_events_org_scoped",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780480000000,
+      "tag": "0018_venue_images",
+      "breakpoints": true
     }
   ]
 }
