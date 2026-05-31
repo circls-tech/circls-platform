@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from '@/lib/api/client';
 import type { MeTenant } from '@/lib/api/types';
+import { BrandMark } from '@/components/BrandMark';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -20,8 +21,9 @@ function Sidebar({ pathname }: { pathname: string }) {
       className="fixed inset-y-0 left-0 flex w-[220px] flex-col bg-[#0f172a]"
       style={{ zIndex: 40 }}
     >
-      <div className="flex h-14 items-center px-6">
-        <span className="text-lg font-bold tracking-tight text-white">circls admin</span>
+      <div className="flex h-14 items-center gap-2 px-6">
+        <BrandMark className="h-7 w-7" />
+        <span className="text-lg font-bold tracking-tight text-white">admin</span>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-2">
         {NAV_LINKS.map(({ href, label }) => {

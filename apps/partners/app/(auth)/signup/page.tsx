@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { BrandMark } from '@/lib/ui';
 
 /** Friendly copy for the Firebase signup error codes we expect. */
 function signupErrorMessage(err: unknown): string {
@@ -43,6 +44,7 @@ export default function SignupPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
+      <BrandMark className="h-11 w-11" />
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Create your circls account</h1>
         <p className="text-sm text-slate-500">

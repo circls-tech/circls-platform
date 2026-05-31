@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BrandMark } from '@/lib/ui';
 
 const LINKS = [
   { href: '/venues', label: 'Venues' },
@@ -13,8 +14,9 @@ export function Footer() {
     <footer className="bg-ink-deep text-white/70">
       <div className="mx-auto max-w-6xl px-4 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <Link href="/" className="font-display text-xl text-white">
-            Cir<span className="text-gold-500">cls</span>
+          <Link href="/" className="flex items-center gap-2 font-display text-xl text-white">
+            <BrandMark className="h-7 w-7" />
+            <span>circls</span>
           </Link>
           <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
             {LINKS.map((l) => (

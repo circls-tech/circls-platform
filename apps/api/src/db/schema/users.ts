@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgEnum, pgTable, text } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 
@@ -10,6 +11,7 @@ export const users = pgTable('users', {
   phoneE164: text('phone_e164').unique(),
   email: text('email').unique(),
   displayName: text('display_name'),
+  interests: text('interests').array().notNull().default(sql`'{}'::text[]`),
   status: userStatus('status').notNull().default('active'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

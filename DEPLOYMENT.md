@@ -50,6 +50,11 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `NODE_ENV` | no | development | set `production` in prod |
 | `RESEND_API_KEY` | for email | — | Resend server key (`re_…`). Unset ⇒ email runs in stub mode. See `docs/EMAIL_SETUP.md`. |
 | `RESEND_FROM` | with key | — | verified sender, e.g. `Circls <no-reply@circls.app>`. Required alongside the key. |
+| `R2_ACCOUNT_ID` | for media | — | Cloudflare R2 account id (hex prefix of the S3 endpoint). Unset ⇒ storage stub mode. |
+| `R2_ACCESS_KEY_ID` | for media | — | R2 API token S3 access key id. |
+| `R2_SECRET_ACCESS_KEY` | for media | — | R2 API token S3 secret. |
+| `R2_BUCKET` | for media | — | `circls-media` (public venue-media bucket). |
+| `R2_PUBLIC_BASE_URL` | for media | — | bucket public URL, e.g. `https://pub-….r2.dev`. Venue-image URLs are built from this. |
 
 ## Gotchas captured this session
 

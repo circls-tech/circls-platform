@@ -11,6 +11,43 @@ export function useVenueEvents(venueId: string) {
   });
 }
 
+/** All events for a tenant (venue-scoped + org-scoped). */
+export function useTenantEvents(tenantId: string) {
+  return useQuery({
+    queryKey: ['tenant-events', tenantId],
+    queryFn: () => apiFetch<VenueEvent[]>(`/v1/tenants/${tenantId}/events`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export interface CreateTenantEventInput {
+  /** Provide exactly one scope: a venueId OR a standalone address. */
+  venueId?: string;
+  addressJson?: Record<string, unknown>;
+  lat?: number;
+  lng?: number;
+  tzName?: string;
+  name: string;
+  description?: string;
+  /** ISO-8601, with tz. */
+  startsAt: string;
+  endsAt: string;
+  pricePaise: number;
+  capacity?: number;
+}
+
+export function useCreateTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTenantEventInput) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] }),
+  });
+}
+
 export function useEvent(tenantId: string, eventId: string | null) {
   return useQuery({
     queryKey: ['event', tenantId, eventId],

@@ -51,6 +51,26 @@ export interface Arena {
   tags: string[];
 }
 
+/** A venue photo. `url` is the public, CDN-cacheable R2 URL to render. */
+export interface VenueImage {
+  id: string;
+  venueId: string;
+  storageKey: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  position: number;
+  createdAt: string;
+}
+
+/** Response from the upload-presign endpoint — the client PUTs to `uploadUrl`. */
+export interface PresignedUpload {
+  uploadUrl: string;
+  storageKey: string;
+  headers: Record<string, string>;
+  expiresIn: number;
+}
+
 export interface Slot {
   id: string;
   tenantId: string;
@@ -232,7 +252,11 @@ export type EventStatus =
 export interface VenueEvent {
   id: string;
   tenantId: string;
-  venueId: string;
+  venueId: string | null;
+  addressJson: Record<string, unknown> | null;
+  lat: number | null;
+  lng: number | null;
+  tzName: string | null;
   name: string;
   description: string | null;
   /** ISO-8601 */

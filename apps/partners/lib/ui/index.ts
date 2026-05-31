@@ -18,3 +18,5 @@ export type { ModalProps } from './Modal';
 
 export { TagsInput } from './TagsInput';
 export type { TagsInputProps } from './TagsInput';
+
+export { BrandMark } from './BrandMark';

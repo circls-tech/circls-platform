@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { BrandMark } from '@/lib/ui';
 
 export default function LoginPage() {
   const { signInWithEmail } = useAuth();
@@ -28,7 +29,10 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-bold tracking-tight">circls Partner Portal</h1>
+      <div className="flex items-center gap-3">
+        <BrandMark className="h-11 w-11" />
+        <h1 className="text-2xl font-bold tracking-tight">circls Partner Portal</h1>
+      </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="email">Email</label>
         <input

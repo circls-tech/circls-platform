@@ -7,6 +7,8 @@ import {
   consumerBookEvent,
   consumerBookSlots,
   consumerPurchaseMembership,
+  getMyProfile,
+  getPublicEventById,
   getPublicVenue,
   listMyBookings,
   listPublicArenas,
@@ -16,6 +18,7 @@ import {
   listPublicMembershipsAcrossVenues,
   listPublicUpcomingEvents,
   listPublicVenues,
+  updateMyProfile,
 } from '../services/consumer_service.js';
 
 /**
@@ -50,6 +53,13 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     const rows = await listPublicUpcomingEvents({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
     return { rows };
+  });
+
+  app.get('/v1/consumer/events/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const ev = await getPublicEventById(id);
+    if (!ev) throw new NotFound('Event not found', 'event_not_found');
+    return ev;
   });
 
   app.get('/v1/consumer/memberships', async (req) => {
