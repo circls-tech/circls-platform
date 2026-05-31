@@ -150,6 +150,66 @@ const STATUS_OPTIONS: { value: BookingStatus | ''; label: string }[] = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────────────
+// CSV export
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Wrap a value as a CSV field, escaping quotes and forcing string type. */
+function csvField(value: unknown): string {
+  const s = value == null ? '' : String(value);
+  // Always quote: simplest correct handling of commas, quotes, and newlines.
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+/** Build a CSV string from the currently-displayed (filtered) booking rows. */
+function bookingsToCsv(rows: BookingListItem[], tz: string): string {
+  const headers = [
+    'Booking ID',
+    'Customer',
+    'Contact',
+    'Arena',
+    'Start',
+    'End',
+    'Slots',
+    'Total (₹)',
+    'Status',
+    'Channel',
+    'Booked At',
+  ];
+  const lines = rows.map((b) =>
+    [
+      b.id,
+      b.customerName ?? '',
+      b.customerContact ?? '',
+      b.arenaName,
+      fmtInTz(b.firstStartAt, tz),
+      fmtInTz(b.lastEndAt, tz),
+      b.slotCount,
+      (b.totalPaise / 100).toFixed(2),
+      b.status,
+      b.channel,
+      fmtInTz(b.createdAt, tz),
+    ]
+      .map(csvField)
+      .join(','),
+  );
+  return [headers.map(csvField).join(','), ...lines].join('\r\n');
+}
+
+/** Trigger a client-side download of `content` as a file named `filename`. */
+function downloadCsv(content: string, filename: string): void {
+  // Prepend a UTF-8 BOM so Excel renders the ₹ symbol and other characters correctly.
+  const blob = new Blob([`﻿${content}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Booking detail modal
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -377,6 +437,19 @@ export default function BookingsPage() {
     { key: 'custom', label: 'Custom' },
   ];
 
+  // ── CSV download of the currently-filtered rows ──
+  const hasRows = Boolean(bookings && bookings.length > 0);
+  function handleDownloadCsv() {
+    if (!bookings || bookings.length === 0) return;
+    const stamp = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    downloadCsv(bookingsToCsv(bookings, tz), `bookings-${stamp}.csv`);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* ── Header ── */}
@@ -394,6 +467,15 @@ export default function BookingsPage() {
           </div>
           <h1 className="mt-1 text-xl font-semibold text-slate-800">Bookings</h1>
         </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleDownloadCsv}
+          disabled={!hasRows}
+          title={hasRows ? 'Download the filtered bookings as CSV' : 'No bookings to download'}
+        >
+          Download CSV
+        </Button>
       </div>
 
       {/* ── Filters ── */}
