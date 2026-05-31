@@ -52,7 +52,7 @@ test('a journal entry with no .sql file is rejected', () => {
   assert.match(r.errors.join('\n'), /no matching \.sql/);
 });
 
-test('non-increasing "when" is rejected', () => {
+test('backwards "when" (a genuine step back) is rejected', () => {
   const files = ['0000_a.sql', '0001_b.sql'];
   const journal = j([
     { idx: 0, tag: '0000_a', when: 5 },
@@ -60,7 +60,18 @@ test('non-increasing "when" is rejected', () => {
   ]);
   const r = checkMigrations(files, journal);
   assert.equal(r.ok, false);
-  assert.match(r.errors.join('\n'), /strictly increasing/);
+  assert.match(r.errors.join('\n'), /goes backwards/);
+});
+
+test('equal "when" across different idx is ALLOWED (drizzle orders by idx)', () => {
+  // This is the exact condition present on main: idx 16 and 17 share a placeholder `when`.
+  const files = ['0016_a.sql', '0017_b.sql'];
+  const journal = j([
+    { idx: 16, tag: '0016_a', when: 1780400000000 },
+    { idx: 17, tag: '0017_b', when: 1780400000000 },
+  ]);
+  const r = checkMigrations(files, journal);
+  assert.equal(r.ok, true, r.errors.join('; '));
 });
 
 test('malformed filename is rejected', () => {

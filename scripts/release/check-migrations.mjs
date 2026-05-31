@@ -48,11 +48,15 @@ export function checkMigrations(sqlFiles, journal) {
     if (!byNum.has(e.idx)) errors.push(`_journal entry idx ${e.idx} (tag "${e.tag}") has no matching .sql file`);
   }
 
+  // drizzle applies migrations by idx, so `when` only needs to be non-decreasing.
+  // Equal timestamps across different idx are harmless (and common when parallel branches
+  // stamp placeholder `when`s) — the real collision hazard is duplicate idx/number, caught
+  // above. Reject only a genuine backwards step.
   const sorted = [...entries].sort((a, b) => a.idx - b.idx);
   for (let i = 1; i < sorted.length; i++) {
-    if (!(sorted[i].when > sorted[i - 1].when)) {
+    if (sorted[i].when < sorted[i - 1].when) {
       errors.push(
-        `_journal "when" not strictly increasing: idx ${sorted[i - 1].idx} (${sorted[i - 1].when}) >= idx ${sorted[i].idx} (${sorted[i].when})`,
+        `_journal "when" goes backwards: idx ${sorted[i - 1].idx} (${sorted[i - 1].when}) > idx ${sorted[i].idx} (${sorted[i].when})`,
       );
     }
   }
