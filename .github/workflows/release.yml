@@ -24,6 +24,7 @@ on:
 permissions:
   contents: write
   issues: write
+  checks: read # the CI-green pre-flight reads check-runs via `gh api .../check-runs`
 
 concurrency:
   group: release-prod
