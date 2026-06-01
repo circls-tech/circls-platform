@@ -47,4 +47,7 @@ design spec: `docs/superpowers/specs/2026-05-31-release-management-system-design
 
 ## Cutover record
 - `release` branch created from `main` and Coolify repointed `main → release` for all four
-  services on **<DATE — fill at Task 9>**. Pipeline smoke-tested with a no-op release dispatch.
+  services on **2026-06-01**. Pipeline smoke-tested end-to-end with a no-op release dispatch:
+  `release-2026-06-01.1` tag cut, Coolify deployed `1ca057e` from `release`, `/v1/health`
+  build-SHA verified, smoke probes green, `lkg` moved. Production now deploys only via the
+  Release workflow — merging to `main` no longer ships.
