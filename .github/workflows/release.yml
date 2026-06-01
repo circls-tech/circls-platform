@@ -3,6 +3,16 @@ name: Release
 # The go/no-go. Operator-triggered. Pre-flights (target on main + CI green + prod healthy),
 # fast-forwards `release` to the target SHA and pushes (Coolify deploys on that push),
 # tags release-<date>.N, then verifies the live build SHA + smoke probes, and moves `lkg`.
+#
+# SECURITY: never inline a `${{ }}` expression (esp. a dispatch input) directly inside a
+# `run:`/`script:` body — it is spliced into the source before the shell/JS sees it, which is
+# a command-injection vector. All such values are passed via `env:` and read as `$VAR` /
+# `process.env.VAR`. (`steps.target.outputs.sha` is a git-rev-parse'd 40-hex string, but we
+# pass it through env too so the workflow has zero inline expansions in run/script bodies.)
+#
+# CONCURRENCY: this shares `group: release-prod` with rollback.yml ON PURPOSE — a release and
+# a rollback both push `release`, so they must be mutually exclusive. Keep the group name in
+# sync across both workflows.
 on:
   workflow_dispatch:
     inputs:
@@ -33,44 +43,50 @@ jobs:
 
       - name: Resolve target SHA
         id: target
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
           git fetch origin main release --tags || git fetch origin main --tags
-          SHA='${{ inputs.sha }}'
+          SHA="$INPUT_SHA"
           if [ -z "$SHA" ]; then SHA=$(git rev-parse origin/main); fi
           SHA=$(git rev-parse "$SHA")
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Target SHA: $SHA"
 
       - name: Pre-flight — target is on main and fast-forward from release
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.target.outputs.sha }}'
-          git merge-base --is-ancestor "$SHA" origin/main \
-            || { echo "::error::Target $SHA is not an ancestor of main"; exit 1; }
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main \
+            || { echo "::error::Target $TARGET_SHA is not an ancestor of main"; exit 1; }
           if git rev-parse --verify --quiet origin/release >/dev/null; then
-            git merge-base --is-ancestor origin/release "$SHA" \
+            git merge-base --is-ancestor origin/release "$TARGET_SHA" \
               || { echo "::error::Not a fast-forward from release — use Rollback to move backwards"; exit 1; }
           fi
 
       - name: Pre-flight — CI is green on the target SHA
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/commits/${{ steps.target.outputs.sha }}/check-runs" > checks.json
+          gh api "repos/${{ github.repository }}/commits/$TARGET_SHA/check-runs" > checks.json
           node scripts/release/check-ci.mjs < checks.json
 
       - name: Pre-flight — prod is currently healthy
         run: |
           set -euo pipefail
-          curl -fsS "$HEALTH_URL" | tee /dev/stderr | grep -q '"ok":true' \
+          curl -fsS "$HEALTH_URL" | tee /dev/stderr | grep -qE '"ok"[[:space:]]*:[[:space:]]*true' \
             || { echo "::error::Prod health check failed before release"; exit 1; }
 
       - name: Flag migrations in this batch
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.target.outputs.sha }}'
-          if git rev-parse --verify --quiet origin/release >/dev/null; then BASE=$(git rev-parse origin/release); else BASE="$SHA^"; fi
-          MIGS=$(node scripts/release/detect-migrations.mjs "$BASE" "$SHA" || true)
+          if git rev-parse --verify --quiet origin/release >/dev/null; then BASE=$(git rev-parse origin/release); else BASE="$TARGET_SHA^"; fi
+          MIGS=$(node scripts/release/detect-migrations.mjs "$BASE" "$TARGET_SHA" || true)
           if [ -n "$MIGS" ]; then
             echo "::warning::This release runs migrations on deploy:"; echo "$MIGS"
           else
@@ -79,31 +95,41 @@ jobs:
 
       - name: Deploy — fast-forward release and push (triggers Coolify)
         id: deploy
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          SHA='${{ steps.target.outputs.sha }}'
-          git push origin "$SHA:refs/heads/release"
+          git push origin "$TARGET_SHA:refs/heads/release"
           DATE=$(date -u +%Y-%m-%d)
           TAG=$(git tag -l "release-$DATE.*" | DATE="$DATE" node scripts/release/release-tag.mjs)
-          git tag "$TAG" "$SHA"
+          git tag "$TAG" "$TARGET_SHA"
           git push origin "refs/tags/$TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Released $SHA as $TAG"
+          echo "Released $TARGET_SHA as $TAG"
 
       - name: Verify — wait for live build SHA + smoke probes
-        run: EXPECTED_SHA='${{ steps.target.outputs.sha }}' node scripts/release/smoke.mjs
+        env:
+          EXPECTED_SHA: ${{ steps.target.outputs.sha }}
+        run: node scripts/release/smoke.mjs
 
       - name: Mark last-known-good
         if: success()
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          git tag -f lkg '${{ steps.target.outputs.sha }}'
-          git push -f origin refs/tags/lkg
-          echo "lkg → ${{ steps.target.outputs.sha }}"
+          git tag -f lkg "$TARGET_SHA"
+          # A failed tag push must not masquerade as a failed deploy — the release already
+          # succeeded and `release` is pushed. Warn instead of failing the job.
+          git push -f origin refs/tags/lkg || echo "::warning::lkg tag push failed; the release itself succeeded"
+          echo "lkg → $TARGET_SHA"
 
       - name: Comment success on today's candidate issue
         if: success()
         uses: actions/github-script@v7
+        env:
+          DEPLOY_TAG: ${{ steps.deploy.outputs.tag }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         with:
           script: |
             const today = new Date().toISOString().slice(0, 10);
@@ -113,23 +139,26 @@ jobs:
             });
             const issue = open.data.find((i) => i.title === `Release candidate ${today}`);
             if (issue) {
-              const tag = '${{ steps.deploy.outputs.tag }}';
-              const sha = '${{ steps.target.outputs.sha }}';
+              const tag = process.env.DEPLOY_TAG;
+              const sha = process.env.TARGET_SHA;
               await github.rest.issues.createComment({
                 owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
-                body: `✅ Released \`${tag}\` (\`${sha.slice(0,7)}\`). lkg updated.`,
+                body: `✅ Released \`${tag}\` (\`${sha.slice(0, 7)}\`). lkg updated.`,
               });
             }
 
       - name: Alert on failure
         if: failure()
         uses: actions/github-script@v7
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         with:
           script: |
-            const sha = '${{ steps.target.outputs.sha }}';
+            const sha = process.env.TARGET_SHA || 'unknown';
+            const shortSha = sha === 'unknown' ? sha : sha.slice(0, 7);
             await github.rest.issues.create({
               owner: context.repo.owner, repo: context.repo.repo,
-              title: `🔴 Release failed (${sha.slice(0,7)})`,
+              title: `🔴 Release failed (${shortSha})`,
               body: [
                 `Release of \`${sha}\` failed at a verification step. Prod may be mid-deploy.`,
                 '',
