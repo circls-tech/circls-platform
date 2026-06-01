@@ -61,7 +61,7 @@ export function healthShaMatches(healthJson, expectedSha) {
   const data = typeof healthJson === 'string' ? safeParse(healthJson) : healthJson;
   const actual = data && typeof data.commit === 'string' ? data.commit.toLowerCase() : '';
   const expected = String(expectedSha ?? '').toLowerCase();
-  if (!actual || !expected) return false;
+  if (!actual || !expected || expected.length < 7) return false;
   return actual.startsWith(expected) || expected.startsWith(actual);
 }
 
@@ -75,6 +75,9 @@ function safeParse(s) {
 
 /** Given GitHub check-runs JSON and required check names, report whether all passed. */
 export function allChecksPassed(checkRunsJson, requiredNames) {
+  if (!Array.isArray(requiredNames) || requiredNames.length === 0) {
+    return { ok: false, details: [] };
+  }
   const data = typeof checkRunsJson === 'string' ? safeParse(checkRunsJson) : checkRunsJson;
   const runs = data && Array.isArray(data.check_runs) ? data.check_runs : [];
   const byName = new Map();
@@ -96,8 +99,11 @@ export function nextReleaseTag(existingTags, dateStr) {
   let max = 0;
   for (const t of existingTags) {
     if (typeof t === 'string' && t.startsWith(prefix)) {
-      const n = Number(t.slice(prefix.length));
-      if (Number.isInteger(n) && n > max) max = n;
+      const suffix = t.slice(prefix.length);
+      if (/^\d+$/.test(suffix)) {
+        const n = Number(suffix);
+        if (n > max) max = n;
+      }
     }
   }
   return `${prefix}${max + 1}`;

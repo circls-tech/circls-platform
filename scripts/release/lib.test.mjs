@@ -73,6 +73,11 @@ test('healthShaMatches: mismatch / bad input is false', () => {
   assert.equal(healthShaMatches('{"commit":"abc"}', ''), false);
 });
 
+test('healthShaMatches: a too-short expected SHA never matches', () => {
+  assert.equal(healthShaMatches('{"ok":true,"commit":"abc1234def"}', 'a'), false);
+  assert.equal(healthShaMatches('{"ok":true,"commit":"abc1234def"}', 'abc12'), false);
+});
+
 test('allChecksPassed: all required green = ok', () => {
   const json = JSON.stringify({ check_runs: [
     { name: 'verify', status: 'completed', conclusion: 'success' },
@@ -110,6 +115,10 @@ test('allChecksPassed: keeps the newest run per name (first wins)', () => {
   assert.equal(allChecksPassed(json, ['db']).ok, true);
 });
 
+test('allChecksPassed: empty requiredNames fails closed (misconfig, not vacuously green)', () => {
+  assert.equal(allChecksPassed('{"check_runs":[{"name":"verify","status":"completed","conclusion":"success"}]}', []).ok, false);
+});
+
 test('nextReleaseTag: first of the day is .1', () => {
   assert.equal(nextReleaseTag([], '2026-06-01'), 'release-2026-06-01.1');
 });
@@ -123,4 +132,9 @@ test('nextReleaseTag: increments past existing, ignores other dates/malformed', 
     'lkg',
   ];
   assert.equal(nextReleaseTag(tags, '2026-06-01'), 'release-2026-06-01.3');
+});
+
+test('nextReleaseTag: ignores scientific-notation / padded suffixes', () => {
+  const tags = ['release-2026-06-01.1', 'release-2026-06-01.2e3', 'release-2026-06-01. 5'];
+  assert.equal(nextReleaseTag(tags, '2026-06-01'), 'release-2026-06-01.2');
 });
