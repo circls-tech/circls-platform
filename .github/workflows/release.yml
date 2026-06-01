@@ -1,0 +1,141 @@
+name: Release
+
+# The go/no-go. Operator-triggered. Pre-flights (target on main + CI green + prod healthy),
+# fast-forwards `release` to the target SHA and pushes (Coolify deploys on that push),
+# tags release-<date>.N, then verifies the live build SHA + smoke probes, and moves `lkg`.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'main SHA to release (blank = current main tip)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: release-prod
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      REQUIRED_CHECKS: 'verify,db'
+      HEALTH_URL: 'https://api.circls.app/v1/health'
+      PORTAL_URLS: 'https://admin.circls.app,https://partners.circls.app,https://circls.app'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Resolve target SHA
+        id: target
+        run: |
+          set -euo pipefail
+          git fetch origin main release --tags || git fetch origin main --tags
+          SHA='${{ inputs.sha }}'
+          if [ -z "$SHA" ]; then SHA=$(git rev-parse origin/main); fi
+          SHA=$(git rev-parse "$SHA")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Target SHA: $SHA"
+
+      - name: Pre-flight — target is on main and fast-forward from release
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.target.outputs.sha }}'
+          git merge-base --is-ancestor "$SHA" origin/main \
+            || { echo "::error::Target $SHA is not an ancestor of main"; exit 1; }
+          if git rev-parse --verify --quiet origin/release >/dev/null; then
+            git merge-base --is-ancestor origin/release "$SHA" \
+              || { echo "::error::Not a fast-forward from release — use Rollback to move backwards"; exit 1; }
+          fi
+
+      - name: Pre-flight — CI is green on the target SHA
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/commits/${{ steps.target.outputs.sha }}/check-runs" > checks.json
+          node scripts/release/check-ci.mjs < checks.json
+
+      - name: Pre-flight — prod is currently healthy
+        run: |
+          set -euo pipefail
+          curl -fsS "$HEALTH_URL" | tee /dev/stderr | grep -q '"ok":true' \
+            || { echo "::error::Prod health check failed before release"; exit 1; }
+
+      - name: Flag migrations in this batch
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.target.outputs.sha }}'
+          if git rev-parse --verify --quiet origin/release >/dev/null; then BASE=$(git rev-parse origin/release); else BASE="$SHA^"; fi
+          MIGS=$(node scripts/release/detect-migrations.mjs "$BASE" "$SHA" || true)
+          if [ -n "$MIGS" ]; then
+            echo "::warning::This release runs migrations on deploy:"; echo "$MIGS"
+          else
+            echo "No migrations in this batch."
+          fi
+
+      - name: Deploy — fast-forward release and push (triggers Coolify)
+        id: deploy
+        run: |
+          set -euo pipefail
+          SHA='${{ steps.target.outputs.sha }}'
+          git push origin "$SHA:refs/heads/release"
+          DATE=$(date -u +%Y-%m-%d)
+          TAG=$(git tag -l "release-$DATE.*" | DATE="$DATE" node scripts/release/release-tag.mjs)
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Released $SHA as $TAG"
+
+      - name: Verify — wait for live build SHA + smoke probes
+        run: EXPECTED_SHA='${{ steps.target.outputs.sha }}' node scripts/release/smoke.mjs
+
+      - name: Mark last-known-good
+        if: success()
+        run: |
+          set -euo pipefail
+          git tag -f lkg '${{ steps.target.outputs.sha }}'
+          git push -f origin refs/tags/lkg
+          echo "lkg → ${{ steps.target.outputs.sha }}"
+
+      - name: Comment success on today's candidate issue
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().slice(0, 10);
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'release-candidate',
+            });
+            const issue = open.data.find((i) => i.title === `Release candidate ${today}`);
+            if (issue) {
+              const tag = '${{ steps.deploy.outputs.tag }}';
+              const sha = '${{ steps.target.outputs.sha }}';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+                body: `✅ Released \`${tag}\` (\`${sha.slice(0,7)}\`). lkg updated.`,
+              });
+            }
+
+      - name: Alert on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.target.outputs.sha }}';
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `🔴 Release failed (${sha.slice(0,7)})`,
+              body: [
+                `Release of \`${sha}\` failed at a verification step. Prod may be mid-deploy.`,
+                '',
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '**If prod is unhealthy, trigger Rollback (defaults to `lkg`).**',
+              ].join('\n'),
+              labels: ['release'],
+            });
