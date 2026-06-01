@@ -1,0 +1,67 @@
+name: Release candidate
+
+# Opens/updates a "Release candidate <date>" issue each morning: the diff release..main,
+# the migrations in the batch, and how to ship. This is the daily-sprint surface — it
+# deploys nothing. Safe before the release branch exists (it skips gracefully).
+on:
+  schedule:
+    - cron: '30 2 * * *' # 08:00 IST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Build release notes (release..main)
+        id: notes
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if ! git fetch origin release 2>/dev/null || ! git rev-parse --verify --quiet origin/release >/dev/null; then
+            echo "release branch not created yet — skipping candidate." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE=$(git rev-parse origin/release)
+          HEAD=$(git rev-parse origin/main)
+          node scripts/release/release-notes.mjs "$BASE" "$HEAD" > notes.md
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the candidate issue
+        if: steps.notes.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const head = '${{ steps.notes.outputs.head }}';
+            const body = fs.readFileSync('notes.md', 'utf8') +
+              `\n\n---\n**To ship:** Actions → **Release** → Run workflow ` +
+              `(target defaults to \`main\` tip \`${head.slice(0,7)}\`).\n` +
+              `**To roll back:** Actions → **Rollback** → Run workflow (defaults to \`lkg\`).`;
+            const today = new Date().toISOString().slice(0, 10);
+            const title = `Release candidate ${today}`;
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'release-candidate',
+            });
+            const mine = open.data.find((i) => i.title === title);
+            if (mine) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: mine.number, body,
+              });
+              core.info(`Updated #${mine.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['release-candidate'],
+              });
+              core.info(`Created #${created.data.number}`);
+            }
