@@ -5,6 +5,7 @@ import type {
   EventBookingResult,
   MembershipPurchaseResult,
   MyBooking,
+  MyBookingDetail,
   PublicEvent,
   PublicEventWithVenue,
   PublicMembership,
@@ -172,5 +173,16 @@ export function useMyBookings() {
     queryFn: () => apiFetch<{ rows: MyBooking[] }>('/v1/consumer/me/bookings'),
     enabled: Boolean(user),
     select: (data) => data.rows,
+  });
+}
+
+export function useMyBooking(id: string) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['my-booking', user?.uid, id],
+    queryFn: () =>
+      apiFetch<{ booking: MyBookingDetail }>(`/v1/consumer/me/bookings/${id}`),
+    enabled: Boolean(user) && Boolean(id),
+    select: (data) => data.booking,
   });
 }

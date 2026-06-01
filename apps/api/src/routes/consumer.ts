@@ -7,6 +7,7 @@ import {
   consumerBookEvent,
   consumerBookSlots,
   consumerPurchaseMembership,
+  getMyBookingDetail,
   getMyProfile,
   getPublicEventById,
   getPublicVenueWithImages,
@@ -169,5 +170,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/consumer/me/bookings', { preHandler: requireAuth }, async (req) => {
     const user = await currentUser(req);
     return { rows: await listMyBookings(user.id) };
+  });
+
+  app.get('/v1/consumer/me/bookings/:id', { preHandler: requireAuth }, async (req) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
+    if (!params.success) throw new NotFound('Booking not found', 'booking_not_found');
+    const user = await currentUser(req);
+    return { booking: await getMyBookingDetail(user.id, params.data.id) };
   });
 };

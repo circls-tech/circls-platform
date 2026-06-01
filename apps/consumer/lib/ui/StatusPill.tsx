@@ -1,13 +1,10 @@
 import { Badge, type BadgeTone } from './Badge';
 
 /**
- * Maps an entity lifecycle status (venues, arenas, events, memberships) to a
- * partner-friendly label + Badge tone. Subproject B added the `pending_review`
- * and `rejected` states (new listings now go to Circls for approval before they
- * become visible to consumers), so this is the single place the partner portal
- * translates raw status strings into something a partner can understand.
- *
- * Partners only VIEW status here — approving/rejecting is admin-only.
+ * Maps an entity lifecycle status (venues, arenas, events, memberships) OR a
+ * booking status (pending / confirmed / completed / no_show / cancelled) to a
+ * consumer-friendly label + Badge tone. This is the single place the consumer
+ * portal translates raw status strings into something a customer can understand.
  */
 const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   pending_review: { label: 'Pending review', tone: 'warning' },
@@ -17,7 +14,12 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   suspended:      { label: 'Suspended',      tone: 'danger' },
   inactive:       { label: 'Inactive',       tone: 'neutral' },
   draft:          { label: 'Draft',          tone: 'open' },
-  cancelled:      { label: 'cancelled',      tone: 'neutral' },
+  // Booking statuses (consumer "My bookings").
+  pending:        { label: 'Pending',        tone: 'warning' },
+  confirmed:      { label: 'Confirmed',      tone: 'success' },
+  completed:      { label: 'Completed',      tone: 'booked' },
+  no_show:        { label: 'No-show',        tone: 'danger' },
+  cancelled:      { label: 'Cancelled',      tone: 'neutral' },
 };
 
 export interface StatusPillProps {

@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Header } from '@/components/Header';
@@ -51,22 +52,28 @@ export default function MyBookingsPage() {
         ) : (
           <div className="flex flex-col gap-3">
             {bookings.data.map((b) => (
-              <Card key={b.id}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="font-display text-base font-semibold text-ink">{b.venueName}</h2>
-                    <p className="mt-0.5 text-sm text-text-secondary">
-                      {ITEM_TYPE_LABELS[b.itemType] ?? b.itemType} · {formatDate(b.createdAt)}
-                    </p>
+              <Link
+                key={b.id}
+                href={`/me/bookings/${b.id}`}
+                className="block rounded-card outline-none transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-gold-600"
+              >
+                <Card>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="font-display text-base font-semibold text-ink">{b.venueName}</h2>
+                      <p className="mt-0.5 text-sm text-text-secondary">
+                        {ITEM_TYPE_LABELS[b.itemType] ?? b.itemType} · {formatDate(b.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <StatusPill status={b.status} />
+                      <span className="text-sm font-medium text-ink">
+                        {formatPaise(b.totalPaise)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <StatusPill status={b.status} />
-                    <span className="text-sm font-medium text-ink">
-                      {formatPaise(b.totalPaise)}
-                    </span>
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              </Link>
             ))}
           </div>
         )}
