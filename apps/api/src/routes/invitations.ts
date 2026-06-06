@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { BadRequest, Forbidden } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -40,9 +41,8 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
     });
     return reply.status(201).send({
       invitation: result.invitation,
-      // Return the plaintext token in the response too so callers can preview
-      // the URL in dev — production callers should ignore this field.
-      token: result.plaintextToken,
+      // Plaintext token is for dev preview only; never expose it in prod responses.
+      ...(env.NODE_ENV !== 'production' ? { token: result.plaintextToken } : {}),
     });
   });
 
@@ -77,9 +77,8 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
       const result = await resendInvitation({ tenantId, invitationId, actorUserId: user.id });
       return reply.status(200).send({
         invitation: result.invitation,
-        // Return the plaintext token in the response too so callers can preview
-        // the URL in dev — production callers should ignore this field.
-        token: result.plaintextToken,
+        // Plaintext token is for dev preview only; never expose it in prod responses.
+        ...(env.NODE_ENV !== 'production' ? { token: result.plaintextToken } : {}),
       });
     },
   );

@@ -51,6 +51,20 @@ export async function buildServer(): Promise<FastifyInstance> {
     logger: {
       level: env.LOG_LEVEL,
       base: { service: 'circls-api' },
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers["x-razorpay-signature"]',
+          'req.headers.cookie',
+          '*.keySecret',
+          '*.key_secret',
+          '*.plaintextToken',
+          '*.token_hash',
+          '*.private_key',
+          '*.secret',
+        ],
+        censor: '[REDACTED]',
+      },
       ...(env.NODE_ENV !== 'production'
         ? {
             transport: {
@@ -70,7 +84,17 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, { global: true });
-  await app.register(cors, { origin: true, credentials: true });
+  const allowedOrigins = [...env.CORS_ALLOWED_ORIGINS];
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, cb) => {
+      // No Origin header (server-to-server, curl, same-origin) → allow.
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (env.NODE_ENV !== 'production' && /^http:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+      return cb(null, false); // not an error — just no CORS headers, browser blocks it
+    },
+  });
   await app.register(sensible);
 
   // ── OpenAPI (Phase 17) ───────────────────────────────────────────────────

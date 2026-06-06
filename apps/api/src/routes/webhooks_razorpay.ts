@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import { env } from '../config/env.js';
 import { BadRequest, Unauthorized } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getRazorpay } from '../lib/razorpay.js';
@@ -31,6 +32,10 @@ export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.post('/webhooks/razorpay', async (req, reply) => {
+    if (env.NODE_ENV === 'production' && getRazorpay().mode === 'stub') {
+      logger.error('razorpay_webhook_stub_in_prod');
+      return reply.status(503).send({ error: { code: 'payments_unconfigured' } });
+    }
     const signature = req.headers['x-razorpay-signature'];
     if (typeof signature !== 'string') {
       throw new Unauthorized('Missing signature', 'missing_signature');

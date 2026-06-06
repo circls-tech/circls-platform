@@ -5,6 +5,20 @@ const baseOptions: LoggerOptions = {
   level: env.LOG_LEVEL,
   base: { service: 'circls-api' },
   timestamp: pino.stdTimeFunctions.isoTime,
+  redact: {
+    paths: [
+      'req.headers.authorization',
+      'req.headers["x-razorpay-signature"]',
+      'req.headers.cookie',
+      '*.keySecret',
+      '*.key_secret',
+      '*.plaintextToken',
+      '*.token_hash',
+      '*.private_key',
+      '*.secret',
+    ],
+    censor: '[REDACTED]',
+  },
 };
 
 const devOptions: LoggerOptions = {
