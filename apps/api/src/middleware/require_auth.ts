@@ -37,7 +37,10 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply): Pr
   req.authUser = {
     firebaseUid: decoded.uid,
     phoneE164: decoded.phone_number ?? null,
-    email: decoded.email ?? null,
+    // SECURITY (C1): only trust the email claim when Firebase has verified ownership.
+    // An unverified email must never become an identity key (adoptStaleIdentity matches
+    // on it). Firebase phone-auth numbers are inherently verified, so phone is unchanged.
+    email: decoded.email_verified ? (decoded.email ?? null) : null,
     claims: decoded,
   };
 }

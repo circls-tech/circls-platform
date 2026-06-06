@@ -4,11 +4,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     const map: Record<string, Record<string, unknown>> = {
-      owner: { uid: 'fbuid_aowner', email: 'aowner@x.com' },
-      other: { uid: 'fbuid_aother', email: 'aother@x.com' },
+      owner: { uid: 'fbuid_aowner', email: 'aowner@x.com', email_verified: true },
+      other: { uid: 'fbuid_aother', email: 'aother@x.com', email_verified: true },
       // separate user for arena-read tenant-isolation tests
-      arOwner: { uid: 'fbuid_arowner', email: 'arowner@x.com' },
-      arOther: { uid: 'fbuid_arother', email: 'arother@x.com' },
+      arOwner: { uid: 'fbuid_arowner', email: 'arowner@x.com', email_verified: true },
+      arOther: { uid: 'fbuid_arother', email: 'arother@x.com', email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');

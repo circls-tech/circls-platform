@@ -127,6 +127,9 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
     if (!decoded.email) {
       throw new Forbidden('Firebase token has no email', 'no_email_claim');
     }
+    if (!decoded.email_verified) {
+      throw new Forbidden('Email not verified', 'email_unverified');
+    }
     const result = await acceptInvitation({
       token,
       firebaseUid: decoded.uid,
