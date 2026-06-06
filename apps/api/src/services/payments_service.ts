@@ -101,12 +101,12 @@ export interface WebhookEvent {
  */
 function extractPaymentEntity(
   payload: Record<string, unknown>,
-): { order_id?: string; id?: string; status?: string } | undefined {
+): { order_id?: string; id?: string; status?: string; amount?: number; currency?: string } | undefined {
   const paymentWrap = payload['payment'];
   if (!paymentWrap || typeof paymentWrap !== 'object') return undefined;
   const entity = (paymentWrap as Record<string, unknown>)['entity'];
   if (!entity || typeof entity !== 'object') return undefined;
-  return entity as { order_id?: string; id?: string; status?: string };
+  return entity as { order_id?: string; id?: string; status?: string; amount?: number; currency?: string };
 }
 
 function extractRefundEntity(
@@ -137,7 +137,7 @@ export async function handleRazorpayWebhook(event: WebhookEvent): Promise<void> 
       await handlePaymentFailed(event);
       return;
     case 'refund.processed':
-      await handleRefundProcessedStub(event);
+      await handleRefundProcessed(event);
       return;
     default:
       // Unknown events: log and ack so Razorpay doesn't retry forever.
@@ -175,15 +175,55 @@ async function handlePaymentCaptured(event: WebhookEvent): Promise<void> {
       return;
     }
 
-    // Flip the row to captured first so holdForBooking() (which filters on
-    // status='captured') can find it inside the same transaction.
-    await tx
+    // M1: verify the captured amount + currency match the server-side order
+    // before holding funds / confirming. The webhook is signed but the *amount*
+    // is attacker-influenceable upstream of us; never trust the wire over our
+    // own row. On mismatch we leave the row in its current state (pending) and
+    // log so ops can investigate — we do NOT confirm the booking.
+    const capturedAmount = entity.amount;
+    const capturedCurrency = entity.currency;
+    if (typeof capturedAmount !== 'number' || capturedAmount !== Number(pay.amountPaise)) {
+      logger.error(
+        {
+          paymentId: pay.id,
+          eventId: event.eventId,
+          expectedAmountPaise: Number(pay.amountPaise),
+          capturedAmount: capturedAmount ?? null,
+        },
+        'payment_amount_mismatch',
+      );
+      return;
+    }
+    if (typeof capturedCurrency === 'string' && capturedCurrency.toUpperCase() !== pay.currency.toUpperCase()) {
+      logger.error(
+        {
+          paymentId: pay.id,
+          eventId: event.eventId,
+          expectedCurrency: pay.currency,
+          capturedCurrency,
+        },
+        'payment_amount_mismatch',
+      );
+      return;
+    }
+
+    // M4: status-guarded flip to captured. Only the writer that observes the row
+    // still `pending` proceeds; a concurrent duplicate delivery loses the race
+    // (no row returned) and is a safe no-op. Flip first so holdForBooking()
+    // (which filters on status='captured') can find it inside the same tx.
+    const [won] = await tx
       .update(payments)
       .set({
         status: 'captured',
         providerPaymentId: providerPaymentId ?? pay.providerPaymentId,
       })
-      .where(eq(payments.id, pay.id));
+      .where(and(eq(payments.id, pay.id), eq(payments.status, 'pending')))
+      .returning({ id: payments.id });
+
+    if (!won) {
+      logger.info({ paymentId: pay.id, eventId: event.eventId }, 'razorpay_capture_race_lost');
+      return;
+    }
 
     // Compute settlement_hold_until from the booking's slot end.
     await holdForBooking(pay.bookingId, tx);
@@ -242,10 +282,19 @@ async function handlePaymentFailed(event: WebhookEvent): Promise<void> {
       return;
     }
 
-    await tx
+    // M4: status-guarded flip. Only fail a still-`pending` charge; concurrent
+    // duplicate deliveries (or a fail racing a capture) lose the guard and
+    // no-op rather than clobbering a captured row.
+    const [won] = await tx
       .update(payments)
       .set({ status: 'failed' })
-      .where(eq(payments.id, pay.id));
+      .where(and(eq(payments.id, pay.id), eq(payments.status, 'pending')))
+      .returning({ id: payments.id });
+
+    if (!won) {
+      logger.info({ paymentId: pay.id, eventId: event.eventId }, 'razorpay_failed_race_lost');
+      return;
+    }
 
     // Cancel the (still pending) booking so the slot frees up.
     const [booking] = await tx
@@ -277,19 +326,78 @@ async function handlePaymentFailed(event: WebhookEvent): Promise<void> {
 }
 
 /**
- * Refund webhook stub. Phase 14 (refund_service) owns the matching write —
- * a refund row is inserted when the API triggers the refund, and this handler
- * is what flips it to `processed`. For Phase 12 we log an audit breadcrumb so
- * reconciliation can see the event arrived.
+ * Refund webhook handler (`refund.processed` / refund failure).
+ *
+ * `issueRefund`/`runRefund` stores the provider refund id on the refund row's
+ * `provider_payment_id` (and kind='refund'). Here we match on that id and move
+ * the row to its terminal state: `captured` when the provider reports the money
+ * moved, `failed` otherwise.
+ *
+ * Idempotency + concurrency: the UPDATE is status-guarded to non-terminal
+ * states (`pending`/`authorized`). A replay of an already-terminal row returns
+ * no row and is a safe no-op. An unknown refund id is logged and acked (2xx) so
+ * Razorpay stops retrying — it just means we have no local ledger row to flip
+ * (e.g. a refund issued out-of-band).
  */
-async function handleRefundProcessedStub(event: WebhookEvent): Promise<void> {
-  // TODO(phase-14): match the refund entity by provider_payment_id and update
-  // the refund row's status to 'processed'. This sits in refund_service.
+async function handleRefundProcessed(event: WebhookEvent): Promise<void> {
   const entity = extractRefundEntity(event.payload);
-  logger.info(
-    { eventId: event.eventId, refundId: entity?.id, paymentId: entity?.payment_id },
-    'razorpay_refund_processed_stub',
-  );
+  const refundId = entity?.id;
+  if (!refundId) {
+    logger.warn({ eventId: event.eventId }, 'razorpay_refund_missing_id');
+    return;
+  }
+
+  // Razorpay refund states: 'processed' = money moved → 'captured'; anything
+  // else the webhook surfaces as a failure → 'failed'. Default to captured for
+  // the `refund.processed` event when status is absent.
+  const failed = entity.status === 'failed';
+  const targetStatus: 'captured' | 'failed' = failed ? 'failed' : 'captured';
+
+  await db.transaction(async (tx) => {
+    const [refund] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.kind, 'refund'), eq(payments.providerPaymentId, refundId)))
+      .limit(1);
+
+    if (!refund) {
+      logger.warn({ refundId, eventId: event.eventId }, 'razorpay_refund_unknown');
+      return;
+    }
+
+    // Status-guarded transition from a non-terminal state. A replay (row already
+    // captured/failed) returns no row → no-op.
+    const [won] = await tx
+      .update(payments)
+      .set({ status: targetStatus })
+      .where(
+        and(
+          eq(payments.id, refund.id),
+          sql`${payments.status} in ('pending', 'authorized')`,
+        ),
+      )
+      .returning({ id: payments.id });
+
+    if (!won) {
+      logger.info(
+        { paymentId: refund.id, refundId, eventId: event.eventId },
+        'razorpay_refund_replay_ignored',
+      );
+      return;
+    }
+
+    await tx.execute(sql`
+      insert into audit_log (tenant_id, action, entity_type, entity_id, before, after)
+      values (
+        ${refund.tenantId}::uuid,
+        'payment.refund_processed',
+        'payment',
+        ${refund.id}::uuid,
+        ${JSON.stringify({ status: refund.status })}::jsonb,
+        ${JSON.stringify({ status: targetStatus, eventId: event.eventId, refundId })}::jsonb
+      )
+    `);
+  });
 }
 
 export async function listForBooking(bookingId: string): Promise<Payment[]> {

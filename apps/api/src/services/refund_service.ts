@@ -60,12 +60,20 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
   // 1. Locate the charge row to refund against. Use the most recent captured
   //    charge for this booking. (Multiple charges per booking are not yet a
   //    real path, but we sort by created_at desc to be future-proof.)
+  //
+  //    M3: take a row lock (SELECT ... FOR UPDATE) on the charge so concurrent
+  //    refunds against the same charge serialize. Without it, two refunds can
+  //    each read the same `alreadyRefunded` aggregate, both pass the remaining
+  //    check, and over-refund. Holding the lock for the whole
+  //    read-check-insert (all inside this tx) makes the remaining-amount check
+  //    authoritative. Mirrors the FOR UPDATE locking in payout_service.
   const [charge] = await tx
     .select()
     .from(payments)
     .where(and(eq(payments.bookingId, input.bookingId), eq(payments.kind, 'charge')))
     .orderBy(sql`${payments.createdAt} desc`)
-    .limit(1);
+    .limit(1)
+    .for('update');
 
   if (!charge) throw new NotFound('No charge to refund', 'no_charge_for_booking');
 
