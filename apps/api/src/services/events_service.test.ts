@@ -120,4 +120,23 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
     });
     await expect(updateEvent(ctx(), venueScoped.id, { venueId: null })).rejects.toThrow();
   });
+
+  it('re-scopes a venue-scoped event to standalone when an address is provided', async () => {
+    const venueScoped = await createEvent(ctx(), {
+      tenantId,
+      venueId,
+      name: 'Going Standalone',
+      startsAt: new Date('2030-07-01T10:00:00Z'),
+      endsAt: new Date('2030-07-01T12:00:00Z'),
+      pricePaise: 0,
+    });
+    const moved = await updateEvent(ctx(), venueScoped.id, {
+      venueId: null,
+      addressJson: { line1: '9 New St', city: 'Mumbai' },
+      tzName: 'Asia/Kolkata',
+    });
+    expect(moved.venueId).toBeNull();
+    expect(moved.addressJson).toMatchObject({ line1: '9 New St', city: 'Mumbai' });
+    expect(moved.tzName).toBe('Asia/Kolkata');
+  });
 });

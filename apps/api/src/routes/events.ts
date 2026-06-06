@@ -60,8 +60,13 @@ const updateEventSchema = z.object({
   pricePaise: z.number().int().min(0).optional(),
   capacity: z.number().int().min(1).nullable().optional(),
   // Re-scope the event: a venue id makes it venue-scoped; null makes it
-  // standalone (the existing/standalone address is retained). Absent = no change.
+  // standalone. When going standalone, the address/tz below are used (falling
+  // back to any address the event already carries). Absent venueId = no change.
   venueId: z.string().uuid().nullable().optional(),
+  addressJson: z.record(z.unknown()).optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  tzName: z.string().min(1).optional(),
 });
 
 export const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -177,6 +182,11 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       }
       patch.venueId = parsed.data.venueId;
     }
+    // Standalone address/location — used when going (or staying) standalone.
+    if (parsed.data.addressJson !== undefined) patch.addressJson = parsed.data.addressJson;
+    if (parsed.data.tzName !== undefined) patch.tzName = parsed.data.tzName;
+    if (parsed.data.lat !== undefined) patch.lat = parsed.data.lat;
+    if (parsed.data.lng !== undefined) patch.lng = parsed.data.lng;
     return updateEvent({ tenantId, actorUserId: user.id }, id, patch);
   });
 

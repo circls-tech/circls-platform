@@ -97,14 +97,26 @@ export default function OrgEventDetailPage() {
   const [capacityRaw, setCapacityRaw] = useState('');
   // '' => standalone; otherwise a venue id.
   const [venueChoice, setVenueChoice] = useState('');
-  // The tz used to interpret the datetime-local inputs, captured at edit start.
-  const [editTz, setEditTz] = useState('Asia/Kolkata');
+  // Standalone address fields (shown when venueChoice === '').
+  const [line1, setLine1] = useState('');
+  const [line2, setLine2] = useState('');
+  const [city, setCity] = useState('');
+  const [stateRegion, setStateRegion] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [latRaw, setLatRaw] = useState('');
+  const [lngRaw, setLngRaw] = useState('');
+  const [tzForm, setTzForm] = useState('Asia/Kolkata');
 
   const currentVenue = ev?.venueId ? venues?.find((v) => v.id === ev.venueId) : undefined;
   const effectiveTz = ev?.venueId ? (currentVenue?.tzName ?? 'Asia/Kolkata') : (ev?.tzName ?? 'Asia/Kolkata');
   const venueLabel = ev?.venueId
     ? (currentVenue?.name ?? 'Venue')
     : 'Standalone (no venue)';
+
+  // Timezone the datetime-local inputs are interpreted in: a chosen venue's tz,
+  // or the standalone tz field. Derived so it follows the venue selector live.
+  const selectedEditVenue = venueChoice ? venues?.find((v) => v.id === venueChoice) : undefined;
+  const editTz = venueChoice === '' ? tzForm : (selectedEditVenue?.tzName ?? 'Asia/Kolkata');
 
   function startEdit() {
     if (!ev) return;
@@ -116,7 +128,17 @@ export default function OrgEventDetailPage() {
     setPriceRupees((ev.pricePaise / 100).toString());
     setCapacityRaw(ev.capacity != null ? String(ev.capacity) : '');
     setVenueChoice(ev.venueId ?? '');
-    setEditTz(tz);
+    // Prefill the standalone address from whatever the event already carries.
+    const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
+    const str = (k: string) => (typeof addr[k] === 'string' ? (addr[k] as string) : '');
+    setLine1(str('line1'));
+    setLine2(str('line2'));
+    setCity(str('city'));
+    setStateRegion(str('state'));
+    setPincode(str('pincode'));
+    setLatRaw(ev.lat != null ? String(ev.lat) : '');
+    setLngRaw(ev.lng != null ? String(ev.lng) : '');
+    setTzForm(ev.tzName ?? 'Asia/Kolkata');
     setErrorMsg(null);
     setEditing(true);
   }
@@ -139,6 +161,16 @@ export default function OrgEventDetailPage() {
     }
   }
 
+  function buildAddressJson(): Record<string, unknown> {
+    const a: Record<string, unknown> = {};
+    if (line1.trim()) a.line1 = line1.trim();
+    if (line2.trim()) a.line2 = line2.trim();
+    if (city.trim()) a.city = city.trim();
+    if (stateRegion.trim()) a.state = stateRegion.trim();
+    if (pincode.trim()) a.pincode = pincode.trim();
+    return a;
+  }
+
   async function onSubmitEdit(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
@@ -146,11 +178,41 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Set a start and end time.');
       return;
     }
-    // Only send venueId when the scope actually changed (avoids needless
-    // re-scoping and the standalone-without-address error on no-op edits).
+
     const originalChoice = ev?.venueId ?? '';
-    const venuePatch =
-      venueChoice !== originalChoice ? { venueId: venueChoice === '' ? null : venueChoice } : {};
+    const scopeChanged = venueChoice !== originalChoice;
+
+    // Build the scope/address portion of the patch.
+    let scopePatch: {
+      venueId?: string | null;
+      addressJson?: Record<string, unknown>;
+      tzName?: string;
+      lat?: number | null;
+      lng?: number | null;
+    } = {};
+    if (venueChoice === '') {
+      // Standalone (becoming or staying): require an address + tz, send them.
+      const addressJson = buildAddressJson();
+      if (Object.keys(addressJson).length === 0) {
+        setErrorMsg('Enter an address for a standalone event.');
+        return;
+      }
+      if (!tzForm.trim()) {
+        setErrorMsg('Enter a timezone for a standalone event.');
+        return;
+      }
+      scopePatch = {
+        addressJson,
+        tzName: tzForm.trim(),
+        lat: latRaw ? parseFloat(latRaw) : null,
+        lng: lngRaw ? parseFloat(lngRaw) : null,
+        ...(scopeChanged ? { venueId: null } : {}),
+      };
+    } else if (scopeChanged) {
+      // Assigning/reassigning to a venue.
+      scopePatch = { venueId: venueChoice };
+    }
+
     try {
       await update.mutateAsync({
         eventId,
@@ -161,7 +223,7 @@ export default function OrgEventDetailPage() {
           endsAt: localToTzIso(endsAtLocal, editTz),
           pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
           ...(capacityRaw ? { capacity: parseInt(capacityRaw, 10) } : {}),
-          ...venuePatch,
+          ...scopePatch,
         },
       });
       setEditing(false);
@@ -171,9 +233,6 @@ export default function OrgEventDetailPage() {
   }
 
   const backHref = '/events';
-  // Standalone is only offered when the event already carries an address (the
-  // backend refuses to drop a venue with no fallback address).
-  const canGoStandalone = Boolean(ev?.addressJson) || !ev?.venueId;
 
   return (
     <div className="flex flex-col gap-6">
@@ -330,7 +389,7 @@ export default function OrgEventDetailPage() {
                     onChange={(e) => setVenueChoice(e.target.value)}
                     className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
                   >
-                    {canGoStandalone && <option value="">Standalone (no venue)</option>}
+                    <option value="">Standalone (no venue) — enter address</option>
                     {venues?.map((v) => (
                       <option key={v.id} value={v.id}>
                         {v.name}
@@ -338,9 +397,58 @@ export default function OrgEventDetailPage() {
                     ))}
                   </select>
                   <p className="text-xs text-slate-400">
-                    Assigning a venue uses that venue&apos;s location. Times stay in {editTz}.
+                    Assigning a venue uses that venue&apos;s location. Times are in {editTz}.
                   </p>
                 </div>
+
+                {venueChoice === '' && (
+                  <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3">
+                    <Input
+                      label="Address line 1"
+                      value={line1}
+                      onChange={(e) => setLine1(e.target.value)}
+                      placeholder="Street / building"
+                    />
+                    <Input
+                      label="Address line 2"
+                      value={line2}
+                      onChange={(e) => setLine2(e.target.value)}
+                      placeholder="Optional"
+                    />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
+                      <Input
+                        label="State"
+                        value={stateRegion}
+                        onChange={(e) => setStateRegion(e.target.value)}
+                      />
+                      <Input label="PIN" value={pincode} onChange={(e) => setPincode(e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <Input
+                        label="Latitude"
+                        type="number"
+                        step="0.000001"
+                        value={latRaw}
+                        onChange={(e) => setLatRaw(e.target.value)}
+                        hint="Optional — for the map pin."
+                      />
+                      <Input
+                        label="Longitude"
+                        type="number"
+                        step="0.000001"
+                        value={lngRaw}
+                        onChange={(e) => setLngRaw(e.target.value)}
+                      />
+                      <Input
+                        label="Timezone"
+                        value={tzForm}
+                        onChange={(e) => setTzForm(e.target.value)}
+                        hint="IANA tz, e.g. Asia/Kolkata"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Input
