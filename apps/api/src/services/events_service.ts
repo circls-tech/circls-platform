@@ -158,6 +158,14 @@ export interface UpdateEventPatch {
   endsAt?: Date;
   pricePaise?: number;
   capacity?: number | null;
+  /**
+   * Re-scope the event. A venue id makes it venue-scoped (location is read from
+   * the venue, so the denormalized standalone fields are cleared). `null` makes
+   * it standalone — the event must already carry an address (org-scoped events
+   * do). Omit to leave the scope unchanged. The caller (route) is responsible
+   * for verifying the venue belongs to the tenant.
+   */
+  venueId?: string | null;
 }
 
 /**
@@ -194,6 +202,26 @@ export async function updateEvent(
     if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
     if (patch.pricePaise !== undefined) set.pricePaise = patch.pricePaise;
     if (patch.capacity !== undefined) set.capacity = patch.capacity;
+
+    // Re-scope: venue-scoped events read location from the venue (clear the
+    // denormalized standalone fields); standalone events must keep an address.
+    if (patch.venueId !== undefined) {
+      if (patch.venueId) {
+        set.venueId = patch.venueId;
+        set.addressJson = null;
+        set.lat = null;
+        set.lng = null;
+        set.tzName = null;
+      } else {
+        if (!existing.addressJson) {
+          throw new BadRequest(
+            'Cannot make this event standalone without an address',
+            'event_address_required',
+          );
+        }
+        set.venueId = null;
+      }
+    }
 
     if (Object.keys(set).length > 0) {
       await tx.update(events).set(set).where(eq(events.id, eventId));

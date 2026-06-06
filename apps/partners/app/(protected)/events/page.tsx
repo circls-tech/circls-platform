@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTenantEvents, usePublishTenantEvent } from '@/lib/api/events';
@@ -44,7 +45,12 @@ function EventList({ tenantId }: { tenantId: string }) {
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="font-medium text-[#0f172a]">{ev.name}</p>
+                <Link
+                  href={`/events/${ev.id}`}
+                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {ev.name}
+                </Link>
                 <p className="mt-0.5 text-xs text-slate-400">{IST.format(new Date(ev.startsAt))}</p>
               </div>
               <div className="flex items-center gap-2">
