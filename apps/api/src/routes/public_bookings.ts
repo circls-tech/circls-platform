@@ -90,6 +90,12 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
     '/api/v1/bookings',
     { preHandler: requireApiKey },
     async (req, reply) => {
+      // Enforce the API key's role: only write/admin keys may create bookings.
+      const role = req.apiKey?.role;
+      if (role !== 'write' && role !== 'admin') {
+        throw new Forbidden('API key is not authorized to write', 'api_key_write_forbidden');
+      }
+
       const parsed = bookSlotsSchema.safeParse(req.body);
       if (!parsed.success) {
         throw new BadRequest('Invalid booking payload', 'bad_request', {

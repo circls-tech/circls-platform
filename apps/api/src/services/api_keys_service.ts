@@ -13,7 +13,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { apiKeys, type ApiKey } from '../db/schema/api_keys.js';
 import { env } from '../config/env.js';
-import { writeAudit } from '../lib/audit.js';
+import { writeAudit, writeSystemAudit } from '../lib/audit.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 
 const BCRYPT_ROUNDS = 10;
 const PREFIX_LEN = 12;
@@ -60,19 +61,28 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<CreateApiK
 
   if (!row) throw new Error('api_key_insert_failed');
 
-  // Audit trail — only when there's a tenant + actor (platform keys created
-  // out-of-band by ops have no audit tenant; that's logged elsewhere).
-  if (input.tenantId && input.actorUserId) {
-    await writeAudit(
-      db,
-      { tenantId: input.tenantId, actorUserId: input.actorUserId },
-      'api_key.created',
-      'api_key',
-      row.id,
-      null,
-      { name: row.name, role: row.role, scopes: row.scopes, prefix },
-    );
-  }
+  // Audit trail — ALWAYS write a row, including for ops-issued platform keys
+  // (tenantId === null). Tenant-scoped keys audit against their own tenant;
+  // platform keys audit against the Circls platform tenant. The actor is the
+  // creating user, or null for fully system-issued keys (the column is
+  // nullable). Never silently skip auditing key creation.
+  const auditTenantId = input.tenantId ?? (await getPlatformTenantId());
+  await writeSystemAudit(
+    db,
+    { tenantId: auditTenantId, actorUserId: input.actorUserId ?? null },
+    'api_key.created',
+    'api_key',
+    row.id,
+    null,
+    {
+      name: row.name,
+      role: row.role,
+      scopes: row.scopes,
+      prefix,
+      // Record whether this was a platform (null-tenant) key for traceability.
+      platformKey: input.tenantId === null,
+    },
+  );
 
   return { id: row.id, plaintext, prefix };
 }

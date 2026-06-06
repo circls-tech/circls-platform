@@ -32,3 +32,30 @@ export async function writeAudit(
     after: after ?? undefined,
   });
 }
+
+/**
+ * Like {@link writeAudit} but for system/automated writes that may have no
+ * human actor. `actorUserId` is nullable (the column allows null) — pass null
+ * for fully system-issued records such as ops-issued platform API keys. Most
+ * callers should prefer `writeAudit`; this exists so we never *skip* auditing
+ * just because there's no acting user.
+ */
+export async function writeSystemAudit(
+  exec: Inserter,
+  ctx: { tenantId: string; actorUserId: string | null },
+  action: string,
+  entityType: string,
+  entityId: string,
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+): Promise<void> {
+  await exec.insert(auditLog).values({
+    tenantId: ctx.tenantId,
+    actorUserId: ctx.actorUserId ?? undefined,
+    action,
+    entityType,
+    entityId,
+    before: before ?? undefined,
+    after: after ?? undefined,
+  });
+}

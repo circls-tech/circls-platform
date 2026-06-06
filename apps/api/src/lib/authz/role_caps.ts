@@ -14,6 +14,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'analytics.read', 'financials.read',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
+    'integration.api_keys.manage',
   ],
   manager: [
     'tenant.read', 'tenant.update',
@@ -26,6 +27,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'analytics.read', 'financials.read',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
+    'integration.api_keys.manage',
   ],
   staff: [
     'tenant.read',
@@ -58,6 +60,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   manager: [
     'tenant.read', 'tenant.update',
     'members.read',
+    'integration.api_keys.manage',
     'admin.tenants.read', 'admin.tenants.suspend',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
