@@ -19,8 +19,23 @@ import {
   listPublicMembershipsAcrossVenues,
   listPublicUpcomingEvents,
   listPublicVenues,
+  logConsumerActivity,
   updateMyProfile,
 } from '../services/consumer_service.js';
+
+/** Behavioral telemetry batch (M6). event_type/item_type kept open (telemetry,
+ *  not domain) so new client signals never need a server change. */
+export const activityEventInput = z.object({
+  eventType: z.string().min(1).max(64),
+  itemType: z.string().max(40).optional(),
+  itemId: z.string().max(200).optional(),
+  props: z.record(z.unknown()).optional(),
+  clientTs: z.string().datetime(),
+  sessionId: z.string().max(200).optional(),
+});
+export const activityBatchBody = z.object({
+  events: z.array(activityEventInput).min(1).max(200),
+});
 
 /**
  * Consumer portal API (subproject E) for circls.app. Browse endpoints are
@@ -170,6 +185,18 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/consumer/me/bookings', { preHandler: requireAuth }, async (req) => {
     const user = await currentUser(req);
     return { rows: await listMyBookings(user.id) };
+  });
+
+  // Behavioral telemetry ingest (M6). Best-effort: a malformed batch is a 400,
+  // but a bad individual item_id degrades to null inside the service rather
+  // than failing the row. user_id is stamped from the token (no spoofing).
+  app.post('/v1/consumer/activity', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const parsed = activityBatchBody.safeParse(req.body);
+    if (!parsed.success)
+      throw new BadRequest('Invalid activity payload', 'bad_request', { issues: parsed.error.issues });
+    const accepted = await logConsumerActivity(user.id, parsed.data.events);
+    return { accepted };
   });
 
   app.get('/v1/consumer/me/bookings/:id', { preHandler: requireAuth }, async (req) => {
