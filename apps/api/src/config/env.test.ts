@@ -34,4 +34,16 @@ describe('envSchema production refinement', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('allows both apex and www consumer origins by default', () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgres://x',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.CORS_ALLOWED_ORIGINS).toContain('https://circls.app');
+      expect(result.data.CORS_ALLOWED_ORIGINS).toContain('https://www.circls.app');
+    }
+  });
 });
