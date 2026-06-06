@@ -7,8 +7,11 @@ import type {
   AdminListingType,
   AdminPayoutListPage,
   AdminStats,
+  AdminSupportIssue,
   AdminTenantDetail,
   AdminTenantListPage,
+  SupportIssueStatus,
+  SupportIssuePriority,
   TenantAuditLogPage,
 } from './types';
 
@@ -185,5 +188,28 @@ export function useTenantAuditLog(tenantId: string | null) {
         `/v1/tenants/${tenantId!}/audit-log${qs({ limit: 50, cursor: pageParam })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+// ── Support issues ────────────────────────────────────────────────────────────
+
+export function useAdminSupportIssues() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'support-issues'],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<AdminSupportIssue[]>('/v1/admin/support-issues'),
+  });
+}
+
+export function useUpdateSupportIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status, priority }: { id: string; status?: SupportIssueStatus; priority?: SupportIssuePriority }) =>
+      apiFetch<AdminSupportIssue>(`/v1/admin/support-issues/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, priority }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'support-issues'] }),
   });
 }

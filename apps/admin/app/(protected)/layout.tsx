@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '/payouts', label: 'Payouts' },
   { href: '/listings', label: 'Review queue' },
   { href: '/audit-log', label: 'Audit log' },
+  { href: '/support-issues', label: 'Support issues' },
 ] as const;
 
 function Sidebar({ pathname }: { pathname: string }) {

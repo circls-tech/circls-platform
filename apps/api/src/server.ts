@@ -43,6 +43,8 @@ import { consumerRoutes } from './routes/consumer.js';
 // Team management (subproject D).
 import { invitationRoutes } from './routes/invitations.js';
 import { teamRoutes } from './routes/team.js';
+// Support issues (UX issue #20).
+import { supportIssueRoutes } from './routes/support_issues.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -209,6 +211,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(publicBookingRoutes);
   // Subproject E: consumer portal API (public browse + authed consumer booking).
   await app.register(consumerRoutes);
+  // UX issue #20: partner support issues + admin support inbox.
+  await app.register(supportIssueRoutes);
 
   return app;
 }

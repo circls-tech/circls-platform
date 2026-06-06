@@ -1,12 +1,15 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyTenants } from '@/lib/api/queries';
 import { OrgProvider } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
+import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { Button, BrandMark } from '@/lib/ui';
+
+const ORG_SELECTED_KEY = 'circls.orgSelected';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -49,14 +52,92 @@ function Sidebar({ pathname }: { pathname: string }) {
         })}
       </nav>
 
-      {/* Bottom spacer */}
-      <div className="h-6" />
+      {/* Help link at the bottom */}
+      <div className="px-3 pb-4 pt-2 border-t border-white/10 mt-2">
+        <Link
+          href="/help"
+          className={[
+            'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+            pathname === '/help'
+              ? 'bg-white/10 text-white'
+              : 'text-slate-400 hover:bg-white/5 hover:text-white',
+          ].join(' ')}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          Help
+        </Link>
+      </div>
     </aside>
   );
 }
 
+function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; pathname: string }) {
+  const [showOrgSelector, setShowOrgSelector] = useState(false);
+  const { data: tenants } = useMyTenants();
+  const { signOut } = useAuth();
+
+  // Show org selector modal once per session when user has multiple orgs.
+  useEffect(() => {
+    if (!tenants || tenants.length <= 1) return;
+    const alreadySelected = sessionStorage.getItem(ORG_SELECTED_KEY);
+    if (!alreadySelected) {
+      setShowOrgSelector(true);
+      sessionStorage.setItem(ORG_SELECTED_KEY, '1');
+    }
+  }, [tenants]);
+
+  return (
+    <OrgProvider>
+      <div className="min-h-screen">
+        {/* Left sidebar */}
+        <Sidebar pathname={pathname} />
+
+        {/* Right of sidebar */}
+        <div className="ml-[220px] flex min-h-screen flex-col">
+          {/* Top bar */}
+          <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#e5e7eb] bg-white px-6">
+            <ContextBar />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void signOut()}
+            >
+              Sign out
+            </Button>
+          </header>
+
+          {/* Content area */}
+          <main className="flex-1 bg-[#f8fafc] p-6">
+            {children}
+          </main>
+        </div>
+      </div>
+
+      <OrgSelectorModal
+        open={showOrgSelector}
+        onClose={() => setShowOrgSelector(false)}
+      />
+    </OrgProvider>
+  );
+}
+
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { data: tenants, isLoading: tenantsLoading } = useMyTenants();
@@ -94,32 +175,5 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   // tolerates zero tenants (it no-ops until tenants load).
   if (pathname === '/onboarding') return <OrgProvider>{children}</OrgProvider>;
 
-  return (
-    <OrgProvider>
-      <div className="min-h-screen">
-        {/* Left sidebar */}
-        <Sidebar pathname={pathname} />
-
-        {/* Right of sidebar */}
-        <div className="ml-[220px] flex min-h-screen flex-col">
-          {/* Top bar */}
-          <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#e5e7eb] bg-white px-6">
-            <ContextBar />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void signOut()}
-            >
-              Sign out
-            </Button>
-          </header>
-
-          {/* Content area */}
-          <main className="flex-1 bg-[#f8fafc] p-6">
-            {children}
-          </main>
-        </div>
-      </div>
-    </OrgProvider>
-  );
+  return <LayoutWithOrg pathname={pathname}>{children}</LayoutWithOrg>;
 }

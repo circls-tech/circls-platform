@@ -17,6 +17,7 @@ import type {
   Payment,
   PresignedUpload,
   Slot,
+  SupportIssue,
   TeamMember,
   Tenant,
   TenantInvitation,
@@ -627,5 +628,19 @@ export function useRevokeInvitation(tenantId: string) {
     mutationFn: (invitationId: string) =>
       apiFetch<void>(`/v1/tenants/${tenantId}/invitations/${invitationId}`, { method: 'DELETE' }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-invitations', tenantId] }),
+  });
+}
+
+// ── Support issues ────────────────────────────────────────────────────────────
+
+export function useSubmitSupportIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) =>
+      apiFetch<SupportIssue>('/v1/support/issues', {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['support-issues'] }),
   });
 }
