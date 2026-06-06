@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     if (token === 'good') {
-      return { uid: 'fbuid_test_1', email: 'me@example.com', phone_number: null };
+      return { uid: 'fbuid_test_1', email: 'me@example.com', email_verified: true, phone_number: null };
     }
     throw new Error('invalid token');
   }),

@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     const map: Record<string, Record<string, unknown>> = {
-      owner: { uid: 'fbuid_owner', email: 'owner@x.com' },
-      other: { uid: 'fbuid_other', email: 'other@x.com' },
-      admin: { uid: 'fbuid_admin', email: 'admin@x.com' },
+      owner: { uid: 'fbuid_owner', email: 'owner@x.com', email_verified: true },
+      other: { uid: 'fbuid_other', email: 'other@x.com', email_verified: true },
+      admin: { uid: 'fbuid_admin', email: 'admin@x.com', email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
