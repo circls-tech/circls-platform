@@ -1,62 +1,15 @@
 'use client';
 import { type FormEvent, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useSubmitSupportIssue } from '@/lib/api/queries';
+import { HELP_ARTICLES } from '@/lib/help/articles';
 import { Button, Card } from '@/lib/ui';
 
 // ── Article data ──────────────────────────────────────────────────────────────
+// Article metadata lives in lib/help/articles.ts (single source of truth) and the
+// full body of each article lives in content/help/<slug>.md.
 
-const ARTICLES = [
-  {
-    id: 'onboarding',
-    title: 'Getting started: create your organisation and first venue',
-    category: 'Setup',
-    summary: 'A step-by-step walkthrough of the onboarding wizard — creating an organisation, adding a venue, setting up arenas, and releasing your first slots.',
-  },
-  {
-    id: 'venues',
-    title: 'Managing venues and arenas',
-    category: 'Venues',
-    summary: 'How to add, edit and update your venues and arenas, upload photos, and manage their listing status.',
-  },
-  {
-    id: 'schedule',
-    title: 'Setting up schedules and slot pricing',
-    category: 'Scheduling',
-    summary: 'Use the visual schedule builder to define opening hours, block-out days, slot durations, and per-slot pricing.',
-  },
-  {
-    id: 'bookings',
-    title: 'Understanding bookings and cancellations',
-    category: 'Bookings',
-    summary: 'How to view confirmed bookings, handle cancellations, issue refunds, and manage no-shows.',
-  },
-  {
-    id: 'events',
-    title: 'Creating and publishing events',
-    category: 'Events',
-    summary: 'How to create events tied to your venues, set capacity and pricing, and get them approved for the consumer portal.',
-  },
-  {
-    id: 'memberships',
-    title: 'Setting up membership plans',
-    category: 'Memberships',
-    summary: 'How to create membership plans, define benefits and pricing, and manage active member subscriptions.',
-  },
-  {
-    id: 'team',
-    title: 'Inviting and managing team members',
-    category: 'Settings',
-    summary: 'How to invite colleagues to your organisation, assign roles (owner, manager, staff, read-only), and revoke access.',
-  },
-  {
-    id: 'api-keys',
-    title: 'API keys and webhooks',
-    category: 'Developer',
-    summary: 'How to generate API keys, configure outbound webhooks, and integrate circls with your own systems.',
-  },
-];
-
-const QUICK_LINKS = ['onboarding', 'schedule', 'bookings'];
+const ARTICLES = [...HELP_ARTICLES].sort((a, b) => a.order - b.order);
 
 // ── Raise an Issue Form ───────────────────────────────────────────────────────
 
@@ -145,7 +98,7 @@ export default function HelpPage() {
     );
   }, [search]);
 
-  const quickArticles = ARTICLES.filter((a) => QUICK_LINKS.includes(a.id));
+  const quickArticles = ARTICLES.filter((a) => a.quickLink);
 
   return (
     <div className="flex flex-col gap-6">
@@ -185,13 +138,17 @@ export default function HelpPage() {
             </h2>
             <div className="grid gap-3 sm:grid-cols-3">
               {quickArticles.map((a) => (
-                <Card key={a.id} className="flex flex-col gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-600">
-                    {a.category}
-                  </span>
-                  <p className="text-sm font-medium text-slate-900">{a.title}</p>
-                  <p className="text-xs text-slate-500 line-clamp-2">{a.summary}</p>
-                </Card>
+                <Link key={a.slug} href={`/help/${a.slug}`} className="group">
+                  <Card className="flex h-full flex-col gap-2 transition-colors group-hover:border-brand-300">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-600">
+                      {a.category}
+                    </span>
+                    <p className="text-sm font-medium text-slate-900 group-hover:text-brand-700">
+                      {a.title}
+                    </p>
+                    <p className="text-xs text-slate-500 line-clamp-2">{a.summary}</p>
+                  </Card>
+                </Link>
               ))}
             </div>
           </section>
@@ -232,18 +189,21 @@ export default function HelpPage() {
             ) : (
               <div className="flex flex-col gap-2">
                 {filtered.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex flex-col gap-1 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-3"
+                  <Link
+                    key={a.slug}
+                    href={`/help/${a.slug}`}
+                    className="group flex flex-col gap-1 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-3 transition-colors hover:border-brand-300 hover:bg-slate-50"
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-600">
                         {a.category}
                       </span>
                     </div>
-                    <p className="text-sm font-medium text-slate-900">{a.title}</p>
+                    <p className="text-sm font-medium text-slate-900 group-hover:text-brand-700">
+                      {a.title}
+                    </p>
                     <p className="text-xs text-slate-500">{a.summary}</p>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
