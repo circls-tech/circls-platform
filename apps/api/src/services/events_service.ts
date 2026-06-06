@@ -161,11 +161,16 @@ export interface UpdateEventPatch {
   /**
    * Re-scope the event. A venue id makes it venue-scoped (location is read from
    * the venue, so the denormalized standalone fields are cleared). `null` makes
-   * it standalone — the event must already carry an address (org-scoped events
-   * do). Omit to leave the scope unchanged. The caller (route) is responsible
-   * for verifying the venue belongs to the tenant.
+   * it standalone, using `addressJson`/`tzName` below (falling back to whatever
+   * the event already carries). Omit to leave the scope unchanged. The caller
+   * (route) is responsible for verifying the venue belongs to the tenant.
    */
   venueId?: string | null;
+  /** Standalone address — applied when the event is (or becomes) standalone. */
+  addressJson?: Record<string, unknown>;
+  tzName?: string;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 /**
@@ -203,24 +208,37 @@ export async function updateEvent(
     if (patch.pricePaise !== undefined) set.pricePaise = patch.pricePaise;
     if (patch.capacity !== undefined) set.capacity = patch.capacity;
 
-    // Re-scope: venue-scoped events read location from the venue (clear the
-    // denormalized standalone fields); standalone events must keep an address.
-    if (patch.venueId !== undefined) {
-      if (patch.venueId) {
-        set.venueId = patch.venueId;
-        set.addressJson = null;
-        set.lat = null;
-        set.lng = null;
-        set.tzName = null;
-      } else {
-        if (!existing.addressJson) {
-          throw new BadRequest(
-            'Cannot make this event standalone without an address',
-            'event_address_required',
-          );
-        }
-        set.venueId = null;
+    // Resolve the post-update scope: a venue id in the patch wins, otherwise the
+    // event keeps whatever scope it already has.
+    const targetVenueId =
+      patch.venueId !== undefined ? patch.venueId : existing.venueId;
+
+    if (patch.venueId !== undefined && patch.venueId) {
+      // Venue-scoped: location is read from the venue — clear standalone fields.
+      set.venueId = patch.venueId;
+      set.addressJson = null;
+      set.lat = null;
+      set.lng = null;
+      set.tzName = null;
+    } else if (!targetVenueId) {
+      // Standalone (becoming or staying). Address/tz come from the patch when
+      // provided, else from what the event already carries.
+      const addressJson = patch.addressJson ?? existing.addressJson;
+      const tzName = patch.tzName ?? existing.tzName;
+      if (!addressJson || Object.keys(addressJson).length === 0) {
+        throw new BadRequest(
+          'Standalone events require a non-empty address',
+          'event_address_required',
+        );
       }
+      if (!tzName) {
+        throw new BadRequest('Standalone events require a timezone', 'event_tz_required');
+      }
+      if (patch.venueId !== undefined) set.venueId = null;
+      if (patch.addressJson !== undefined) set.addressJson = patch.addressJson;
+      if (patch.tzName !== undefined) set.tzName = patch.tzName;
+      if (patch.lat !== undefined) set.lat = patch.lat;
+      if (patch.lng !== undefined) set.lng = patch.lng;
     }
 
     if (Object.keys(set).length > 0) {
