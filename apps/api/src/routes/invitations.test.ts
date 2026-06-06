@@ -62,6 +62,9 @@ describe.skipIf(!runIntegration)('invitations + C1 unverified-email guards', () 
     if (tenantId) {
       await db.execute(sql`DELETE FROM tenant_invitations WHERE tenant_id = ${tenantId}::uuid`);
       await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${tenantId}::uuid`);
+      // The accept flow writes a membership notification that FK-references the tenant;
+      // delete it before the tenant or the cleanup trips notifications_tenant_id_tenants_id_fk.
+      await db.execute(sql`DELETE FROM notifications WHERE tenant_id = ${tenantId}::uuid`);
       await db.execute(sql`DELETE FROM tenants WHERE id = ${tenantId}::uuid`);
     }
     await db.execute(sql`DELETE FROM users WHERE firebase_uid IN
