@@ -18,7 +18,16 @@ export default function ForgotPasswordPage() {
       await sendPasswordReset(email);
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send reset email');
+      const code = (err as { code?: string } | undefined)?.code ?? '';
+      if (code === 'auth/invalid-email') {
+        setError('That email address looks invalid.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many requests. Please wait a moment and try again.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection and try again.');
+      } else {
+        setError('Uh-oh, we encountered an issue. We will resolve this very quickly.');
+      }
     } finally {
       setBusy(false);
     }

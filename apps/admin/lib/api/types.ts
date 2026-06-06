@@ -137,3 +137,18 @@ export interface AdminListingRow {
 export interface AdminListingListResponse {
   rows: AdminListingRow[];
 }
+
+// ── Support issues ────────────────────────────────────────────────────────────
+
+export type SupportIssueStatus = 'unresolved' | 'in_progress' | 'backlog' | 'resolved';
+export type SupportIssuePriority = 'low' | 'medium' | 'high';
+
+export interface AdminSupportIssue {
+  id: string;
+  userId: string;
+  message: string;
+  status: SupportIssueStatus;
+  priority: SupportIssuePriority;
+  createdAt: string;
+  updatedAt: string;
+}

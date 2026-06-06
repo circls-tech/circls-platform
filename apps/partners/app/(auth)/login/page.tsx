@@ -5,6 +5,26 @@ import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { BrandMark } from '@/lib/ui';
 
+function loginErrorMessage(err: unknown): string {
+  const code = (err as { code?: string } | undefined)?.code ?? '';
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'Incorrect email or password. Please try again.';
+    case 'auth/invalid-email':
+      return 'That email address looks invalid.';
+    case 'auth/user-disabled':
+      return 'This account has been disabled. Please contact support.';
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Please wait a moment and try again.';
+    case 'auth/network-request-failed':
+      return 'Network error. Check your connection and try again.';
+    default:
+      return 'Uh-oh, we encountered an issue. We will resolve this very quickly.';
+  }
+}
+
 export default function LoginPage() {
   const { signInWithEmail } = useAuth();
   const router = useRouter();
@@ -21,7 +41,7 @@ export default function LoginPage() {
       await signInWithEmail(email, password);
       router.replace('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed');
+      setError(loginErrorMessage(err));
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useRef } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
@@ -76,9 +77,11 @@ interface SegmentProps {
   items: SegmentItem[];
   currentId: string | null;
   onSelect: (id: string) => void;
+  addNewHref?: string;
+  addNewLabel?: string;
 }
 
-function Segment({ label, loading, items, currentId, onSelect }: SegmentProps) {
+function Segment({ label, loading, items, currentId, onSelect, addNewHref, addNewLabel }: SegmentProps) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
   function handleSelect(id: string) {
@@ -127,6 +130,18 @@ function Segment({ label, loading, items, currentId, onSelect }: SegmentProps) {
             </li>
           ))}
         </ul>
+        {addNewHref && (
+          <div className="border-t border-[#e5e7eb] py-1">
+            <Link
+              href={addNewHref}
+              onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-brand-600 hover:bg-slate-50"
+            >
+              <span className="text-base leading-none">＋</span>
+              {addNewLabel ?? 'Add new'}
+            </Link>
+          </div>
+        )}
       </div>
     </details>
   );
@@ -231,6 +246,8 @@ export function ContextBar() {
         items={tenants.map((t) => ({ id: t.id, name: t.name }))}
         currentId={activeTenantId}
         onSelect={handleOrgSelect}
+        addNewHref="/onboarding"
+        addNewLabel="Add new organisation"
       />
 
       {/* Venue segment (shown on venue + arena routes) */}

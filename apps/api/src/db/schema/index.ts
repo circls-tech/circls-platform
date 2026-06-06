@@ -21,3 +21,4 @@ export * from './event_images.js';
 export * from './memberships.js';
 export * from './api_keys.js';
 export * from './webhooks.js';
+export * from './support_issues.js';

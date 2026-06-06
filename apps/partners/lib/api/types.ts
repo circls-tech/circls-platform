@@ -420,3 +420,18 @@ export interface CreateInvitationResponse {
   invitation: TenantInvitation;
   token: string; // shown once for copy-link
 }
+
+// ── Support issues ────────────────────────────────────────────────────────────
+
+export type SupportIssueStatus = 'unresolved' | 'in_progress' | 'backlog' | 'resolved';
+export type SupportIssuePriority = 'low' | 'medium' | 'high';
+
+export interface SupportIssue {
+  id: string;
+  userId: string;
+  message: string;
+  status: SupportIssueStatus;
+  priority: SupportIssuePriority;
+  createdAt: string;
+  updatedAt: string;
+}
