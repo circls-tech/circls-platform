@@ -20,6 +20,7 @@ import { memberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
+import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { prepareOnlineBookingWithPayment, bookEvent } from './booking_service.js';
@@ -679,4 +680,43 @@ export async function updateMyProfile(
   const row = updated[0];
   if (!row) throw new NotFound('User not found', 'user_not_found');
   return toMyProfile(row);
+}
+
+// -- Behavioral telemetry (M6) ------------------------------------------------
+
+/** One client-logged behavioral event. event_type/item_type are open strings. */
+export interface ActivityEventInput {
+  eventType: string;
+  itemType?: string | undefined;
+  itemId?: string | undefined;
+  props?: Record<string, unknown> | undefined;
+  clientTs: string;
+  sessionId?: string | undefined;
+}
+
+const ACTIVITY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Append-only ingest of consumer behavioral telemetry. Best-effort: a non-uuid
+ * `itemId` is stored as null rather than failing the row (the column is uuid).
+ * `user_id` is the caller's id (stamped by the route), never client-supplied.
+ * Returns the number of rows inserted.
+ */
+export async function logConsumerActivity(
+  userId: string,
+  events: ActivityEventInput[],
+): Promise<number> {
+  if (events.length === 0) return 0;
+  const rows = events.map((e) => ({
+    userId,
+    sessionId: e.sessionId ?? null,
+    eventType: e.eventType,
+    itemType: e.itemType ?? null,
+    itemId: e.itemId && ACTIVITY_UUID_RE.test(e.itemId) ? e.itemId : null,
+    props: e.props ?? null,
+    clientTs: new Date(e.clientTs),
+  }));
+  await db.insert(consumerActivity).values(rows);
+  return rows.length;
 }
