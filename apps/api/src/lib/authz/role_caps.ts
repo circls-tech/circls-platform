@@ -12,6 +12,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'pricing.read', 'pricing.write',
     'bookings.read', 'bookings.create', 'bookings.cancel',
     'analytics.read', 'financials.read',
+    'payments.refund',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
     'integration.api_keys.manage',
@@ -25,6 +26,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'pricing.read', 'pricing.write',
     'bookings.read', 'bookings.create', 'bookings.cancel',
     'analytics.read', 'financials.read',
+    'payments.refund',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
     'integration.api_keys.manage',
@@ -60,6 +62,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   manager: [
     'tenant.read', 'tenant.update',
     'members.read',
+    'payments.refund',
     'integration.api_keys.manage',
     'admin.tenants.read', 'admin.tenants.suspend',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',

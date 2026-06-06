@@ -152,6 +152,27 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.decorateRequest('apiKey', null);
   app.decorateRequest('apiTenantId', null);
 
+  // Raw-body-capturing JSON parser, registered ONCE at server scope (L5).
+  // Content-type parsers are app-global in Fastify, so registering this inside
+  // a route plugin silently replaced JSON parsing for the whole server and was
+  // order-dependent (Razorpay webhook HMAC verification reads req.rawBody and
+  // broke if registration order changed). Doing it here is intentional and
+  // order-stable: every JSON route still gets a parsed body, and we stash the
+  // exact bytes on req.rawBody for signature checks.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (req, body, done) => {
+      (req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
+      try {
+        const parsed = body ? (JSON.parse(body as string) as unknown) : {};
+        done(null, parsed);
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
     if (err instanceof AppError) {
       req.log.warn({ err }, 'app_error');

@@ -63,7 +63,15 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const { from, to, arenaId } = parsed.data;
-      const arenaList = arenaId ? [{ id: arenaId } as { id: string }] : await listArenas(venueId);
+      // listArenas(venueId) is the authoritative, venue-scoped loader. When an
+      // arenaId is supplied we must confirm it belongs to this (already
+      // tenant-checked) venue — listSlots() has no tenant filter, so passing an
+      // unverified arenaId would leak any other tenant's slots (H5).
+      const arenas = await listArenas(venueId);
+      const arenaList = arenaId ? arenas.filter((a) => a.id === arenaId) : arenas;
+      if (arenaId && arenaList.length === 0) {
+        throw new NotFound('Arena not found for venue', 'arena_not_found');
+      }
 
       // Same listSlots path as the internal route — no duplicated SQL.
       const arenaSlots = await Promise.all(

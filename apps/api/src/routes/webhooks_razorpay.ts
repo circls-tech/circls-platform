@@ -15,22 +15,10 @@ type RawBodyRequest = FastifyRequest & { rawBody?: string };
  * differences would break the signature).
  */
 export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
-  // parseAs:'string' hands us the raw body; we keep it on the request for the
-  // signature check, and still parse JSON so the handler gets a typed object.
-  app.addContentTypeParser(
-    'application/json',
-    { parseAs: 'string' },
-    (req, body, done) => {
-      (req as RawBodyRequest).rawBody = body as string;
-      try {
-        const parsed = body ? (JSON.parse(body as string) as unknown) : {};
-        done(null, parsed);
-      } catch (err) {
-        done(err as Error, undefined);
-      }
-    },
-  );
-
+  // The raw-body-capturing JSON parser is registered once at server scope (see
+  // server.ts, L5): it stashes the exact request bytes on req.rawBody so we can
+  // verify the HMAC against what Razorpay actually signed — never a
+  // re-stringified copy (key order / escaping / whitespace would break it).
   app.post('/webhooks/razorpay', async (req, reply) => {
     if (env.NODE_ENV === 'production' && getRazorpay().mode === 'stub') {
       logger.error('razorpay_webhook_stub_in_prod');

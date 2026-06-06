@@ -9,6 +9,7 @@ import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { issueRefund } from '../services/refund_service.js';
 
 const refundBodySchema = z.object({
@@ -27,7 +28,8 @@ const refundBodySchema = z.object({
  * Authorisation (capability-based):
  *   1. Platform admin with `admin.payouts.execute` (owner/manager of the Circls
  *      platform tenant), OR
- *   2. An 'owner' of the tenant the payment belongs to (self-service refund).
+ *   2. A member of the tenant the payment belongs to with `payments.refund`
+ *      (owner/manager) — self-service refund.
  *
  * `bySelf=false` audit semantics apply implicitly: this is always a staff
  * override.
@@ -63,16 +65,26 @@ export const adminRefundRoutes: FastifyPluginAsync = async (app) => {
       try {
         const platformCtx = await requireTenantMembership(user.id, platformTenantId);
         allowed = can(platformCtx, 'admin.payouts.execute');
-      } catch {
-        // Not a member of the platform tenant — fall through to the owner check.
+      } catch (err) {
+        // Only "not a member of the platform tenant" is an expected miss here —
+        // fall through to the tenant self-service check. Anything else (DB
+        // faults, etc.) must propagate rather than be masked as "not allowed".
+        if (!(err instanceof Forbidden && err.code === 'tenant_forbidden')) throw err;
       }
-      // 2. Otherwise, an owner of the payment's own tenant.
+      // 2. Otherwise, a member of the payment's own tenant with payments.refund
+      //    (owner/manager) — partner self-service refund.
       if (!allowed) {
         try {
           const tenantCtx = await requireTenantMembership(user.id, payment.tenantId);
-          allowed = tenantCtx.role === 'owner';
-        } catch {
-          // Not a member of the payment's tenant either.
+          assertCap(tenantCtx, 'payments.refund');
+          allowed = true;
+        } catch (err) {
+          // Swallow ONLY the "not a member" miss and the capability denial;
+          // genuine errors (DB faults) propagate.
+          const benign =
+            err instanceof Forbidden &&
+            (err.code === 'tenant_forbidden' || err.code === 'forbidden_capability');
+          if (!benign) throw err;
         }
       }
       if (!allowed) {

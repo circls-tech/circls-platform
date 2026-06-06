@@ -26,7 +26,9 @@ const withKey = (t: string, key: string) => ({ ...bearer(t), 'idempotency-key': 
 describe.skipIf(!runIntegration)('public bookings — API-key role enforcement (H2)', () => {
   let app: FastifyInstance;
   let tenantId: string;
+  let venueId: string;
   let arenaId: string;
+  let otherArenaId: string;
   let openSlotIds: string[];
   let readKey: string;
   let writeKey: string;
@@ -49,7 +51,7 @@ describe.skipIf(!runIntegration)('public bookings — API-key role enforcement (
       headers: bearer('owner'),
       payload: { name: 'Public Venue' },
     });
-    const venueId = v.json().id;
+    venueId = v.json().id;
 
     const a = await app.inject({
       method: 'POST',
@@ -58,6 +60,23 @@ describe.skipIf(!runIntegration)('public bookings — API-key role enforcement (
       payload: { name: 'Public Arena', slotDurationMin: 60 },
     });
     arenaId = a.json().id;
+
+    // A SECOND venue (same tenant is fine — the point is that the arena does
+    // NOT belong to `venueId`, so availability for venueId must reject it).
+    const v2 = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Other Venue' },
+    });
+    const otherVenueId = v2.json().id;
+    const a2 = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${otherVenueId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Other Arena', slotDurationMin: 60 },
+    });
+    otherArenaId = a2.json().id;
 
     const releaseRes = await app.inject({
       method: 'POST',
@@ -121,5 +140,28 @@ describe.skipIf(!runIntegration)('public bookings — API-key role enforcement (
     // Past the role gate: the booking is created and stamped aggregator.
     expect(res.statusCode).toBe(201);
     expect(res.json().channel).toBe('aggregator');
+  });
+
+  // H5 — cross-tenant/cross-venue slot enumeration via arenaId.
+  it('rejects an arenaId that does not belong to the venue (404 arena_not_found)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/venues/${venueId}/availability?from=2027-06-01T00:00:00Z&to=2027-06-02T00:00:00Z&arenaId=${otherArenaId}`,
+      headers: { authorization: `Bearer ${readKey}` },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('arena_not_found');
+  });
+
+  it('allows an arenaId that DOES belong to the venue', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/venues/${venueId}/availability?from=2027-06-01T00:00:00Z&to=2027-06-02T00:00:00Z&arenaId=${arenaId}`,
+      headers: { authorization: `Bearer ${readKey}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { arenas: Array<{ arenaId: string }> };
+    expect(body.arenas).toHaveLength(1);
+    expect(body.arenas[0]?.arenaId).toBe(arenaId);
   });
 });

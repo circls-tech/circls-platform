@@ -27,6 +27,7 @@ export type Capability =
   | 'bookings.cancel'
   | 'analytics.read'
   | 'financials.read'
+  | 'payments.refund'
   | 'events.read'
   | 'events.write'
   | 'memberships.read'
@@ -51,6 +52,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'pricing.read', 'pricing.write',
   'bookings.read', 'bookings.create', 'bookings.cancel',
   'analytics.read', 'financials.read',
+  'payments.refund',
   'events.read', 'events.write',
   'memberships.read', 'memberships.write',
   'integration.api_keys.manage',
