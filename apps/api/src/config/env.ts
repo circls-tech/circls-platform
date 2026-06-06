@@ -52,7 +52,8 @@ export const envSchema = z
     .string()
     .optional()
     .transform((v) =>
-      (v ?? 'https://admin.circls.app,https://partners.circls.app,https://circls.app')
+      (v ??
+        'https://admin.circls.app,https://partners.circls.app,https://circls.app,https://www.circls.app')
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0),
