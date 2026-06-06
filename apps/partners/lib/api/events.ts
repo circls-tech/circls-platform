@@ -124,6 +124,27 @@ export function usePublishEvent(tenantId: string, venueId: string) {
       }),
     onSuccess: (ev) => {
       void qc.invalidateQueries({ queryKey: ['venue-events', venueId] });
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/**
+ * Submit an event for review from the org-scoped Events tab (works for both
+ * venue-scoped and standalone events — same backend endpoint as the venue
+ * path). Invalidates the tenant-events list the tab renders from.
+ */
+export function usePublishTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
       void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
     },
   });
