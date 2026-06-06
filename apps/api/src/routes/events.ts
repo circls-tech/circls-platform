@@ -59,6 +59,9 @@ const updateEventSchema = z.object({
   endsAt: z.string().datetime().optional(),
   pricePaise: z.number().int().min(0).optional(),
   capacity: z.number().int().min(1).nullable().optional(),
+  // Re-scope the event: a venue id makes it venue-scoped; null makes it
+  // standalone (the existing/standalone address is retained). Absent = no change.
+  venueId: z.string().uuid().nullable().optional(),
 });
 
 export const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -165,6 +168,15 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
     if (parsed.data.pricePaise !== undefined) patch.pricePaise = parsed.data.pricePaise;
     if (parsed.data.capacity !== undefined) patch.capacity = parsed.data.capacity;
+    if (parsed.data.venueId !== undefined) {
+      // Re-scoping to a venue: the venue must belong to this tenant.
+      if (parsed.data.venueId) {
+        const venue = await getVenueById(parsed.data.venueId);
+        if (!venue || venue.tenantId !== tenantId)
+          throw new NotFound('Venue not found', 'venue_not_found');
+      }
+      patch.venueId = parsed.data.venueId;
+    }
     return updateEvent({ tenantId, actorUserId: user.id }, id, patch);
   });
 

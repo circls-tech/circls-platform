@@ -97,6 +97,8 @@ export interface UpdateEventInput {
   endsAt?: string;
   pricePaise?: number;
   capacity?: number;
+  /** Re-scope the event: a venue id → venue-scoped; null → standalone. */
+  venueId?: string | null;
 }
 
 /** PATCH an event (draft only — API returns 409 event_not_draft otherwise). */
@@ -160,6 +162,44 @@ export function useCancelEvent(tenantId: string, venueId: string) {
       }),
     onSuccess: (ev) => {
       void qc.invalidateQueries({ queryKey: ['venue-events', venueId] });
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/**
+ * Tenant-scoped variants for the org-scoped Events tab / detail page. The event
+ * may be venue-scoped or standalone, so these invalidate the tenant-events list
+ * (and the venue list when the event has a venue). The update hook supports
+ * re-scoping via `input.venueId` (a venue id, or null for standalone).
+ */
+export function useUpdateTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, input }: { eventId: string; input: UpdateEventInput }) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+export function useCancelTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
       void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
     },
   });

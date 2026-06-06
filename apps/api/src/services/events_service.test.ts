@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { tenants, users, venues } from '../db/schema/index.js';
-import { createEvent, listEventsForTenant } from './events_service.js';
+import { createEvent, listEventsForTenant, updateEvent } from './events_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -89,5 +89,35 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
     expect(rows.length).toBeGreaterThanOrEqual(2);
     expect(rows.some((r) => r.venueId === venueId)).toBe(true);
     expect(rows.some((r) => r.venueId === null)).toBe(true);
+  });
+
+  it('re-scopes a standalone event onto a venue and clears its address', async () => {
+    const standalone = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { line1: '5 Move Rd', city: 'Pune' },
+      tzName: 'Asia/Kolkata',
+      name: 'Movable Event',
+      startsAt: new Date('2030-05-01T10:00:00Z'),
+      endsAt: new Date('2030-05-01T12:00:00Z'),
+      pricePaise: 0,
+    });
+    expect(standalone.venueId).toBeNull();
+
+    const moved = await updateEvent(ctx(), standalone.id, { venueId });
+    expect(moved.venueId).toBe(venueId);
+    expect(moved.addressJson).toBeNull();
+    expect(moved.tzName).toBeNull();
+  });
+
+  it('rejects making a venue-scoped event standalone with no address', async () => {
+    const venueScoped = await createEvent(ctx(), {
+      tenantId,
+      venueId,
+      name: 'Stuck At Venue',
+      startsAt: new Date('2030-06-01T10:00:00Z'),
+      endsAt: new Date('2030-06-01T12:00:00Z'),
+      pricePaise: 0,
+    });
+    await expect(updateEvent(ctx(), venueScoped.id, { venueId: null })).rejects.toThrow();
   });
 });
