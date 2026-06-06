@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { env } from '../config/env.js';
 import { slots } from '../db/schema/index.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -143,7 +144,11 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // POST /v1/slots/hold
-  app.post('/v1/slots/hold', { preHandler: requireAuth }, async (req) => {
+  // Holds reserve inventory → stricter public ceiling (M6 rate limiting).
+  app.post('/v1/slots/hold', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: env.RATE_LIMIT_PUBLIC_MAX, timeWindow: '1 minute' } },
+  }, async (req) => {
     const parsed = slotIdsSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new BadRequest('Invalid hold payload', 'bad_request', { issues: parsed.error.issues });

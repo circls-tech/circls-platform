@@ -65,6 +65,13 @@ export const envSchema = z
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
 
+  // Rate limiting (M6). Global per-client per-minute ceiling, plus a stricter
+  // ceiling for abuse-prone public/anonymous endpoints (hold/book/browse).
+  // In-memory store → per-instance limits (fine for single-instance Coolify).
+  // Disabled entirely when NODE_ENV==='test' (see server.ts allowList).
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60),
+
   // Worker process toggle (the partner-portal API container runs both web + in-proc
   // worker; if we ever split to a second Coolify service this flips false there).
   RUN_WORKER: z

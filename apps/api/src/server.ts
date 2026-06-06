@@ -6,6 +6,7 @@ import Fastify, {
 } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -96,6 +97,28 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
   });
   await app.register(sensible);
+
+  // ── Rate limiting (M6) ─────────────────────────────────────────────────────
+  // Global per-minute ceiling keyed by API key / Firebase token, falling back
+  // to client IP (trustProxy is on, so req.ip is the real client). Abuse-prone
+  // public/hold/booking routes set a stricter per-route `config.rateLimit` (see
+  // slots.ts / consumer.ts / public_bookings.ts); those still inherit this
+  // global allowList. In-memory store ⇒ per-instance limits (acceptable on a
+  // single-instance Coolify deploy; move to the redis store if we scale out).
+  //
+  // Disabled under test via allowList (returns truthy ⇒ request excluded). The
+  // test suite hammers app.inject(); a high `max` would still flake, so we skip
+  // limiting entirely rather than raise the ceiling.
+  await app.register(rateLimit, {
+    global: true,
+    max: env.RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const auth = req.headers.authorization;
+      return (typeof auth === 'string' && auth) || req.ip;
+    },
+    allowList: () => env.NODE_ENV === 'test',
+  });
 
   // ── OpenAPI (Phase 17) ───────────────────────────────────────────────────
   // Two auth schemes: Firebase ID token (internal portal/admin) and Bearer

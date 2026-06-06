@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
+import { env } from '../config/env.js';
 import { bookings, slots } from '../db/schema/index.js';
 import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { requireApiKey } from '../middleware/require_api_key.js';
@@ -96,7 +97,11 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
   // ──────────────────────────────────────────────────────────────────────────
   app.post(
     '/api/v1/bookings',
-    { preHandler: requireApiKey },
+    {
+      preHandler: requireApiKey,
+      // Creates real bookings + claims inventory → stricter public ceiling (M6).
+      config: { rateLimit: { max: env.RATE_LIMIT_PUBLIC_MAX, timeWindow: '1 minute' } },
+    },
     async (req, reply) => {
       // Enforce the API key's role: only write/admin keys may create bookings.
       const role = req.apiKey?.role;
