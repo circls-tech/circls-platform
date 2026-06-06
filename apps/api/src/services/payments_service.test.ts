@@ -177,7 +177,15 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
         event: 'payment.captured',
         eventId: 'evt_capture_1',
         payload: {
-          payment: { entity: { order_id: orderId, id: 'pay_stub_1', status: 'captured' } },
+          payment: {
+            entity: {
+              order_id: orderId,
+              id: 'pay_stub_1',
+              status: 'captured',
+              amount: 50000,
+              currency: 'INR',
+            },
+          },
         },
       });
 
@@ -205,7 +213,15 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
         event: 'payment.captured',
         eventId,
         payload: {
-          payment: { entity: { order_id: orderId, id: 'pay_stub_2', status: 'captured' } },
+          payment: {
+            entity: {
+              order_id: orderId,
+              id: 'pay_stub_2',
+              status: 'captured',
+              amount: 50000,
+              currency: 'INR',
+            },
+          },
         },
       };
 
@@ -224,6 +240,91 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
 
       const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
       expect(book?.status).toBe('confirmed');
+    });
+
+    // M1: a captured amount that disagrees with the stored order amount must NOT
+    // confirm the booking nor flip the row to captured. The row stays pending so
+    // ops can investigate (the handler logs `payment_amount_mismatch`).
+    it('does NOT capture/confirm when the webhook amount != order amount', async () => {
+      const dateIso = '2031-09-19T05:00:00.000Z';
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(dateIso);
+
+      await handleRazorpayWebhook({
+        event: 'payment.captured',
+        eventId: 'evt_capture_mismatch',
+        payload: {
+          payment: {
+            // 49999 != stored 50000.
+            entity: { order_id: orderId, id: 'pay_stub_bad', status: 'captured', amount: 49999, currency: 'INR' },
+          },
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending'); // unchanged
+      expect(pay?.providerPaymentId).toBeNull(); // not patched
+
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending'); // NOT confirmed
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${paymentId} and action = 'payment.captured'`);
+      expect(auditRows.length).toBe(0);
+    });
+
+    // M1: currency mismatch is also rejected.
+    it('does NOT capture when the webhook currency != order currency', async () => {
+      const dateIso = '2031-09-26T05:00:00.000Z';
+      const { paymentId } = await seedPendingBookingWithOrder(dateIso);
+
+      await handleRazorpayWebhook({
+        event: 'payment.captured',
+        eventId: 'evt_capture_cur_mismatch',
+        payload: {
+          payment: {
+            entity: { order_id: (await db.select().from(payments).where(sql`id = ${paymentId}`))[0]!.providerOrderId!, id: 'pay_stub_cur', status: 'captured', amount: 50000, currency: 'USD' },
+          },
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+    });
+
+    // M4: a second delivery of the same capture is a no-op — the status-guarded
+    // UPDATE matches no `pending` row the second time, so exactly one audit row
+    // (one confirmation side effect) results.
+    it('M4: duplicate capture deliveries confirm exactly once', async () => {
+      const dateIso = '2031-09-30T05:00:00.000Z';
+      const { paymentId } = await seedPendingBookingWithOrder(dateIso);
+
+      const orderId = (await db.select().from(payments).where(sql`id = ${paymentId}`))[0]!
+        .providerOrderId!;
+      const mk = (eventId: string) => ({
+        event: 'payment.captured',
+        eventId,
+        payload: {
+          payment: {
+            entity: { order_id: orderId, id: 'pay_stub_m4', status: 'captured', amount: 50000, currency: 'INR' },
+          },
+        },
+      });
+
+      // Distinct eventIds so we bypass the cheap status pre-check and exercise
+      // the status-guarded UPDATE on the second call.
+      await handleRazorpayWebhook(mk('evt_m4_a'));
+      await handleRazorpayWebhook(mk('evt_m4_b'));
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${paymentId} and action = 'payment.captured'`);
+      expect(auditRows.length).toBe(1);
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
     });
   });
 
@@ -246,30 +347,102 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     });
   });
 
-  describe('handleRazorpayWebhook — refund.processed (stub)', () => {
-    it('does not throw and writes no payment-row change for now', async () => {
-      const dateIso = '2031-11-02T05:00:00.000Z';
-      const { paymentId } = await seedPendingBookingWithOrder(dateIso);
+  describe('handleRazorpayWebhook — refund.processed', () => {
+    /**
+     * Seed a refund ledger row directly, mirroring what runRefund() persists: a
+     * negative-amount `refund` row whose provider refund id lives on
+     * provider_payment_id, status 'pending' (awaiting the processed webhook).
+     */
+    async function seedPendingRefund(refundProviderId: string): Promise<{
+      bookingId: string;
+      refundRowId: string;
+    }> {
+      const dd = String(Math.floor(1 + Math.random() * 28)).padStart(2, '0');
+      const dateIso = `2031-11-${dd}T05:00:00.000Z`;
+      const { bookingId } = await seedPendingBookingWithOrder(dateIso);
+      const [r] = await db
+        .insert(payments)
+        .values({
+          bookingId,
+          tenantId,
+          provider: 'razorpay',
+          providerPaymentId: refundProviderId,
+          amountPaise: -50000,
+          currency: 'INR',
+          status: 'pending',
+          kind: 'refund',
+          metadata: {},
+        })
+        .returning();
+      return { bookingId, refundRowId: r!.id };
+    }
 
-      // Before: pending. After the refund webhook: still pending — Phase 14
-      // owns the refund-row update. We only assert this branch is a safe no-op.
-      const beforeStatus = (
-        await db.select().from(payments).where(sql`id = ${paymentId}`)
-      )[0]?.status;
-      expect(beforeStatus).toBe('pending');
+    // M2: a refund.processed webhook flips the pending refund row to captured.
+    it('transitions a pending refund row to captured', async () => {
+      const { refundRowId } = await seedPendingRefund('rfnd_proc_1');
 
       await handleRazorpayWebhook({
         event: 'refund.processed',
-        eventId: 'evt_refund_1',
-        payload: {
-          refund: { entity: { id: 'rfnd_x', payment_id: 'pay_x', amount: 50000, status: 'processed' } },
-        },
+        eventId: 'evt_refund_proc_1',
+        payload: { refund: { entity: { id: 'rfnd_proc_1', status: 'processed', amount: 50000 } } },
       });
 
-      const afterStatus = (
-        await db.select().from(payments).where(sql`id = ${paymentId}`)
-      )[0]?.status;
-      expect(afterStatus).toBe('pending');
+      const [row] = await db.select().from(payments).where(sql`id = ${refundRowId}`);
+      expect(row?.status).toBe('captured');
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${refundRowId} and action = 'payment.refund_processed'`);
+      expect(auditRows.length).toBe(1);
+    });
+
+    // M2: a replay is idempotent — the status-guarded UPDATE matches no
+    // non-terminal row the second time, so no second audit row is written.
+    it('is idempotent on replay (no double-apply)', async () => {
+      const { refundRowId } = await seedPendingRefund('rfnd_proc_replay');
+
+      const event = {
+        event: 'refund.processed',
+        eventId: 'evt_refund_replay',
+        payload: { refund: { entity: { id: 'rfnd_proc_replay', status: 'processed' } } },
+      };
+      await handleRazorpayWebhook(event);
+      await handleRazorpayWebhook(event); // replay
+
+      const [row] = await db.select().from(payments).where(sql`id = ${refundRowId}`);
+      expect(row?.status).toBe('captured');
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${refundRowId} and action = 'payment.refund_processed'`);
+      expect(auditRows.length).toBe(1);
+    });
+
+    // M2: a failure event flips the refund row to failed.
+    it('flips the refund row to failed on a failure event', async () => {
+      const { refundRowId } = await seedPendingRefund('rfnd_fail_1');
+
+      await handleRazorpayWebhook({
+        event: 'refund.processed',
+        eventId: 'evt_refund_fail_1',
+        payload: { refund: { entity: { id: 'rfnd_fail_1', status: 'failed' } } },
+      });
+
+      const [row] = await db.select().from(payments).where(sql`id = ${refundRowId}`);
+      expect(row?.status).toBe('failed');
+    });
+
+    // M2: an unknown refund id is acked without throwing and changes nothing.
+    it('acks an unknown refund id without error', async () => {
+      await expect(
+        handleRazorpayWebhook({
+          event: 'refund.processed',
+          eventId: 'evt_refund_unknown',
+          payload: { refund: { entity: { id: 'rfnd_does_not_exist', status: 'processed' } } },
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 

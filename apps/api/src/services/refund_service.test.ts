@@ -239,6 +239,40 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
     ).rejects.toMatchObject({ code: 'bad_refund_amount' });
   });
 
+  // M3: two concurrent full-amount refunds against the same charge must NOT
+  // both succeed. The FOR UPDATE lock on the charge serializes them, so the
+  // second sees the first's refund and is rejected for exceeding remaining.
+  it('serializes concurrent refunds (no over-refund)', async () => {
+    const bookingId = await seedBookingWithCharge({
+      provider: 'razorpay',
+      amountPaise: 40000,
+      providerPaymentId: 'pay_test_concurrent_1',
+    });
+
+    const results = await Promise.allSettled([
+      issueRefund({ bookingId, amountPaise: 40000, reason: 'race a', actorUserId }),
+      issueRefund({ bookingId, amountPaise: 40000, reason: 'race b', actorUserId }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: 'refund_exceeds_charge',
+    });
+
+    // Exactly one (negative) refund row should exist, and the charge is fully
+    // refunded — never over-refunded.
+    const refundRows = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${bookingId} and kind = 'refund' and status <> 'failed'`);
+    expect(refundRows).toHaveLength(1);
+    const totalRefunded = refundRows.reduce((s, r) => s + Math.abs(Number(r.amountPaise)), 0);
+    expect(totalRefunded).toBe(40000);
+  });
+
   it('writes a payment.refunded audit row', async () => {
     const rows = await db
       .select()

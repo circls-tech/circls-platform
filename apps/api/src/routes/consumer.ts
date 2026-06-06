@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
@@ -44,12 +45,18 @@ export const activityBatchBody = z.object({
  * Every read is approval + tenant-active filtered inside consumer_service.
  */
 export const consumerRoutes: FastifyPluginAsync = async (app) => {
+  // Stricter public ceiling (M6 rate limiting) for anonymous browse +
+  // consumer book/purchase. Inherits the global allowList (test-disabled).
+  const publicLimit = {
+    rateLimit: { max: env.RATE_LIMIT_PUBLIC_MAX, timeWindow: '1 minute' },
+  } as const;
+
   // ── Browse (public) ────────────────────────────────────────────────────────
   const venuesQuery = z.object({
     search: z.string().min(1).max(120).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   });
-  app.get('/v1/consumer/venues', async (req) => {
+  app.get('/v1/consumer/venues', { config: publicLimit }, async (req) => {
     const parsed = venuesQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     const rows = await listPublicVenues({
@@ -64,28 +71,28 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     limit: z.coerce.number().int().min(1).max(100).optional(),
   });
 
-  app.get('/v1/consumer/events', async (req) => {
+  app.get('/v1/consumer/events', { config: publicLimit }, async (req) => {
     const parsed = limitQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     const rows = await listPublicUpcomingEvents({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
     return { rows };
   });
 
-  app.get('/v1/consumer/events/:id', async (req) => {
+  app.get('/v1/consumer/events/:id', { config: publicLimit }, async (req) => {
     const { id } = req.params as { id: string };
     const ev = await getPublicEventById(id);
     if (!ev) throw new NotFound('Event not found', 'event_not_found');
     return ev;
   });
 
-  app.get('/v1/consumer/memberships', async (req) => {
+  app.get('/v1/consumer/memberships', { config: publicLimit }, async (req) => {
     const parsed = limitQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     const rows = await listPublicMembershipsAcrossVenues({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
     return { rows };
   });
 
-  app.get('/v1/consumer/venues/:venueId', async (req) => {
+  app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
     const venue = await getPublicVenueWithImages(venueId);
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
@@ -93,12 +100,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return { venue, arenas };
   });
 
-  app.get('/v1/consumer/venues/:venueId/events', async (req) => {
+  app.get('/v1/consumer/venues/:venueId/events', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
     return { rows: await listPublicEvents(venueId) };
   });
 
-  app.get('/v1/consumer/venues/:venueId/memberships', async (req) => {
+  app.get('/v1/consumer/venues/:venueId/memberships', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
     return { rows: await listPublicMemberships(venueId) };
   });
@@ -107,7 +114,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     from: z.string().datetime(),
     to: z.string().datetime(),
   });
-  app.get('/v1/consumer/arenas/:arenaId/slots', async (req) => {
+  app.get('/v1/consumer/arenas/:arenaId/slots', { config: publicLimit }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
     const parsed = slotsQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
@@ -121,7 +128,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     customerContact: z.string().min(1).max(200),
     note: z.string().max(500).optional(),
   });
-  app.post('/v1/consumer/bookings', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/consumer/bookings', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const user = await currentUser(req);
     const parsed = bookSlotsBody.safeParse(req.body);
     if (!parsed.success) throw new BadRequest('Invalid booking payload', 'bad_request', { issues: parsed.error.issues });
@@ -138,7 +145,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     name: z.string().max(200).optional(),
     contact: z.string().max(200).optional(),
   });
-  app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
     const user = await currentUser(req);
     const parsed = bookEventBody.safeParse(req.body ?? {});
@@ -150,7 +157,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
     const user = await currentUser(req);
     return consumerPurchaseMembership(membershipId, user.id);

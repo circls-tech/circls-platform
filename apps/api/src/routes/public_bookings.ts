@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
+import { env } from '../config/env.js';
 import { bookings, slots } from '../db/schema/index.js';
 import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { requireApiKey } from '../middleware/require_api_key.js';
@@ -63,7 +64,15 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const { from, to, arenaId } = parsed.data;
-      const arenaList = arenaId ? [{ id: arenaId } as { id: string }] : await listArenas(venueId);
+      // listArenas(venueId) is the authoritative, venue-scoped loader. When an
+      // arenaId is supplied we must confirm it belongs to this (already
+      // tenant-checked) venue — listSlots() has no tenant filter, so passing an
+      // unverified arenaId would leak any other tenant's slots (H5).
+      const arenas = await listArenas(venueId);
+      const arenaList = arenaId ? arenas.filter((a) => a.id === arenaId) : arenas;
+      if (arenaId && arenaList.length === 0) {
+        throw new NotFound('Arena not found for venue', 'arena_not_found');
+      }
 
       // Same listSlots path as the internal route — no duplicated SQL.
       const arenaSlots = await Promise.all(
@@ -88,8 +97,18 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
   // ──────────────────────────────────────────────────────────────────────────
   app.post(
     '/api/v1/bookings',
-    { preHandler: requireApiKey },
+    {
+      preHandler: requireApiKey,
+      // Creates real bookings + claims inventory → stricter public ceiling (M6).
+      config: { rateLimit: { max: env.RATE_LIMIT_PUBLIC_MAX, timeWindow: '1 minute' } },
+    },
     async (req, reply) => {
+      // Enforce the API key's role: only write/admin keys may create bookings.
+      const role = req.apiKey?.role;
+      if (role !== 'write' && role !== 'admin') {
+        throw new Forbidden('API key is not authorized to write', 'api_key_write_forbidden');
+      }
+
       const parsed = bookSlotsSchema.safeParse(req.body);
       if (!parsed.success) {
         throw new BadRequest('Invalid booking payload', 'bad_request', {

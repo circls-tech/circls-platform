@@ -6,6 +6,7 @@ import Fastify, {
 } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -51,6 +52,20 @@ export async function buildServer(): Promise<FastifyInstance> {
     logger: {
       level: env.LOG_LEVEL,
       base: { service: 'circls-api' },
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers["x-razorpay-signature"]',
+          'req.headers.cookie',
+          '*.keySecret',
+          '*.key_secret',
+          '*.plaintextToken',
+          '*.token_hash',
+          '*.private_key',
+          '*.secret',
+        ],
+        censor: '[REDACTED]',
+      },
       ...(env.NODE_ENV !== 'production'
         ? {
             transport: {
@@ -70,8 +85,40 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, { global: true });
-  await app.register(cors, { origin: true, credentials: true });
+  const allowedOrigins = [...env.CORS_ALLOWED_ORIGINS];
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, cb) => {
+      // No Origin header (server-to-server, curl, same-origin) → allow.
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (env.NODE_ENV !== 'production' && /^http:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+      return cb(null, false); // not an error — just no CORS headers, browser blocks it
+    },
+  });
   await app.register(sensible);
+
+  // ── Rate limiting (M6) ─────────────────────────────────────────────────────
+  // Global per-minute ceiling keyed by API key / Firebase token, falling back
+  // to client IP (trustProxy is on, so req.ip is the real client). Abuse-prone
+  // public/hold/booking routes set a stricter per-route `config.rateLimit` (see
+  // slots.ts / consumer.ts / public_bookings.ts); those still inherit this
+  // global allowList. In-memory store ⇒ per-instance limits (acceptable on a
+  // single-instance Coolify deploy; move to the redis store if we scale out).
+  //
+  // Disabled under test via allowList (returns truthy ⇒ request excluded). The
+  // test suite hammers app.inject(); a high `max` would still flake, so we skip
+  // limiting entirely rather than raise the ceiling.
+  await app.register(rateLimit, {
+    global: true,
+    max: env.RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const auth = req.headers.authorization;
+      return (typeof auth === 'string' && auth) || req.ip;
+    },
+    allowList: () => env.NODE_ENV === 'test',
+  });
 
   // ── OpenAPI (Phase 17) ───────────────────────────────────────────────────
   // Two auth schemes: Firebase ID token (internal portal/admin) and Bearer
@@ -127,6 +174,27 @@ export async function buildServer(): Promise<FastifyInstance> {
   // properties must be initialized at build time, not per-request).
   app.decorateRequest('apiKey', null);
   app.decorateRequest('apiTenantId', null);
+
+  // Raw-body-capturing JSON parser, registered ONCE at server scope (L5).
+  // Content-type parsers are app-global in Fastify, so registering this inside
+  // a route plugin silently replaced JSON parsing for the whole server and was
+  // order-dependent (Razorpay webhook HMAC verification reads req.rawBody and
+  // broke if registration order changed). Doing it here is intentional and
+  // order-stable: every JSON route still gets a parsed body, and we stash the
+  // exact bytes on req.rawBody for signature checks.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (req, body, done) => {
+      (req as FastifyRequest & { rawBody?: string }).rawBody = body as string;
+      try {
+        const parsed = body ? (JSON.parse(body as string) as unknown) : {};
+        done(null, parsed);
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
 
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
     if (err instanceof AppError) {

@@ -39,7 +39,11 @@ export function firebaseAuth(): Auth {
   return getAuth(app());
 }
 
-/** Verify a Firebase ID token; throws if invalid/expired. */
+/** Verify a Firebase ID token; throws if invalid/expired/revoked. */
 export async function verifyIdToken(token: string): Promise<DecodedIdToken> {
-  return firebaseAuth().verifyIdToken(token);
+  // checkRevoked=true so revoked/disabled accounts are rejected immediately
+  // instead of staying valid until token expiry (≤1h). This costs an extra
+  // Firebase lookup per request, which is acceptable at the current scale and
+  // closes the revocation gap (M5).
+  return firebaseAuth().verifyIdToken(token, true);
 }

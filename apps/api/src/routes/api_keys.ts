@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { BadRequest } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { createApiKey, listApiKeys, revokeApiKey } from '../services/api_keys_service.js';
@@ -16,14 +17,16 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/tenants/:tenantId/api-keys', { preHandler: requireAuth }, async (req) => {
     const { tenantId } = req.params as { tenantId: string };
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'integration.api_keys.manage');
     return listApiKeys(tenantId);
   });
 
   app.post('/v1/tenants/:tenantId/api-keys', { preHandler: requireAuth }, async (req) => {
     const { tenantId } = req.params as { tenantId: string };
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'integration.api_keys.manage');
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequest('Invalid api-key payload', 'bad_request', {
@@ -38,7 +41,8 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'integration.api_keys.manage');
       await revokeApiKey(id, tenantId, user.id);
       return reply.status(204).send();
     },

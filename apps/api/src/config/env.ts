@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
+export const envSchema = z
+  .object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   LOG_LEVEL: z
@@ -45,12 +46,31 @@ const envSchema = z.object({
   // Partner portal base URL (used to build invite acceptance links).
   PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
 
+  // Browser origins allowed to make credentialed CORS requests. Comma-separated;
+  // trimmed and emptied entries dropped. Defaults to the production portals.
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? 'https://admin.circls.app,https://partners.circls.app,https://circls.app')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    ),
+
   // Admin portal base URL (used to build Circls-internal invite links).
   ADMIN_BASE_URL: z.string().url().default('https://admin.circls.app'),
 
   // Outbound webhooks. Phase 17.
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
+
+  // Rate limiting (M6). Global per-client per-minute ceiling, plus a stricter
+  // ceiling for abuse-prone public/anonymous endpoints (hold/book/browse).
+  // In-memory store → per-instance limits (fine for single-instance Coolify).
+  // Disabled entirely when NODE_ENV==='test' (see server.ts allowList).
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(60),
 
   // Worker process toggle (the partner-portal API container runs both web + in-proc
   // worker; if we ever split to a second Coolify service this flips false there).
@@ -63,20 +83,24 @@ const envSchema = z.object({
   // belt-and-suspenders lookup. Must match the row inserted by
   // src/scripts/bootstrap_circls_tenant.ts.
   CIRCLS_INTERNAL_TENANT_SLUG: z.string().default('circls-internal'),
-
-  // Platform admin user IDs for out-of-policy refunds. Comma-separated list of
-  // user UUIDs. Until the Phase 16 admin console lands with proper role-based
-  // auth, this env var gates `/v1/admin/*` routes. Empty = nobody is platform
-  // admin (only tenant owners can act on their own tenant's payments).
-  ADMIN_USER_IDS: z
-    .string()
-    .optional()
-    .transform((v) =>
-      v
-        ? v.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
-        : [],
-    ),
-});
+  })
+  .superRefine((val, ctx) => {
+    if (val.NODE_ENV === 'production') {
+      for (const key of [
+        'RAZORPAY_KEY_ID',
+        'RAZORPAY_KEY_SECRET',
+        'RAZORPAY_WEBHOOK_SECRET',
+      ] as const) {
+        if (!val[key] || val[key].length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required in production`,
+          });
+        }
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 
