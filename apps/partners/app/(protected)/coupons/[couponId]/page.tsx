@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { useTenantCoupons, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
 const selectCls = 'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a]';
-const IST = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
 
 function discountLabel(c: Coupon) {
   return c.discountType === 'percent' ? `${c.discountValue / 100}%` : `₹${(c.discountValue / 100).toFixed(2)}`;
@@ -23,6 +23,14 @@ export default function CouponDetailPage() {
   const coupon = coupons?.find((c) => c.id === couponId);
   const update = useUpdateCoupon(tenantId);
   const del = useDeleteCoupon(tenantId);
+
+  // Coupon validity dates have no venue anchor, so they display in the
+  // portal-wide viewing timezone (top-bar selector); "Auto" = browser-local.
+  const { resolveTz } = useTimezone();
+  const dateFmt = useMemo(
+    () => new Intl.DateTimeFormat('en-IN', { timeZone: resolveTz(), dateStyle: 'medium', timeStyle: 'short' }),
+    [resolveTz],
+  );
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -103,7 +111,7 @@ export default function CouponDetailPage() {
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Visibility</dt><dd className="mt-1 text-sm capitalize text-slate-700">{coupon.visibility}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Min order</dt><dd className="mt-1 text-sm text-slate-700">{coupon.minOrderPaise != null ? `₹${(coupon.minOrderPaise / 100).toFixed(2)}` : '—'}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Redeemed</dt><dd className="mt-1 text-sm text-slate-700">{coupon.maxRedemptions ? `${coupon.redeemedCount}/${coupon.maxRedemptions}` : `${coupon.redeemedCount}/∞`}{coupon.perUserLimit ? ` · ${coupon.perUserLimit}/user` : ''}</dd></div>
-                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Valid</dt><dd className="mt-1 text-sm text-slate-700">{coupon.validFrom ? IST.format(new Date(coupon.validFrom)) : 'Always'} → {coupon.validUntil ? IST.format(new Date(coupon.validUntil)) : 'No expiry'}</dd></div>
+                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Valid</dt><dd className="mt-1 text-sm text-slate-700">{coupon.validFrom ? dateFmt.format(new Date(coupon.validFrom)) : 'Always'} → {coupon.validUntil ? dateFmt.format(new Date(coupon.validUntil)) : 'No expiry'}</dd></div>
                 {coupon.description && <div className="sm:col-span-2"><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</dt><dd className="mt-1 text-sm text-slate-700">{coupon.description}</dd></div>}
               </dl>
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
