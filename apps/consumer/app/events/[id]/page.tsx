@@ -7,7 +7,7 @@ import { SportImage } from '@/components/SportImage';
 import { useEvent } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDateTime, formatPaise } from '@/lib/format';
-import { useCheckout, type CheckoutState } from '@/lib/useCheckout';
+import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
 function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
@@ -19,28 +19,10 @@ function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | n
   return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
 }
 
-function CheckoutBanner({ state, onDismiss }: { state: CheckoutState; onDismiss: () => void }) {
-  if (state.kind === 'idle') return null;
-  const tone =
-    state.kind === 'success'
-      ? 'bg-green-50 text-green-800 border-green-200'
-      : state.kind === 'reserved'
-        ? 'bg-amber-50 text-amber-800 border-amber-200'
-        : 'bg-red-50 text-red-700 border-red-200';
-  return (
-    <div className={`mb-6 flex items-start justify-between gap-4 rounded-[var(--radius)] border px-4 py-3 text-sm ${tone}`}>
-      <span>{state.message}</span>
-      <button type="button" onClick={onDismiss} className="font-medium underline">
-        Dismiss
-      </button>
-    </div>
-  );
-}
-
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const eventQ = useEvent(id);
-  const checkout = useCheckout();
+  const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const ev = eventQ.data;
   const isFree = (ev?.pricePaise ?? 0) === 0;
@@ -93,8 +75,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </div>
             </div>
 
-            <CheckoutBanner state={checkout.state} onDismiss={checkout.reset} />
-
             <Card className="flex flex-col gap-3">
               {ev.description && <p className="text-sm text-text-secondary">{ev.description}</p>}
               <div className="flex items-center gap-2 text-sm text-text-secondary">
@@ -103,12 +83,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </div>
               <div className="pt-2">
                 <Button
-                  loading={checkout.busy}
                   onClick={() => {
                     const prefill: { name?: string; contact?: string } = {};
                     if (user?.displayName) prefill.name = user.displayName;
                     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-                    void checkout.bookEventNow(ev.id, ev.pricePaise, prefill);
+                    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name }, prefill);
                   }}
                 >
                   {isFree ? 'Register' : 'Book'}

@@ -13,7 +13,7 @@ import {
 import type { PublicArena, PublicEvent, PublicMembership } from '@/lib/api/types';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDateTime, formatPaise, formatTime } from '@/lib/format';
-import { useCheckout, type CheckoutState } from '@/lib/useCheckout';
+import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
@@ -21,7 +21,6 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   const venueQ = useVenue(venueId);
   const eventsQ = useVenueEvents(venueId);
   const membershipsQ = useVenueMemberships(venueId);
-  const checkout = useCheckout();
 
   return (
     <div className="min-h-screen">
@@ -65,8 +64,6 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               </div>
             </div>
 
-            <CheckoutBanner state={checkout.state} onDismiss={checkout.reset} />
-
             {/* Arenas */}
             <section className="mb-8">
               <h2 className="mb-3 font-display text-lg font-semibold text-ink">Courts &amp; turfs</h2>
@@ -75,7 +72,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               ) : (
                 <div className="flex flex-col gap-4">
                   {venueQ.data.arenas.map((arena) => (
-                    <ArenaCard key={arena.id} arena={arena} checkout={checkout} />
+                    <ArenaCard key={arena.id} arena={arena} />
                   ))}
                 </div>
               )}
@@ -91,7 +88,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {eventsQ.data.map((ev) => (
-                    <EventCard key={ev.id} event={ev} checkout={checkout} />
+                    <EventCard key={ev.id} event={ev} />
                   ))}
                 </div>
               )}
@@ -107,7 +104,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {membershipsQ.data.map((m) => (
-                    <MembershipCard key={m.id} membership={m} checkout={checkout} />
+                    <MembershipCard key={m.id} membership={m} />
                   ))}
                 </div>
               )}
@@ -119,8 +116,6 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   );
 }
 
-type Checkout = ReturnType<typeof useCheckout>;
-
 function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
   if (!addressJson) return null;
   const parts = ['line1', 'line2', 'city', 'state', 'pincode']
@@ -128,24 +123,6 @@ function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | n
     .filter((v): v is string => typeof v === 'string' && v.length > 0);
   if (parts.length === 0) return null;
   return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
-}
-
-function CheckoutBanner({ state, onDismiss }: { state: CheckoutState; onDismiss: () => void }) {
-  if (state.kind === 'idle') return null;
-  const tone =
-    state.kind === 'success'
-      ? 'bg-green-50 text-green-800 border-green-200'
-      : state.kind === 'reserved'
-        ? 'bg-amber-50 text-amber-800 border-amber-200'
-        : 'bg-red-50 text-red-700 border-red-200';
-  return (
-    <div className={`mb-6 flex items-start justify-between gap-4 rounded-[var(--radius)] border px-4 py-3 text-sm ${tone}`}>
-      <span>{state.message}</span>
-      <button type="button" onClick={onDismiss} className="font-medium underline">
-        Dismiss
-      </button>
-    </div>
-  );
 }
 
 /** Today's local date as YYYY-MM-DD for the date input default. */
@@ -162,17 +139,14 @@ function dayBounds(date: string): { from: string; to: string } {
   return { from: start.toISOString(), to: end.toISOString() };
 }
 
-function ArenaCard({ arena, checkout }: { arena: PublicArena; checkout: Checkout }) {
-  const { user } = useAuth();
+function ArenaCard({ arena }: { arena: PublicArena }) {
+  const { openCheckout } = useCheckoutModal();
   const [date, setDate] = useState(todayLocal());
   const { from, to } = dayBounds(date);
   const slotsQ = useArenaSlots(arena.id, from, to);
 
-  function handleBook(slotId: string) {
-    // Prefill name/contact from the signed-in user where possible.
-    const customerName = user?.displayName ?? 'Guest';
-    const customerContact = user?.phoneNumber ?? user?.email ?? '';
-    void checkout.bookSlotsNow({ slotIds: [slotId], customerName, customerContact });
+  function handleBook(slotId: string, slotLabel: string) {
+    openCheckout({ kind: 'slot', slotIds: [slotId], title: `${arena.name} · ${slotLabel}` });
   }
 
   return (
@@ -208,20 +182,20 @@ function ArenaCard({ arena, checkout }: { arena: PublicArena; checkout: Checkout
           <p className="text-sm text-text-secondary">No open slots for this day.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {slotsQ.data.map((slot) => (
-              <button
-                key={slot.id}
-                type="button"
-                disabled={checkout.busy}
-                onClick={() => handleBook(slot.id)}
-                className="flex flex-col items-start rounded-[var(--radius)] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-gold-500 hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span className="text-sm font-medium text-ink">
-                  {formatTime(slot.startAt)} – {formatTime(slot.endAt)}
-                </span>
-                <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
-              </button>
-            ))}
+            {slotsQ.data.map((slot) => {
+              const slotLabel = `${formatTime(slot.startAt)} – ${formatTime(slot.endAt)}`;
+              return (
+                <button
+                  key={slot.id}
+                  type="button"
+                  onClick={() => handleBook(slot.id, slotLabel)}
+                  className="flex flex-col items-start rounded-[var(--radius)] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-gold-500 hover:bg-gold-100"
+                >
+                  <span className="text-sm font-medium text-ink">{slotLabel}</span>
+                  <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -229,8 +203,9 @@ function ArenaCard({ arena, checkout }: { arena: PublicArena; checkout: Checkout
   );
 }
 
-function EventCard({ event, checkout }: { event: PublicEvent; checkout: Checkout }) {
+function EventCard({ event }: { event: PublicEvent }) {
   const { user } = useAuth();
+  const { openCheckout } = useCheckoutModal();
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
@@ -246,12 +221,11 @@ function EventCard({ event, checkout }: { event: PublicEvent; checkout: Checkout
       <div className="mt-auto pt-4">
         <Button
           size="sm"
-          loading={checkout.busy}
           onClick={() => {
             const prefill: { name?: string; contact?: string } = {};
             if (user?.displayName) prefill.name = user.displayName;
             if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-            void checkout.bookEventNow(event.id, event.pricePaise, prefill);
+            openCheckout({ kind: 'event', eventId: event.id, title: event.name }, prefill);
           }}
         >
           {isFree ? 'Register' : 'Book'}
@@ -261,8 +235,9 @@ function EventCard({ event, checkout }: { event: PublicEvent; checkout: Checkout
   );
 }
 
-function MembershipCard({ membership, checkout }: { membership: PublicMembership; checkout: Checkout }) {
+function MembershipCard({ membership }: { membership: PublicMembership }) {
   const { user } = useAuth();
+  const { openCheckout } = useCheckoutModal();
   return (
     <Card className="flex h-full flex-col">
       <h3 className="text-base font-semibold text-ink">{membership.name}</h3>
@@ -276,12 +251,11 @@ function MembershipCard({ membership, checkout }: { membership: PublicMembership
       <div className="mt-auto pt-4">
         <Button
           size="sm"
-          loading={checkout.busy}
           onClick={() => {
             const prefill: { name?: string; contact?: string } = {};
             if (user?.displayName) prefill.name = user.displayName;
             if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-            void checkout.buyMembershipNow(membership.id, membership.pricePaise, prefill);
+            openCheckout({ kind: 'membership', membershipId: membership.id, title: membership.name }, prefill);
           }}
         >
           Buy
