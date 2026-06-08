@@ -151,6 +151,72 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
     expect(mem?.role).toBe('manager');
   });
 
+  it('acceptInvitation bumps an existing member up to a higher invited role', async () => {
+    const email = `bump-${SUFFIX}@x.test`;
+    // Invite minted while they are not yet a member (createInvitation requires this).
+    const r = await createInvitation({
+      tenantId,
+      actorUserId: ownerUserId,
+      email,
+      role: 'manager',
+    });
+    // They become a staff member another way before clicking the link.
+    const [u] = await db
+      .insert(users)
+      .values({ firebaseUid: `bump-fb-${SUFFIX}`, email })
+      .returning();
+    createdUserIds.push(u!.id);
+    await db.insert(tenantMembers).values({ userId: u!.id, tenantId, role: 'staff' });
+
+    const accepted = await acceptInvitation({
+      token: r.plaintextToken,
+      firebaseUid: `bump-fb-${SUFFIX}`,
+      email,
+    });
+    expect(accepted.alreadyMember).toBe(true);
+    expect(accepted.roleChanged).toBe(true);
+    expect(accepted.previousRole).toBe('staff');
+    expect(accepted.role).toBe('manager');
+
+    const [mem] = await db
+      .select()
+      .from(tenantMembers)
+      .where(sql`tenant_id = ${tenantId} and user_id = ${u!.id}`);
+    expect(mem?.role).toBe('manager');
+  });
+
+  it('acceptInvitation is a no-op for a member already at an equal-or-higher role', async () => {
+    const email = `noop-${SUFFIX}@x.test`;
+    const r = await createInvitation({
+      tenantId,
+      actorUserId: ownerUserId,
+      email,
+      role: 'staff',
+    });
+    const [u] = await db
+      .insert(users)
+      .values({ firebaseUid: `noop-fb-${SUFFIX}`, email })
+      .returning();
+    createdUserIds.push(u!.id);
+    await db.insert(tenantMembers).values({ userId: u!.id, tenantId, role: 'manager' });
+
+    const accepted = await acceptInvitation({
+      token: r.plaintextToken,
+      firebaseUid: `noop-fb-${SUFFIX}`,
+      email,
+    });
+    expect(accepted.alreadyMember).toBe(true);
+    expect(accepted.roleChanged).toBe(false);
+    // Their existing higher role is preserved, not downgraded.
+    expect(accepted.role).toBe('manager');
+
+    const [mem] = await db
+      .select()
+      .from(tenantMembers)
+      .where(sql`tenant_id = ${tenantId} and user_id = ${u!.id}`);
+    expect(mem?.role).toBe('manager');
+  });
+
   it('acceptInvitation adopts a stale user row sharing the invitee email (no email-unique 500)', async () => {
     const email = `adopt-${SUFFIX}@x.test`;
     // The invitee already has a row under an OLD firebase_uid (signed in via a

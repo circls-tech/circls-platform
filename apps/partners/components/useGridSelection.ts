@@ -93,23 +93,50 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
     dragStart.current = null;
   }, []);
 
-  /** Select all slot ids for a specific day column. */
-  const selectDay = useCallback((dayIndex: number) => {
-    const ids: string[] = [];
-    cellMap.current.forEach((cell, slotId) => {
-      if (cell.dayIndex === dayIndex && !cell.locked) ids.push(slotId);
+  /**
+   * Add a group of slot ids to the selection, or remove them if they're all
+   * already selected. This makes row/column header clicks behave as a toggle
+   * that accumulates across multiple rows and columns: the first click on a
+   * header selects its whole line; clicking it again (when every cell in that
+   * line is selected) deselects just that line.
+   */
+  const toggleGroup = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allSelected = ids.every((id) => next.has(id));
+      if (allSelected) {
+        ids.forEach((id) => next.delete(id));
+      } else {
+        ids.forEach((id) => next.add(id));
+      }
+      return next;
     });
-    setSelected(new Set(ids));
   }, []);
 
-  /** Select all slot ids for a specific time row. */
-  const selectRow = useCallback((rowIndex: number) => {
-    const ids: string[] = [];
-    cellMap.current.forEach((cell, slotId) => {
-      if (cell.rowIndex === rowIndex && !cell.locked) ids.push(slotId);
-    });
-    setSelected(new Set(ids));
-  }, []);
+  /** Toggle all (unlocked) slot ids for a specific day column. */
+  const selectDay = useCallback(
+    (dayIndex: number) => {
+      const ids: string[] = [];
+      cellMap.current.forEach((cell, slotId) => {
+        if (cell.dayIndex === dayIndex && !cell.locked) ids.push(slotId);
+      });
+      toggleGroup(ids);
+    },
+    [toggleGroup],
+  );
+
+  /** Toggle all (unlocked) slot ids for a specific time row. */
+  const selectRow = useCallback(
+    (rowIndex: number) => {
+      const ids: string[] = [];
+      cellMap.current.forEach((cell, slotId) => {
+        if (cell.rowIndex === rowIndex && !cell.locked) ids.push(slotId);
+      });
+      toggleGroup(ids);
+    },
+    [toggleGroup],
+  );
 
   return {
     selected,

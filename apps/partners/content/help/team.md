@@ -23,7 +23,11 @@ An invite link is generated (and emailed to them). It's shown to you in a highli
 
 ### Accepting an invite
 
-The invited person opens the invite link, which shows the organisation name and the role they've been offered. They confirm their email (pre-filled) and set a password, then click **Accept invitation**. They're added to your organisation with the assigned role and taken to the dashboard. If they already have a circls account, accepting simply adds them to your organisation.
+The invited person opens the invite link, which shows the organisation name and the role they've been offered. What happens next depends on whether they already use circls:
+
+- **New to circls** — they set a password to create their account, click **Accept invitation**, and are added to your organisation with the assigned role.
+- **Already have a circls account** — the link asks them to **log in** instead of signing up (so they don't hit an "email already exists" error). After logging in they're added to your organisation. If they're already signed in as that email, it's a single click.
+- **Already a member of this organisation** — the link tells them they're already a member and there's nothing to accept. If the invite was for a **higher** role than they currently hold, accepting upgrades them to that role; an invite for the same or a lower role leaves their role unchanged.
 
 ## Managing pending invitations
 
