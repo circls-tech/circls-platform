@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
-import { formatPaise } from '@/lib/format';
+import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
 import { useBookSlots, useBookEvent, usePurchaseMembership } from '@/lib/api/consumer';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
@@ -44,11 +44,11 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
   const [codeInput, setCodeInput] = useState('');
   const [appliedCode, setAppliedCode] = useState<string | undefined>();
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
-  const [showOffers, setShowOffers] = useState(false);
 
   const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
     : item.kind === 'membership' ? { itemType: 'membership' as const, itemId: item.membershipId } : null;
-  const offers = usePublicCoupons(showOffers ? offersItem : null);
+  // Load public offers eagerly (event/membership) so the picker dropdown is populated.
+  const offers = usePublicCoupons(offersItem);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +69,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
 
   function applyCode(code: string) {
     const c = code.trim().toUpperCase();
-    if (c) { setCodeInput(c); setAppliedCode(c); setShowOffers(false); }
+    if (c) { setCodeInput(c); setAppliedCode(c); }
   }
   function clearCode() { setAppliedCode(undefined); setCodeInput(''); setCouponMsg(null); }
 
@@ -133,47 +133,44 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <Row label="Base price" value={breakdown ? formatPaise(breakdown.basePaise) : '—'} />
+          <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise) : '—'} />
           {breakdown && breakdown.discountPaise > 0 && (
-            <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaise(breakdown.discountPaise)}`} accent />
+            <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise)}`} accent />
           )}
-          {breakdown && <Row label="Other charges (incl taxes)" value={formatPaise(breakdown.otherChargesPaise)} muted />}
+          {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise)} muted />}
           <div className="my-1 border-t border-[var(--color-border)]" />
-          <Row label="Total" value={breakdown ? formatPaise(breakdown.totalPaise) : '—'} bold />
+          <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise) : '—'} bold />
 
           {!appliedCode ? (
-            <div className="mt-2 flex items-end gap-2">
-              <div className="flex-1"><Input label="Coupon code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="SUMMER10" /></div>
-              <Button variant="secondary" size="sm" onClick={() => applyCode(codeInput)} disabled={!codeInput.trim() || busy}>Apply</Button>
+            <div className="mt-2 flex flex-col gap-2">
+              {offersItem && (offers.data?.rows.length ?? 0) > 0 && (
+                <select
+                  aria-label="Available offers"
+                  className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                  value=""
+                  onChange={(e) => { if (e.target.value) applyCode(e.target.value); }}
+                  disabled={busy}
+                >
+                  <option value="">Select an offer…</option>
+                  {offers.data?.rows.map((o) => (
+                    <option key={o.code} value={o.code}>
+                      {o.code} — {o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaiseExact(o.discountValue)} off`}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex items-end gap-2">
+                <div className="flex-1"><Input label="Coupon code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="Type a code" /></div>
+                <Button variant="secondary" size="sm" onClick={() => applyCode(codeInput)} disabled={!codeInput.trim() || busy}>Apply</Button>
+              </div>
             </div>
           ) : (
             <button type="button" onClick={clearCode} className="mt-1 self-start text-xs font-medium text-[var(--color-text-secondary)] underline">Remove coupon</button>
           )}
           {couponMsg && <p className="text-xs text-red-600">{couponMsg}</p>}
 
-          {offersItem && !appliedCode && (
-            <div>
-              <button type="button" onClick={() => setShowOffers((s) => !s)} className="text-xs font-medium text-[var(--color-text-secondary)] underline">
-                {showOffers ? 'Hide offers' : 'View available offers'}
-              </button>
-              {showOffers && (
-                <div className="mt-2 flex flex-col gap-1">
-                  {offers.isLoading && <p className="text-xs text-[var(--color-text-secondary)]">Loading…</p>}
-                  {offers.data?.rows.length === 0 && <p className="text-xs text-[var(--color-text-secondary)]">No public offers.</p>}
-                  {offers.data?.rows.map((o) => (
-                    <button key={o.code} type="button" onClick={() => applyCode(o.code)}
-                      className="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-left text-xs hover:bg-[var(--color-gold-100)]">
-                      <span className="font-medium">{o.code}</span>
-                      <span className="text-[var(--color-text-secondary)]">{o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaise(o.discountValue)} off`}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy}>
-            {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaise(breakdown.totalPaise) : ''}`}
+            {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise) : ''}`}
           </Button>
         </div>
       )}

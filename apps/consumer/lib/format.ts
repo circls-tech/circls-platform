@@ -10,6 +10,24 @@ export function formatPaise(paise: number): string {
   return rupeeFmt.format(paise / 100);
 }
 
+const rupeeFmtExact = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Format paise as rupees showing exact paise (2 decimals), e.g. 35847 → "₹358.47".
+ * Use where sub-rupee amounts occur (checkout breakdown), since the Razorpay
+ * gross-up produces fractional-rupee totals that the integer `formatPaise` would
+ * truncate misleadingly. Free → "Free".
+ */
+export function formatPaiseExact(paise: number): string {
+  if (!paise) return 'Free';
+  return rupeeFmtExact.format(paise / 100);
+}
+
 const timeFmt = new Intl.DateTimeFormat('en-IN', {
   hour: 'numeric',
   minute: '2-digit',
