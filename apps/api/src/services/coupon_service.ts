@@ -14,6 +14,7 @@ import { arenas } from '../db/schema/arenas.js';
 import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { isUniqueViolation } from '../db/errors.js';
 
 /** The item being purchased, used for scope matching. */
 export interface CheckoutItem {
@@ -108,11 +109,6 @@ function assertScopeShape(input: { scopeType: Coupon['scopeType']; scopeId?: str
   if (!needsId && input.scopeId) {
     throw new BadRequest('org scope must not have a scopeId', 'coupon_scope_id_unexpected');
   }
-}
-
-/** True if a thrown DB error is a Postgres unique-violation (SQLSTATE 23505). */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
 }
 
 export async function createCoupon(
