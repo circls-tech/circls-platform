@@ -3,18 +3,24 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { useTenantEvents, usePublishTenantEvent } from '@/lib/api/events';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 
-const IST = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+/** Format an event start in a given zone. Each event's natural zone is its own
+ *  `tzName`; the portal-wide viewing tz overrides it when set. */
+function fmtEventTime(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(iso));
+}
 
 function EventList({ tenantId }: { tenantId: string }) {
   const { data: events, isLoading } = useTenantEvents(tenantId);
   const publish = usePublishTenantEvent(tenantId);
+  const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function handlePublish(id: string) {
@@ -51,7 +57,9 @@ function EventList({ tenantId }: { tenantId: string }) {
                 >
                   {ev.name}
                 </Link>
-                <p className="mt-0.5 text-xs text-slate-400">{IST.format(new Date(ev.startsAt))}</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {fmtEventTime(ev.startsAt, resolveTz(ev.tzName))}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />

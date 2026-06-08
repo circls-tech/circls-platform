@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { Button, Card, Input } from '@/lib/ui';
 import { useArena, useReleaseSlots, useVenues, type ReleaseCell } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
+import { fmtTzOffset } from '@/lib/time';
 import type { Slot } from '@/lib/api/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -118,44 +120,6 @@ function buildReleaseCells(previewSlots: PreviewSlot[], quantizationMin: number)
 const FALLBACK_TZ = 'Asia/Kolkata';
 const today = new Date().toISOString().slice(0, 10);
 
-/** A short GMT-offset label for a timezone, e.g. "GMT+5:30". */
-function fmtTzOffset(tz: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      timeZoneName: 'shortOffset',
-    }).formatToParts(new Date());
-    return parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/** Full IANA timezone list when the runtime supports it, else a curated set. */
-function listTimezones(): string[] {
-  const sv = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
-    .supportedValuesOf;
-  if (typeof sv === 'function') {
-    try {
-      return sv('timeZone');
-    } catch {
-      /* fall through to curated list */
-    }
-  }
-  return [
-    'UTC',
-    'Asia/Kolkata',
-    'Asia/Dubai',
-    'Asia/Singapore',
-    'Asia/Tokyo',
-    'Europe/London',
-    'Europe/Paris',
-    'America/New_York',
-    'America/Los_Angeles',
-    'Australia/Sydney',
-  ];
-}
-
 export default function ScheduleBuilderPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
@@ -166,16 +130,11 @@ export default function ScheduleBuilderPage() {
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
 
-  // Viewing timezone — defaults to the venue tz (null = follow venue), but the
-  // user can override it to read the grid in another zone. This is display-only:
-  // slots are still generated and released in the venue's own timezone.
-  const [viewingTz, setViewingTz] = useState<string | null>(null);
-  const effectiveTz = viewingTz ?? tz;
-  const tzOptions = useMemo(() => {
-    const all = listTimezones();
-    const withVenue = all.includes(tz) ? all : [tz, ...all];
-    return withVenue.map((z) => ({ value: z, label: `${z} (${fmtTzOffset(z)})` }));
-  }, [tz]);
+  // Viewing timezone comes from the portal-wide selector in the top bar. Auto =
+  // the venue's own zone; an override renders the grid in the chosen zone. This
+  // is display-only: slots are still generated and released in the venue's tz.
+  const { resolveTz } = useTimezone();
+  const effectiveTz = resolveTz(tz);
 
   // Form config state
   const [cfg, setCfg] = useState<BuilderConfig>({
@@ -405,37 +364,17 @@ export default function ScheduleBuilderPage() {
             title="Preview grid"
             subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel."
           >
-            {/* Timezone bar — clear display + view-only override. */}
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm">
-              <label htmlFor="viewing-tz" className="font-medium text-slate-600">
-                Times shown in
-              </label>
-              <select
-                id="viewing-tz"
-                value={effectiveTz}
-                onChange={(e) =>
-                  setViewingTz(e.target.value === tz ? null : e.target.value)
-                }
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800"
-              >
-                {tzOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {effectiveTz === tz ? (
+            {/* Times render in the portal-wide viewing tz (top-bar selector).
+                Auto = the venue's own zone. Read-only indicator here. */}
+            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              <span className="font-medium">Times shown in</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
+                {effectiveTz} ({fmtTzOffset(effectiveTz)})
+              </span>
+              {effectiveTz !== tz && (
                 <span className="ml-auto text-xs text-slate-400">
-                  Venue timezone · {fmtTzOffset(tz)}
+                  Venue is {tz} ({fmtTzOffset(tz)}) · change the zone from the timezone selector in the top bar
                 </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setViewingTz(null)}
-                  className="ml-auto text-xs text-blue-600 hover:underline"
-                >
-                  Reset to venue time ({tz})
-                </button>
               )}
             </div>
 

@@ -7,6 +7,7 @@ import { useArenas, useBookingDetail, useBookingPayments, useVenueBookings, useV
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Timezone-aware helpers
@@ -395,7 +396,12 @@ export default function BookingsPage() {
   // ── Resolve venue timezone ──
   const { activeTenantId } = useOrg();
   const { data: venues } = useVenues(activeTenantId ?? '');
+  // `tz` is the venue's own zone — used for DATE-RANGE filtering (a "day" is a
+  // venue-local day) and the export filename. `displayTz` is what times are
+  // SHOWN in: the venue zone by default, or the portal-wide viewing tz override.
   const tz = venues?.find((v) => v.id === venueId)?.tzName ?? FALLBACK_TZ;
+  const { resolveTz } = useTimezone();
+  const displayTz = resolveTz(tz);
 
   // ── Filters ──
   const [searchInput, setSearchInput] = useState('');
@@ -447,7 +453,7 @@ export default function BookingsPage() {
       month: '2-digit',
       day: '2-digit',
     }).format(new Date());
-    downloadCsv(bookingsToCsv(bookings, tz), `bookings-${stamp}.csv`);
+    downloadCsv(bookingsToCsv(bookings, displayTz), `bookings-${stamp}.csv`);
   }
 
   return (
@@ -632,9 +638,9 @@ export default function BookingsPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{b.arenaName}</td>
                   <td className="px-4 py-3 text-slate-600">
-                    {fmtInTz(b.firstStartAt, tz)}
+                    {fmtInTz(b.firstStartAt, displayTz)}
                     {b.firstStartAt !== b.lastEndAt && (
-                      <span className="text-slate-400"> – {fmtTimeInTz(b.lastEndAt, tz)}</span>
+                      <span className="text-slate-400"> – {fmtTimeInTz(b.lastEndAt, displayTz)}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center text-slate-600">{b.slotCount}</td>
@@ -655,7 +661,7 @@ export default function BookingsPage() {
       <BookingDetailModal
         bookingId={selectedBookingId}
         venueId={venueId}
-        tz={tz}
+        tz={displayTz}
         onClose={() => setSelectedBookingId(null)}
       />
     </div>

@@ -1,26 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { useNotifications } from '@/lib/api/queries';
 import type { NotificationItem, NotificationChannel, NotificationStatus } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
-
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function formatIST(iso: string | null): string {
-  if (!iso) return '—';
-  return IST_FMT.format(new Date(iso));
-}
 
 function statusTone(s: NotificationStatus): 'success' | 'warning' | 'open' | 'neutral' {
   if (s === 'sent')    return 'success';
@@ -34,6 +20,26 @@ const STATUSES: NotificationStatus[]  = ['pending', 'sent', 'failed', 'skipped']
 
 export default function NotificationsPage() {
   const { activeTenantId } = useOrg();
+  const { resolveTz } = useTimezone();
+
+  const fmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
+
+  function formatIST(iso: string | null): string {
+    if (!iso) return '—';
+    return fmt.format(new Date(iso));
+  }
 
   const [channelFilter, setChannelFilter] = useState<'' | NotificationChannel>('');
   const [statusFilter, setStatusFilter]   = useState<'' | NotificationStatus>('');
@@ -131,7 +137,7 @@ export default function NotificationsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#e5e7eb] text-left">
-                  <th className="pb-2 pr-4 font-medium text-slate-500">When (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">When</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Channel</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Template</th>

@@ -5,7 +5,7 @@ Venues and arenas are the foundation of your circls listing. A **venue** is a ph
 1. Go to **Venues** in the sidebar and click **+ Add venue**.
 2. Fill in:
    - **Venue name** (required).
-   - **Timezone** — an IANA timezone such as `Asia/Kolkata`. This defaults to `Asia/Kolkata` and controls how slot and booking times are displayed.
+   - **Timezone** — an IANA timezone such as `Asia/Kolkata`. This defaults to `Asia/Kolkata`. It is the venue's *canonical* zone: slot and booking times are interpreted and scheduled in it. (Separately, the **timezone selector in the top bar** lets you change the zone times are *displayed* in across the portal — a view-only preference that never changes a venue's actual timezone.)
    - **Tags** (optional) — short descriptors like `indoor` or `floodlit`.
 3. Save. You'll be taken to the venue's detail page.
 

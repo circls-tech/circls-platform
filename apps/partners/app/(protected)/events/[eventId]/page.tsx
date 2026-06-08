@@ -14,20 +14,22 @@ import {
 } from '@/lib/api/events';
 import { useVenues } from '@/lib/api/queries';
 import { EventImages } from '@/components/EventImages';
+import { useTimezone } from '@/lib/timezone_context';
 import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function fmt(iso: string) {
-  return IST_FMT.format(new Date(iso));
+/** Display a UTC instant in the given zone (the event's own tz, or the
+ *  portal-wide viewing tz when overridden). Display only — event scheduling
+ *  still round-trips through the venue tz via localToTzIso/isoToTzLocal. */
+function fmt(iso: string, tz: string) {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }
 
 /**
@@ -107,8 +109,12 @@ export default function OrgEventDetailPage() {
   const [lngRaw, setLngRaw] = useState('');
   const [tzForm, setTzForm] = useState('Asia/Kolkata');
 
+  const { resolveTz } = useTimezone();
   const currentVenue = ev?.venueId ? venues?.find((v) => v.id === ev.venueId) : undefined;
-  const effectiveTz = ev?.venueId ? (currentVenue?.tzName ?? 'Asia/Kolkata') : (ev?.tzName ?? 'Asia/Kolkata');
+  const eventTz = ev?.venueId ? (currentVenue?.tzName ?? 'Asia/Kolkata') : (ev?.tzName ?? 'Asia/Kolkata');
+  // The zone times are DISPLAYED in: the event's own zone, or the portal-wide
+  // viewing tz when the user overrides it from the top bar.
+  const effectiveTz = resolveTz(eventTz);
   const venueLabel = ev?.venueId
     ? (currentVenue?.name ?? 'Venue')
     : 'Standalone (no venue)';
@@ -120,7 +126,9 @@ export default function OrgEventDetailPage() {
 
   function startEdit() {
     if (!ev) return;
-    const tz = effectiveTz;
+    // Populate the datetime-local inputs in the event's OWN zone (not the
+    // viewing override) so they round-trip correctly through localToTzIso on save.
+    const tz = eventTz;
     setName(ev.name);
     setDescription(ev.description ?? '');
     setStartsAtLocal(isoToTzLocal(ev.startsAt, tz));
@@ -276,7 +284,7 @@ export default function OrgEventDetailPage() {
                     When ({effectiveTz})
                   </dt>
                   <dd className="mt-1 text-sm text-slate-700">
-                    {fmt(ev.startsAt)} → {fmt(ev.endsAt)}
+                    {fmt(ev.startsAt, effectiveTz)} → {fmt(ev.endsAt, effectiveTz)}
                   </dd>
                 </div>
                 <div>
@@ -522,7 +530,7 @@ export default function OrgEventDetailPage() {
                       <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
                       <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                       <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
-                      <th className="pb-2 font-medium text-slate-500">Registered (IST)</th>
+                      <th className="pb-2 font-medium text-slate-500">Registered</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f1f5f9]">
@@ -540,7 +548,7 @@ export default function OrgEventDetailPage() {
                             `₹${(b.totalPaise / 100).toFixed(2)}`
                           )}
                         </td>
-                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt)}</td>
+                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt, effectiveTz)}</td>
                       </tr>
                     ))}
                   </tbody>

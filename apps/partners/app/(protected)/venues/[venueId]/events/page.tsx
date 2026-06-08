@@ -5,19 +5,18 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useVenueEvents, usePublishEvent } from '@/lib/api/events';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
+import { useTimezone } from '@/lib/timezone_context';
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function fmt(iso: string) {
-  return IST_FMT.format(new Date(iso));
+function fmt(iso: string, tz: string) {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }
 
 export default function VenueEventsPage() {
@@ -25,6 +24,7 @@ export default function VenueEventsPage() {
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const { data: events, isLoading } = useVenueEvents(venueId);
   const publish = usePublishEvent(tenantId, venueId);
+  const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function handlePublish(id: string) {
@@ -76,7 +76,7 @@ export default function VenueEventsPage() {
               <thead>
                 <tr className="border-b border-[#e5e7eb] text-left">
                   <th className="pb-2 pr-4 font-medium text-slate-500">Name</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">When (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">When</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Price</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Capacity</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
@@ -95,7 +95,7 @@ export default function VenueEventsPage() {
                       </Link>
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(ev.startsAt)} → {fmt(ev.endsAt)}
+                      {fmt(ev.startsAt, resolveTz(ev.tzName))} → {fmt(ev.endsAt, resolveTz(ev.tzName))}
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">
                       {ev.pricePaise === 0 ? (

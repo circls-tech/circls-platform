@@ -1,29 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { useAuditLog } from '@/lib/api/queries';
 import type { AuditLogItem } from '@/lib/api/types';
 import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
-
-// IST date+time formatter
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-});
-
-function formatIST(iso: string) {
-  return IST_FMT.format(new Date(iso));
-}
 
 function actionTone(action: string): 'success' | 'warning' | 'open' | 'neutral' {
   if (action === 'create') return 'success';
@@ -59,6 +44,26 @@ const ACTION_OPTIONS = ['create', 'update', 'delete', 'cancel', 'hold', 'release
 
 export default function AuditLogPage() {
   const { activeTenantId } = useOrg();
+  const { resolveTz } = useTimezone();
+
+  const fmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
+
+  function formatIST(iso: string) {
+    return fmt.format(new Date(iso));
+  }
 
   const [actionFilter, setActionFilter]         = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState('');
@@ -186,7 +191,7 @@ export default function AuditLogPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#e5e7eb] text-left">
-                  <th className="pb-2 pr-4 font-medium text-slate-500">When (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">When</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Actor</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Action</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Entity</th>

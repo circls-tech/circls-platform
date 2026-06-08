@@ -7,6 +7,7 @@ import { useMyTenants } from '@/lib/api/queries';
 import { OrgProvider } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
+import { TimezoneSelect } from '@/components/TimezoneSelect';
 import { Button, BrandMark } from '@/lib/ui';
 
 const ORG_SELECTED_KEY = 'circls.orgSelected';
@@ -110,15 +111,18 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
         {/* Right of sidebar */}
         <div className="ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
-          <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#e5e7eb] bg-white px-6">
+          <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-6">
             <ContextBar />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void signOut()}
-            >
-              Sign out
-            </Button>
+            <div className="flex items-center gap-4">
+              <TimezoneSelect />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void signOut()}
+              >
+                Sign out
+              </Button>
+            </div>
           </header>
 
           {/* Content area */}

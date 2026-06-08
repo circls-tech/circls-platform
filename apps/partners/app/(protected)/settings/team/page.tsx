@@ -1,6 +1,7 @@
 'use client';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import {
   useCreateInvitation,
   useRemoveMember,
@@ -17,6 +18,26 @@ const ROLES: TenantRole[] = ['owner', 'manager', 'staff', 'readonly'];
 export default function TeamPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { resolveTz } = useTimezone();
+
+  const dateTimeFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        timeZone: resolveTz(),
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+    [resolveTz],
+  );
+  const dateFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        timeZone: resolveTz(),
+        dateStyle: 'medium',
+      }),
+    [resolveTz],
+  );
+
   const { data: members } = useTeamMembers(tenantId);
   const { data: pending } = useTeamInvitations(tenantId, 'pending');
   const createInvite = useCreateInvitation(tenantId);
@@ -111,7 +132,7 @@ export default function TeamPage() {
               <div>
                 <div className="font-medium">{inv.email}</div>
                 <div className="text-xs text-slate-500">
-                  Invited as {inv.role} &middot; expires {new Date(inv.expiresAt).toLocaleString()}
+                  Invited as {inv.role} &middot; expires {dateTimeFmt.format(new Date(inv.expiresAt))}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -147,7 +168,7 @@ export default function TeamPage() {
             <li key={m.userId} className="flex items-center justify-between gap-3 py-2 text-sm">
               <div>
                 <div className="font-medium">{m.email ?? m.displayName ?? m.userId}</div>
-                <div className="text-xs text-slate-500">Joined {new Date(m.createdAt).toLocaleDateString()}</div>
+                <div className="text-xs text-slate-500">Joined {dateFmt.format(new Date(m.createdAt))}</div>
               </div>
               <div className="flex items-center gap-2">
                 <select
