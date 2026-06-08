@@ -133,6 +133,9 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       token: r.plaintextToken,
       firebaseUid: `accept-fb-${SUFFIX}`,
       email: `accept-${SUFFIX}@x.test`,
+      // Brand-new invitee whose Firebase email is not yet verified — the secret
+      // invite token is the proof of ownership, so the join still succeeds.
+      emailVerified: false,
     });
     createdUserIds.push(accepted.userId);
     expect(accepted.tenantId).toBe(tenantId);
@@ -172,6 +175,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       token: r.plaintextToken,
       firebaseUid: `bump-fb-${SUFFIX}`,
       email,
+      emailVerified: true,
     });
     expect(accepted.alreadyMember).toBe(true);
     expect(accepted.roleChanged).toBe(true);
@@ -204,6 +208,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       token: r.plaintextToken,
       firebaseUid: `noop-fb-${SUFFIX}`,
       email,
+      emailVerified: true,
     });
     expect(accepted.alreadyMember).toBe(true);
     expect(accepted.roleChanged).toBe(false);
@@ -240,6 +245,8 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       token: r.plaintextToken,
       firebaseUid: `adopt-new-fb-${SUFFIX}`,
       email,
+      // Verified token → adopting the existing row onto the new uid is allowed.
+      emailVerified: true,
     });
 
     // Same person, migrated onto the new uid, and now a member.
@@ -256,6 +263,46 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
     expect(mem?.role).toBe('staff');
   });
 
+  it('acceptInvitation refuses to adopt a pre-existing row onto an UNVERIFIED uid (C1 takeover guard)', async () => {
+    const email = `takeover-${SUFFIX}@x.test`;
+    // A real, established user owns a row under their own uid.
+    const [victim] = await db
+      .insert(users)
+      .values({ firebaseUid: `takeover-victim-fb-${SUFFIX}`, email })
+      .returning();
+    createdUserIds.push(victim!.id);
+
+    const r = await createInvitation({
+      tenantId,
+      actorUserId: ownerUserId,
+      email,
+      role: 'staff',
+    });
+
+    // Attacker holds the secret token + a NEW uid carrying the victim's email,
+    // but UNVERIFIED. Adopting the victim row would be account takeover → refused.
+    await expect(
+      acceptInvitation({
+        token: r.plaintextToken,
+        firebaseUid: `takeover-attacker-fb-${SUFFIX}`,
+        email,
+        emailVerified: false,
+      }),
+    ).rejects.toMatchObject({ code: 'email_unverified' });
+
+    // The victim's row is untouched and the invite is still pending.
+    const [stillVictim] = await db
+      .select({ firebaseUid: users.firebaseUid })
+      .from(users)
+      .where(sql`id = ${victim!.id}`);
+    expect(stillVictim?.firebaseUid).toBe(`takeover-victim-fb-${SUFFIX}`);
+    const [inv] = await db
+      .select()
+      .from(tenantInvitations)
+      .where(sql`id = ${r.invitation.id}`);
+    expect(inv?.acceptedAt).toBeNull();
+  });
+
   it('acceptInvitation rejects email mismatch', async () => {
     const r = await createInvitation({
       tenantId,
@@ -268,6 +315,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
         token: r.plaintextToken,
         firebaseUid: `mis-fb-${SUFFIX}`,
         email: `other-${SUFFIX}@x.test`,
+        emailVerified: true,
       }),
     ).rejects.toMatchObject({ code: 'invitation_email_mismatch' });
   });
@@ -285,6 +333,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
         token: r.plaintextToken,
         firebaseUid: `rev-fb-${SUFFIX}`,
         email: `rev-${SUFFIX}@x.test`,
+        emailVerified: true,
       }),
     ).rejects.toMatchObject({ code: 'invitation_not_found' });
   });
@@ -339,6 +388,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
         token: old,
         firebaseUid: `resend-fb-${SUFFIX}`,
         email: `resend-${SUFFIX}@x.test`,
+        emailVerified: true,
       }),
     ).rejects.toMatchObject({ code: 'invitation_not_found' });
   });
