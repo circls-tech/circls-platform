@@ -61,13 +61,29 @@ deduction. Amounts are integer paise throughout.
 
 ### Who funds the discount (payout impact only)
 
-- **Org-funded** (org / venue / item coupons): the org simply nets `discountedBase`. No
-  change to payout logic.
-- **Platform-funded** (admin Circls-wide coupons): the org must still net the full `base`.
-  The weekly payout job adds the redemption's `discount_paise` back to that tenant's gross
-  and books it against Circls' margin.
+The org's weekly payout `gross` is summed from the `payments` table. Because the customer
+is now charged the grossed-up `total`, the captured `payments.amount_paise` equals `total`
+(grossed up) — summing that would over-pay the org. So each charge also records the
+**org-settleable base** in a new `payments.settle_base_paise` column, and the payout
+reconciliation sums **`settle_base_paise`** for gross (not `amount_paise`). The gross-up
+portion therefore never reaches the org; it exactly offsets the Razorpay fee so Circls
+nets the settleable base.
 
-Each redemption records `funder = 'org' | 'platform'` so this is computable after the fact.
+`settle_base_paise` is set at order-creation time:
+
+- **No coupon:** `settle_base_paise = base`.
+- **Org-funded** (org / venue / item coupons): `settle_base_paise = discountedBase` — the
+  org nets the discounted base.
+- **Platform-funded** (admin Circls-wide coupons): `settle_base_paise = base` (full) — the
+  org is made whole; the discount is funded out of Circls' margin (the residual between
+  what was collected and what is settled out).
+
+Equivalently: `settle_base_paise = (funder === 'platform') ? base : discountedBase`. Each
+redemption still records `funder = 'org' | 'platform'` for audit/analytics, but the payout
+math reads only `settle_base_paise`, so no separate add-back pass is needed.
+
+Refund handling of the gross-up portion is out of scope (see "Out of scope"); refunds keep
+their existing behaviour.
 
 ### Worked examples (r = 0.0236)
 
@@ -138,11 +154,15 @@ counting; index `(tenant_id, funder, created_at)` for the payout job.
 
 ### `bookings` additions
 
-Add nullable `coupon_id` (FK → coupons), `discount_paise` (bigint, default 0). The
-existing `total_paise` stores the grossed-up amount actually charged. The org's payout
-base remains the item `base` (= `total_paise`'s pre-gross-up figure derived as
-`base = price subtotal`, **not** `total_paise`). To avoid recomputation, also persist
-`base_paise` on the booking (sum of item prices before discount/gross-up).
+Add nullable `coupon_id` (FK → coupons), `discount_paise` (bigint, default 0), and
+`base_paise` (bigint — the item subtotal before discount/gross-up). The existing
+`total_paise` stores the grossed-up amount actually charged.
+
+### `payments` addition
+
+Add `settle_base_paise` (bigint, nullable) — the org-settleable base for this charge (see
+"Who funds the discount"). Set on every `createRouteOrder` charge; the payout
+reconciliation sums this column for gross instead of `amount_paise`.
 
 ## API (apps/api, Fastify, `/v1`)
 
@@ -196,9 +216,11 @@ All mutations write `audit_log` via `writeAudit(tx, ctx, 'coupon.created' | 'cou
 
 ### Payout job change
 
-The weekly settlement job is extended: for each `coupon_redemptions` row in the period with
-`funder = 'platform'`, add `discount_paise` back to that tenant's gross (so the org nets the
-full base) and deduct it from Circls' margin. `funder = 'org'` rows need no adjustment.
+`createRouteOrder` is extended to accept and persist `settleBasePaise` on the charge row.
+The weekly `reconcileWeeklyPayouts` gross query sums `payments.settle_base_paise` (falling
+back to `amount_paise` for legacy rows where it is null) instead of `amount_paise`. This is
+the only payout change — platform-funded coupons are made whole automatically because their
+charges carry `settle_base_paise = base`.
 
 ## Consumer checkout modal
 
