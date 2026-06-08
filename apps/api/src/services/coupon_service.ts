@@ -4,7 +4,12 @@
  * tested directly; the per-user redemption count + code resolution that need
  * the DB live in `resolveCouponForCheckout` (added with the CRUD).
  */
-import type { Coupon } from '../db/schema/coupons.js';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { coupons, type Coupon, type NewCoupon } from '../db/schema/coupons.js';
+import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
+import { writeAudit, type AuditCtx } from '../lib/audit.js';
+import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 
 /** The item being purchased, used for scope matching. */
 export interface CheckoutItem {
@@ -70,4 +75,198 @@ export function validateCoupon(
     return { ok: false, code: 'coupon_max_redeemed' };
   }
   return { ok: true };
+}
+
+/** Owner selector: a tenant id for org coupons, or `'platform'`. */
+export type CouponOwner = { kind: 'tenant'; tenantId: string } | { kind: 'platform' };
+
+export interface CreateCouponInput {
+  code: string;
+  description?: string | null;
+  scopeType: Coupon['scopeType'];
+  scopeId?: string | null;
+  discountType: Coupon['discountType'];
+  discountValue: number;
+  maxDiscountPaise?: number | null;
+  minOrderPaise?: number | null;
+  visibility?: Coupon['visibility'];
+  validFrom?: Date | null;
+  validUntil?: Date | null;
+  maxRedemptions?: number | null;
+  perUserLimit?: number | null;
+}
+
+function assertScopeShape(input: { scopeType: Coupon['scopeType']; scopeId?: string | null }): void {
+  const needsId = input.scopeType !== 'org';
+  if (needsId && !input.scopeId) {
+    throw new BadRequest('This scope requires a scopeId', 'coupon_scope_id_required');
+  }
+  if (!needsId && input.scopeId) {
+    throw new BadRequest('org scope must not have a scopeId', 'coupon_scope_id_unexpected');
+  }
+}
+
+/** True if a thrown DB error is a Postgres unique-violation (SQLSTATE 23505). */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+}
+
+export async function createCoupon(
+  ctx: AuditCtx,
+  owner: CouponOwner,
+  input: CreateCouponInput,
+): Promise<Coupon> {
+  assertScopeShape(input);
+  if (input.discountType === 'percent' && (input.discountValue <= 0 || input.discountValue > 10_000)) {
+    throw new BadRequest('Percent discount must be 1–10000 bps', 'coupon_bad_percent');
+  }
+  if (input.discountType === 'fixed' && input.discountValue <= 0) {
+    throw new BadRequest('Fixed discount must be positive', 'coupon_bad_fixed');
+  }
+  const values: NewCoupon = {
+    ownerType: owner.kind === 'tenant' ? 'tenant' : 'platform',
+    tenantId: owner.kind === 'tenant' ? owner.tenantId : null,
+    code: input.code.trim(),
+    description: input.description ?? null,
+    scopeType: input.scopeType,
+    scopeId: input.scopeId ?? null,
+    discountType: input.discountType,
+    discountValue: input.discountValue,
+    maxDiscountPaise: input.maxDiscountPaise ?? null,
+    minOrderPaise: input.minOrderPaise ?? null,
+    visibility: input.visibility ?? 'private',
+    validFrom: input.validFrom ?? null,
+    validUntil: input.validUntil ?? null,
+    maxRedemptions: input.maxRedemptions ?? null,
+    perUserLimit: input.perUserLimit ?? null,
+  };
+  return db.transaction(async (tx) => {
+    let row: Coupon | undefined;
+    try {
+      [row] = await tx.insert(coupons).values(values).returning();
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new Conflict('A coupon with this code already exists', 'coupon_code_taken');
+      }
+      throw err;
+    }
+    if (!row) throw new Error('coupon insert returned no row');
+    await writeAudit(tx, ctx, 'coupon.created', 'coupon', row.id, null, {
+      code: row.code,
+      scopeType: row.scopeType,
+      discountType: row.discountType,
+      discountValue: row.discountValue,
+    });
+    return row;
+  });
+}
+
+export async function listCoupons(owner: CouponOwner): Promise<Coupon[]> {
+  const where =
+    owner.kind === 'tenant'
+      ? and(eq(coupons.ownerType, 'tenant'), eq(coupons.tenantId, owner.tenantId))
+      : eq(coupons.ownerType, 'platform');
+  return db.select().from(coupons).where(where).orderBy(sql`${coupons.createdAt} desc`);
+}
+
+/** Owner-scoped fetch so a tenant can never read/patch another owner's coupon. */
+export async function getOwnedCoupon(owner: CouponOwner, couponId: string): Promise<Coupon | null> {
+  const where =
+    owner.kind === 'tenant'
+      ? and(eq(coupons.id, couponId), eq(coupons.ownerType, 'tenant'), eq(coupons.tenantId, owner.tenantId))
+      : and(eq(coupons.id, couponId), eq(coupons.ownerType, 'platform'));
+  const [row] = await db.select().from(coupons).where(where).limit(1);
+  return row ?? null;
+}
+
+export interface UpdateCouponPatch {
+  description?: string | null;
+  minOrderPaise?: number | null;
+  maxDiscountPaise?: number | null;
+  visibility?: Coupon['visibility'];
+  validFrom?: Date | null;
+  validUntil?: Date | null;
+  maxRedemptions?: number | null;
+  perUserLimit?: number | null;
+  status?: Coupon['status'];
+}
+
+export async function updateCoupon(
+  ctx: AuditCtx,
+  owner: CouponOwner,
+  couponId: string,
+  patch: UpdateCouponPatch,
+): Promise<Coupon> {
+  return db.transaction(async (tx) => {
+    const existing = await getOwnedCoupon(owner, couponId);
+    if (!existing) throw new NotFound('Coupon not found', 'coupon_not_found');
+    const set: Partial<NewCoupon> = {};
+    for (const k of [
+      'description', 'minOrderPaise', 'maxDiscountPaise', 'visibility',
+      'validFrom', 'validUntil', 'maxRedemptions', 'perUserLimit', 'status',
+    ] as const) {
+      if (patch[k] !== undefined) (set as Record<string, unknown>)[k] = patch[k];
+    }
+    if (Object.keys(set).length > 0) {
+      await tx.update(coupons).set(set).where(eq(coupons.id, couponId));
+    }
+    const [updated] = await tx.select().from(coupons).where(eq(coupons.id, couponId)).limit(1);
+    await writeAudit(tx, ctx, 'coupon.updated', 'coupon', couponId, existing as unknown as Record<string, unknown>, set);
+    return updated!;
+  });
+}
+
+export async function deleteCoupon(ctx: AuditCtx, owner: CouponOwner, couponId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const existing = await getOwnedCoupon(owner, couponId);
+    if (!existing) throw new NotFound('Coupon not found', 'coupon_not_found');
+    await tx.delete(coupons).where(eq(coupons.id, couponId));
+    await writeAudit(tx, ctx, 'coupon.deleted', 'coupon', couponId, existing as unknown as Record<string, unknown>, null);
+  });
+}
+
+/**
+ * Resolve a typed code for an item purchase. Looks among the item's tenant's
+ * coupons + platform coupons; org-owned wins on an exact-code collision. Then
+ * runs the pure validation + the per-user limit check (DB count). Returns the
+ * coupon and its funder, or a typed error.
+ */
+export async function resolveCouponForCheckout(args: {
+  code: string;
+  tenantId: string;
+  userId: string;
+  basePaise: number;
+  now: Date;
+  item: CheckoutItem;
+}): Promise<{ ok: true; coupon: Coupon; funder: 'org' | 'platform' } | { ok: false; code: CouponErrorCode }> {
+  const code = args.code.trim();
+  const rows = await db
+    .select()
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.code, code),
+        or(
+          and(eq(coupons.ownerType, 'tenant'), eq(coupons.tenantId, args.tenantId)),
+          and(eq(coupons.ownerType, 'platform'), isNull(coupons.tenantId)),
+        ),
+      ),
+    );
+  if (rows.length === 0) return { ok: false, code: 'coupon_not_found' };
+  // Org-owned wins on collision.
+  const coupon = rows.find((r) => r.ownerType === 'tenant') ?? rows[0]!;
+
+  const base = validateCoupon(coupon, { basePaise: args.basePaise, now: args.now, item: args.item });
+  if (!base.ok) return base;
+
+  if (coupon.perUserLimit != null) {
+    const countRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(couponRedemptions)
+      .where(and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.userId, args.userId)));
+    const n = countRows[0]?.n ?? 0;
+    if (n >= coupon.perUserLimit) return { ok: false, code: 'coupon_user_limit' };
+  }
+
+  return { ok: true, coupon, funder: coupon.ownerType === 'platform' ? 'platform' : 'org' };
 }
