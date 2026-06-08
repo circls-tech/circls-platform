@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: '/tenants', label: 'Tenants' },
   { href: '/payouts', label: 'Payouts' },
   { href: '/listings', label: 'Review queue' },
+  { href: '/coupons', label: 'Coupons' },
   { href: '/audit-log', label: 'Audit log' },
   { href: '/support-issues', label: 'Support issues' },
 ] as const;
