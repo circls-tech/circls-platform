@@ -23,3 +23,5 @@ export * from './api_keys.js';
 export * from './webhooks.js';
 export * from './support_issues.js';
 export * from './consumer_activity.js';
+export * from './coupons.js';
+export * from './coupon_redemptions.js';
