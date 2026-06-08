@@ -173,6 +173,6 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       payload: { couponCode: code },
     });
     expect(second.statusCode).toBe(409);
-    expect((second.json() as { code: string }).code).toBe('coupon_max_redeemed');
+    expect((second.json() as { error: { code: string } }).error.code).toBe('coupon_max_redeemed');
   });
 });

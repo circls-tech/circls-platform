@@ -21,7 +21,7 @@ export const coupons = pgTable('coupons', {
   id: uuidPk(),
   ownerType: couponOwnerType('owner_type').notNull(),
   /** Set for tenant-owned; null for platform-owned. */
-  tenantId: uuid('tenant_id').references(() => tenants.id),
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
   code: text('code').notNull(),
   description: text('description'),
   scopeType: couponScopeType('scope_type').notNull(),
