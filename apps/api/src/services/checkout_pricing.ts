@@ -35,7 +35,7 @@ export function computeDiscountPaise(basePaise: number, coupon: CouponForPricing
     discount = Math.floor((basePaise * coupon.discountValue) / 10_000);
     if (coupon.maxDiscountPaise != null) discount = Math.min(discount, coupon.maxDiscountPaise);
   } else {
-    discount = coupon.discountValue;
+    discount = Math.floor(coupon.discountValue);
   }
   return Math.max(0, Math.min(discount, basePaise));
 }

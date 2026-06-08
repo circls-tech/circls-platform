@@ -27,6 +27,10 @@ describe('computeDiscountPaise', () => {
   it('caps a percentage discount at maxDiscountPaise', () => {
     expect(computeDiscountPaise(50000, { discountType: 'percent', discountValue: 1000, maxDiscountPaise: 3000 })).toBe(3000);
   });
+  it('floors a fractional percentage discount to whole paise', () => {
+    // 10001 * 1000 / 10000 = 1000.1 → floor 1000
+    expect(computeDiscountPaise(10001, { discountType: 'percent', discountValue: 1000, maxDiscountPaise: null })).toBe(1000);
+  });
   it('applies a fixed discount in paise', () => {
     expect(computeDiscountPaise(50000, { discountType: 'fixed', discountValue: 5000, maxDiscountPaise: null })).toBe(5000);
   });
