@@ -12,22 +12,25 @@ import {
   useUpdateEvent,
 } from '@/lib/api/events';
 import { EventImages } from '@/components/EventImages';
+import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function fmt(iso: string) {
-  return IST_FMT.format(new Date(iso));
+/** Display a UTC instant in the given zone (the event's own tz, or the
+ *  portal-wide viewing tz when overridden). Display only. */
+function fmt(iso: string, displayTz: string) {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: displayTz,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }
 
+// The zone the datetime-local INPUTS are interpreted in on save (venue
+// convention). Unchanged by the viewing-tz selector — scheduling stays anchored.
 const tz = 'Asia/Kolkata';
 
 /**
@@ -82,6 +85,11 @@ export default function EventDetailPage() {
   const publish = usePublishEvent(tenantId, venueId);
   const cancel = useCancelEvent(tenantId, venueId);
   const update = useUpdateEvent(tenantId, venueId);
+
+  // Zone to DISPLAY times in: the event's own zone (falls back to the venue
+  // convention `tz`), overridden by the portal-wide viewing tz when set.
+  const { resolveTz } = useTimezone();
+  const displayTz = resolveTz(ev?.tzName ?? tz);
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -194,10 +202,10 @@ export default function EventDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-                    When (IST)
+                    When ({displayTz})
                   </dt>
                   <dd className="mt-1 text-sm text-slate-700">
-                    {fmt(ev.startsAt)} → {fmt(ev.endsAt)}
+                    {fmt(ev.startsAt, displayTz)} → {fmt(ev.endsAt, displayTz)}
                   </dd>
                 </div>
                 <div>
@@ -374,7 +382,7 @@ export default function EventDetailPage() {
                       <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
                       <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                       <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
-                      <th className="pb-2 font-medium text-slate-500">Registered (IST)</th>
+                      <th className="pb-2 font-medium text-slate-500">Registered</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f1f5f9]">
@@ -394,7 +402,7 @@ export default function EventDetailPage() {
                             `₹${(b.totalPaise / 100).toFixed(2)}`
                           )}
                         </td>
-                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt)}</td>
+                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt, displayTz)}</td>
                       </tr>
                     ))}
                   </tbody>

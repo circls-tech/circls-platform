@@ -1,29 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { useWebhookDeliveries } from '@/lib/api/queries';
 import type { WebhookDeliveryItem } from '@/lib/api/types';
 import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-});
-
-function fmt(iso: string | null) {
+function fmt(formatter: Intl.DateTimeFormat, iso: string | null) {
   if (!iso) return '—';
-  return IST_FMT.format(new Date(iso));
+  return formatter.format(new Date(iso));
 }
 
 function statusTone(s: WebhookDeliveryItem['status']) {
@@ -61,6 +51,21 @@ export default function WebhookDeliveriesPage() {
   const subId = params.id;
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { resolveTz } = useTimezone();
+  const dtFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
 
   const {
     data,
@@ -103,7 +108,7 @@ export default function WebhookDeliveriesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#e5e7eb] text-left">
-                  <th className="pb-2 pr-4 font-medium text-slate-500">When (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">When</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Event</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Attempts</th>
@@ -116,7 +121,7 @@ export default function WebhookDeliveriesPage() {
                 {rows.map((r) => (
                   <tr key={r.id} className="align-top">
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(r.createdAt)}
+                      {fmt(dtFmt, r.createdAt)}
                     </td>
                     <td className="py-2.5 pr-4 font-mono text-xs text-slate-700">
                       {r.eventType}
@@ -126,10 +131,10 @@ export default function WebhookDeliveriesPage() {
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">{r.attempts}</td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(r.deliveredAt)}
+                      {fmt(dtFmt, r.deliveredAt)}
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(r.nextAttemptAt)}
+                      {fmt(dtFmt, r.nextAttemptAt)}
                     </td>
                     <td className="py-2.5">
                       <ErrorToggle message={r.lastError} />

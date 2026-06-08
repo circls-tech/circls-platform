@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import {
   useApiKeys,
   useCreateApiKey,
@@ -14,21 +15,6 @@ import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
 import { Input } from '@/lib/ui/Input';
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function fmtIst(iso: string | null) {
-  if (!iso) return '—';
-  return IST_FMT.format(new Date(iso));
-}
-
 interface NewKey {
   id: string;
   name: string;
@@ -38,6 +24,26 @@ interface NewKey {
 export default function ApiKeysPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { resolveTz } = useTimezone();
+
+  const fmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
+
+  function fmtIst(iso: string | null) {
+    if (!iso) return '—';
+    return fmt.format(new Date(iso));
+  }
 
   const { data: keys = [], isLoading, isError } = useApiKeys(tenantId);
   const createMut = useCreateApiKey(tenantId);
@@ -178,8 +184,8 @@ export default function ApiKeysPage() {
                   <th className="pb-2 pr-4 font-medium text-slate-500">Prefix</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Role</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Last used (IST)</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Created (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">Last used</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">Created</th>
                   <th className="pb-2 font-medium text-slate-500"></th>
                 </tr>
               </thead>

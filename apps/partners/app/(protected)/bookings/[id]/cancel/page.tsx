@@ -7,16 +7,7 @@ import { useBookingDetail, useBookingPayments, useCancelBookingWithReason } from
 import { ApiError } from '@/lib/api/client';
 import type { CancelResult } from '@/lib/api/types';
 import { Badge, Button, Card, Input } from '@/lib/ui';
-
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
+import { useTimezone } from '@/lib/timezone_context';
 
 function rupees(paise: number): string {
   return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -56,6 +47,22 @@ export default function CancelBookingPage() {
   const { data: booking, isLoading, isError, error } = useBookingDetail(id);
   const { data: paymentsRows } = useBookingPayments(id);
   const cancel = useCancelBookingWithReason();
+
+  // Slot time display honors the portal-wide viewing tz (Auto = your local time).
+  const { resolveTz } = useTimezone();
+  const slotFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
 
   const [reason, setReason] = useState('');
   const [result, setResult] = useState<CancelResult | null>(null);
@@ -143,7 +150,7 @@ export default function CancelBookingPage() {
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-400">First slot</p>
                   <p className="mt-0.5 text-slate-700">
-                    {firstSlotStart ? IST_FMT.format(new Date(firstSlotStart)) : '—'}
+                    {firstSlotStart ? slotFmt.format(new Date(firstSlotStart)) : '—'}
                   </p>
                 </div>
               </div>

@@ -1,8 +1,9 @@
 'use client';
 
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import {
   useActivateMembership,
   useCreateMembership,
@@ -15,15 +16,8 @@ import { useVenues } from '@/lib/api/queries';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 import type { Membership } from '@/lib/api/types';
 
-const IST_DATE_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-});
-
-function fmtDate(iso: string) {
-  return IST_DATE_FMT.format(new Date(iso));
+function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
+  return formatter.format(new Date(iso));
 }
 
 export default function MembershipsPage() {
@@ -423,6 +417,17 @@ interface MembershipBuyersProps {
 
 function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
   const { data, isLoading, error } = useMembershipPurchases(tenantId, membershipId);
+  const { resolveTz } = useTimezone();
+  const dateFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }),
+    [resolveTz],
+  );
 
   return (
     <div className="mt-3 max-w-2xl rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4">
@@ -459,9 +464,9 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
                     <StatusPill status={p.status} />
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">
-                    {fmtDate(p.startsAt)} → {fmtDate(p.endsAt)}
+                    {fmtDate(dateFmt, p.startsAt)} → {fmtDate(dateFmt, p.endsAt)}
                   </td>
-                  <td className="py-2.5 text-slate-700">{fmtDate(p.createdAt)}</td>
+                  <td className="py-2.5 text-slate-700">{fmtDate(dateFmt, p.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

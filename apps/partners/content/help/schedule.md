@@ -15,7 +15,9 @@ Click **Build preview**. If something's off you'll see a clear message (for exam
 
 ## 2. Shape the week on the grid
 
-The preview shows a representative week (Sunday–Saturday) as a grid: one column per day, one row per slot. Times are shown in the venue's timezone.
+The preview shows a representative week (Sunday–Saturday) as a grid: one column per day, one row per slot. Times are shown in the venue's timezone by default; a small read-out above the grid tells you which zone is in effect.
+
+You can change the zone times are *displayed* in from the **timezone selector in the top bar** (it applies across the whole portal). This is view-only — slots are always generated and released in the venue's own timezone no matter what you're viewing in. Leave the selector on **Auto** to follow each venue's own time.
 
 - **Click and drag** to select a range of cells.
 - With cells selected, the **inspector panel** lets you:

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import {
   useCreateWebhookSubscription,
   useDeleteWebhookSubscription,
@@ -13,16 +14,6 @@ import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
 import { Input } from '@/lib/ui/Input';
-
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
 
 const AVAILABLE_EVENTS = [
   'booking.confirmed',
@@ -40,6 +31,20 @@ interface NewSubscription {
 export default function WebhooksPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { resolveTz } = useTimezone();
+  const fmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
 
   const { data: subs = [], isLoading, isError } = useWebhookSubscriptions(tenantId);
   const createMut = useCreateWebhookSubscription(tenantId);
@@ -197,7 +202,7 @@ export default function WebhooksPage() {
                   <th className="pb-2 pr-4 font-medium text-slate-500">URL</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Events</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Created (IST)</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">Created</th>
                   <th className="pb-2 font-medium text-slate-500"></th>
                 </tr>
               </thead>
@@ -221,7 +226,7 @@ export default function WebhooksPage() {
                       />
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {IST_FMT.format(new Date(s.createdAt))}
+                      {fmt.format(new Date(s.createdAt))}
                     </td>
                     <td className="py-2.5 text-right">
                       <div className="flex justify-end gap-2">
