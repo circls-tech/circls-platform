@@ -18,7 +18,7 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { tenants } from '../db/schema/tenants.js';
-import { tenantMembers, type TenantRole } from '../db/schema/tenant_members.js';
+import { tenantMembers, ROLE_RANK, type TenantRole } from '../db/schema/tenant_members.js';
 import { tenantInvitations, type TenantInvitation } from '../db/schema/tenant_invitations.js';
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
@@ -273,8 +273,16 @@ export interface AcceptInvitationInput {
 export interface AcceptInvitationResult {
   invitationId: string;
   tenantId: string;
+  tenantName: string;
   userId: string;
+  /** The member's effective role after accepting (post-bump). */
   role: TenantRole;
+  /** True if the user was already a member of this tenant before accepting. */
+  alreadyMember: boolean;
+  /** True if accepting raised the member to a higher role. */
+  roleChanged: boolean;
+  /** The member's role before accepting, when they were already a member. */
+  previousRole: TenantRole | null;
 }
 
 export async function acceptInvitation(
@@ -333,10 +341,48 @@ export async function acceptInvitation(
       }
     }
 
-    await tx
-      .insert(tenantMembers)
-      .values({ userId: existing.id, tenantId: meta.tenantId, role: meta.role })
-      .onConflictDoNothing({ target: [tenantMembers.userId, tenantMembers.tenantId] });
+    // Are they already a member of this tenant? If so, the invite is a no-op
+    // for membership — but we still bump their role when the invite grants a
+    // strictly higher one. Otherwise we add them as a new member.
+    const [currentMember] = await tx
+      .select({ role: tenantMembers.role })
+      .from(tenantMembers)
+      .where(
+        and(
+          eq(tenantMembers.userId, existing.id),
+          eq(tenantMembers.tenantId, meta.tenantId),
+        ),
+      )
+      .limit(1);
+
+    const alreadyMember = currentMember != null;
+    const previousRole = currentMember?.role ?? null;
+    let roleChanged = false;
+    let effectiveRole = meta.role;
+
+    if (currentMember) {
+      if (ROLE_RANK[meta.role] > ROLE_RANK[currentMember.role]) {
+        await tx
+          .update(tenantMembers)
+          .set({ role: meta.role })
+          .where(
+            and(
+              eq(tenantMembers.userId, existing.id),
+              eq(tenantMembers.tenantId, meta.tenantId),
+            ),
+          );
+        roleChanged = true;
+        effectiveRole = meta.role;
+      } else {
+        // Same or lower role — keep their existing (higher-or-equal) role.
+        effectiveRole = currentMember.role;
+      }
+    } else {
+      await tx
+        .insert(tenantMembers)
+        .values({ userId: existing.id, tenantId: meta.tenantId, role: meta.role })
+        .onConflictDoNothing({ target: [tenantMembers.userId, tenantMembers.tenantId] });
+    }
 
     const acceptedAt = new Date();
     const claimed = await tx
@@ -362,21 +408,37 @@ export async function acceptInvitation(
       { acceptedAt: null },
       { acceptedAt, acceptedUserId: existing.id },
     );
-    await writeAudit(
-      tx,
-      { tenantId: meta.tenantId, actorUserId: existing.id },
-      'tenant.member_added',
-      'tenant_member',
-      existing.id,
-      null,
-      { userId: existing.id, role: meta.role, source: 'invitation' },
-    );
+    if (!alreadyMember) {
+      await writeAudit(
+        tx,
+        { tenantId: meta.tenantId, actorUserId: existing.id },
+        'tenant.member_added',
+        'tenant_member',
+        existing.id,
+        null,
+        { userId: existing.id, role: meta.role, source: 'invitation' },
+      );
+    } else if (roleChanged) {
+      await writeAudit(
+        tx,
+        { tenantId: meta.tenantId, actorUserId: existing.id },
+        'tenant.member_role_changed',
+        'tenant_member',
+        existing.id,
+        { role: previousRole },
+        { role: effectiveRole, source: 'invitation' },
+      );
+    }
 
     return {
       invitationId: meta.invitationId,
       tenantId: meta.tenantId,
+      tenantName: meta.tenantName,
       userId: existing.id,
-      role: meta.role,
+      role: effectiveRole,
+      alreadyMember,
+      roleChanged,
+      previousRole,
     };
   });
 }

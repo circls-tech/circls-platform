@@ -516,7 +516,7 @@ export function Matrix({
                     isToday ? 'text-red-600' : '',
                   ].join(' ')}
                   onClick={() => selectDay(colIndex)}
-                  title={`Select all ${day} slots`}
+                  title={`Toggle all ${day} slots`}
                 >
                   <span className={isToday ? 'font-bold' : ''}>{day}</span>
                   <span
@@ -548,7 +548,7 @@ export function Matrix({
                     'hover:text-slate-600 cursor-pointer select-none py-1',
                   ].join(' ')}
                   onClick={() => selectRow(rowIndex)}
-                  title={`Select all ${tk} slots`}
+                  title={`Toggle all ${tk} slots`}
                 >
                   {tk}
                 </button>

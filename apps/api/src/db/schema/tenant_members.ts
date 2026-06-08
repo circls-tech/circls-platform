@@ -25,3 +25,14 @@ export const tenantMembers = pgTable(
 export type TenantMember = typeof tenantMembers.$inferSelect;
 export type NewTenantMember = typeof tenantMembers.$inferInsert;
 export type TenantRole = (typeof tenantRole.enumValues)[number];
+
+/**
+ * Privilege ranking — higher number = more privileged. Used to decide whether
+ * accepting an invitation should "bump" an existing member to a higher role.
+ */
+export const ROLE_RANK: Record<TenantRole, number> = {
+  readonly: 0,
+  staff: 1,
+  manager: 2,
+  owner: 3,
+};
