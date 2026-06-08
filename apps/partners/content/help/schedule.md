@@ -42,7 +42,9 @@ After a successful release, follow **Go to reception view →** to see and manag
 
 ## Reception view — managing live slots
 
-The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Each slot has a status:
+The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Like the builder grid, its slot times and day columns follow the **timezone selector in the top bar** — leave it on **Auto** to read the schedule in the venue's own zone, or pick a zone to view the same slots in your local time. This is display-only; it never changes when a slot actually is.
+
+Each slot has a status:
 
 | Status | Meaning |
 | --- | --- |

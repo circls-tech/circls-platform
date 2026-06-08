@@ -8,6 +8,7 @@ import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useArena, useArenaSlots, useBulkSlots, useCancelBookingById, useVenues } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
+import { useTimezone } from '@/lib/timezone_context';
 import { Card } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -45,6 +46,13 @@ export default function ArenaReceptionPage() {
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
 
+  // The grid is *displayed* in the portal-wide viewing timezone (top-bar
+  // selector). On "Auto" this falls back to the venue's own tz. Slot times,
+  // day-column bucketing and the today highlight all follow `displayTz` so the
+  // whole grid is internally consistent in whatever zone you're viewing.
+  const { resolveTz } = useTimezone();
+  const displayTz = resolveTz(tz);
+
   // ── Week state ──
   const [weekStart, setWeekStart] = useState<Date>(thisSunday);
 
@@ -55,11 +63,11 @@ export default function ArenaReceptionPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Widen the fetch window by ±1 day to absorb browser↔venue timezone skew so
-  // boundary slots are never clipped. The Matrix still places slots into the
-  // correct 7 columns using the venue tz (IST); this only widens the fetch.
-  // NOTE: single-tz assumption (IST/Asia/Kolkata) — full tz-correct windowing
-  // is deferred; see the matching caveat in slot_service.ts.
+  // Widen the fetch window by ±1 day to absorb browser↔display timezone skew so
+  // boundary slots are never clipped. The Matrix places slots into the correct 7
+  // columns using `displayTz`; this only widens the fetch (±1 day comfortably
+  // covers the max ~14h tz offset). Slots are absolute instants, so changing the
+  // viewing zone only re-labels/re-buckets them — it never moves a slot in time.
   const fromIso = useMemo(() => addDays(weekStart, -1).toISOString(), [weekStart]);
   const toIso = useMemo(() => addDays(weekStart, 8).toISOString(), [weekStart]);
 
@@ -181,7 +189,7 @@ export default function ArenaReceptionPage() {
           mode="reception"
           slots={slots}
           weekStart={weekStart}
-          tz={tz}
+          tz={displayTz}
           now={now}
           onBulk={handleBulk}
           onBook={handleBook}
