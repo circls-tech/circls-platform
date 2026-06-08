@@ -14,3 +14,6 @@ export { StatusPill } from './StatusPill';
 export type { StatusPillProps } from './StatusPill';
 
 export { BrandMark } from './BrandMark';
+
+export { Modal } from './Modal';
+export type { ModalProps } from './Modal';
