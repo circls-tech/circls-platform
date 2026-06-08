@@ -32,6 +32,7 @@ export const payments = pgTable('payments', {
   providerOrderId: text('provider_order_id'),
   providerPaymentId: text('provider_payment_id'),
   amountPaise: bigintPaise('amount_paise').notNull(),
+  settleBasePaise: bigintPaise('settle_base_paise'),
   currency: text('currency').notNull().default('INR'),
   status: paymentStatus('status').notNull().default('pending'),
   kind: paymentKind('kind').notNull(),
