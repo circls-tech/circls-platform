@@ -92,6 +92,15 @@ export default function AcceptInvitePage() {
       `/v1/invitations/${encodeURIComponent(token)}/accept`,
       { method: 'POST', body: JSON.stringify({ firebaseIdToken }) },
     );
+    // Accepting may have promoted our email to verified server-side (the invite
+    // token proved ownership). Refresh the local session so the next requests
+    // carry the updated claim. Best-effort — membership is already granted.
+    try {
+      await auth.currentUser?.reload();
+      await auth.currentUser?.getIdToken(true);
+    } catch {
+      /* token refreshes within the hour regardless */
+    }
     if (res.alreadyMember && !res.roleChanged) {
       setResult(res);
       return;

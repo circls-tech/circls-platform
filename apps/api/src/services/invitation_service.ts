@@ -22,7 +22,7 @@ import { tenantMembers, ROLE_RANK, type TenantRole } from '../db/schema/tenant_m
 import { tenantInvitations, type TenantInvitation } from '../db/schema/tenant_invitations.js';
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
-import { Conflict, NotFound } from '../lib/errors.js';
+import { Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { env } from '../config/env.js';
 import { getNotifications } from '../lib/notifications/index.js';
 import { logger } from '../lib/logger.js';
@@ -268,6 +268,13 @@ export interface AcceptInvitationInput {
   token: string;
   firebaseUid: string;
   email: string;
+  /**
+   * Whether the accepting Firebase token's email was already verified. An
+   * unverified token is allowed to CREATE a fresh identity (the secret invite
+   * token proves inbox control), but is refused when it would ADOPT a
+   * pre-existing user row onto a new uid — that would be account takeover (C1).
+   */
+  emailVerified: boolean;
 }
 
 export interface AcceptInvitationResult {
@@ -316,6 +323,13 @@ export async function acceptInvitation(
         .limit(1);
       if (byEmail) {
         if (byEmail.firebaseUid !== input.firebaseUid) {
+          // Re-binding an existing identity onto a new uid is account takeover
+          // unless the incoming token actually owns (verified) the email. The
+          // secret invite token is enough to JOIN as a new user, but never to
+          // hijack a pre-existing account (C1 guard).
+          if (!input.emailVerified) {
+            throw new Forbidden('Email not verified', 'email_unverified');
+          }
           await tx
             .update(users)
             .set({ firebaseUid: input.firebaseUid })

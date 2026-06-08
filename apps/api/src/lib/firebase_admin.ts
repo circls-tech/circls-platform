@@ -47,3 +47,14 @@ export async function verifyIdToken(token: string): Promise<DecodedIdToken> {
   // closes the revocation gap (M5).
   return firebaseAuth().verifyIdToken(token, true);
 }
+
+/**
+ * Promote a Firebase user's email to verified. Used by the invitation-accept
+ * flow: possession of the secret, single-use invite token (delivered to the
+ * invited address) proves inbox control, so once the invite is accepted we mark
+ * that email verified — turning the freshly signed-up invitee into a full
+ * verified account.
+ */
+export async function markEmailVerified(uid: string): Promise<void> {
+  await firebaseAuth().updateUser(uid, { emailVerified: true });
+}

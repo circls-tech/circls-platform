@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // Firebase verifier mock. Distinct tokens model verified vs unverified email
 // ownership so the C1 account-takeover guards can be exercised end to end.
+const markEmailVerifiedMock = vi.fn(async (_uid: string) => {});
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     const map: Record<string, Record<string, unknown>> = {
@@ -24,6 +25,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
     if (!u) throw new Error('bad token');
     return u;
   }),
+  markEmailVerified: markEmailVerifiedMock,
 }));
 
 const { closeDb, db } = await import('../db/client.js');
@@ -73,7 +75,8 @@ describe.skipIf(!runIntegration)('invitations + C1 unverified-email guards', () 
     await closeDb();
   });
 
-  it('rejects POST /v1/invitations/:token/accept with an unverified email (403 email_unverified)', async () => {
+  it('accepts a NEW invitee with an unverified email (the secret token is the proof) and promotes them to verified', async () => {
+    markEmailVerifiedMock.mockClear();
     // Create a real, live invitation for invitee@x.com and grab the plaintext token.
     const inv = await app.inject({
       method: 'POST',
@@ -84,17 +87,19 @@ describe.skipIf(!runIntegration)('invitations + C1 unverified-email guards', () 
     expect(inv.statusCode).toBe(201);
     const inviteToken = (inv.json() as { token: string }).token;
 
-    // Accept it with a token whose email_verified is false → must be rejected
-    // BEFORE any adoption/membership write.
+    // Accept with an UNVERIFIED token. There's no pre-existing identity for this
+    // email, so possession of the secret invite token is sufficient: the join
+    // succeeds and we promote the email to verified out-of-band.
     const res = await app.inject({
       method: 'POST',
       url: `/v1/invitations/${inviteToken}/accept`,
       payload: { firebaseIdToken: 'unverifiedInvitee' },
     });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error.code).toBe('email_unverified');
+    expect(res.statusCode).toBe(201);
+    expect(res.json().role).toBe('staff');
+    expect(markEmailVerifiedMock).toHaveBeenCalledWith('fbuid_inv_unverified');
 
-    // The invitation must still be pending (not consumed by the rejected accept).
+    // The invitation is now consumed (no longer pending).
     const pending = await app.inject({
       method: 'GET',
       url: `/v1/tenants/${tenantId}/invitations?status=pending`,
@@ -103,7 +108,43 @@ describe.skipIf(!runIntegration)('invitations + C1 unverified-email guards', () 
     expect(pending.statusCode).toBe(200);
     expect(
       (pending.json() as { email: string }[]).some((i) => i.email === 'invitee@x.com'),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('refuses to adopt the victim row when an UNVERIFIED token accepts an invite for that email (403)', async () => {
+    markEmailVerifiedMock.mockClear();
+    // Victim establishes their row under their own verified uid.
+    const victim = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('victim') });
+    expect(victim.statusCode).toBe(200);
+    const victimBody = victim.json() as { id: string };
+
+    // Owner invites the victim's email.
+    const inv = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/invitations`,
+      headers: bearer('owner'),
+      payload: { email: 'victim@x.com', role: 'staff' },
+    });
+    expect(inv.statusCode).toBe(201);
+    const inviteToken = (inv.json() as { token: string }).token;
+
+    // Attacker holds the token + victim's email but UNVERIFIED → must be rejected
+    // before any row adoption, and the email must NOT be promoted to verified.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/invitations/${inviteToken}/accept`,
+      payload: { firebaseIdToken: 'attacker' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('email_unverified');
+    expect(markEmailVerifiedMock).not.toHaveBeenCalled();
+
+    // The victim's row still belongs to the victim's original uid.
+    const rows = await db.execute<{ firebase_uid: string }>(sql`
+      SELECT firebase_uid FROM users WHERE id = ${victimBody.id}::uuid
+    `);
+    const stillVictim = (rows as unknown as { firebase_uid: string }[])[0];
+    expect(stillVictim?.firebase_uid).toBe('fbuid_inv_victim');
   });
 
   it('closes the takeover: an unverified email on GET /v1/me does NOT adopt the victim row', async () => {

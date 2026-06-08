@@ -6,7 +6,7 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { verifyIdToken } from '../lib/firebase_admin.js';
+import { markEmailVerified, verifyIdToken } from '../lib/firebase_admin.js';
 import {
   acceptInvitation,
   createInvitation,
@@ -126,14 +126,27 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
     if (!decoded.email) {
       throw new Forbidden('Firebase token has no email', 'no_email_claim');
     }
-    if (!decoded.email_verified) {
-      throw new Forbidden('Email not verified', 'email_unverified');
-    }
+    // Email ownership is proven by possession of the secret, single-use invite
+    // token, which was delivered to the invited address — so we accept an
+    // unverified token here and promote the email to verified on success.
+    // acceptInvitation still REFUSES to adopt a pre-existing user identity onto
+    // an unverified token (that would be an account-takeover vector, C1).
+    const wasVerified = Boolean(decoded.email_verified);
     const result = await acceptInvitation({
       token,
       firebaseUid: decoded.uid,
       email: decoded.email,
+      emailVerified: wasVerified,
     });
+    if (!wasVerified) {
+      // Membership is already committed; promotion is best-effort. If it fails
+      // the invitee is still a valid (uid-based) member — log and carry on.
+      try {
+        await markEmailVerified(decoded.uid);
+      } catch (err) {
+        req.log.error({ err, uid: decoded.uid }, 'failed to mark invited email verified');
+      }
+    }
     return reply.status(201).send(result);
   });
 };
