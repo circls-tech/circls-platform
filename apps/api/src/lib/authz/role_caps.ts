@@ -15,6 +15,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'payments.refund',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
+    'discounts.read', 'discounts.write',
     'integration.api_keys.manage',
   ],
   manager: [
@@ -29,6 +30,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'payments.refund',
     'events.read', 'events.write',
     'memberships.read', 'memberships.write',
+    'discounts.read', 'discounts.write',
     'integration.api_keys.manage',
   ],
   staff: [
@@ -38,6 +40,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'bookings.read', 'bookings.create', 'bookings.cancel',
     'analytics.read',
     'events.read', 'memberships.read',
+    'discounts.read',
   ],
   readonly: [
     'tenant.read',
@@ -46,6 +49,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
     'bookings.read',
     'analytics.read', 'financials.read',
     'events.read', 'memberships.read',
+    'discounts.read',
   ],
 } as const;
 
@@ -57,6 +61,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'admin.tenants.read', 'admin.tenants.suspend',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
+    'admin.coupons.read', 'admin.coupons.write',
   ],
   // Ops lead: every admin power; no team mgmt of Circls itself.
   manager: [
@@ -67,6 +72,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'admin.tenants.read', 'admin.tenants.suspend',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
+    'admin.coupons.read', 'admin.coupons.write',
   ],
   // Ops IC: tenant + listing review + audit + payout visibility, no execution.
   staff: [
@@ -76,6 +82,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'admin.listings.review',
     'admin.payouts.read',
     'admin.audit.read',
+    'admin.coupons.read',
   ],
   // Read-only audit / accountant for Circls — sees payouts, can't execute them.
   readonly: [
@@ -84,5 +91,6 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'admin.tenants.read',
     'admin.payouts.read',
     'admin.audit.read',
+    'admin.coupons.read',
   ],
 } as const;
