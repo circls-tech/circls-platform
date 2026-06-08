@@ -88,6 +88,14 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
       'How to generate API keys, configure outbound webhooks, and integrate circls with your own systems.',
     order: 8,
   },
+  {
+    slug: 'coupons',
+    title: 'Creating and managing discount coupons',
+    category: 'Discounts',
+    summary:
+      'Create percentage or fixed-amount discount codes, scope them to your org / a venue / a specific event, arena or membership, set validity and redemption limits, and choose whether they are public or private.',
+    order: 9,
+  },
 ];
 
 export function getArticleMeta(slug: string): HelpArticleMeta | undefined {

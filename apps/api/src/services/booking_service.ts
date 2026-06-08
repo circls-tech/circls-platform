@@ -8,6 +8,15 @@ import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { createRouteOrder } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
+import { computeCheckout } from './checkout_pricing.js';
+import { recordRedemption } from './coupon_service.js';
+import type { Coupon } from '../db/schema/coupons.js';
+
+/** A resolved coupon + who funds the discount, threaded into the booking flows. */
+export interface CouponPricing {
+  coupon: Coupon;
+  funder: 'org' | 'platform';
+}
 
 export interface BookSlotsInput {
   slotIds: string[];
@@ -160,12 +169,13 @@ export async function prepareOnlineBookingWithPayment(
   ctx: AuditCtx,
   venueId: string,
   input: PrepareOnlineBookingInput,
+  pricing?: CouponPricing | null,
 ): Promise<PrepareOnlineBookingResult> {
   if (input.slotIds.length === 0) throw new Conflict('No slots selected', 'no_slots');
 
   // Same claim flow as walk-in, but staged: bookings.status='pending', and we
   // capture the price total so the Razorpay order has the right paise amount.
-  const { bookingId, totalPaise } = await db.transaction(async (tx) => {
+  const { bookingId, totalPaise, settleBasePaise, isFree } = await db.transaction(async (tx) => {
     const sel = await tx
       .select({
         ...getTableColumns(slots),
@@ -189,6 +199,22 @@ export async function prepareOnlineBookingWithPayment(
 
     const total = sel.reduce((s, r) => s + r.pricePaise, 0);
 
+    // Money model: discount + gross-up. A 100%/over-base coupon makes the
+    // booking free (skip Razorpay). settleBase is the org's payout base: full
+    // base when platform-funded, discounted base when org-funded.
+    const breakdown = computeCheckout(
+      total,
+      pricing
+        ? {
+            discountType: pricing.coupon.discountType,
+            discountValue: pricing.coupon.discountValue,
+            maxDiscountPaise: pricing.coupon.maxDiscountPaise,
+          }
+        : null,
+    );
+    const free = breakdown.totalPaise === 0;
+    const settleBase = pricing && pricing.funder === 'platform' ? total : breakdown.discountedBasePaise;
+
     // Circls is the merchant — the customer's payment lands in Circls's account.
     // No per-tenant KYC / Linked Account gate; the venue is paid out weekly,
     // net of commission, via the payouts workflow.
@@ -199,12 +225,15 @@ export async function prepareOnlineBookingWithPayment(
         venueId,
         itemType: 'slot',
         channel: 'circls',
-        paymentMethod: 'razorpay_route',
-        status: 'pending',
+        paymentMethod: free ? 'free' : 'razorpay_route',
+        status: free ? 'confirmed' : 'pending',
         customerName: input.customerName,
         customerContact: input.customerContact,
         note: input.note ?? null,
-        totalPaise: total,
+        basePaise: total,
+        discountPaise: breakdown.discountPaise,
+        couponId: pricing?.coupon.id ?? null,
+        totalPaise: breakdown.totalPaise,
         createdByUserId: ctx.actorUserId,
       })
       .returning();
@@ -247,18 +276,45 @@ export async function prepareOnlineBookingWithPayment(
       })
       .where(eq(bookings.id, booking!.id));
 
+    // When a coupon applies, record the redemption inside the booking tx so a
+    // lost cap race rolls the whole booking back (and frees the claimed slots).
+    if (pricing) {
+      await recordRedemption(tx, {
+        coupon: pricing.coupon,
+        bookingId: booking!.id,
+        userId: ctx.actorUserId,
+        tenantId: ctx.tenantId,
+        basePaise: total,
+        discountPaise: breakdown.discountPaise,
+        funder: pricing.funder,
+      });
+    }
+
     await writeAudit(tx, ctx, 'booking.create_pending', 'booking', booking!.id, null, {
       slotIds: input.slotIds,
       total,
+      discountPaise: breakdown.discountPaise,
+      totalPaise: breakdown.totalPaise,
+      free,
       channel: 'circls',
-      paymentMethod: 'razorpay_route',
+      paymentMethod: free ? 'free' : 'razorpay_route',
     });
 
     return {
       bookingId: booking!.id,
-      totalPaise: total,
+      totalPaise: breakdown.totalPaise,
+      settleBasePaise: settleBase,
+      isFree: free,
     };
   });
+
+  // Free booking (e.g. a 100%-off coupon): no Razorpay order, no payment row.
+  if (isFree) {
+    return {
+      bookingId,
+      payment: { orderId: '', keyId: '', amountPaise: 0, currency: 'INR' },
+    };
+  }
 
   // Create the order outside the booking transaction so a network blip talking
   // to Razorpay doesn't roll back the pending booking + slot claim. If
@@ -268,6 +324,7 @@ export async function prepareOnlineBookingWithPayment(
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
+    settleBasePaise,
     actorUserId: ctx.actorUserId,
   });
 
@@ -354,6 +411,7 @@ export interface BookEventResult {
 export async function bookEvent(
   eventId: string,
   customer: BookEventCustomer,
+  pricing?: CouponPricing | null,
 ): Promise<BookEventResult> {
   // Phase 1 — atomic seat reservation. The booking row goes into the DB inside
   // a transaction so capacity check + insert are race-safe.
@@ -386,7 +444,21 @@ export async function bookEvent(
       }
     }
 
-    const isFree = ev.pricePaise === 0;
+    // Money model: discount + gross-up. A 100%/over-base coupon can make a paid
+    // event free, so derive isFree from the grossed-up total, not the base.
+    const basePaise = ev.pricePaise;
+    const breakdown = computeCheckout(
+      basePaise,
+      pricing
+        ? {
+            discountType: pricing.coupon.discountType,
+            discountValue: pricing.coupon.discountValue,
+            maxDiscountPaise: pricing.coupon.maxDiscountPaise,
+          }
+        : null,
+    );
+    const isFree = breakdown.totalPaise === 0;
+    const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
     // Circls is the merchant — no per-tenant KYC / Linked Account gate.
 
     const [b] = await tx
@@ -402,8 +474,11 @@ export async function bookEvent(
         customerName: customer.name ?? null,
         customerContact: customer.contact ?? null,
         note: customer.note ?? null,
-        pricePaise: ev.pricePaise,
-        totalPaise: ev.pricePaise,
+        pricePaise: basePaise,
+        basePaise,
+        discountPaise: breakdown.discountPaise,
+        couponId: pricing?.coupon.id ?? null,
+        totalPaise: breakdown.totalPaise,
         itemData: { eventId: ev.id, eventName: ev.name },
         createdByUserId: ctx.actorUserId,
       })
@@ -427,12 +502,33 @@ export async function bookEvent(
       }
     }
 
+    // Record the redemption inside the same tx so a lost cap race rolls the
+    // booking (and capacity claim) back together.
+    if (pricing) {
+      await recordRedemption(tx, {
+        coupon: pricing.coupon,
+        bookingId: b.id,
+        userId: customer.userId,
+        tenantId: ev.tenantId,
+        basePaise,
+        discountPaise: breakdown.discountPaise,
+        funder: pricing.funder,
+      });
+    }
+
     await writeAudit(tx, ctx, 'event.booked', 'booking', b.id, null, {
       eventId: ev.id,
       free: isFree,
     });
 
-    return { booking: b, isFree, tenantId: ev.tenantId, eventName: ev.name };
+    return {
+      booking: b,
+      isFree,
+      tenantId: ev.tenantId,
+      eventName: ev.name,
+      totalPaise: breakdown.totalPaise,
+      settleBasePaise,
+    };
   });
 
   if (reserved.isFree) {
@@ -449,7 +545,8 @@ export async function bookEvent(
     const result = await paymentsService.createRouteOrder({
       bookingId: reserved.booking.id,
       tenantId: reserved.tenantId,
-      amountPaise: reserved.booking.pricePaise ?? 0,
+      amountPaise: reserved.totalPaise,
+      settleBasePaise: reserved.settleBasePaise,
       actorUserId: customer.userId,
     });
     providerOrderId = result.providerOrderId;
@@ -466,6 +563,6 @@ export async function bookEvent(
     paymentId,
     providerOrderId,
     keyId: env.RAZORPAY_KEY_ID ?? '',
-    amountPaise: reserved.booking.pricePaise ?? 0,
+    amountPaise: reserved.totalPaise,
   };
 }

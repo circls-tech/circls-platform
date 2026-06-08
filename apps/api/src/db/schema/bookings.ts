@@ -1,6 +1,7 @@
 import { customType, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { arenas } from './arenas.js';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
+import { coupons } from './coupons.js';
 import { tenants } from './tenants.js';
 import { users } from './users.js';
 import { venues } from './venues.js';
@@ -58,6 +59,9 @@ export const bookings = pgTable('bookings', {
   customerContact: text('customer_contact'),
   note: text('note'),
   totalPaise: bigintPaise('total_paise'),
+  basePaise: bigintPaise('base_paise'),
+  discountPaise: bigintPaise('discount_paise').default(0),
+  couponId: uuid('coupon_id').references(() => coupons.id),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

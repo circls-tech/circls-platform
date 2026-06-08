@@ -84,7 +84,7 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   const grossRows = await db
     .select({
       tenantId: payments.tenantId,
-      gross: sql<number>`coalesce(sum(${payments.amountPaise}), 0)::bigint`,
+      gross: sql<number>`coalesce(sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
     })
     .from(payments)
     .where(

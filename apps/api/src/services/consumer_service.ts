@@ -22,9 +22,10 @@ import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { venues, type Venue } from '../db/schema/venues.js';
-import { Conflict, NotFound } from '../lib/errors.js';
+import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { prepareOnlineBookingWithPayment, bookEvent } from './booking_service.js';
-import type { PrepareOnlineBookingResult, BookEventResult } from './booking_service.js';
+import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
+import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
 import { imagesForEvents } from './event_image_service.js';
@@ -344,6 +345,39 @@ export interface ConsumerSlotBookingInput {
   customerContact: string;
   note?: string | null;
   actorUserId: string;
+  /** Optional coupon typed at checkout; resolved + validated before booking. */
+  couponCode?: string;
+}
+
+/**
+ * Resolve + validate a typed coupon code for an item, returning the
+ * `CouponPricing` to thread into the booking flow, or throwing a typed
+ * 400/409. Shared by the three consumer book/purchase paths.
+ */
+async function resolvePricing(
+  req:
+    | { itemType: 'slot'; slotIds: string[] }
+    | { itemType: 'event'; eventId: string }
+    | { itemType: 'membership'; membershipId: string },
+  userId: string,
+  couponCode: string,
+): Promise<CouponPricing> {
+  const priced = await priceItem(req);
+  const resolved = await resolveCouponForCheckout({
+    code: couponCode,
+    tenantId: priced.tenantId,
+    userId,
+    basePaise: priced.basePaise,
+    now: new Date(),
+    item: priced.item,
+  });
+  if (!resolved.ok) {
+    if (resolved.code === 'coupon_max_redeemed' || resolved.code === 'coupon_user_limit') {
+      throw new Conflict('Coupon not applicable', resolved.code);
+    }
+    throw new BadRequest('Coupon not applicable', resolved.code);
+  }
+  return { coupon: resolved.coupon, funder: resolved.funder };
 }
 
 /**
@@ -374,6 +408,10 @@ export async function consumerBookSlots(
 
   await assertVenueVisible(venueId);
 
+  const pricing = input.couponCode
+    ? await resolvePricing({ itemType: 'slot', slotIds: input.slotIds }, input.actorUserId, input.couponCode)
+    : null;
+
   return prepareOnlineBookingWithPayment(
     { tenantId, actorUserId: input.actorUserId },
     venueId,
@@ -383,6 +421,7 @@ export async function consumerBookSlots(
       customerContact: input.customerContact,
       note: input.note ?? null,
     },
+    pricing,
   );
 }
 
@@ -390,6 +429,7 @@ export async function consumerBookSlots(
 export async function consumerBookEvent(
   eventId: string,
   customer: { userId: string; name?: string | null; contact?: string | null },
+  couponCode?: string,
 ): Promise<BookEventResult> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!ev || ev.status !== 'published') throw new NotFound('Event not found', 'event_not_found');
@@ -405,20 +445,27 @@ export async function consumerBookEvent(
       .limit(1);
     if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
   }
-  return bookEvent(eventId, customer);
+  const pricing = couponCode
+    ? await resolvePricing({ itemType: 'event', eventId }, customer.userId, couponCode)
+    : null;
+  return bookEvent(eventId, customer, pricing);
 }
 
 /** Purchase a membership as a consumer (must be active + tenant visible). */
 export async function consumerPurchaseMembership(
   membershipId: string,
   userId: string,
+  couponCode?: string,
 ): Promise<PurchaseMembershipResult> {
   const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
   if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
   // Confirm the owning tenant is live (membership has no own venue gate when tenant-wide).
   const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
   if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
-  return purchaseMembership({ membershipId, userId });
+  const pricing = couponCode
+    ? await resolvePricing({ itemType: 'membership', membershipId }, userId, couponCode)
+    : null;
+  return purchaseMembership({ membershipId, userId }, pricing);
 }
 
 // ── My bookings ──────────────────────────────────────────────────────────────

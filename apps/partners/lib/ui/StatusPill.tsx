@@ -18,6 +18,8 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   inactive:       { label: 'Inactive',       tone: 'neutral' },
   draft:          { label: 'Draft',          tone: 'open' },
   cancelled:      { label: 'Cancelled',      tone: 'neutral' },
+  paused:         { label: 'Paused',         tone: 'warning' },
+  expired:        { label: 'Expired',        tone: 'neutral' },
 };
 
 export interface StatusPillProps {

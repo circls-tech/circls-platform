@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
+  { href: '/coupons', label: 'Coupons' },
   { href: '/settings', label: 'Settings' },
 ] as const;
 

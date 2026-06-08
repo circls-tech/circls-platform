@@ -138,6 +138,31 @@ export interface AdminListingListResponse {
   rows: AdminListingRow[];
 }
 
+// ── Coupons ───────────────────────────────────────────────────────────────────
+
+export interface Coupon {
+  id: string;
+  ownerType: 'platform' | 'tenant';
+  tenantId: string | null;
+  code: string;
+  description: string | null;
+  scopeType: 'org' | 'venue' | 'event' | 'arena' | 'membership';
+  scopeId: string | null;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  maxDiscountPaise: number | null;
+  minOrderPaise: number | null;
+  visibility: 'public' | 'private';
+  validFrom: string | null;
+  validUntil: string | null;
+  maxRedemptions: number | null;
+  perUserLimit: number | null;
+  redeemedCount: number;
+  status: 'active' | 'paused' | 'expired';
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Support issues ────────────────────────────────────────────────────────────
 
 export type SupportIssueStatus = 'unresolved' | 'in_progress' | 'backlog' | 'resolved';

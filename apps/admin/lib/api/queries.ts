@@ -10,6 +10,7 @@ import type {
   AdminSupportIssue,
   AdminTenantDetail,
   AdminTenantListPage,
+  Coupon,
   SupportIssueStatus,
   SupportIssuePriority,
   TenantAuditLogPage,
@@ -211,5 +212,58 @@ export function useUpdateSupportIssue() {
         body: JSON.stringify({ status, priority }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'support-issues'] }),
+  });
+}
+
+// ── Coupons ───────────────────────────────────────────────────────────────────
+
+export function useAdminCoupons() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'coupons'],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<Coupon[]>('/v1/admin/coupons'),
+  });
+}
+
+export interface AdminCreateCouponBody {
+  code: string;
+  description?: string;
+  scopeType: 'org' | 'venue' | 'event' | 'arena' | 'membership';
+  scopeId?: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  maxDiscountPaise?: number;
+  minOrderPaise?: number;
+  visibility?: 'public' | 'private';
+  validFrom?: string;
+  validUntil?: string;
+  maxRedemptions?: number;
+  perUserLimit?: number;
+}
+
+export function useCreateAdminCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AdminCreateCouponBody) =>
+      apiFetch<Coupon>('/v1/admin/coupons', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
+  });
+}
+
+export function useUpdateAdminCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; patch: { status?: 'active' | 'paused' | 'expired'; visibility?: 'public' | 'private'; validUntil?: string | null } }) =>
+      apiFetch<Coupon>(`/v1/admin/coupons/${args.id}`, { method: 'PATCH', body: JSON.stringify(args.patch) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
+  });
+}
+
+export function useDeleteAdminCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/v1/admin/coupons/${id}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
   });
 }
