@@ -29,6 +29,12 @@ export interface CreateRouteOrderInput {
   bookingId: string;
   tenantId: string;
   amountPaise: number;
+  /**
+   * Org-settleable base for this charge (gross-up excluded; full base when
+   * platform-funded). The weekly payout reconciliation sums this for gross.
+   * Defaults to amountPaise when omitted (legacy callers / no-gross-up path).
+   */
+  settleBasePaise?: number;
   /** Audit actor — usually the customer (or the admin impersonating them). */
   actorUserId: string;
 }
@@ -58,6 +64,7 @@ export async function createRouteOrder(
       tenantId: input.tenantId,
       provider,
       amountPaise: input.amountPaise,
+      settleBasePaise: input.settleBasePaise ?? input.amountPaise,
       currency: 'INR',
       status: 'pending',
       kind: 'charge',
