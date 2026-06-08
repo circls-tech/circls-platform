@@ -46,6 +46,8 @@ import { invitationRoutes } from './routes/invitations.js';
 import { teamRoutes } from './routes/team.js';
 // Support issues (UX issue #20).
 import { supportIssueRoutes } from './routes/support_issues.js';
+// Coupon CRUD routes (org + admin).
+import { couponRoutes } from './routes/coupons.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -281,6 +283,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(consumerRoutes);
   // UX issue #20: partner support issues + admin support inbox.
   await app.register(supportIssueRoutes);
+  // Coupon CRUD routes (org + admin).
+  await app.register(couponRoutes);
 
   return app;
 }
