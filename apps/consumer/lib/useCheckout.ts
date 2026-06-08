@@ -123,7 +123,7 @@ export function useCheckout() {
       setBusy(true);
       setState({ kind: 'idle' });
       try {
-        const res = await purchaseMembership.mutateAsync(membershipId);
+        const res = await purchaseMembership.mutateAsync({ membershipId });
         // Free memberships activate immediately with no order.
         if (!res.orderId || amountPaise === 0) {
           setState({ kind: 'success', message: 'Membership activated!' });

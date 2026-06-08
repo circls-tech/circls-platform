@@ -110,6 +110,13 @@ export interface MembershipPurchaseResult {
   amountPaise?: number;
 }
 
+// ── Booking / purchase inputs ─────────────────────────────────────────────────
+
+export interface PurchaseMembershipInput {
+  membershipId: string;
+  couponCode?: string;
+}
+
 export interface MyBooking {
   id: string;
   venueId: string | null;

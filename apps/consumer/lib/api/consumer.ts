@@ -12,6 +12,7 @@ import type {
   PublicMembershipWithScope,
   PublicSlot,
   PublicVenue,
+  PurchaseMembershipInput,
   SlotBookingResult,
   VenueDetail,
 } from './types';
@@ -119,6 +120,7 @@ export interface BookSlotsInput {
   customerName: string;
   customerContact: string;
   note?: string;
+  couponCode?: string;
 }
 
 export function useBookSlots() {
@@ -140,6 +142,7 @@ export interface BookEventInput {
   eventId: string;
   name?: string;
   contact?: string;
+  couponCode?: string;
 }
 
 export function useBookEvent() {
@@ -157,10 +160,10 @@ export function useBookEvent() {
 export function usePurchaseMembership() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (membershipId: string) =>
+    mutationFn: ({ membershipId, couponCode }: PurchaseMembershipInput) =>
       apiFetch<MembershipPurchaseResult>(
         `/v1/consumer/memberships/${membershipId}/purchase`,
-        { method: 'POST', body: JSON.stringify({}) },
+        { method: 'POST', body: JSON.stringify(couponCode ? { couponCode } : {}) },
       ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['my-bookings'] }),
   });
