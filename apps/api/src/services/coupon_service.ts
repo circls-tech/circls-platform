@@ -4,9 +4,13 @@
  * tested directly; the per-user redemption count + code resolution that need
  * the DB live in `resolveCouponForCheckout` (added with the CRUD).
  */
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { coupons, type Coupon, type NewCoupon } from '../db/schema/coupons.js';
+import { events } from '../db/schema/events.js';
+import { memberships } from '../db/schema/memberships.js';
+import { slots } from '../db/schema/slots.js';
+import { arenas } from '../db/schema/arenas.js';
 import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
@@ -269,4 +273,59 @@ export async function resolveCouponForCheckout(args: {
   }
 
   return { ok: true, coupon, funder: coupon.ownerType === 'platform' ? 'platform' : 'org' };
+}
+
+export interface PricedItem {
+  tenantId: string;
+  basePaise: number;
+  item: CheckoutItem;
+}
+
+/** Resolve base price + tenant + scope-item for a quote/booking request. */
+export async function priceItem(req:
+  | { itemType: 'event'; eventId: string }
+  | { itemType: 'membership'; membershipId: string }
+  | { itemType: 'slot'; slotIds: string[] },
+): Promise<PricedItem> {
+  if (req.itemType === 'event') {
+    const [ev] = await db.select().from(events).where(eq(events.id, req.eventId)).limit(1);
+    if (!ev) throw new NotFound('Event not found', 'event_not_found');
+    return { tenantId: ev.tenantId, basePaise: ev.pricePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
+  }
+  if (req.itemType === 'membership') {
+    const [m] = await db.select().from(memberships).where(eq(memberships.id, req.membershipId)).limit(1);
+    if (!m) throw new NotFound('Membership not found', 'membership_not_found');
+    return { tenantId: m.tenantId, basePaise: m.pricePaise ?? 0, item: { type: 'membership', id: m.id, venueId: m.venueId ?? null } };
+  }
+  // slots: sum prices, all must share one arena + tenant
+  const rows = await db.select().from(slots).where(inArray(slots.id, req.slotIds));
+  if (rows.length === 0 || rows.length !== req.slotIds.length) throw new NotFound('Slot not found', 'slot_not_found');
+  const arenaId = rows[0]!.arenaId;
+  const tenantId = rows[0]!.tenantId;
+  if (!rows.every((r) => r.arenaId === arenaId && r.tenantId === tenantId)) {
+    throw new BadRequest('Slots must share one arena', 'multi_arena_booking');
+  }
+  const basePaise = rows.reduce((s, r) => s + r.pricePaise, 0);
+  // Resolve the arena's venue so venue-scoped coupons can match a slot booking.
+  const [arena] = await db.select().from(arenas).where(eq(arenas.id, arenaId)).limit(1);
+  const venueId = arena?.venueId ?? null;
+  return { tenantId, basePaise, item: { type: 'slot', id: arenaId, venueId } };
+}
+
+/** Public, in-window coupons applicable to an item (for the offers picker). */
+export async function listPublicCouponsForItem(priced: PricedItem, now: Date): Promise<Coupon[]> {
+  const rows = await db
+    .select()
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.visibility, 'public'),
+        eq(coupons.status, 'active'),
+        or(
+          and(eq(coupons.ownerType, 'tenant'), eq(coupons.tenantId, priced.tenantId)),
+          and(eq(coupons.ownerType, 'platform'), isNull(coupons.tenantId)),
+        ),
+      ),
+    );
+  return rows.filter((c) => validateCoupon(c, { basePaise: priced.basePaise, now, item: priced.item }).ok);
 }
