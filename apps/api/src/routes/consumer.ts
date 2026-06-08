@@ -127,6 +127,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     customerName: z.string().min(1).max(200),
     customerContact: z.string().min(1).max(200),
     note: z.string().max(500).optional(),
+    couponCode: z.string().min(1).max(64).optional(),
   });
   app.post('/v1/consumer/bookings', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const user = await currentUser(req);
@@ -138,29 +139,40 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       customerContact: parsed.data.customerContact,
       note: parsed.data.note ?? null,
       actorUserId: user.id,
+      ...(parsed.data.couponCode ? { couponCode: parsed.data.couponCode } : {}),
     });
   });
 
   const bookEventBody = z.object({
     name: z.string().max(200).optional(),
     contact: z.string().max(200).optional(),
+    couponCode: z.string().min(1).max(64).optional(),
   });
   app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
     const user = await currentUser(req);
     const parsed = bookEventBody.safeParse(req.body ?? {});
     if (!parsed.success) throw new BadRequest('Invalid payload', 'bad_request', { issues: parsed.error.issues });
-    return consumerBookEvent(eventId, {
-      userId: user.id,
-      name: parsed.data.name ?? null,
-      contact: parsed.data.contact ?? null,
-    });
+    return consumerBookEvent(
+      eventId,
+      {
+        userId: user.id,
+        name: parsed.data.name ?? null,
+        contact: parsed.data.contact ?? null,
+      },
+      parsed.data.couponCode,
+    );
   });
 
+  const purchaseMembershipBody = z.object({
+    couponCode: z.string().min(1).max(64).optional(),
+  });
   app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
     const user = await currentUser(req);
-    return consumerPurchaseMembership(membershipId, user.id);
+    const parsed = purchaseMembershipBody.safeParse(req.body ?? {});
+    if (!parsed.success) throw new BadRequest('Invalid payload', 'bad_request', { issues: parsed.error.issues });
+    return consumerPurchaseMembership(membershipId, user.id, parsed.data.couponCode);
   });
 
   app.get('/v1/consumer/me', { preHandler: requireAuth }, async (req) => {

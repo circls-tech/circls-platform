@@ -22,6 +22,9 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import * as paymentsService from './payments_service.js';
+import { computeCheckout } from './checkout_pricing.js';
+import { recordRedemption } from './coupon_service.js';
+import type { CouponPricing } from './booking_service.js';
 
 export async function listMembershipsForTenant(tenantId: string): Promise<Membership[]> {
   return db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
@@ -270,6 +273,7 @@ export interface PurchaseMembershipResult {
  */
 export async function purchaseMembership(
   input: PurchaseMembershipInput,
+  pricing?: CouponPricing | null,
 ): Promise<PurchaseMembershipResult> {
   // Phase 1 — atomic reserve. Free memberships finish here; paid ones return
   // their booking + user_membership ids for the Phase 2 createRouteOrder call.
@@ -284,7 +288,27 @@ export async function purchaseMembership(
     const now = new Date();
     const endsAt = new Date(now.getTime() + m.durationDays * 24 * 60 * 60 * 1000);
 
-    if (m.pricePaise === 0) {
+    // Money model: discount + gross-up. A 100%/over-base coupon makes a paid
+    // membership free; isFree derives from the grossed-up total, not the base.
+    const basePaise = m.pricePaise;
+    const breakdown = computeCheckout(
+      basePaise,
+      pricing
+        ? {
+            discountType: pricing.coupon.discountType,
+            discountValue: pricing.coupon.discountValue,
+            maxDiscountPaise: pricing.coupon.maxDiscountPaise,
+          }
+        : null,
+    );
+    const isFree = breakdown.totalPaise === 0;
+    const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
+
+    // A coupon redemption must reference a bookings row (FK NOT NULL). The
+    // original free path skipped the synthetic booking; we still skip it when
+    // free AND no coupon, but mint one when a coupon makes the purchase free so
+    // the redemption has something to anchor on.
+    if (isFree && !pricing) {
       const [um] = await tx
         .insert(userMemberships)
         .values({
@@ -311,8 +335,9 @@ export async function purchaseMembership(
       return { kind: 'free' as const, userMembershipId: um.id };
     }
 
-    // Paid path — Circls is the merchant, no per-tenant KYC / Linked Account.
-    // Synthetic bookings row anchors the payment (payments.booking_id NOT NULL).
+    // Circls is the merchant, no per-tenant KYC / Linked Account.
+    // Synthetic bookings row anchors the payment (payments.booking_id NOT NULL)
+    // and any coupon redemption.
     const [b] = await tx
       .insert(bookings)
       .values({
@@ -320,11 +345,14 @@ export async function purchaseMembership(
         venueId: m.venueId,
         itemType: 'membership',
         channel: 'circls',
-        paymentMethod: 'razorpay_route',
-        status: 'pending',
+        paymentMethod: isFree ? 'free' : 'razorpay_route',
+        status: isFree ? 'confirmed' : 'pending',
         customerUserId: input.userId,
-        pricePaise: m.pricePaise,
-        totalPaise: m.pricePaise,
+        pricePaise: basePaise,
+        basePaise,
+        discountPaise: breakdown.discountPaise,
+        couponId: pricing?.coupon.id ?? null,
+        totalPaise: breakdown.totalPaise,
         itemData: { membershipId: m.id },
       })
       .returning();
@@ -343,6 +371,18 @@ export async function purchaseMembership(
       .returning();
     if (!um) throw new Error('user_membership insert returned no row');
 
+    if (pricing) {
+      await recordRedemption(tx, {
+        coupon: pricing.coupon,
+        bookingId: b.id,
+        userId: input.userId,
+        tenantId: m.tenantId,
+        basePaise,
+        discountPaise: breakdown.discountPaise,
+        funder: pricing.funder,
+      });
+    }
+
     await writeAudit(
       tx,
       { tenantId: m.tenantId, actorUserId: input.userId },
@@ -350,15 +390,21 @@ export async function purchaseMembership(
       'user_membership',
       um.id,
       null,
-      { membershipId: m.id, pricePaise: m.pricePaise, free: false, bookingId: b.id },
+      { membershipId: m.id, pricePaise: basePaise, totalPaise: breakdown.totalPaise, free: isFree, bookingId: b.id },
     );
+
+    // A coupon-driven free membership finishes here — no Razorpay order.
+    if (isFree) {
+      return { kind: 'free' as const, userMembershipId: um.id };
+    }
 
     return {
       kind: 'paid' as const,
       bookingId: b.id,
       userMembershipId: um.id,
       tenantId: m.tenantId,
-      pricePaise: m.pricePaise,
+      totalPaise: breakdown.totalPaise,
+      settleBasePaise,
       membershipId: m.id,
     };
   });
@@ -376,7 +422,8 @@ export async function purchaseMembership(
     const result = await paymentsService.createRouteOrder({
       bookingId: reserved.bookingId,
       tenantId: reserved.tenantId,
-      amountPaise: reserved.pricePaise,
+      amountPaise: reserved.totalPaise,
+      settleBasePaise: reserved.settleBasePaise,
       actorUserId: input.userId,
     });
     orderId = result.providerOrderId;
@@ -401,7 +448,7 @@ export async function purchaseMembership(
     paymentId,
     orderId,
     keyId: env.RAZORPAY_KEY_ID ?? '',
-    amountPaise: reserved.pricePaise,
+    amountPaise: reserved.totalPaise,
   };
 }
 

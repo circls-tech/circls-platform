@@ -312,6 +312,49 @@ export async function priceItem(req:
   return { tenantId, basePaise, item: { type: 'slot', id: arenaId, venueId } };
 }
 
+/**
+ * Atomically bump redeemed_count (respecting max_redemptions) and insert the
+ * redemption row, inside the caller's booking transaction. Throws Conflict if
+ * the total cap is now exhausted (a lost race) so the booking rolls back.
+ * `tx` is the transaction handle from db.transaction(async (tx) => …).
+ */
+export async function recordRedemption(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  args: {
+    coupon: Coupon;
+    bookingId: string;
+    userId: string;
+    tenantId: string;
+    basePaise: number;
+    discountPaise: number;
+    funder: 'org' | 'platform';
+  },
+): Promise<void> {
+  const bumped = await tx
+    .update(coupons)
+    .set({ redeemedCount: sql`${coupons.redeemedCount} + 1` })
+    .where(
+      and(
+        eq(coupons.id, args.coupon.id),
+        args.coupon.maxRedemptions != null
+          ? sql`${coupons.redeemedCount} < ${args.coupon.maxRedemptions}`
+          : sql`true`,
+      ),
+    )
+    .returning({ id: coupons.id });
+  if (bumped.length === 0) throw new Conflict('Coupon fully redeemed', 'coupon_max_redeemed');
+
+  await tx.insert(couponRedemptions).values({
+    couponId: args.coupon.id,
+    bookingId: args.bookingId,
+    userId: args.userId,
+    tenantId: args.tenantId,
+    basePaise: args.basePaise,
+    discountPaise: args.discountPaise,
+    funder: args.funder,
+  });
+}
+
 /** Public, in-window coupons applicable to an item (for the offers picker). */
 export async function listPublicCouponsForItem(priced: PricedItem, now: Date): Promise<Coupon[]> {
   const rows = await db
