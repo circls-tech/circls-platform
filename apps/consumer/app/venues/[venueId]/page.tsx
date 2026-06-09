@@ -144,9 +144,36 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
   const [date, setDate] = useState(todayLocal());
   const { from, to } = dayBounds(date);
   const slotsQ = useArenaSlots(arena.id, from, to);
+  // Selected slot ids for THIS arena+date. Backend books multiple slots in one
+  // arena atomically (POST /v1/consumer/bookings takes slotIds[]), so we let the
+  // user pick several and check out together.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  function handleBook(slotId: string, slotLabel: string) {
-    openCheckout({ kind: 'slot', slotIds: [slotId], title: `${arena.name} · ${slotLabel}` });
+  function changeDate(d: string) {
+    setDate(d);
+    setSelected(new Set()); // selection is per-day; slots differ across dates
+  }
+  function toggle(slotId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(slotId)) next.delete(slotId);
+      else next.add(slotId);
+      return next;
+    });
+  }
+
+  const slots = slotsQ.data ?? [];
+  const selectedSlots = slots.filter((s) => selected.has(s.id));
+  const selectedTotal = selectedSlots.reduce((sum, s) => sum + s.pricePaise, 0);
+
+  function book() {
+    if (selectedSlots.length === 0) return;
+    const n = selectedSlots.length;
+    openCheckout({
+      kind: 'slot',
+      slotIds: selectedSlots.map((s) => s.id),
+      title: `${arena.name} · ${n} slot${n > 1 ? 's' : ''}`,
+    });
   }
 
   return (
@@ -165,7 +192,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
             type="date"
             value={date}
             min={todayLocal()}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => changeDate(e.target.value)}
             className="rounded-[var(--radius)] border border-border px-2 py-1 text-sm text-ink"
           />
         </label>
@@ -178,25 +205,45 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
           <p className="text-sm text-red-600">
             {slotsQ.error instanceof Error ? slotsQ.error.message : 'Failed to load slots'}
           </p>
-        ) : !slotsQ.data || slotsQ.data.length === 0 ? (
+        ) : slots.length === 0 ? (
           <p className="text-sm text-text-secondary">No open slots for this day.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {slotsQ.data.map((slot) => {
-              const slotLabel = `${formatTime(slot.startAt)} – ${formatTime(slot.endAt)}`;
-              return (
-                <button
-                  key={slot.id}
-                  type="button"
-                  onClick={() => handleBook(slot.id, slotLabel)}
-                  className="flex flex-col items-start rounded-[var(--radius)] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-gold-500 hover:bg-gold-100"
-                >
-                  <span className="text-sm font-medium text-ink">{slotLabel}</span>
-                  <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <p className="mb-2 text-xs text-text-secondary">Tap to select one or more slots, then book them together.</p>
+            <div className="flex flex-wrap gap-2">
+              {slots.map((slot) => {
+                const slotLabel = `${formatTime(slot.startAt)} – ${formatTime(slot.endAt)}`;
+                const isSelected = selected.has(slot.id);
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => toggle(slot.id)}
+                    aria-pressed={isSelected}
+                    className={[
+                      'flex flex-col items-start rounded-[var(--radius)] border px-3 py-2 text-left transition-colors',
+                      isSelected
+                        ? 'border-gold-600 bg-gold-100 ring-1 ring-gold-500'
+                        : 'border-border bg-white hover:border-gold-500 hover:bg-gold-100',
+                    ].join(' ')}
+                  >
+                    <span className="text-sm font-medium text-ink">{slotLabel}</span>
+                    <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedSlots.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm text-text-secondary">
+                  {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''} · {formatPaise(selectedTotal)}
+                </span>
+                <Button onClick={book}>
+                  Book {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''}
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </Card>
