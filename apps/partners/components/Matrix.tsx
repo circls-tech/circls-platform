@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Slot } from '@/lib/api/types';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useBookingDetail } from '@/lib/api/queries';
+import { gridDayIndex, sortTimeKeys } from '@/lib/schedule/grid';
 import { useGridSelection } from './useGridSelection';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ interface MatrixProps {
   tz: string;                // venue IANA tz, e.g. 'Asia/Kolkata'
   mode: 'builder' | 'reception';
   now?: Date;                // ticking current time; reception-mode only
+  dayStartMin?: number;      // business-day boundary (min-of-day); 0 = calendar day
   onBulk: (slotIds: string[], patch: { price?: number; blocked?: boolean }) => void;
   onBook: (slotIds: string[]) => void;
   onCancel?: (bookingId: string) => void;
@@ -53,21 +55,6 @@ function fmtTimeKey(isoString: string, tz: string): string {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(isoString));
-}
-
-function getDayIndex(isoString: string, tz: string, weekStart: Date): number {
-  // Determine which day-of-week the slot falls on (0=Sun … 6=Sat) in the venue tz.
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    weekday: 'short',
-  }).formatToParts(new Date(isoString));
-  const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
-  const abbrs = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const slotDow = abbrs.indexOf(wd);
-
-  // weekStart is always Sunday — compute offset.
-  const weekStartDow = weekStart.getDay();
-  return (slotDow - weekStartDow + 7) % 7;
 }
 
 /**
@@ -355,6 +342,7 @@ export function Matrix({
   tz,
   mode,
   now,
+  dayStartMin = 0,
   onBulk,
   onBook,
   onCancel,
@@ -371,10 +359,12 @@ export function Matrix({
     selectRow,
   } = useGridSelection(slots, weekStart);
 
-  // Build a sorted list of unique time-row labels.
-  const timeKeys: string[] = [
-    ...new Set(slots.map((s) => fmtTimeKey(s.startAt, tz))),
-  ].sort();
+  // Build a list of unique time-row labels, ordered by their position within
+  // the business day (so a 3am start renders 03:00 → 02:00 top-to-bottom).
+  const timeKeys: string[] = sortTimeKeys(
+    [...new Set(slots.map((s) => fmtTimeKey(s.startAt, tz)))],
+    dayStartMin,
+  );
 
   // Build a map: `${dayIndex}:${rowIndex}` → Slot
   // Also build slotsByTimeKey for now-line offset computation.
@@ -385,7 +375,7 @@ export function Matrix({
   const lockedIds = new Set<string>();
 
   slots.forEach((slot) => {
-    const dayIndex = getDayIndex(slot.startAt, tz, weekStart);
+    const dayIndex = gridDayIndex(slot.startAt, tz, weekStart, dayStartMin);
     const tk = fmtTimeKey(slot.startAt, tz);
     const rowIndex = timeKeys.indexOf(tk);
     if (dayIndex >= 0 && dayIndex <= 6 && rowIndex >= 0) {

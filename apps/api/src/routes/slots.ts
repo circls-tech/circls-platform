@@ -30,10 +30,28 @@ async function authorizeArena(req: FastifyRequest, arenaId: string) {
   return { user, venue, arena };
 }
 
+const scheduleTemplateSchema = z.object({
+  quantizationMin: z.number().int().positive(),
+  defaultPriceRupees: z.number().int().nonnegative(),
+  bands: z
+    .array(
+      z.object({
+        startMin: z.number().int().min(0).max(1439),
+        endMin: z.number().int().min(0).max(1439),
+        priceRupees: z.number().int().nonnegative(),
+      }),
+    )
+    .max(48),
+});
+
 const releaseSlotsSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
   quantizationMin: z.number().int().positive(),
+  // Business-day boundary (minute-of-day, 0..1439) to persist on the arena.
+  businessDayStartMin: z.number().int().min(0).max(1439).optional(),
+  // Last-used builder template to persist on the arena for prefill.
+  template: scheduleTemplateSchema.optional(),
   cells: z.array(
     z.object({
       dayOfWeek: z.number().int().min(0).max(6),
@@ -83,6 +101,10 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
           startDate: input.startDate,
           endDate: input.endDate,
           quantizationMin: input.quantizationMin,
+          ...(input.businessDayStartMin !== undefined
+            ? { businessDayStartMin: input.businessDayStartMin }
+            : {}),
+          ...(input.template !== undefined ? { template: input.template } : {}),
           cells: input.cells.map((c) => ({
             dayOfWeek: c.dayOfWeek,
             startTimeMin: c.startTimeMin,

@@ -2,26 +2,31 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { Button, Card, Input } from '@/lib/ui';
 import { useArena, useReleaseSlots, useVenues, type ReleaseCell } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { fmtTzOffset } from '@/lib/time';
-import type { Slot } from '@/lib/api/types';
+import {
+  type Band,
+  expandBandsToCells,
+  minToTime,
+  parseTimeToMin,
+  validateBands,
+} from '@/lib/schedule/bands';
+import type { ScheduleTemplate, Slot } from '@/lib/api/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────────────────────────
 
-interface BuilderConfig {
-  startDate: string;
-  endDate: string;
-  dailyOpenTime: string;   // 'HH:MM'
-  dailyCloseTime: string;  // 'HH:MM'
-  quantizationMin: number;
-  defaultPriceRupees: number;
+/** A band row in the editor — times kept as 'HH:MM' strings for the inputs. */
+interface BandRow {
+  startTime: string;
+  endTime: string;
+  priceRupees: number;
 }
 
 type PreviewSlot = Slot;
@@ -30,12 +35,6 @@ type PreviewSlot = Slot;
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-/** Parse 'HH:MM' → minutes from midnight */
-function parseTimeToMin(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-}
-
 /** Return the Sunday on/before the given YYYY-MM-DD string (local). */
 function sundayOnOrBefore(dateStr: string): Date {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -43,73 +42,75 @@ function sundayOnOrBefore(dateStr: string): Date {
   return d;
 }
 
-/**
- * Build a synthetic grid of Slot-shaped objects for one representative week.
- *
- * We create an ISO timestamp for each cell by offsetting from Sunday of the
- * preview week. The tz is informational for display; the startAt/endAt values
- * use a simple local-midnight approach (same as the arena page's date picker).
- */
-function buildPreviewSlots(cfg: BuilderConfig, arenaId: string, tz: string): PreviewSlot[] {
-  const weekStart = sundayOnOrBefore(cfg.startDate);
-  const openMin = parseTimeToMin(cfg.dailyOpenTime);
-  const closeMin = parseTimeToMin(cfg.dailyCloseTime);
-  const { quantizationMin, defaultPriceRupees } = cfg;
+/** A preview-slot id encodes its release-cell shape so edits survive round-trip. */
+function cellId(dow: number, startTimeMin: number, durationMin: number): string {
+  return `prev-${dow}-${startTimeMin}-${durationMin}`;
+}
 
-  const slots: PreviewSlot[] = [];
+function parseCellId(id: string): { dayOfWeek: number; startTimeMin: number; durationMin: number } | null {
+  const m = /^prev-(\d+)-(\d+)-(\d+)$/.exec(id);
+  if (!m) return null;
+  return { dayOfWeek: Number(m[1]), startTimeMin: Number(m[2]), durationMin: Number(m[3]) };
+}
 
-  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const dayDate = new Date(weekStart);
-    dayDate.setDate(dayDate.getDate() + dayOffset);
-    const dayBase = dayDate.getTime(); // midnight local
-
-    for (let minOfDay = openMin; minOfDay < closeMin; minOfDay += quantizationMin) {
-      const startMs = dayBase + minOfDay * 60_000;
-      const endMs = startMs + quantizationMin * 60_000;
-      const startAt = new Date(startMs).toISOString();
-      const endAt = new Date(endMs).toISOString();
-
-      slots.push({
-        id: `prev-${dayOffset}-${minOfDay}`,
-        tenantId: '',
-        arenaId,
-        timeRange: `[${startAt},${endAt})`,
-        pricePaise: defaultPriceRupees * 100,
-        status: 'open',
-        holdExpiresAt: null,
-        bookingId: null,
-        releaseId: null,
-        deletedAt: null,
-        createdAt: startAt,
-        updatedAt: startAt,
-        startAt,
-        endAt,
-      });
-    }
-  }
-
-  return slots;
+/** Map the band-editor rows to the pure Band model. */
+function rowsToBands(rows: BandRow[]): Band[] {
+  return rows.map((r) => ({
+    startMin: parseTimeToMin(r.startTime),
+    endMin: parseTimeToMin(r.endTime),
+    priceRupees: r.priceRupees,
+  }));
 }
 
 /**
- * Map preview cells to release API cells[].
- * startTimeMin is derived from the slot's startAt (minutes from local midnight).
+ * Build a synthetic grid of Slot-shaped objects for one representative week from
+ * the release cells. Each cell is anchored to the Sunday of the preview week; an
+ * overnight cell (startTimeMin ≥ 1440) naturally rolls into the next calendar
+ * day, and the business-day-aware Matrix buckets it back under its owning day.
  */
-function buildReleaseCells(previewSlots: PreviewSlot[], quantizationMin: number): ReleaseCell[] {
-  return previewSlots.map((slot) => {
-    const start = new Date(slot.startAt);
-    const hoursMin = start.getHours() * 60 + start.getMinutes();
-    // dayOfWeek: 0=Sun … 6=Sat
-    const dow = start.getDay();
-
+function buildPreviewSlots(cells: ReleaseCell[], weekStart: Date, arenaId: string): PreviewSlot[] {
+  return cells.map((c) => {
+    const dayBase = new Date(weekStart);
+    dayBase.setDate(dayBase.getDate() + c.dayOfWeek);
+    const startMs = dayBase.getTime() + c.startTimeMin * 60_000;
+    const endMs = startMs + c.durationMin * 60_000;
+    const startAt = new Date(startMs).toISOString();
+    const endAt = new Date(endMs).toISOString();
     return {
-      dayOfWeek: dow,
-      startTimeMin: hoursMin,
-      durationMin: quantizationMin,
-      price: slot.pricePaise,
-      blocked: slot.status === 'blocked',
+      id: cellId(c.dayOfWeek, c.startTimeMin, c.durationMin),
+      tenantId: '',
+      arenaId,
+      timeRange: `[${startAt},${endAt})`,
+      pricePaise: c.price ?? 0,
+      status: c.blocked ? 'blocked' : 'open',
+      holdExpiresAt: null,
+      heldByUserId: null,
+      bookingId: null,
+      releaseId: null,
+      deletedAt: null,
+      createdAt: startAt,
+      updatedAt: startAt,
+      startAt,
+      endAt,
     };
   });
+}
+
+/** Read release cells back from the (possibly edited) preview slots. */
+function previewSlotsToCells(previewSlots: PreviewSlot[]): ReleaseCell[] {
+  const cells: ReleaseCell[] = [];
+  for (const s of previewSlots) {
+    const meta = parseCellId(s.id);
+    if (!meta) continue;
+    cells.push({
+      dayOfWeek: meta.dayOfWeek,
+      startTimeMin: meta.startTimeMin,
+      durationMin: meta.durationMin,
+      price: s.pricePaise,
+      blocked: s.status === 'blocked',
+    });
+  }
+  return cells;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -119,6 +120,10 @@ function buildReleaseCells(previewSlots: PreviewSlot[], quantizationMin: number)
 /** Fallback tz while venue is resolving — prevents a crash on first render. */
 const FALLBACK_TZ = 'Asia/Kolkata';
 const today = new Date().toISOString().slice(0, 10);
+
+/** Default band set offered before any template has been saved. */
+const DEFAULT_BANDS: BandRow[] = [{ startTime: '06:00', endTime: '22:00', priceRupees: 500 }];
+const DEFAULT_DAY_START = '03:00';
 
 export default function ScheduleBuilderPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
@@ -130,110 +135,127 @@ export default function ScheduleBuilderPage() {
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
 
-  // Viewing timezone comes from the portal-wide selector in the top bar. Auto =
-  // the venue's own zone; an override renders the grid in the chosen zone. This
-  // is display-only: slots are still generated and released in the venue's tz.
+  // Viewing timezone comes from the portal-wide selector in the top bar. Display
+  // only — slots are generated and released in the venue's tz.
   const { resolveTz } = useTimezone();
   const effectiveTz = resolveTz(tz);
 
-  // Form config state
-  const [cfg, setCfg] = useState<BuilderConfig>({
-    startDate: today,
-    endDate: today,
-    dailyOpenTime: '06:00',
-    dailyCloseTime: '22:00',
-    quantizationMin: 60,
-    defaultPriceRupees: 500,
-  });
+  // ── Form state ──
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [dayStartTime, setDayStartTime] = useState(DEFAULT_DAY_START);
+  const [quantizationMin, setQuantizationMin] = useState(60);
+  const [defaultPriceRupees, setDefaultPriceRupees] = useState(500);
+  const [bands, setBands] = useState<BandRow[]>(DEFAULT_BANDS);
 
-  // Preview grid state
+  // ── Preview / release state ──
   const [previewSlots, setPreviewSlots] = useState<PreviewSlot[] | null>(null);
   const [weekStart, setWeekStart] = useState<Date>(sundayOnOrBefore(today));
   const [validationError, setValidationError] = useState<string | null>(null);
-
-  // Release mutation
   const releaseSlots = useReleaseSlots(arenaId);
-  const [releaseResult, setReleaseResult] = useState<{ created: number; skipped: number } | null>(
-    null,
-  );
+  const [releaseResult, setReleaseResult] = useState<{ created: number; skipped: number } | null>(null);
 
-  // ── Config field helpers ──
+  // ── Prefill from the arena's saved template (once it first loads) ──
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (prefilledRef.current || !arena) return;
+    prefilledRef.current = true;
+    setDayStartTime(minToTime(arena.businessDayStartMin));
+    const tmpl = arena.scheduleTemplate;
+    if (tmpl && tmpl.bands.length > 0) {
+      setQuantizationMin(tmpl.quantizationMin);
+      setDefaultPriceRupees(tmpl.defaultPriceRupees);
+      setBands(
+        tmpl.bands.map((b) => ({
+          startTime: minToTime(b.startMin),
+          endTime: minToTime(b.endMin),
+          priceRupees: b.priceRupees,
+        })),
+      );
+    }
+  }, [arena]);
 
-  function setField<K extends keyof BuilderConfig>(key: K, value: BuilderConfig[K]) {
-    setCfg((prev) => ({ ...prev, [key]: value }));
-    // Clear preview when config changes
+  // ── Band-editor helpers ──
+  function clearDerived() {
     setPreviewSlots(null);
     setReleaseResult(null);
     setValidationError(null);
   }
 
+  function updateBand(index: number, patch: Partial<BandRow>) {
+    setBands((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    clearDerived();
+  }
+  function addBand() {
+    // Start the new band where the last one ends, for a natural chain.
+    const last = bands[bands.length - 1];
+    setBands((prev) => [
+      ...prev,
+      { startTime: last?.endTime ?? '06:00', endTime: last?.endTime ?? '22:00', priceRupees: defaultPriceRupees },
+    ]);
+    clearDerived();
+  }
+  function removeBand(index: number) {
+    setBands((prev) => prev.filter((_, i) => i !== index));
+    clearDerived();
+  }
+
   // ── Build preview ──
+  const dayStartMin = parseTimeToMin(dayStartTime);
 
   function handleBuildPreview() {
     setValidationError(null);
     setReleaseResult(null);
 
-    if (!cfg.startDate || !cfg.endDate) {
+    if (!startDate || !endDate) {
       setValidationError('Start date and End date are required.');
       return;
     }
-    if (cfg.startDate > cfg.endDate) {
+    if (startDate > endDate) {
       setValidationError('Start date must be on or before End date.');
       return;
     }
-    if (parseTimeToMin(cfg.dailyOpenTime) >= parseTimeToMin(cfg.dailyCloseTime)) {
-      setValidationError('Daily open time must be before close time.');
+    if (Number.isNaN(dayStartMin)) {
+      setValidationError('Business day start time is invalid.');
       return;
     }
-    // Guard against an empty or NaN default price so `price: NaN` is never sent
-    // to the API. The field may be blank if the user clears it.
-    if (
-      cfg.defaultPriceRupees === undefined ||
-      cfg.defaultPriceRupees === null ||
-      Number.isNaN(cfg.defaultPriceRupees) ||
-      cfg.defaultPriceRupees < 0
-    ) {
-      setValidationError('Default price must be a valid non-negative number (in ₹).');
+    const bandModel = rowsToBands(bands);
+    const v = validateBands(bandModel, dayStartMin);
+    if (!v.ok) {
+      setValidationError(v.error ?? 'Bands are invalid.');
       return;
     }
 
-    const ws = sundayOnOrBefore(cfg.startDate);
+    const cells = expandBandsToCells({ bands: bandModel, dayStartMin, quantizationMin });
+    const ws = sundayOnOrBefore(startDate);
     setWeekStart(ws);
-    setPreviewSlots(buildPreviewSlots(cfg, arenaId, tz));
+    setPreviewSlots(buildPreviewSlots(cells, ws, arenaId));
   }
 
   // ── Matrix callbacks (edit local preview) ──
+  const handleBulk = useCallback((slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
+    if (patch.price !== undefined && (Number.isNaN(patch.price) || patch.price < 0)) {
+      setValidationError('Per-cell price must be a valid non-negative number (in paise).');
+      return;
+    }
+    setValidationError(null);
+    setPreviewSlots((prev) =>
+      prev
+        ? prev.map((s) => {
+            if (!slotIds.includes(s.id)) return s;
+            return {
+              ...s,
+              ...(patch.price !== undefined ? { pricePaise: patch.price } : {}),
+              ...(patch.blocked !== undefined
+                ? { status: patch.blocked ? ('blocked' as const) : ('open' as const) }
+                : {}),
+            };
+          })
+        : prev,
+    );
+  }, []);
 
-  const handleBulk = useCallback(
-    (slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
-      // Reject a NaN per-cell price before it reaches the preview or the API
-      if (patch.price !== undefined && (Number.isNaN(patch.price) || patch.price < 0)) {
-        setValidationError('Per-cell price must be a valid non-negative number (in paise).');
-        return;
-      }
-      setValidationError(null);
-      setPreviewSlots((prev) =>
-        prev
-          ? prev.map((s) => {
-              if (!slotIds.includes(s.id)) return s;
-              return {
-                ...s,
-                ...(patch.price !== undefined ? { pricePaise: patch.price } : {}),
-                ...(patch.blocked !== undefined
-                  ? { status: patch.blocked ? ('blocked' as const) : ('open' as const) }
-                  : {}),
-              };
-            })
-          : prev,
-      );
-    },
-    [],
-  );
-
-  // onBook is a no-op in builder mode
   const handleBook = useCallback((_slotIds: string[]) => {}, []);
-
-  // Nav: just shift the week label (template repeats weekly)
   const handlePrevWeek = useCallback(() => {
     setWeekStart((prev) => {
       const d = new Date(prev);
@@ -241,7 +263,6 @@ export default function ScheduleBuilderPage() {
       return d;
     });
   }, []);
-
   const handleNextWeek = useCallback(() => {
     setWeekStart((prev) => {
       const d = new Date(prev);
@@ -251,18 +272,28 @@ export default function ScheduleBuilderPage() {
   }, []);
 
   // ── Release schedule ──
-
   async function handleRelease() {
     if (!previewSlots || previewSlots.length === 0) return;
     setReleaseResult(null);
 
+    const template: ScheduleTemplate = {
+      quantizationMin,
+      defaultPriceRupees,
+      bands: rowsToBands(bands).map((b) => ({
+        startMin: b.startMin,
+        endMin: b.endMin,
+        priceRupees: b.priceRupees,
+      })),
+    };
+
     try {
-      const cells = buildReleaseCells(previewSlots, cfg.quantizationMin);
       const result = await releaseSlots.mutateAsync({
-        startDate: cfg.startDate,
-        endDate: cfg.endDate,
-        quantizationMin: cfg.quantizationMin,
-        cells,
+        startDate,
+        endDate,
+        quantizationMin,
+        cells: previewSlotsToCells(previewSlots),
+        businessDayStartMin: dayStartMin,
+        template,
       });
       setReleaseResult(result);
     } catch {
@@ -293,40 +324,21 @@ export default function ScheduleBuilderPage() {
 
       {/* Config form */}
       <Card title="Configure schedule">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Input label="Start date" type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDerived(); }} />
+          <Input label="End date" type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); clearDerived(); }} />
           <Input
-            label="Start date"
-            type="date"
-            value={cfg.startDate}
-            onChange={(e) => setField('startDate', e.target.value)}
-          />
-          <Input
-            label="End date"
-            type="date"
-            value={cfg.endDate}
-            onChange={(e) => setField('endDate', e.target.value)}
-          />
-          <Input
-            label="Daily open time"
+            label="Business day starts at"
             type="time"
-            value={cfg.dailyOpenTime}
-            onChange={(e) => setField('dailyOpenTime', e.target.value)}
+            value={dayStartTime}
+            hint="Day runs 24h from here"
+            onChange={(e) => { setDayStartTime(e.target.value); clearDerived(); }}
           />
-          <Input
-            label="Daily close time"
-            type="time"
-            value={cfg.dailyCloseTime}
-            onChange={(e) => setField('dailyCloseTime', e.target.value)}
-          />
-
-          {/* Quantization select */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-              Quantization
-            </label>
+            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Quantization</label>
             <select
-              value={cfg.quantizationMin}
-              onChange={(e) => setField('quantizationMin', Number(e.target.value))}
+              value={quantizationMin}
+              onChange={(e) => { setQuantizationMin(Number(e.target.value)); clearDerived(); }}
               className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300 transition-colors duration-150"
             >
               <option value={30}>30 min</option>
@@ -334,27 +346,52 @@ export default function ScheduleBuilderPage() {
               <option value={90}>90 min</option>
             </select>
           </div>
+        </div>
 
-          <Input
-            label="Default price (₹)"
-            type="number"
-            min={0}
-            step={1}
-            placeholder="500"
-            value={cfg.defaultPriceRupees}
-            onChange={(e) => setField('defaultPriceRupees', Number(e.target.value))}
-          />
+        {/* Pricing bands */}
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Pricing bands</label>
+            <span className="text-xs text-slate-400">
+              Each band covers a time range at one price. An end ≤ start crosses midnight; set end = start for 24 hours.
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {bands.map((b, i) => (
+              <div key={i} className="flex flex-wrap items-end gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2">
+                <Input label={i === 0 ? 'From' : undefined} type="time" value={b.startTime} onChange={(e) => updateBand(i, { startTime: e.target.value })} />
+                <span className="pb-2 text-slate-400">→</span>
+                <Input label={i === 0 ? 'To' : undefined} type="time" value={b.endTime} onChange={(e) => updateBand(i, { endTime: e.target.value })} />
+                <Input
+                  label={i === 0 ? 'Price (₹)' : undefined}
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={b.priceRupees}
+                  onChange={(e) => updateBand(i, { priceRupees: Number(e.target.value) })}
+                />
+                <Button size="sm" variant="ghost" onClick={() => removeBand(i)} aria-label="Remove band" className="mb-0.5 text-red-500">
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            <Button onClick={addBand} variant="ghost" size="sm">
+              + Add band
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4">
           <Button onClick={handleBuildPreview} variant="secondary">
-            Build preview
+            Generate preview
           </Button>
         </div>
 
-        {validationError && (
-          <p className="mt-3 text-sm text-red-600">{validationError}</p>
-        )}
+        {validationError && <p className="mt-3 text-sm text-red-600">{validationError}</p>}
       </Card>
 
       {/* Preview grid */}
@@ -364,18 +401,12 @@ export default function ScheduleBuilderPage() {
             title="Preview grid"
             subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel."
           >
-            {/* Times render in the portal-wide viewing tz (top-bar selector).
-                Auto = the venue's own zone. Read-only indicator here. */}
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
               <span className="font-medium">Times shown in</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
                 {effectiveTz} ({fmtTzOffset(effectiveTz)})
               </span>
-              {effectiveTz !== tz && (
-                <span className="ml-auto text-xs text-slate-400">
-                  Venue is {tz} ({fmtTzOffset(tz)}) · change the zone from the timezone selector in the top bar
-                </span>
-              )}
+              <span className="ml-auto text-xs text-slate-400">Business day starts {dayStartTime}</span>
             </div>
 
             <Matrix
@@ -383,6 +414,7 @@ export default function ScheduleBuilderPage() {
               slots={previewSlots}
               weekStart={weekStart}
               tz={effectiveTz}
+              dayStartMin={dayStartMin}
               onBulk={handleBulk}
               onBook={handleBook}
               onPrevWeek={handlePrevWeek}
@@ -394,25 +426,22 @@ export default function ScheduleBuilderPage() {
           <Card title="Release schedule">
             <div className="flex flex-col gap-4">
               <p className="text-sm text-slate-500">
-                This will create slots from{' '}
-                <span className="font-medium text-slate-700">{cfg.startDate}</span> to{' '}
-                <span className="font-medium text-slate-700">{cfg.endDate}</span> using the
-                template above ({cfg.quantizationMin}-min slots, every day{' '}
-                {cfg.dailyOpenTime}–{cfg.dailyCloseTime}).
+                This will create {quantizationMin}-min slots from{' '}
+                <span className="font-medium text-slate-700">{startDate}</span> to{' '}
+                <span className="font-medium text-slate-700">{endDate}</span> using the {bands.length} pricing band
+                {bands.length === 1 ? '' : 's'} above. Your bands are saved for next time.
               </p>
 
               {releaseSlots.error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {(releaseSlots.error as Error).message}
-                </p>
+                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{(releaseSlots.error as Error).message}</p>
               )}
 
               {releaseResult && (
                 <div className="rounded bg-green-50 px-4 py-3 text-sm text-green-800">
                   <p className="font-semibold">Schedule released.</p>
                   <p>
-                    Created: <span className="font-mono">{releaseResult.created}</span> &nbsp;|&nbsp;
-                    Skipped (already existed): <span className="font-mono">{releaseResult.skipped}</span>
+                    Created: <span className="font-mono">{releaseResult.created}</span> &nbsp;|&nbsp; Skipped (already
+                    existed): <span className="font-mono">{releaseResult.skipped}</span>
                   </p>
                   <Link
                     href={`/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
