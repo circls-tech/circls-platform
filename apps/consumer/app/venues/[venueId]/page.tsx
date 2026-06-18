@@ -1,5 +1,6 @@
 'use client';
 import { use, useState } from 'react';
+import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
@@ -252,8 +253,6 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
 }
 
 function EventCard({ event }: { event: PublicEvent }) {
-  const { user } = useAuth();
-  const { openCheckout } = useCheckoutModal();
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
@@ -267,17 +266,10 @@ function EventCard({ event }: { event: PublicEvent }) {
         {event.capacity != null && <span>· {event.capacity} seats</span>}
       </div>
       <div className="mt-auto pt-4">
-        <Button
-          size="sm"
-          onClick={() => {
-            const prefill: { name?: string; contact?: string } = {};
-            if (user?.displayName) prefill.name = user.displayName;
-            if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-            openCheckout({ kind: 'event', eventId: event.id, title: event.name }, prefill);
-          }}
-        >
-          {isFree ? 'Register' : 'Book'}
-        </Button>
+        {/* Tickets are tier-based; pick quantities on the event detail page. */}
+        <Link href={`/events/${event.id}`}>
+          <Button size="sm">{isFree ? 'View & register' : 'View tickets'}</Button>
+        </Link>
       </div>
     </Card>
   );

@@ -6,6 +6,7 @@ import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues } from '@/lib/api/queries';
 import { useCreateTenantEvent, type CreateTenantEventInput } from '@/lib/api/events';
+import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { Button, Card, Input } from '@/lib/ui';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
@@ -43,8 +44,7 @@ export default function NewTenantEventPage() {
   const [description, setDescription] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
-  const [priceRupees, setPriceRupees] = useState('0');
-  const [capacityRaw, setCapacityRaw] = useState('');
+  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
   const [city, setCity] = useState('');
@@ -73,16 +73,17 @@ export default function NewTenantEventPage() {
       setErr('Enter at least an address line or city.');
       return;
     }
-    const pricePaise = Math.round(parseFloat(priceRupees || '0') * 100);
-    const capacityNum = capacityRaw ? parseInt(capacityRaw, 10) : undefined;
+    if (tiers.some((t) => !t.name.trim())) {
+      setErr('Give every ticket tier a name.');
+      return;
+    }
 
     const base = {
       name,
       ...(description ? { description } : {}),
       startsAt: localToTzIso(startsAtLocal, effectiveTz),
       endsAt: localToTzIso(endsAtLocal, effectiveTz),
-      pricePaise,
-      ...(capacityNum !== undefined ? { capacity: capacityNum } : {}),
+      tiers: tiersToPayload(tiers),
     };
 
     let input: CreateTenantEventInput;
@@ -192,10 +193,7 @@ export default function NewTenantEventPage() {
             <Input label={`Ends (${effectiveTz})`} type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} required />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input label="Price (₹)" type="number" min={0} step="0.01" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} hint="Leave 0 for a free event." />
-            <Input label="Capacity" type="number" min={1} value={capacityRaw} onChange={(e) => setCapacityRaw(e.target.value)} hint="Maximum seats. Leave blank for unlimited." />
-          </div>
+          <TiersEditor value={tiers} onChange={setTiers} />
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 

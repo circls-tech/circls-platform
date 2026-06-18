@@ -53,7 +53,7 @@ describe.skipIf(!runIntegration)('event images', () => {
         name: 'Launch Night',
         startsAt: '2099-01-01T18:00:00.000Z',
         endsAt: '2099-01-01T21:00:00.000Z',
-        pricePaise: 50000,
+        tiers: [{ name: 'General', pricePaise: 50000 }],
       },
     });
     eventId = ev.json().id;

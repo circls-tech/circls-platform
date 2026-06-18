@@ -17,6 +17,8 @@ export * from './tenant_invitations.js';
 export * from './payments.js';
 export * from './notifications.js';
 export * from './events.js';
+export * from './event_ticket_tiers.js';
+export * from './event_booking_tickets.js';
 export * from './event_images.js';
 export * from './memberships.js';
 export * from './api_keys.js';

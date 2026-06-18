@@ -149,6 +149,7 @@ export function useBookSlots() {
 
 export interface BookEventInput {
   eventId: string;
+  lines: { tierId: string; quantity: number }[];
   name?: string;
   contact?: string;
   couponCode?: string;

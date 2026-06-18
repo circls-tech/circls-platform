@@ -49,6 +49,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
   let ownerId: string;
   let tenantId: string;
   let eventId: string;
+  let tierId: string;
   const SUFFIX = Date.now();
 
   beforeAll(async () => {
@@ -75,10 +76,17 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
         name: 'Redeem Test Event',
         startsAt: '2030-09-01T10:00:00.000Z',
         endsAt: '2030-09-01T12:00:00.000Z',
-        pricePaise: 50000,
+        tiers: [{ name: 'General', pricePaise: 50000 }],
       },
     });
     eventId = (ev.json() as { id: string }).id;
+
+    // createEvent returns only the Event row; read the tier id back from DB.
+    const tierRows = (await db.execute(sql`
+      select id from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string }>;
+    tierId = tierRows[0]!.id;
+
     await db.execute(sql`update events set status='published' where id = ${eventId}`);
   });
 
@@ -88,6 +96,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from coupons where tenant_id = ${tenantId} or owner_type = 'platform' and code like ${'%' + String(SUFFIX)}`);
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from event_ticket_tiers where event_id = ${eventId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
@@ -105,7 +114,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       method: 'POST',
       url: `/v1/consumer/events/${eventId}/book`,
       headers: bearer('consumer'),
-      payload: { couponCode: code },
+      payload: { couponCode: code, lines: [{ tierId, quantity: 1 }] },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { booking: { id: string }; amountPaise: number };
@@ -136,7 +145,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       method: 'POST',
       url: `/v1/consumer/events/${eventId}/book`,
       headers: bearer('consumer'),
-      payload: { couponCode: code },
+      payload: { couponCode: code, lines: [{ tierId, quantity: 1 }] },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { booking: { id: string }; amountPaise: number };
@@ -162,7 +171,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       method: 'POST',
       url: `/v1/consumer/events/${eventId}/book`,
       headers: bearer('consumer'),
-      payload: { couponCode: code },
+      payload: { couponCode: code, lines: [{ tierId, quantity: 1 }] },
     });
     expect(first.statusCode).toBe(200);
 
@@ -170,7 +179,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       method: 'POST',
       url: `/v1/consumer/events/${eventId}/book`,
       headers: bearer('consumer'),
-      payload: { couponCode: code },
+      payload: { couponCode: code, lines: [{ tierId, quantity: 1 }] },
     });
     expect(second.statusCode).toBe(409);
     expect((second.json() as { error: { code: string } }).error.code).toBe('coupon_max_redeemed');

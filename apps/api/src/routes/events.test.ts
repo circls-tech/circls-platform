@@ -60,7 +60,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         name: 'Standalone Meetup',
         startsAt: '2030-05-01T10:00:00.000Z',
         endsAt: '2030-05-01T12:00:00.000Z',
-        pricePaise: 0,
+        tiers: [{ name: 'General', pricePaise: 0 }],
       },
     });
     expect(res.statusCode).toBe(200);
@@ -81,7 +81,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         name: 'Both',
         startsAt: '2030-05-01T10:00:00.000Z',
         endsAt: '2030-05-01T12:00:00.000Z',
-        pricePaise: 0,
+        tiers: [{ name: 'General', pricePaise: 0 }],
       },
     });
     expect(res.statusCode).toBe(400);
@@ -96,7 +96,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         name: 'Neither',
         startsAt: '2030-05-01T10:00:00.000Z',
         endsAt: '2030-05-01T12:00:00.000Z',
-        pricePaise: 0,
+        tiers: [{ name: 'General', pricePaise: 0 }],
       },
     });
     expect(res.statusCode).toBe(400);
@@ -113,7 +113,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         name: 'Empty Address',
         startsAt: '2030-05-01T10:00:00.000Z',
         endsAt: '2030-05-01T12:00:00.000Z',
-        pricePaise: 0,
+        tiers: [{ name: 'General', pricePaise: 0 }],
       },
     });
     expect(res.statusCode).toBe(400);

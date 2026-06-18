@@ -27,7 +27,7 @@ const COUPON_ERRORS: Record<string, string> = {
 function quoteItem(item: CheckoutItem): QuoteRequest {
   switch (item.kind) {
     case 'slot': return { itemType: 'slot', slotIds: item.slotIds };
-    case 'event': return { itemType: 'event', eventId: item.eventId };
+    case 'event': return { itemType: 'event', eventId: item.eventId, lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })) };
     case 'membership': return { itemType: 'membership', membershipId: item.membershipId };
   }
 }
@@ -89,6 +89,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
       } else if (item.kind === 'event') {
         const r = await bookEvent.mutateAsync({
           eventId: item.eventId,
+          lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })),
           ...(prefill.name ? { name: prefill.name } : {}),
           ...(prefill.contact ? { contact: prefill.contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
@@ -111,7 +112,11 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
       else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
       else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
     } catch (e) {
-      setPhase({ kind: 'error', message: (e as Error).message });
+      const raw = (e as Error).message;
+      const message = /sold out/i.test(raw)
+        ? 'A ticket tier just sold out — go back and adjust quantities.'
+        : raw;
+      setPhase({ kind: 'error', message });
     }
   }
 
@@ -133,6 +138,9 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          {item.kind === 'event' && item.lines.map((l) => (
+            <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity)} muted />
+          ))}
           <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise) : '—'} />
           {breakdown && breakdown.discountPaise > 0 && (
             <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise)}`} accent />

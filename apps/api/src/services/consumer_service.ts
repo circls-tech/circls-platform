@@ -23,9 +23,10 @@ import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
-import { prepareOnlineBookingWithPayment, bookEvent } from './booking_service.js';
+import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
+import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
 import { imagesForEvents } from './event_image_service.js';
@@ -187,6 +188,33 @@ export interface PublicEventWithVenue extends Event {
   locAddressJson: Record<string, unknown> | null;
   /** Uploaded event photos (public R2 URLs), ordered by position; [] if none. */
   images: PublicImageRef[];
+  /** Purchasable ticket tiers (public projection); [] on list rows (single-event read only). */
+  tiers: PublicTier[];
+}
+
+/**
+ * Public-facing ticket tier — the consumer-safe slice of a tier row. Excludes
+ * internal columns (tenantId, eventId, sortOrder, timestamps, deletedAt) and the
+ * raw sold count; consumers only need price, cap, and how many are left.
+ */
+export interface PublicTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  capacity: number | null;
+  remaining: number | null;
+}
+
+function toPublicTier(t: TierWithRemaining): PublicTier {
+  return {
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    capacity: t.capacity,
+    remaining: t.remaining,
+  };
 }
 
 interface EventJoinRow {
@@ -213,6 +241,7 @@ function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEv
     locTzName: (isStandalone ? r.e.tzName : r.venueTz) ?? 'Asia/Kolkata',
     locAddressJson: isStandalone ? (r.e.addressJson ?? null) : r.venueAddr,
     images,
+    tiers: [],
   };
 }
 
@@ -274,7 +303,8 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   if (!row) return null;
   const joinRow = row as EventJoinRow;
   const imagesByEvent = await imagesForEvents([joinRow.e.id]);
-  return toPublicEvent(joinRow, imagesByEvent.get(joinRow.e.id) ?? []);
+  const tiers = (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier);
+  return { ...toPublicEvent(joinRow, imagesByEvent.get(joinRow.e.id) ?? []), tiers };
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */
@@ -395,7 +425,7 @@ export interface ConsumerSlotBookingInput {
 async function resolvePricing(
   req:
     | { itemType: 'slot'; slotIds: string[] }
-    | { itemType: 'event'; eventId: string }
+    | { itemType: 'event'; eventId: string; lines?: { tierId: string; quantity: number }[] }
     | { itemType: 'membership'; membershipId: string },
   userId: string,
   couponCode: string,
@@ -467,6 +497,7 @@ export async function consumerBookSlots(
 export async function consumerBookEvent(
   eventId: string,
   customer: { userId: string; name?: string | null; contact?: string | null },
+  lines: EventLine[],
   couponCode?: string,
 ): Promise<BookEventResult> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
@@ -484,9 +515,9 @@ export async function consumerBookEvent(
     if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
   }
   const pricing = couponCode
-    ? await resolvePricing({ itemType: 'event', eventId }, customer.userId, couponCode)
+    ? await resolvePricing({ itemType: 'event', eventId, lines }, customer.userId, couponCode)
     : null;
-  return bookEvent(eventId, customer, pricing);
+  return bookEvent(eventId, customer, pricing, lines);
 }
 
 /** Purchase a membership as a consumer (must be active + tenant visible). */

@@ -40,6 +40,9 @@ const bookEventSchema = z.object({
       note: z.string().optional(),
     })
     .optional(),
+  lines: z
+    .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
+    .min(1),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -164,12 +167,17 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         issues: parsed.error.issues,
       });
     }
-    return bookEvent(eventId, {
-      userId: user.id,
-      name: parsed.data.customer?.name ?? null,
-      contact: parsed.data.customer?.contact ?? null,
-      note: parsed.data.customer?.note ?? null,
-    });
+    return bookEvent(
+      eventId,
+      {
+        userId: user.id,
+        name: parsed.data.customer?.name ?? null,
+        contact: parsed.data.customer?.contact ?? null,
+        note: parsed.data.customer?.note ?? null,
+      },
+      null,
+      parsed.data.lines,
+    );
   });
 };
 

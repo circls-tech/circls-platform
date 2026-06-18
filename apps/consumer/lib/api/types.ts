@@ -44,6 +44,17 @@ export interface PublicSlot {
   status: 'open';
 }
 
+/** A ticket tier for an event. `remaining` is `capacity - sold`, or null when
+ *  the tier is uncapped. */
+export interface PublicTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  capacity: number | null;
+  remaining: number | null;
+}
+
 export interface PublicEvent {
   id: string;
   tenantId: string;
@@ -57,6 +68,8 @@ export interface PublicEvent {
   pricePaise: number;
   capacity: number | null;
   status: 'published';
+  /** Ticket tiers; [] on list/upcoming responses, populated on the detail view. */
+  tiers: PublicTier[];
 }
 
 export interface PublicMembership {
