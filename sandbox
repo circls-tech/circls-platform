@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Circls local sandbox controller. One command to run the whole stack offline.
+# Plumbing (Dockerfiles, env files) lives in .sandbox/ ; this file is the entrypoint.
+set -euo pipefail
+cd "$(dirname "$0")"
+COMPOSE="docker compose -f compose.sandbox.yaml"
+
+case "${1:-help}" in
+  setup)
+    command -v gh >/dev/null || { echo "Install GitHub CLI (gh) first: https://cli.github.com"; exit 1; }
+    gh auth status >/dev/null 2>&1 || { echo "Run 'gh auth login' first."; exit 1; }
+    echo "→ Forking the repo (creates your own copy; you cannot push to the main repo)…"
+    gh repo fork --remote --remote-name origin || true
+    echo "→ Installing the PR-only git guard…"
+    git config core.hooksPath .githooks
+    echo "→ Building images (first time pulls deps; a few minutes)…"
+    $COMPOSE build
+    echo "✓ Setup done. Next: ./sandbox up"
+    ;;
+  up)
+    shift || true
+    if [ "$#" -gt 0 ]; then $COMPOSE up -d postgres firebase-emulator mailpit api "$@"; else $COMPOSE up -d; fi
+    echo "→ Waiting for the API…"; sleep 3
+    echo "✓ Up. Partners http://localhost:3001 · Admin http://localhost:3002 · Consumer http://localhost:3003"
+    echo "  Emulator UI (OTP codes) http://localhost:4000 · Email inbox http://localhost:8025"
+    echo "  Run './sandbox seed' once to create demo logins."
+    ;;
+  seed)
+    $COMPOSE exec api pnpm --filter @circls/api seed:sandbox
+    ;;
+  reset)
+    echo "→ Wiping the database + emulator state and reseeding…"
+    $COMPOSE down -v
+    $COMPOSE up -d postgres firebase-emulator mailpit
+    sleep 5
+    $COMPOSE up -d api partners admin consumer
+    sleep 5
+    $COMPOSE exec api pnpm --filter @circls/api seed:sandbox
+    echo "✓ Clean, seeded state restored."
+    ;;
+  down) $COMPOSE down ;;
+  build) $COMPOSE build ;;
+  logs) shift || true; $COMPOSE logs -f "$@" ;;
+  *)
+    cat <<'EOF'
+Circls sandbox — usage:
+  ./sandbox setup        First-time: fork the repo, install the git guard, build images
+  ./sandbox up [apps…]   Start everything (or a subset, e.g. ./sandbox up partners)
+  ./sandbox seed         Create demo login users + tenants
+  ./sandbox reset        Wipe everything and reseed (use after you break things)
+  ./sandbox logs [svc]   Tail logs (e.g. ./sandbox logs firebase-emulator to see OTP codes)
+  ./sandbox down         Stop everything
+  ./sandbox build        Rebuild images (after dependency changes)
+EOF
+    ;;
+esac

@@ -5,7 +5,7 @@ name: circls-sandbox
 x-dev: &dev
   build:
     context: .
-    dockerfile: sandbox/Dockerfile.dev
+    dockerfile: .sandbox/Dockerfile.dev
   restart: unless-stopped
   depends_on:
     postgres:
@@ -31,7 +31,7 @@ services:
   firebase-emulator:
     build:
       context: .
-      dockerfile: sandbox/firebase-emulator/Dockerfile
+      dockerfile: .sandbox/firebase-emulator/Dockerfile
     ports:
       - '9099:9099'
       - '4000:4000'
@@ -46,7 +46,7 @@ services:
 
   api:
     <<: *dev
-    env_file: ./sandbox/env/api.env
+    env_file: ./.sandbox/env/api.env
     command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
     ports: ['8080:8080']
     volumes:
@@ -56,7 +56,7 @@ services:
 
   partners:
     <<: *dev
-    env_file: ./sandbox/env/partners.env
+    env_file: ./.sandbox/env/partners.env
     command: pnpm --filter @circls/partners dev
     ports: ['3001:3001']
     volumes:
@@ -67,7 +67,7 @@ services:
 
   admin:
     <<: *dev
-    env_file: ./sandbox/env/admin.env
+    env_file: ./.sandbox/env/admin.env
     command: pnpm --filter @circls/admin dev
     ports: ['3002:3002']
     volumes:
@@ -78,7 +78,7 @@ services:
 
   consumer:
     <<: *dev
-    env_file: ./sandbox/env/consumer.env
+    env_file: ./.sandbox/env/consumer.env
     command: pnpm --filter @circls/consumer dev
     ports: ['3003:3003']
     volumes:
