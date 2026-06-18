@@ -166,8 +166,9 @@ export interface UpdateEventPatch {
   description?: string | null;
   startsAt?: Date;
   endsAt?: Date;
-  pricePaise?: number;
-  capacity?: number | null;
+  // Price + capacity are no longer set directly: an event's price is derived
+  // from its ticket tiers (events.price_paise is kept in sync as the min tier
+  // price by replaceTiers), and capacity is per-tier. Edit via `tiers` below.
   /**
    * Re-scope the event. A venue id makes it venue-scoped (location is read from
    * the venue, so the denormalized standalone fields are cleared). `null` makes
@@ -217,8 +218,6 @@ export async function updateEvent(
     if (patch.description !== undefined) set.description = patch.description;
     if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
     if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
-    if (patch.pricePaise !== undefined) set.pricePaise = patch.pricePaise;
-    if (patch.capacity !== undefined) set.capacity = patch.capacity;
 
     // Resolve the post-update scope: a venue id in the patch wins, otherwise the
     // event keeps whatever scope it already has.
