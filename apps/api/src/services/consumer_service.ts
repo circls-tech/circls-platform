@@ -188,8 +188,33 @@ export interface PublicEventWithVenue extends Event {
   locAddressJson: Record<string, unknown> | null;
   /** Uploaded event photos (public R2 URLs), ordered by position; [] if none. */
   images: PublicImageRef[];
-  /** Purchasable ticket tiers with sold/remaining; [] on list rows (single-event read only). */
-  tiers: TierWithRemaining[];
+  /** Purchasable ticket tiers (public projection); [] on list rows (single-event read only). */
+  tiers: PublicTier[];
+}
+
+/**
+ * Public-facing ticket tier — the consumer-safe slice of a tier row. Excludes
+ * internal columns (tenantId, eventId, sortOrder, timestamps, deletedAt) and the
+ * raw sold count; consumers only need price, cap, and how many are left.
+ */
+export interface PublicTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  capacity: number | null;
+  remaining: number | null;
+}
+
+function toPublicTier(t: TierWithRemaining): PublicTier {
+  return {
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    capacity: t.capacity,
+    remaining: t.remaining,
+  };
 }
 
 interface EventJoinRow {
@@ -278,7 +303,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   if (!row) return null;
   const joinRow = row as EventJoinRow;
   const imagesByEvent = await imagesForEvents([joinRow.e.id]);
-  const tiers = await listTiersWithRemaining(db, joinRow.e.id);
+  const tiers = (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier);
   return { ...toPublicEvent(joinRow, imagesByEvent.get(joinRow.e.id) ?? []), tiers };
 }
 
