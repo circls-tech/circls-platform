@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Blocks pushing to main/release on ANY remote, plus force-pushes and branch
-# deletes. Activated by `git config core.hooksPath .githooks` (./sandbox setup).
+# Blocks pushing to main/release on ANY remote (any refspec/force lands on the
+# destination check), and blocks remote branch deletes. Force-pushing a feature
+# branch is allowed (amending your own PR branch is fine).
+# Activated by `git config core.hooksPath .githooks` (./sandbox setup).
 # Open a pull request instead. This is a convenience guard; the real wall is that
 # sandbox members have no write access to the canonical repo (fork model).
 set -euo pipefail
