@@ -12,7 +12,6 @@
  * Run:  pnpm --filter @circls/api seed:sandbox
  */
 import { eq } from 'drizzle-orm';
-import { getAuth } from 'firebase-admin/auth';
 import { closeDb, db } from '../db/client.js';
 import { env } from '../config/env.js';
 import { firebaseAuth } from '../lib/firebase_admin.js';
@@ -51,7 +50,7 @@ async function main(): Promise<void> {
   await ensureAuthUser(DEMO.admin);
   await ensureAuthUser(DEMO.partner);
   await ensureAuthUser(DEMO.consumer);
-  await getAuth().setCustomUserClaims(DEMO.admin.uid, { admin: true });
+  await firebaseAuth().setCustomUserClaims(DEMO.admin.uid, { admin: true });
 
   const slug = env.CIRCLS_INTERNAL_TENANT_SLUG;
   const [platform] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug)).limit(1);
