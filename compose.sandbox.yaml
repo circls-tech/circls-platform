@@ -64,8 +64,6 @@ services:
       - /repo/node_modules
       - /repo/apps/partners/node_modules
       - /repo/apps/partners/.next
-      - /repo/packages/ui-kit/node_modules
-      - /repo/packages/api-types/node_modules
 
   admin:
     <<: *dev
@@ -77,8 +75,6 @@ services:
       - /repo/node_modules
       - /repo/apps/admin/node_modules
       - /repo/apps/admin/.next
-      - /repo/packages/ui-kit/node_modules
-      - /repo/packages/api-types/node_modules
 
   consumer:
     <<: *dev
@@ -90,8 +86,6 @@ services:
       - /repo/node_modules
       - /repo/apps/consumer/node_modules
       - /repo/apps/consumer/.next
-      - /repo/packages/ui-kit/node_modules
-      - /repo/packages/api-types/node_modules
 
 volumes:
   sandbox_pgdata:
