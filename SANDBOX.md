@@ -5,9 +5,19 @@ real payments, or send real emails/SMS. Break things freely — `./sandbox reset
 puts it back.
 
 ## One-time setup
-1. Install **Docker Desktop** and the **GitHub CLI** (`gh`), then `gh auth login`.
-2. In the project folder, run: `./sandbox setup`
-   (this forks the repo to your own GitHub account and builds the app — a few minutes).
+1. Ask the maintainer to give your GitHub account **Read** access to the `circls-tech` org repo (one-time).
+2. Install **Docker Desktop** and the **GitHub CLI** (`gh`). Open Docker Desktop so it's running.
+3. Sign in to GitHub: `gh auth login`.
+4. Get the project:
+   ```
+   gh repo clone circls-tech/circls-platform
+   cd circls-platform
+   ```
+5. Run the setup (forks the repo to **your** account, installs the safety guard, builds the app — a few minutes):
+   ```
+   ./sandbox setup
+   ```
+6. Quick check it worked: run `git remote -v`. The **origin** line should show **your-username/circls-platform** (your personal fork). If it still shows `circls-tech`, tell the maintainer before continuing.
 
 ## Daily use
 - Start everything:  `./sandbox up`
