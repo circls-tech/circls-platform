@@ -16,9 +16,11 @@ puts it back.
   - Partner portal — http://localhost:3001
   - Admin console  — http://localhost:3002
   - Consumer web   — http://localhost:3003
-- **Logging in:** use the demo phone numbers printed by `./sandbox seed`. The
-  OTP code is shown in the **Emulator UI** at http://localhost:4000 (and in
-  `./sandbox logs firebase-emulator`). No real SMS is sent.
+- **Logging in** (demo accounts printed by `./sandbox seed`):
+  - Admin console & Partner portal — **email + password**: `admin@sandbox.local` / `partner@sandbox.local`, password `sandbox123`.
+  - Consumer web — **phone OTP**: phone `+15555550102`; the OTP code is shown in
+    the **Emulator UI** at http://localhost:4000 (and in
+    `./sandbox logs firebase-emulator`). No real SMS is sent.
 - **Emails** the app "sends" land in the inbox at http://localhost:8025.
 - Messed it up? `./sandbox reset` — wipes and reseeds to a clean state.
 - Stop: `./sandbox down`
