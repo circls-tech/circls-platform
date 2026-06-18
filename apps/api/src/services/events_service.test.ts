@@ -47,7 +47,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
       name: 'Venue Event',
       startsAt: new Date('2030-01-01T10:00:00Z'),
       endsAt: new Date('2030-01-01T12:00:00Z'),
-      pricePaise: 0,
+      tiers: [{ name: 'General', pricePaise: 0 }],
     });
     expect(ev.venueId).toBe(venueId);
     expect(ev.addressJson).toBeNull();
@@ -64,7 +64,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
       name: 'Org Event',
       startsAt: new Date('2030-02-01T10:00:00Z'),
       endsAt: new Date('2030-02-01T12:00:00Z'),
-      pricePaise: 0,
+      tiers: [{ name: 'General', pricePaise: 0 }],
     });
     expect(ev.venueId).toBeNull();
     expect(ev.tzName).toBe('Asia/Kolkata');
@@ -79,7 +79,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
         name: 'No Address',
         startsAt: new Date('2030-03-01T10:00:00Z'),
         endsAt: new Date('2030-03-01T12:00:00Z'),
-        pricePaise: 0,
+        tiers: [{ name: 'General', pricePaise: 0 }],
       }),
     ).rejects.toThrow();
   });
@@ -99,7 +99,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
       name: 'Movable Event',
       startsAt: new Date('2030-05-01T10:00:00Z'),
       endsAt: new Date('2030-05-01T12:00:00Z'),
-      pricePaise: 0,
+      tiers: [{ name: 'General', pricePaise: 0 }],
     });
     expect(standalone.venueId).toBeNull();
 
@@ -116,7 +116,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
       name: 'Stuck At Venue',
       startsAt: new Date('2030-06-01T10:00:00Z'),
       endsAt: new Date('2030-06-01T12:00:00Z'),
-      pricePaise: 0,
+      tiers: [{ name: 'General', pricePaise: 0 }],
     });
     await expect(updateEvent(ctx(), venueScoped.id, { venueId: null })).rejects.toThrow();
   });
@@ -128,7 +128,7 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
       name: 'Going Standalone',
       startsAt: new Date('2030-07-01T10:00:00Z'),
       endsAt: new Date('2030-07-01T12:00:00Z'),
-      pricePaise: 0,
+      tiers: [{ name: 'General', pricePaise: 0 }],
     });
     const moved = await updateEvent(ctx(), venueScoped.id, {
       venueId: null,

@@ -15,6 +15,7 @@ import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
 
 export interface EventBookingRow {
   id: string;
@@ -68,13 +69,18 @@ export async function listEventsForTenant(tenantId: string): Promise<Event[]> {
     .orderBy(sql`${events.createdAt} desc`);
 }
 
-export async function getEvent(eventId: string, tenantId: string): Promise<Event | null> {
+export async function getEvent(
+  eventId: string,
+  tenantId: string,
+): Promise<(Event & { tiers: Awaited<ReturnType<typeof listTiersWithRemaining>> }) | null> {
   const [row] = await db
     .select()
     .from(events)
     .where(and(eq(events.id, eventId), eq(events.tenantId, tenantId)))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const tiers = await listTiersWithRemaining(db, eventId);
+  return { ...row, tiers };
 }
 
 /** Unscoped lookup — callers must then assert tenant membership on event.tenantId. */
@@ -96,8 +102,10 @@ export interface CreateEventInput {
   description?: string | undefined;
   startsAt: Date;
   endsAt: Date;
-  pricePaise: number;
+  /** Legacy: set by replaceTiers to the minimum tier price. Default 0. */
+  pricePaise?: number | undefined;
   capacity?: number | undefined;
+  tiers: TierInput[];
 }
 
 /**
@@ -133,12 +141,14 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
         description: input.description ?? null,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
-        pricePaise: input.pricePaise,
+        pricePaise: input.pricePaise ?? 0,
         capacity: input.capacity ?? null,
         status: 'draft',
       })
       .returning();
     if (!row) throw new Error('event insert returned no row');
+
+    await replaceTiers(tx, row.id, input.tenantId, input.tiers);
 
     await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
       venueId: row.venueId,
@@ -171,6 +181,8 @@ export interface UpdateEventPatch {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** When provided, replaces all ticket tiers (draft-only). */
+  tiers?: TierInput[];
 }
 
 /**
@@ -243,6 +255,10 @@ export async function updateEvent(
 
     if (Object.keys(set).length > 0) {
       await tx.update(events).set(set).where(eq(events.id, eventId));
+    }
+
+    if (patch.tiers !== undefined) {
+      await replaceTiers(tx, eventId, ctx.tenantId, patch.tiers);
     }
 
     const [updated] = await tx
