@@ -84,11 +84,11 @@ inside the container (one-time, minutes); subsequent starts are fast.
   verification code in the Emulator UI (`localhost:4000`) and logs — that is the
   "show them the OTP" behavior. Email/password works directly.
 - **Razorpay → full stub, offline.** No keys set → backend produces deterministic
-  fake orders/refunds (existing stub mode). The consumer checkout uses a
-  **sandbox checkout shim** that simulates confirmation instead of loading real
-  Razorpay JS, so nothing needs to reach the internet and no webhook tunnel is
-  required. (Alternative if they later want the real test widget: Razorpay test
-  keys — explicitly out of scope for v1.)
+  fake orders/refunds (existing stub mode). The consumer checkout already handles
+  the no-key case gracefully — it marks the booking "reserved" instead of loading
+  real Razorpay JS — so nothing reaches the internet and no webhook tunnel or code
+  change is required. (Alternative if they later want the real test widget:
+  Razorpay test keys — explicitly out of scope for v1.)
 - **R2 → in-memory stub.** Uploaded images render during a session, vanish on
   restart. (Optional later: a MinIO container for persistence — out of scope.)
 - **Email → Mailpit.** A sandbox-only SMTP transport (gated by `SANDBOX_SMTP_HOST`)
@@ -107,12 +107,14 @@ inside the container (one-time, minutes); subsequent starts are fast.
 3. New `firebase.json` configuring the Auth emulator port (9099) and UI (4000).
 4. Sandbox-only SMTP transport in the API's email service, gated by
    `SANDBOX_SMTP_HOST` (falls back to existing Resend/stub behavior when unset).
-5. Consumer sandbox checkout shim, gated by a sandbox flag, so payment confirmation
-   works offline without Razorpay JS.
 
-All five are additive and default-off — production builds and `ci.yml` behave
+All three are additive and default-off — production builds and `ci.yml` behave
 exactly as today. A test will assert the prod path still throws when neither service
 account nor emulator host is present.
+
+No consumer checkout change is needed: `CheckoutModal` already degrades gracefully
+when the payment key is absent (stub mode) — it marks the booking "reserved" rather
+than erroring. A "paid"-confirmation simulator is deferred (out of scope).
 
 ### Data — seeded and resettable
 
