@@ -22,6 +22,7 @@
     "migrate:prod": "node dist/migrate.js",
     "db:studio": "drizzle-kit studio",
     "openapi:emit": "tsx scripts/emit_openapi.ts",
+    "seed:sandbox": "tsx src/scripts/seed_sandbox.ts",
     "bootstrap:circls": "tsx src/scripts/bootstrap_circls_tenant.ts",
     "bootstrap:circls:prod": "node dist/scripts/bootstrap_circls_tenant.js",
     "migrate:platform-admins": "tsx scripts/migrate_platform_admin_users.ts"
