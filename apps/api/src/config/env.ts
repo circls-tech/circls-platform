@@ -11,6 +11,15 @@ export const envSchema = z
   // Firebase Admin service-account JSON (raw or base64). Optional in dev/test;
   // required at runtime once auth is exercised (GET /v1/me etc.).
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+  // Local sandbox only. When FIREBASE_AUTH_EMULATOR_HOST is set, the Admin SDK
+  // routes all auth to the Firebase Auth Emulator and needs no service account
+  // (see lib/firebase_admin.ts). Never set in prod.
+  FIREBASE_AUTH_EMULATOR_HOST: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  // Local sandbox only. When set, outbound email is delivered to a local SMTP
+  // sink (Mailpit) instead of Resend/stub (see lib/notifications/email.ts).
+  SANDBOX_SMTP_HOST: z.string().optional(),
+  SANDBOX_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
 
   // ── Track B (Phases 11–17) ─────────────────────────────────────────────────
   // All optional. When unset, the corresponding adapter runs in STUB mode:
