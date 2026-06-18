@@ -11,6 +11,7 @@ import {
   getMyBookingDetail,
   getMyProfile,
   getPublicEventById,
+  getPublicMembershipById,
   getPublicVenueWithImages,
   listMyBookings,
   listPublicArenas,
@@ -90,6 +91,13 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     const rows = await listPublicMembershipsAcrossVenues({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
     return { rows };
+  });
+
+  app.get('/v1/consumer/memberships/:membershipId', { config: publicLimit }, async (req) => {
+    const { membershipId } = req.params as { membershipId: string };
+    const m = await getPublicMembershipById(membershipId);
+    if (!m) throw new NotFound('Membership not found', 'membership_not_found');
+    return m;
   });
 
   app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
