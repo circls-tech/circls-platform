@@ -357,7 +357,7 @@ export interface ConsumerSlotBookingInput {
 async function resolvePricing(
   req:
     | { itemType: 'slot'; slotIds: string[] }
-    | { itemType: 'event'; eventId: string }
+    | { itemType: 'event'; eventId: string; lines?: { tierId: string; quantity: number }[] }
     | { itemType: 'membership'; membershipId: string },
   userId: string,
   couponCode: string,
