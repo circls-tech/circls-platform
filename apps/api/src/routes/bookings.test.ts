@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/firebase_admin.js', () => ({
@@ -13,7 +14,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
   }),
 }));
 
-const { closeDb } = await import('../db/client.js');
+const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -189,5 +190,109 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
       payload: { slotIds: [slotId], customer: { name: 'Alice Again', contact: '9999' } },
     });
     expect(rebook.statusCode).toBe(201);
+  });
+});
+
+describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+  let eventId: string;
+  let generalTierId: string;
+  let vipTierId: string;
+  const SUFFIX = Date.now();
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'Tier Co', slug: `tierco-${SUFFIX}` },
+    });
+    tenantId = t.json().id;
+
+    // Standalone (venue-less) event so booking only gates on the active tenant.
+    // Two tiers: General (uncapped) + VIP (capacity 1, so we can oversell it).
+    const ev = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: { line1: '1 Test St', city: 'Mumbai' },
+        tzName: 'Asia/Kolkata',
+        name: 'Tiered Test Event',
+        startsAt: '2030-09-01T10:00:00.000Z',
+        endsAt: '2030-09-01T12:00:00.000Z',
+        tiers: [
+          { name: 'General', pricePaise: 50000 },
+          { name: 'VIP', pricePaise: 150000, capacity: 1 },
+        ],
+      },
+    });
+    expect(ev.statusCode).toBe(200);
+    eventId = (ev.json() as { id: string }).id;
+
+    // createEvent returns only the Event row; read the tier ids back by name.
+    const tierRows = (await db.execute(sql`
+      select id, name from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string; name: string }>;
+    generalTierId = tierRows.find((x) => x.name === 'General')!.id;
+    vipTierId = tierRows.find((x) => x.name === 'VIP')!.id;
+
+    await db.execute(sql`update events set status='published' where id = ${eventId}`);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from event_booking_tickets where tier_id in (${generalTierId}, ${vipTierId})`);
+    await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from event_ticket_tiers where event_id = ${eventId}`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    await app.close();
+    await closeDb();
+  });
+
+  it('books two tier lines and writes one ticket row per line', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${eventId}/book`,
+      headers: bearer('other'),
+      payload: {
+        lines: [
+          { tierId: generalTierId, quantity: 2 },
+          { tierId: vipTierId, quantity: 1 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { booking: { id: string } };
+    const bookingId = body.booking.id;
+
+    const rows = (await db.execute(sql`
+      select tier_id, quantity from event_booking_tickets
+      where booking_id = ${bookingId}
+      order by quantity
+    `)) as unknown as Array<{ tier_id: string; quantity: number }>;
+    expect(rows).toHaveLength(2);
+    const byTier = new Map(rows.map((r) => [r.tier_id, Number(r.quantity)]));
+    expect(byTier.get(generalTierId)).toBe(2);
+    expect(byTier.get(vipTierId)).toBe(1);
+  });
+
+  it('rejects buying beyond a capped tier with 409 tier_sold_out', async () => {
+    // The VIP tier (capacity 1) is now sold out from the previous test.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${eventId}/book`,
+      headers: bearer('other'),
+      payload: { lines: [{ tierId: vipTierId, quantity: 1 }] },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('tier_sold_out');
   });
 });
