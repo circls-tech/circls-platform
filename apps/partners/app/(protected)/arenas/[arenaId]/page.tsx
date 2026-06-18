@@ -190,6 +190,7 @@ export default function ArenaReceptionPage() {
           slots={slots}
           weekStart={weekStart}
           tz={displayTz}
+          dayStartMin={arena?.businessDayStartMin ?? 0}
           now={now}
           onBulk={handleBulk}
           onBook={handleBook}

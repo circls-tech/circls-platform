@@ -61,6 +61,23 @@ describe('enumerateOccurrences (pure)', () => {
     expect(result[0]?.endIso).toBe('2026-07-04T13:30:00.000Z');
   });
 
+  it('anchors an overnight cell (startTimeMin >= 1440) to the next calendar day, once', () => {
+    // A 1am slot belonging to Saturday's business day is emitted as
+    // {dayOfWeek: 6 (Sat), startTimeMin: 1500 = 25:00}. It must resolve to
+    // Sunday 01:00 IST (= Sat 19:30 UTC) and be created exactly once — only the
+    // Saturday calendar date enumerates it, not Sunday.
+    const result = enumerateOccurrences(
+      '2026-07-04', // Saturday
+      '2026-07-04',
+      [{ dayOfWeek: 6, startTimeMin: 1500, durationMin: 60 }],
+      'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]?.startIso).toBe('2026-07-04T19:30:00.000Z'); // Sun 01:00 IST
+    expect(result[0]?.endIso).toBe('2026-07-04T20:30:00.000Z'); // Sun 02:00 IST
+  });
+
   it('skips occurrences whose start is at or before nowIso, keeps later ones', () => {
     // Two Saturdays: 2026-07-04T12:30Z and 2026-07-11T12:30Z.
     // nowIso == the first occurrence's start → that one is skipped (<=), second kept.
@@ -175,6 +192,29 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
         expect(s.pricePaise).toBe(50000);
         expect(s.status).toBe('open');
       }
+    });
+
+    it('persists businessDayStartMin + template onto the arena', async () => {
+      await releaseSlots(ctx, arenaId, {
+        startDate: '2027-01-02',
+        endDate: '2027-01-02',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000 }],
+        businessDayStartMin: 180,
+        template: {
+          quantizationMin: 60,
+          defaultPriceRupees: 500,
+          bands: [{ startMin: 360, endMin: 600, priceRupees: 400 }],
+        },
+      });
+
+      const [a] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+      expect(a?.businessDayStartMin).toBe(180);
+      expect(a?.scheduleTemplate).toMatchObject({
+        quantizationMin: 60,
+        defaultPriceRupees: 500,
+        bands: [{ startMin: 360, endMin: 600, priceRupees: 400 }],
+      });
     });
 
     it('skips 2 overlapping slots on a second identical release', async () => {

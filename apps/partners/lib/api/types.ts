@@ -41,12 +41,23 @@ export interface Venue {
   tags: string[];
 }
 
+/** Last-used schedule-builder template, persisted per arena for prefill. */
+export interface ScheduleTemplate {
+  quantizationMin: number;
+  defaultPriceRupees: number;
+  bands: { startMin: number; endMin: number; priceRupees: number }[];
+}
+
 export interface Arena {
   id: string;
   venueId: string;
   name: string;
   sport: string | null;
   slotDurationMin: number;
+  /** Minute-of-day the business day begins (default 180 = 3am). */
+  businessDayStartMin: number;
+  /** Last-used builder template, or null before the first release. */
+  scheduleTemplate: ScheduleTemplate | null;
   status: ListingStatus;
   tags: string[];
 }
