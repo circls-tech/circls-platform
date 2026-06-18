@@ -57,8 +57,12 @@ FROM "events" e;
 INSERT INTO "event_booking_tickets" ("booking_id", "tier_id", "quantity", "unit_price_paise")
 SELECT b."id", t."id", 1, COALESCE(b."base_paise", b."price_paise", 0)
 FROM "bookings" b
-JOIN "event_ticket_tiers" t ON t."event_id" = (b."item_data"->>'eventId')::uuid
-WHERE b."item_type" = 'event' AND b."status" <> 'cancelled';
+JOIN "event_ticket_tiers" t
+  ON (b."item_data"->>'eventId') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+ AND t."event_id" = (b."item_data"->>'eventId')::uuid
+WHERE b."item_type" = 'event'
+  AND b."status" <> 'cancelled'
+  AND (b."item_data"->>'eventId') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 --> statement-breakpoint
 -- Keep events.price_paise as the min tier price (no-op for single-tier today).
 UPDATE "events" e
