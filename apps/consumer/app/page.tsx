@@ -55,7 +55,7 @@ export default function LandingPage() {
         )}
 
         {(memberships.data?.length ?? 0) > 0 && (
-          <HScroll title="Memberships">
+          <HScroll title="Memberships" viewAllHref="/memberships">
             {memberships.data!.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}

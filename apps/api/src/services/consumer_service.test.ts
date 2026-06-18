@@ -8,9 +8,11 @@ import { closeDb, db, pingDb } from '../db/client.js';
 import { arenas, bookings, events, memberships, slots, tenants, users, venues } from '../db/schema/index.js';
 import {
   getMyBookingDetail,
+  getPublicMembershipById,
   getPublicVenue,
   listPublicArenas,
   listPublicEvents,
+  listPublicMemberships,
   listPublicMembershipsAcrossVenues,
   listPublicUpcomingEvents,
   listPublicVenues,
@@ -252,6 +254,123 @@ describe.skipIf(!runIntegration)('consumer memberships across venues', () => {
     expect(ids.has(inactiveId)).toBe(false); // status != active
     expect(ids.has(pendingVenueMembId)).toBe(false); // owning venue not active
     expect(ids.has(suspMembId)).toBe(false); // owning tenant suspended
+  });
+});
+
+describe.skipIf(!runIntegration)('getPublicMembershipById', () => {
+  const tag = `mbyid-${Date.now()}`;
+  let tenantId: string;
+  let venueId: string;
+  let pendingVenueId: string;
+  let suspTenantId: string;
+  let scopedId: string;
+  let tenantWideId: string;
+  let inactiveId: string;
+  let pendingVenueMembId: string;
+  let suspMembId: string;
+
+  beforeAll(async () => {
+    await pingDb();
+    const [t] = await db.insert(tenants).values({ name: `ById Brand ${tag}`, slug: tag }).returning();
+    tenantId = t!.id;
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId, name: `ById Venue ${tag}`, status: 'active', tags: ['Tennis'] })
+      .returning();
+    venueId = v!.id;
+    const [pv] = await db
+      .insert(venues)
+      .values({ tenantId, name: `ById Pending ${tag}`, status: 'pending_review' })
+      .returning();
+    pendingVenueId = pv!.id;
+
+    const mkMemb = async (name: string, venue: string | null, status: 'active' | 'inactive') => {
+      const [m] = await db
+        .insert(memberships)
+        .values({ tenantId, venueId: venue, name, durationDays: 30, status })
+        .returning();
+      return m!.id;
+    };
+    scopedId = await mkMemb('Scoped', venueId, 'active');
+    tenantWideId = await mkMemb('Wide', null, 'active');
+    inactiveId = await mkMemb('Inactive', venueId, 'inactive');
+    pendingVenueMembId = await mkMemb('OnPendingVenue', pendingVenueId, 'active');
+
+    const [st] = await db.insert(tenants).values({ name: `ByIdSusp ${tag}`, slug: `${tag}-susp`, status: 'suspended' }).returning();
+    suspTenantId = st!.id;
+    const [sm] = await db
+      .insert(memberships)
+      .values({ tenantId: suspTenantId, venueId: null, name: 'SuspWide', durationDays: 30, status: 'active' })
+      .returning();
+    suspMembId = sm!.id;
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from memberships where tenant_id in (${tenantId}, ${suspTenantId})`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id in (${tenantId}, ${suspTenantId})`);
+  });
+
+  it('returns a venue-scoped membership with scope', async () => {
+    const m = await getPublicMembershipById(scopedId);
+    expect(m).not.toBeNull();
+    expect(m!.id).toBe(scopedId);
+    expect(m!.venueId).toBe(venueId);
+    expect(m!.scopeName).toBe(`ById Venue ${tag}`);
+    expect(m!.venueTags).toEqual(['Tennis']);
+  });
+
+  it('returns a tenant-wide membership with brand scope and empty tags', async () => {
+    const m = await getPublicMembershipById(tenantWideId);
+    expect(m).not.toBeNull();
+    expect(m!.venueId).toBeNull();
+    expect(m!.scopeName).toBe(`ById Brand ${tag}`);
+    expect(m!.venueTags).toEqual([]);
+  });
+
+  it('returns null for inactive, non-active-venue-scoped, suspended-tenant, and unknown', async () => {
+    expect(await getPublicMembershipById(inactiveId)).toBeNull();
+    expect(await getPublicMembershipById(pendingVenueMembId)).toBeNull();
+    expect(await getPublicMembershipById(suspMembId)).toBeNull();
+    expect(await getPublicMembershipById('00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+});
+
+describe.skipIf(!runIntegration)('listPublicMemberships (venue scope enrichment)', () => {
+  const tag = `mvscope-${Date.now()}`;
+  let tenantId: string;
+  let venueId: string;
+
+  beforeAll(async () => {
+    await pingDb();
+    const [t] = await db.insert(tenants).values({ name: `VScope Brand ${tag}`, slug: tag }).returning();
+    tenantId = t!.id;
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId, name: `VScope Venue ${tag}`, status: 'active', tags: ['Padel'] })
+      .returning();
+    venueId = v!.id;
+    await db.insert(memberships).values([
+      { tenantId, venueId, name: 'VScoped', durationDays: 30, status: 'active' },
+      { tenantId, venueId: null, name: 'VWide', durationDays: 30, status: 'active' },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from memberships where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+  });
+
+  it('returns venue-scoped + tenant-wide with scope fields', async () => {
+    const rows = await listPublicMemberships(venueId);
+    const scoped = rows.find((m) => m.name === 'VScoped')!;
+    const wide = rows.find((m) => m.name === 'VWide')!;
+    expect(scoped.scopeName).toBe(`VScope Venue ${tag}`);
+    expect(scoped.venueTags).toEqual(['Padel']);
+    expect(wide.venueId).toBeNull();
+    expect(wide.scopeName).toBe(`VScope Brand ${tag}`);
+    expect(wide.venueTags).toEqual([]);
   });
 });
 
