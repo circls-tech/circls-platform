@@ -1,0 +1,97 @@
+# Local team sandbox — full Circls stack, all third parties simulated offline.
+# Driven by ./sandbox. NOT for production.
+name: circls-sandbox
+
+x-dev: &dev
+  build:
+    context: .
+    dockerfile: sandbox/Dockerfile.dev
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    firebase-emulator:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: circls
+    ports: ['5433:5432']
+    volumes:
+      - sandbox_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d circls']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  firebase-emulator:
+    build:
+      context: .
+      dockerfile: sandbox/firebase-emulator/Dockerfile
+    ports:
+      - '9099:9099'
+      - '4000:4000'
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - '8025:8025'
+      - '1025:1025'
+    restart: unless-stopped
+
+  api:
+    <<: *dev
+    env_file: ./sandbox/env/api.env
+    command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
+    ports: ['8080:8080']
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/api/node_modules
+
+  partners:
+    <<: *dev
+    env_file: ./sandbox/env/partners.env
+    command: pnpm --filter @circls/partners dev
+    ports: ['3001:3001']
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/partners/node_modules
+      - /repo/apps/partners/.next
+      - /repo/packages/ui-kit/node_modules
+      - /repo/packages/api-types/node_modules
+
+  admin:
+    <<: *dev
+    env_file: ./sandbox/env/admin.env
+    command: pnpm --filter @circls/admin dev
+    ports: ['3002:3002']
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/admin/node_modules
+      - /repo/apps/admin/.next
+      - /repo/packages/ui-kit/node_modules
+      - /repo/packages/api-types/node_modules
+
+  consumer:
+    <<: *dev
+    env_file: ./sandbox/env/consumer.env
+    command: pnpm --filter @circls/consumer dev
+    ports: ['3003:3003']
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/consumer/node_modules
+      - /repo/apps/consumer/.next
+      - /repo/packages/ui-kit/node_modules
+      - /repo/packages/api-types/node_modules
+
+volumes:
+  sandbox_pgdata:
