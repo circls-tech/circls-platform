@@ -1,39 +1,64 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand — navy ink */
-  --color-ink:       #0f1c2e;
-  --color-ink-deep:  #0b1424;
-  --color-ink-soft:  #1e3a5f;
+  /* ── Ink: text + every chunky outline ─────────────────────────── */
+  --color-ink:       #17151D;
+  --color-ink-deep:  #0f0e13;
+  --color-ink-soft:  #4a4654;
 
-  /* Accent — gold */
-  --color-gold-500:  #e7c87d;
-  --color-gold-600:  #c79a3a;
-  --color-gold-100:  #f3ead3;
-  --color-gold-text: #7a5b1e;
+  /* ── Coral: primary accent — buttons, highlights ──────────────── */
+  --color-coral:        #F77E54;
+  --color-coral-deep:   #EE5C2B;
+  --color-coral-soft:   #FBE3D6;
 
-  /* Neutrals — warm */
-  --color-surface:      #fbf9f4;
+  /* ── Lavender + mint tints (soft bands, accents) ──────────────── */
+  --color-lav:        #CBCEF6;
+  --color-lav-soft:   #E6E7FB;
+  --color-mint-soft:  #E2F4EA;
+
+  /* ── Brand petals: bright accent fills (badges, dots, art) ────── */
+  --color-petal-yellow: #ffd64a;
+  --color-petal-red:    #f34f34;
+  --color-petal-green:  #206d3f;
+  --color-petal-mint:   #a7e3bf;
+  --color-petal-pink:   #f1608c;
+  --color-petal-maroon: #a73344;
+  --color-petal-teal:   #006476;
+
+  /* ── Navigator pastels (one per section page) ─────────────────── */
+  --color-nav-venues:    #FCE38A;
+  --color-nav-events:    #FFB0A3;
+  --color-nav-circles:   #F9B4D4;
+  --color-nav-nearyou:   #A9C9F2;
+
+  /* ── Neutrals: warm paper ─────────────────────────────────────── */
+  --color-surface:      #FAF3E8;
+  --color-surface-2:    #F3E9D7;
   --color-surface-card: #ffffff;
-  --color-border:       #ece3d0;
-  --color-text-primary:   #0f1c2e;
-  --color-text-secondary: #64748b;
-  --color-text-muted:     #94a3b8;
+  --color-border:       #17151D;
+  --color-text-primary:   #17151D;
+  --color-text-secondary: #4a4654;
+  --color-text-muted:     #7a7682;
 
-  /* Status tones (retained for booking states) */
-  --color-tone-success-bg: #dcfce7; --color-tone-success-text: #166534;
-  --color-tone-warning-bg: #fef9c3; --color-tone-warning-text: #854d0e;
-  --color-tone-danger-bg:  #fee2e2; --color-tone-danger-text:  #991b1b;
-  --color-tone-neutral-bg: #f1f5f9; --color-tone-neutral-text: #64748b;
-  --color-tone-booked-bg:  #dbeafe; --color-tone-booked-text:  #1e40af;
+  /* ── Status tones (booking states) — drawn from brand petals ──── */
+  --color-tone-success-bg: #E2F4EA; --color-tone-success-text: #206d3f;
+  --color-tone-warning-bg: #FFF1C9; --color-tone-warning-text: #8a6a00;
+  --color-tone-danger-bg:  #FBE3D6; --color-tone-danger-text:  #c0341b;
+  --color-tone-neutral-bg: #F3E9D7; --color-tone-neutral-text: #4a4654;
+  --color-tone-booked-bg:  #E6E7FB; --color-tone-booked-text:  #3c3f9e;
 
-  /* Fonts (variables injected by next/font in layout.tsx) */
-  --font-sans:    var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  /* ── Fonts (variables injected by next/font in layout.tsx) ────── */
+  --font-sans:    var(--font-jakarta), system-ui, sans-serif;
+  --font-display: var(--font-bricolage), "Plus Jakarta Sans", sans-serif;
+  --font-accent:  var(--font-caveat), cursive;
 
-  /* Shape */
-  --radius:      0.5rem;
-  --radius-card: 1rem;
+  /* ── Shape: generous rounding ─────────────────────────────────── */
+  --radius:      0.875rem;   /* buttons / inputs / tags */
+  --radius-card: 1.375rem;   /* cards (~22px) */
+
+  /* ── Signature: hard offset shadows, no blur ──────────────────── */
+  --shadow-offset:    6px 6px 0 #17151D;  /* cards → shadow-offset */
+  --shadow-offset-sm: 4px 4px 0 #17151D;  /* buttons / small → shadow-offset-sm */
 }
 
 html, body { height: 100%; }
@@ -44,10 +69,14 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
 }
 
+/* Display headings: tight Bricolage Grotesque */
+h1, h2, h3 { letter-spacing: -0.02em; line-height: 1.05; }
+
 *:focus-visible {
-  outline: 2px solid var(--color-gold-600);
+  outline: 2.5px solid var(--color-coral-deep);
   outline-offset: 2px;
   border-radius: var(--radius);
 }

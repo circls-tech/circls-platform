@@ -1,21 +1,18 @@
 import type { ReactNode } from 'react';
-
-const MOTIF_GRID: React.CSSProperties = {
-  backgroundImage:
-    'linear-gradient(var(--color-gold-500) 2px, transparent 2px), linear-gradient(90deg, var(--color-gold-500) 2px, transparent 2px)',
-  backgroundSize: '26px 26px',
-};
+import { BrandMark } from '@/lib/ui';
 
 export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center rounded-card border border-border bg-white px-6 py-12 text-center">
-      <div aria-hidden className="relative mb-4 h-20 w-28 overflow-hidden rounded-md bg-ink">
-        <div className="absolute inset-0 opacity-20" style={MOTIF_GRID} />
-        <div className="absolute inset-3 rounded border-2 border-gold-500/50" />
+    <div className="flex flex-col items-center rounded-card border-[2.5px] border-ink bg-white px-6 py-12 text-center shadow-offset">
+      <div
+        aria-hidden
+        className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border-[2.5px] border-ink bg-surface-2 text-ink shadow-offset-sm"
+      >
+        <BrandMark className="h-11 w-11" />
       </div>
-      <h3 className="font-display text-lg font-semibold text-ink">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm text-text-secondary">{body}</p>
-      {action && <div className="mt-4">{action}</div>}
+      <h3 className="font-display text-xl font-extrabold text-ink">{title}</h3>
+      <p className="mt-1.5 max-w-sm text-sm text-text-secondary">{body}</p>
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }

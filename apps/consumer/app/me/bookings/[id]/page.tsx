@@ -46,7 +46,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <Link href="/me/bookings" className="text-sm text-gold-600 underline">
+        <Link href="/me/bookings" className="text-sm font-semibold text-coral-deep underline">
           ← All bookings
         </Link>
 
@@ -55,7 +55,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         ) : bookingQ.isLoading ? (
           <p className="mt-6 text-sm text-text-secondary">Loading booking…</p>
         ) : bookingQ.isError ? (
-          <p className="mt-6 text-sm text-red-600">
+          <p className="mt-6 text-sm font-semibold text-petal-red">
             {bookingQ.error instanceof Error ? bookingQ.error.message : 'Failed to load booking'}
           </p>
         ) : !b ? (
@@ -66,7 +66,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <Card>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h1 className="font-display text-2xl font-semibold text-ink">
+                  <h1 className="font-display text-3xl font-extrabold text-ink">
                     {b.event?.name ?? b.membership?.name ?? b.venueName}
                   </h1>
                   <p className="mt-0.5 text-sm text-text-secondary">
@@ -83,7 +83,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             {/* Court (slot) booking: list each booked slot */}
             {b.itemType === 'slot' && b.slots.length > 0 && (
               <Card title="Your slots">
-                <div className="flex flex-col divide-y divide-border">
+                <div className="flex flex-col divide-y divide-ink/15">
                   {b.slots.map((s) => (
                     <div key={s.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div>
@@ -97,7 +97,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   ))}
                 </div>
                 {b.venueId && (
-                  <Link href={`/venues/${b.venueId}`} className="mt-4 inline-block text-sm text-gold-600 underline">
+                  <Link href={`/venues/${b.venueId}`} className="mt-4 inline-block text-sm font-semibold text-coral-deep underline">
                     View {b.venueName}
                   </Link>
                 )}
@@ -114,7 +114,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {b.event.description && (
                   <p className="mt-3 text-sm text-text-secondary">{b.event.description}</p>
                 )}
-                <Link href={`/events/${b.event.id}`} className="mt-4 inline-block text-sm text-gold-600 underline">
+                <Link href={`/events/${b.event.id}`} className="mt-4 inline-block text-sm font-semibold text-coral-deep underline">
                   View event
                 </Link>
               </Card>
@@ -135,7 +135,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
 
             {/* Booking metadata */}
             <Card title="Booking details">
-              <div className="flex flex-col divide-y divide-border">
+              <div className="flex flex-col divide-y divide-ink/15">
                 <DetailRow label="Booked on" value={formatDateTime(b.createdAt)} />
                 <DetailRow label="Payment" value={PAYMENT_METHOD_LABELS[b.paymentMethod] ?? b.paymentMethod} />
                 {b.customerName && <DetailRow label="Name" value={b.customerName} />}

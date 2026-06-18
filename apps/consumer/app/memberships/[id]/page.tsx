@@ -38,30 +38,30 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
         {membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {membershipQ.error instanceof Error ? membershipQ.error.message : 'Failed to load membership'}
           </p>
         ) : !m ? (
           <p className="text-sm text-text-secondary">Membership not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border border-ink-soft bg-gradient-to-br from-ink to-ink-soft p-6 text-white">
+            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink bg-lav p-6 text-ink shadow-offset">
               <div className="flex items-center gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gold-500">{m.scopeName}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">{m.scopeName}</p>
                 {m.venueId === null && <Badge tone="neutral" label="Brand-wide" />}
               </div>
-              <h1 className="mt-1 font-display text-3xl font-semibold">{m.name}</h1>
-              {m.description && <p className="mt-2 text-sm text-white/70">{m.description}</p>}
-              <div className="mt-4 font-display text-2xl font-semibold">
+              <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
+              {m.description && <p className="mt-2 text-sm text-ink-soft">{m.description}</p>}
+              <div className="mt-4 font-display text-2xl font-extrabold">
                 {formatPaise(m.pricePaise)}{' '}
-                <span className="font-sans text-xs text-white/70">/ {m.durationDays} days</span>
+                <span className="font-sans text-xs font-medium text-ink-soft">/ {m.durationDays} days</span>
               </div>
             </div>
 
             <Card className="flex flex-col gap-3">
               <Benefits benefits={m.benefits} />
               {m.venueId && (
-                <Link href={`/venues/${m.venueId}`} className="text-sm text-gold-600 underline">
+                <Link href={`/venues/${m.venueId}`} className="text-sm font-semibold text-coral-deep underline">
                   More at {m.scopeName}
                 </Link>
               )}

@@ -9,7 +9,7 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
   return (
     <Link
       href={`/events/${event.id}`}
-      className={`block overflow-hidden rounded-card border border-border bg-white transition-all hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(15,28,46,0.16)] ${className}`}
+      className={`block overflow-hidden rounded-card border-[2.5px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <div className="relative">
         <ImageCarousel
@@ -24,13 +24,13 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
             />
           }
         />
-        <div className="absolute left-2.5 top-2.5 z-10 rounded-lg bg-white px-2.5 py-1 text-center leading-none shadow-md">
-          <div className="font-display text-lg font-bold text-ink">{day}</div>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-gold-600">{month}</div>
+        <div className="absolute left-2.5 top-2.5 z-10 rounded-lg border-[2px] border-ink bg-white px-2.5 py-1 text-center leading-none shadow-offset-sm">
+          <div className="font-display text-lg font-extrabold text-ink">{day}</div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-coral-deep">{month}</div>
         </div>
       </div>
       <div className="p-4">
-        <h3 className="font-display text-[18px] font-semibold text-ink">{event.name}</h3>
+        <h3 className="font-display text-[18px] font-extrabold text-ink">{event.name}</h3>
         <p className="mt-0.5 text-sm text-text-secondary">
           {event.locationName} · {formatTime(event.startsAt)}
         </p>

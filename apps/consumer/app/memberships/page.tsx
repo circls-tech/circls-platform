@@ -13,7 +13,7 @@ export default function MembershipsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <h1 className="mb-1 font-display text-3xl font-semibold text-ink">Memberships</h1>
+        <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">Memberships</h1>
         <p className="mb-8 text-sm text-text-secondary">Plans and passes across every venue.</p>
 
         {memberships.isLoading ? (
@@ -21,7 +21,7 @@ export default function MembershipsPage() {
             {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : memberships.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {memberships.error instanceof Error ? memberships.error.message : 'Failed to load memberships'}
           </p>
         ) : rows.length === 0 ? (

@@ -129,10 +129,10 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
       {done ? (
         <div className="flex flex-col gap-4">
           <div className={[
-            'rounded-[var(--radius)] border px-4 py-3 text-sm',
-            phase.kind === 'success' ? 'border-green-200 bg-green-50 text-green-800'
-              : phase.kind === 'reserved' ? 'border-amber-200 bg-amber-50 text-amber-800'
-              : 'border-red-200 bg-red-50 text-red-700',
+            'rounded-[var(--radius)] border-[2.5px] border-ink px-4 py-3 text-sm font-medium shadow-offset-sm',
+            phase.kind === 'success' ? 'bg-tone-success-bg text-tone-success-text'
+              : phase.kind === 'reserved' ? 'bg-tone-warning-bg text-tone-warning-text'
+              : 'bg-tone-danger-bg text-tone-danger-text',
           ].join(' ')}>{phase.message}</div>
           <Button onClick={onClose}>Done</Button>
         </div>
@@ -146,7 +146,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
             <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise)}`} accent />
           )}
           {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise)} muted />}
-          <div className="my-1 border-t border-[var(--color-border)]" />
+          <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
           <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise) : '—'} bold />
 
           {!appliedCode ? (
@@ -154,7 +154,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
               {offersItem && (offers.data?.rows.length ?? 0) > 0 && (
                 <select
                   aria-label="Available offers"
-                  className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                  className="w-full rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
                   value=""
                   onChange={(e) => { if (e.target.value) applyCode(e.target.value); }}
                   disabled={busy}
@@ -175,7 +175,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
           ) : (
             <button type="button" onClick={clearCode} className="mt-1 self-start text-xs font-medium text-[var(--color-text-secondary)] underline">Remove coupon</button>
           )}
-          {couponMsg && <p className="text-xs text-red-600">{couponMsg}</p>}
+          {couponMsg && <p className="text-xs font-semibold text-petal-red">{couponMsg}</p>}
 
           <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy}>
             {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise) : ''}`}
@@ -190,7 +190,7 @@ function Row({ label, value, muted, accent, bold }: { label: string; value: stri
   return (
     <div className="flex items-center justify-between text-sm">
       <span className={muted ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-ink)]'}>{label}</span>
-      <span className={[accent ? 'text-green-700' : 'text-[var(--color-ink)]', bold ? 'font-semibold' : ''].join(' ')}>{value}</span>
+      <span className={[accent ? 'text-petal-green' : 'text-[var(--color-ink)]', bold ? 'font-display font-extrabold' : ''].join(' ')}>{value}</span>
     </div>
   );
 }

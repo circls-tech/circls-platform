@@ -15,9 +15,9 @@ export function HScroll({
   return (
     <section className="py-6">
       <div className="mx-auto mb-3 flex max-w-6xl items-baseline justify-between px-4">
-        <h2 className="font-display text-2xl font-semibold text-ink">{title}</h2>
+        <h2 className="font-display text-2xl font-extrabold text-ink">{title}</h2>
         {viewAllHref && (
-          <Link href={viewAllHref} className="text-sm font-semibold text-gold-600 hover:underline">
+          <Link href={viewAllHref} className="text-sm font-bold text-coral-deep hover:underline">
             View all →
           </Link>
         )}
