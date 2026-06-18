@@ -12,6 +12,13 @@ import {
   useUpdateEvent,
 } from '@/lib/api/events';
 import { EventImages } from '@/components/EventImages';
+import {
+  TiersEditor,
+  emptyTier,
+  tierDraftFromApi,
+  tiersToPayload,
+  type TierDraft,
+} from '@/components/TiersEditor';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
@@ -99,8 +106,7 @@ export default function EventDetailPage() {
   const [description, setDescription] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
-  const [priceRupees, setPriceRupees] = useState('0');
-  const [capacityRaw, setCapacityRaw] = useState('');
+  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
 
   function startEdit() {
     if (!ev) return;
@@ -108,8 +114,7 @@ export default function EventDetailPage() {
     setDescription(ev.description ?? '');
     setStartsAtLocal(isoToVenueTzLocal(ev.startsAt, tz));
     setEndsAtLocal(isoToVenueTzLocal(ev.endsAt, tz));
-    setPriceRupees((ev.pricePaise / 100).toString());
-    setCapacityRaw(ev.capacity != null ? String(ev.capacity) : '');
+    setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setErrorMsg(null);
     setEditing(true);
   }
@@ -139,6 +144,10 @@ export default function EventDetailPage() {
       setErrorMsg('Set a start and end time.');
       return;
     }
+    if (tiers.some((t) => !t.name.trim())) {
+      setErrorMsg('Give every ticket tier a name.');
+      return;
+    }
     try {
       await update.mutateAsync({
         eventId,
@@ -147,8 +156,7 @@ export default function EventDetailPage() {
           description,
           startsAt: localToVenueTzIso(startsAtLocal, tz),
           endsAt: localToVenueTzIso(endsAtLocal, tz),
-          pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
-          ...(capacityRaw ? { capacity: parseInt(capacityRaw, 10) } : {}),
+          tiers: tiersToPayload(tiers),
         },
       });
       setEditing(false);
@@ -208,24 +216,29 @@ export default function EventDetailPage() {
                     {fmt(ev.startsAt, displayTz)} → {fmt(ev.endsAt, displayTz)}
                   </dd>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-                    Price
+                    Ticket tiers
                   </dt>
-                  <dd className="mt-1 text-sm text-slate-700">
-                    {ev.pricePaise === 0 ? (
-                      <span className="text-emerald-600">Free</span>
-                    ) : (
-                      `₹${(ev.pricePaise / 100).toFixed(2)}`
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-                    Capacity
-                  </dt>
-                  <dd className="mt-1 text-sm text-slate-700">
-                    {ev.capacity ?? <span className="text-slate-400">Unlimited</span>}
+                  <dd className="mt-1 flex flex-col gap-1 text-sm text-slate-700">
+                    {ev.tiers.length === 0 && <span className="text-slate-400">—</span>}
+                    {ev.tiers.map((t) => (
+                      <div key={t.id} className="flex justify-between gap-4">
+                        <span>
+                          {t.name}
+                          {t.capacity != null && (
+                            <span className="text-slate-400"> · cap {t.capacity}</span>
+                          )}
+                        </span>
+                        <span>
+                          {t.pricePaise === 0 ? (
+                            <span className="text-emerald-600">Free</span>
+                          ) : (
+                            `₹${(t.pricePaise / 100).toFixed(2)}`
+                          )}
+                        </span>
+                      </div>
+                    ))}
                   </dd>
                 </div>
               </dl>
@@ -325,25 +338,7 @@ export default function EventDetailPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Input
-                    label="Price (₹)"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={priceRupees}
-                    onChange={(e) => setPriceRupees(e.target.value)}
-                    hint="Leave 0 for a free event."
-                  />
-                  <Input
-                    label="Capacity"
-                    type="number"
-                    min={1}
-                    value={capacityRaw}
-                    onChange={(e) => setCapacityRaw(e.target.value)}
-                    hint="Maximum seats. Leave blank for unlimited."
-                  />
-                </div>
+                <TiersEditor value={tiers} onChange={setTiers} />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
@@ -367,6 +362,21 @@ export default function EventDetailPage() {
           <EventImages eventId={eventId} />
 
           <Card title={`Registrations${bookings ? ` (${bookings.rows.length})` : ''}`}>
+            {ev.tiers.length > 0 && (
+              <div className="mb-4 flex flex-col gap-1 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3 text-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                  Sold by tier
+                </div>
+                {ev.tiers.map((t) => (
+                  <div key={t.id} className="flex justify-between text-slate-700">
+                    <span>{t.name}</span>
+                    <span>
+                      {t.sold} sold{t.capacity != null ? ` / ${t.capacity}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {bookingsLoading && (
               <p className="py-6 text-center text-sm text-slate-400">Loading…</p>
             )}
