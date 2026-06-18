@@ -81,7 +81,8 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     await db.execute(sql`delete from users where firebase_uid = 'fbuid_chk_consumer'`);
     await db.execute(sql`delete from users where id = ${ownerId}`);
     await app.close();
-    await closeDb();
+    // Note: closeDb() is called by the multi-tier event suite's afterAll (the
+    // last describe in this file) so the shared pool stays open across suites.
   });
 
   it('quote with no coupon → basePaise 50000, totalPaise 51209, discountPaise 0', async () => {

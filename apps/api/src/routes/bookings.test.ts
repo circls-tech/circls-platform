@@ -81,7 +81,8 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
   afterAll(async () => {
     await app.close();
-    await closeDb();
+    // Note: closeDb() is called by the multi-tier event suite's afterAll (the
+    // last describe in this file) so the shared pool stays open across suites.
   });
 
   it('requires an Idempotency-Key', async () => {
