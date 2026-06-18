@@ -25,6 +25,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
   let ownerId: string;
   let tenantId: string;
   let eventId: string;
+  let tierId: string;
   let couponCode: string;
   const SUFFIX = Date.now();
 
@@ -43,7 +44,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     });
     tenantId = (t.json() as { id: string }).id;
 
-    // Create a published event with pricePaise=50000
+    // Create a published event with a single General tier at 50000 paise
     const ev = await app.inject({
       method: 'POST',
       url: `/v1/tenants/${tenantId}/events`,
@@ -54,10 +55,17 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
         name: 'Checkout Test Event',
         startsAt: '2030-09-01T10:00:00.000Z',
         endsAt: '2030-09-01T12:00:00.000Z',
-        pricePaise: 50000,
+        tiers: [{ name: 'General', pricePaise: 50000 }],
       },
     });
     eventId = (ev.json() as { id: string }).id;
+
+    // Read tier id back from DB (same pattern as multi-tier block)
+    const tierRows = (await db.execute(sql`
+      select id from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string }>;
+    tierId = tierRows[0]!.id;
+
     // Publish the event directly via DB (mirrors plan pattern)
     await db.execute(sql`update events set status='published' where id = ${eventId}`);
   });
@@ -73,7 +81,8 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     await db.execute(sql`delete from users where firebase_uid = 'fbuid_chk_consumer'`);
     await db.execute(sql`delete from users where id = ${ownerId}`);
     await app.close();
-    await closeDb();
+    // Note: closeDb() is called by the multi-tier event suite's afterAll (the
+    // last describe in this file) so the shared pool stays open across suites.
   });
 
   it('quote with no coupon → basePaise 50000, totalPaise 51209, discountPaise 0', async () => {
@@ -81,7 +90,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       method: 'POST',
       url: '/v1/consumer/checkout/quote',
       headers: bearer('consumer'),
-      payload: { itemType: 'event', eventId },
+      payload: { itemType: 'event', eventId, lines: [{ tierId, quantity: 1 }] },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -112,7 +121,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       method: 'POST',
       url: '/v1/consumer/checkout/quote',
       headers: bearer('consumer'),
-      payload: { itemType: 'event', eventId, couponCode },
+      payload: { itemType: 'event', eventId, couponCode, lines: [{ tierId, quantity: 1 }] },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -127,11 +136,97 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       method: 'POST',
       url: '/v1/consumer/checkout/quote',
       headers: bearer('consumer'),
-      payload: { itemType: 'event', eventId, couponCode: 'DOESNOTEXIST' },
+      payload: { itemType: 'event', eventId, couponCode: 'DOESNOTEXIST', lines: [{ tierId, quantity: 1 }] },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.error).toBe('coupon_not_found');
     expect(body.totalPaise).toBe(51209);
+  });
+});
+
+describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+  let eventId: string;
+  let vipTierId: string;
+  let gaTierId: string;
+  const SUFFIX = Date.now() + 1;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    // Bootstrap owner + tenant
+    await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('owner') });
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}` },
+    });
+    tenantId = (t.json() as { id: string }).id;
+
+    // Create event with two tiers: VIP (50000) + GA (20000)
+    const ev = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: { line1: '1 Test St', city: 'Mumbai' },
+        tzName: 'Asia/Kolkata',
+        name: 'Tier Quote Event',
+        startsAt: '2030-10-01T10:00:00.000Z',
+        endsAt: '2030-10-01T12:00:00.000Z',
+        tiers: [
+          { name: 'VIP', pricePaise: 50000 },
+          { name: 'GA', pricePaise: 20000 },
+        ],
+      },
+    });
+    expect(ev.statusCode).toBe(200);
+    eventId = (ev.json() as { id: string }).id;
+
+    // Read tier ids back by name (same pattern as bookings.test.ts)
+    const tierRows = (await db.execute(sql`
+      select id, name from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string; name: string }>;
+    vipTierId = tierRows.find((x) => x.name === 'VIP')!.id;
+    gaTierId = tierRows.find((x) => x.name === 'GA')!.id;
+
+    // Publish directly via DB (same as existing checkout test + bookings.test.ts)
+    await db.execute(sql`update events set status='published' where id = ${eventId}`);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from event_ticket_tiers where event_id = ${eventId}`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    // Clean up auto-created consumer user (same as first describe block)
+    await db.execute(sql`delete from users where firebase_uid = 'fbuid_chk_consumer'`);
+    await app.close();
+    await closeDb();
+  });
+
+  it('quote with lines → basePaise = 2×VIP + 1×GA = 120000', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/consumer/checkout/quote',
+      headers: bearer('consumer'),
+      payload: {
+        itemType: 'event',
+        eventId,
+        lines: [
+          { tierId: vipTierId, quantity: 2 },
+          { tierId: gaTierId, quantity: 1 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.basePaise).toBe(120000); // 2*50000 + 1*20000
+    expect(body.coupon).toBeNull();
   });
 });

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Blocks pushing to main/release on ANY remote (any refspec/force lands on the
+# destination check), and blocks remote branch deletes. Force-pushing a feature
+# branch is allowed (amending your own PR branch is fine).
+# Activated by `git config core.hooksPath .githooks` (./sandbox setup).
+# Open a pull request instead. This is a convenience guard; the real wall is that
+# sandbox members have no write access to the canonical repo (fork model).
+set -euo pipefail
+protected_re='^(refs/heads/)?(main|release)$'
+while read -r local_ref local_sha remote_ref remote_sha; do
+  short="${remote_ref#refs/heads/}"
+  if [[ "$short" =~ ^(main|release)$ ]] || [[ "$remote_ref" =~ $protected_re ]]; then
+    echo "✋ Blocked: pushing to '$short' is not allowed. Open a pull request instead." >&2
+    exit 1
+  fi
+  # Deleting a remote branch sends an all-zero local sha.
+  if [[ "$local_sha" =~ ^0+$ ]]; then
+    echo "✋ Blocked: deleting remote branches is not allowed from the sandbox." >&2
+    exit 1
+  fi
+done
+exit 0

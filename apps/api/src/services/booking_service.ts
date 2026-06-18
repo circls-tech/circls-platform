@@ -11,6 +11,14 @@ import * as paymentsService from './payments_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { Coupon } from '../db/schema/coupons.js';
+import { eventBookingTickets } from '../db/schema/event_booking_tickets.js';
+import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
+
+/** One ticket-tier line in an event booking: which tier and how many seats. */
+export interface EventLine {
+  tierId: string;
+  quantity: number;
+}
 
 /** A resolved coupon + who funds the discount, threaded into the booking flows. */
 export interface CouponPricing {
@@ -390,17 +398,17 @@ export interface BookEventResult {
 /**
  * Book a seat on a published event.
  *
- * Capacity check:
- *   - When event.capacity IS NOT NULL we COUNT non-cancelled bookings whose
- *     itemData->>'eventId' matches and reject if we'd exceed `capacity`. We
- *     do this inside the same transaction that performs the insert so two
- *     concurrent calls can't both squeeze under the limit; we additionally
- *     re-COUNT after the insert and roll back if the post-insert count is
- *     over capacity, which is the simple form of "select-then-insert with
- *     verification" — no GIST exclusion constraint exists for events because
- *     they aren't time-range based.
+ * Capacity check (per-tier):
+ *   - The booking is composed of `lines` (one per ticket tier + quantity). We
+ *     SELECT ... FOR UPDATE the referenced tiers inside the booking transaction
+ *     to serialize concurrent buyers, then for each capped tier compare the
+ *     line-table sold count (SUM(quantity) over non-cancelled bookings) plus the
+ *     requested quantity against the tier capacity, rejecting with a
+ *     `tier_sold_out` Conflict if it would exceed. basePaise is the sum of
+ *     tier.pricePaise * quantity across the lines (event.pricePaise is only the
+ *     min-tier display price and is NOT used for charging).
  *
- * Free path  (pricePaise === 0): inserts booking with status='confirmed',
+ * Free path  (basePaise === 0): inserts booking with status='confirmed',
  *   paymentMethod='free'. No KYC check.
  *
  * Paid path: Circls is the merchant (no per-tenant KYC / Linked Account).
@@ -411,7 +419,8 @@ export interface BookEventResult {
 export async function bookEvent(
   eventId: string,
   customer: BookEventCustomer,
-  pricing?: CouponPricing | null,
+  pricing: CouponPricing | null,
+  lines: EventLine[],
 ): Promise<BookEventResult> {
   // Phase 1 — atomic seat reservation. The booking row goes into the DB inside
   // a transaction so capacity check + insert are race-safe.
@@ -427,26 +436,51 @@ export async function bookEvent(
     }
     const ctx: AuditCtx = { tenantId: ev.tenantId, actorUserId: customer.userId };
 
-    if (ev.capacity !== null) {
-      const rows = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(bookings)
-        .where(
-          and(
-            eq(bookings.itemType, 'event'),
-            sql`${bookings.itemData}->>'eventId' = ${eventId}`,
-            ne(bookings.status, 'cancelled'),
-          ),
-        );
-      const n = rows[0]?.n ?? 0;
-      if (n >= ev.capacity) {
-        throw new Conflict('Event is at capacity', 'event_full');
+    if (lines.length === 0) throw new Conflict('No tickets selected', 'no_tickets');
+
+    const tierIds = lines.map((l) => l.tierId);
+    if (new Set(tierIds).size !== tierIds.length) {
+      throw new BadRequest('Duplicate ticket tier in request', 'bad_request');
+    }
+
+    // Lock the referenced tiers (serialize concurrent buyers), validate ownership,
+    // and enforce per-tier capacity using the line-table sold count.
+    const tiers = await tx
+      .select()
+      .from(eventTicketTiers)
+      .where(
+        and(
+          inArray(eventTicketTiers.id, tierIds),
+          eq(eventTicketTiers.eventId, eventId),
+          sql`${eventTicketTiers.deletedAt} is null`,
+        ),
+      )
+      .for('update');
+    const tierById = new Map(tiers.map((t) => [t.id, t]));
+
+    let basePaise = 0;
+    const lineValues: { tierId: string; quantity: number; unitPricePaise: number }[] = [];
+    for (const line of lines) {
+      const tier = tierById.get(line.tierId);
+      if (!tier) throw new BadRequest('Unknown ticket tier for this event', 'bad_request');
+      if (line.quantity <= 0) throw new BadRequest('Quantity must be positive', 'bad_request');
+      if (tier.capacity !== null) {
+        const [row] = await tx
+          .select({ sold: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
+          .from(eventBookingTickets)
+          .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
+          .where(and(eq(eventBookingTickets.tierId, tier.id), ne(bookings.status, 'cancelled')));
+        const sold = row?.sold ?? 0;
+        if (sold + line.quantity > tier.capacity) {
+          throw new Conflict('Tier sold out', 'tier_sold_out', { tierId: tier.id });
+        }
       }
+      basePaise += tier.pricePaise * line.quantity;
+      lineValues.push({ tierId: tier.id, quantity: line.quantity, unitPricePaise: tier.pricePaise });
     }
 
     // Money model: discount + gross-up. A 100%/over-base coupon can make a paid
     // event free, so derive isFree from the grossed-up total, not the base.
-    const basePaise = ev.pricePaise;
     const breakdown = computeCheckout(
       basePaise,
       pricing
@@ -485,22 +519,14 @@ export async function bookEvent(
       .returning();
     if (!b) throw new Error('booking insert returned no row');
 
-    if (ev.capacity !== null) {
-      const rows2 = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(bookings)
-        .where(
-          and(
-            eq(bookings.itemType, 'event'),
-            sql`${bookings.itemData}->>'eventId' = ${eventId}`,
-            ne(bookings.status, 'cancelled'),
-          ),
-        );
-      const n2 = rows2[0]?.n ?? 0;
-      if (n2 > ev.capacity) {
-        throw new Conflict('Event is at capacity', 'event_full');
-      }
-    }
+    await tx.insert(eventBookingTickets).values(
+      lineValues.map((l) => ({
+        bookingId: b.id,
+        tierId: l.tierId,
+        quantity: l.quantity,
+        unitPricePaise: l.unitPricePaise,
+      })),
+    );
 
     // Record the redemption inside the same tx so a lost cap race rolls the
     // booking (and capacity claim) back together.

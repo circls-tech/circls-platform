@@ -8,7 +8,6 @@ import type {
   MyBookingDetail,
   PublicEvent,
   PublicEventWithVenue,
-  PublicMembership,
   PublicMembershipWithScope,
   PublicSlot,
   PublicVenue,
@@ -54,7 +53,7 @@ export function useVenueMemberships(venueId: string) {
   return useQuery({
     queryKey: ['venue-memberships', venueId],
     queryFn: () =>
-      apiFetch<{ rows: PublicMembership[] }>(`/v1/consumer/venues/${venueId}/memberships`),
+      apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/venues/${venueId}/memberships`),
     enabled: Boolean(venueId),
     select: (data) => data.rows,
   });
@@ -94,6 +93,16 @@ export function useAllMemberships(limit = 50) {
     queryFn: () =>
       apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/memberships?limit=${limit}`),
     select: (data) => data.rows,
+  });
+}
+
+/** A single public membership (venue-scoped or tenant-wide) by id. */
+export function useMembership(membershipId: string) {
+  return useQuery({
+    queryKey: ['membership', membershipId],
+    queryFn: () =>
+      apiFetch<PublicMembershipWithScope>(`/v1/consumer/memberships/${membershipId}`),
+    enabled: Boolean(membershipId),
   });
 }
 
@@ -140,6 +149,7 @@ export function useBookSlots() {
 
 export interface BookEventInput {
   eventId: string;
+  lines: { tierId: string; quantity: number }[];
   name?: string;
   contact?: string;
   couponCode?: string;

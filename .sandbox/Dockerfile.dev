@@ -1,0 +1,12 @@
+# Dev image for all four app services. Dependencies are installed into the image
+# so node_modules can be masked by (image-initialized) anonymous volumes at run
+# time, while the repo source is bind-mounted for hot reload. Rebuild when deps
+# change: `./sandbox build`.
+FROM node:24-alpine
+RUN apk add --no-cache bash && corepack enable
+WORKDIR /repo
+COPY . .
+RUN pnpm install --frozen-lockfile
+EXPOSE 8080 3001 3002 3003
+# Each compose service overrides `command`.
+CMD ["sh", "-c", "echo 'override me'"]

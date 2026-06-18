@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useCreateEvent } from '@/lib/api/events';
+import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { Button, Card, Input } from '@/lib/ui';
 
 /**
@@ -45,8 +46,7 @@ export default function NewEventPage() {
   const [description, setDescription] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
-  const [priceRupees, setPriceRupees] = useState('0');
-  const [capacityRaw, setCapacityRaw] = useState('');
+  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [err, setErr] = useState<string | null>(null);
 
   // Best-effort tz; the venue row owns the source of truth but we keep this
@@ -60,16 +60,17 @@ export default function NewEventPage() {
       setErr('Set a start and end time.');
       return;
     }
-    const pricePaise = Math.round(parseFloat(priceRupees || '0') * 100);
-    const capacityNum = capacityRaw ? parseInt(capacityRaw, 10) : undefined;
+    if (tiers.some((t) => !t.name.trim())) {
+      setErr('Give every ticket tier a name.');
+      return;
+    }
     try {
       await createEvent.mutateAsync({
         name,
         ...(description ? { description } : {}),
         startsAt: localToVenueTzIso(startsAtLocal, tz),
         endsAt: localToVenueTzIso(endsAtLocal, tz),
-        pricePaise,
-        ...(capacityNum !== undefined ? { capacity: capacityNum } : {}),
+        tiers: tiersToPayload(tiers),
       });
       router.push(`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`);
     } catch (e) {
@@ -126,25 +127,7 @@ export default function NewEventPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Price (₹)"
-              type="number"
-              min={0}
-              step="0.01"
-              value={priceRupees}
-              onChange={(e) => setPriceRupees(e.target.value)}
-              hint="Leave 0 for a free event."
-            />
-            <Input
-              label="Capacity"
-              type="number"
-              min={1}
-              value={capacityRaw}
-              onChange={(e) => setCapacityRaw(e.target.value)}
-              hint="Maximum seats. Leave blank for unlimited."
-            />
-          </div>
+          <TiersEditor value={tiers} onChange={setTiers} />
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 

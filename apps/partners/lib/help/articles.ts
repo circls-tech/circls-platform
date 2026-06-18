@@ -43,7 +43,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up schedules and slot pricing',
     category: 'Scheduling',
     summary:
-      'Use the visual schedule builder to define opening hours, block-out days, slot durations, and per-slot pricing.',
+      'Use the schedule builder to set pricing bands (including overnight and 24-hour windows), a business-day start, slot durations, and per-slot pricing on a visual grid.',
     quickLink: true,
     order: 3,
   },
@@ -61,7 +61,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Creating and publishing events',
     category: 'Events',
     summary:
-      'How to create events tied to your venues, set capacity and pricing, and get them approved for the consumer portal.',
+      'How to create events, define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
     order: 5,
   },
   {

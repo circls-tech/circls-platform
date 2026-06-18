@@ -41,12 +41,23 @@ export interface Venue {
   tags: string[];
 }
 
+/** Last-used schedule-builder template, persisted per arena for prefill. */
+export interface ScheduleTemplate {
+  quantizationMin: number;
+  defaultPriceRupees: number;
+  bands: { startMin: number; endMin: number; priceRupees: number }[];
+}
+
 export interface Arena {
   id: string;
   venueId: string;
   name: string;
   sport: string | null;
   slotDurationMin: number;
+  /** Minute-of-day the business day begins (default 180 = 3am). */
+  businessDayStartMin: number;
+  /** Last-used builder template, or null before the first release. */
+  scheduleTemplate: ScheduleTemplate | null;
   status: ListingStatus;
   tags: string[];
 }
@@ -278,6 +289,26 @@ export interface VenueEvent {
   pricePaise: number;
   capacity: number | null;
   status: EventStatus;
+  /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
+  tiers: EventTier[];
+}
+
+/**
+ * Event as returned by the LIST endpoints (venue/tenant). Same shape as
+ * {@link VenueEvent} but without the per-event `tiers` array, which only the
+ * detail endpoint hydrates. `pricePaise` is kept in sync as the min tier price.
+ */
+export type VenueEventSummary = Omit<VenueEvent, 'tiers'>;
+
+/** A ticket tier on an event, with live sold/remaining counts. */
+export interface EventTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  capacity: number | null;
+  sold: number;
+  remaining: number | null;
 }
 
 /** A consumer registration for an event (partner-facing). */

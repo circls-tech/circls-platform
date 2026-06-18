@@ -16,13 +16,30 @@ import {
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
 
+const tierSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z
+    .string()
+    .max(2000)
+    .optional()
+    .transform((v) => v ?? null),
+  pricePaise: z.number().int().min(0),
+  capacity: z
+    .number()
+    .int()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+});
+const tiersField = z.array(tierSchema).min(1).max(20);
+
 const createEventSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional(),
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
-  pricePaise: z.number().int().min(0),
-  capacity: z.number().int().min(1).optional(),
+  tiers: tiersField,
 });
 
 const createTenantEventSchema = z
@@ -36,8 +53,7 @@ const createTenantEventSchema = z
     description: z.string().optional(),
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
-    pricePaise: z.number().int().min(0),
-    capacity: z.number().int().min(1).optional(),
+    tiers: tiersField,
   })
   // Exactly one scope: a venue OR a standalone address (never both, never neither).
   .refine((d) => Boolean(d.venueId) !== Boolean(d.addressJson), {
@@ -57,8 +73,6 @@ const updateEventSchema = z.object({
   description: z.string().nullable().optional(),
   startsAt: z.string().datetime().optional(),
   endsAt: z.string().datetime().optional(),
-  pricePaise: z.number().int().min(0).optional(),
-  capacity: z.number().int().min(1).nullable().optional(),
   // Re-scope the event: a venue id makes it venue-scoped; null makes it
   // standalone. When going standalone, the address/tz below are used (falling
   // back to any address the event already carries). Absent venueId = no change.
@@ -67,6 +81,7 @@ const updateEventSchema = z.object({
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
   tzName: z.string().min(1).optional(),
+  tiers: tiersField.optional(),
 });
 
 export const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -99,8 +114,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         description: parsed.data.description,
         startsAt: new Date(parsed.data.startsAt),
         endsAt: new Date(parsed.data.endsAt),
-        pricePaise: parsed.data.pricePaise,
-        capacity: parsed.data.capacity,
+        tiers: parsed.data.tiers,
       },
     );
   });
@@ -151,8 +165,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         description: parsed.data.description,
         startsAt: new Date(parsed.data.startsAt),
         endsAt: new Date(parsed.data.endsAt),
-        pricePaise: parsed.data.pricePaise,
-        capacity: parsed.data.capacity,
+        tiers: parsed.data.tiers,
       },
     );
   });
@@ -171,8 +184,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
     if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
-    if (parsed.data.pricePaise !== undefined) patch.pricePaise = parsed.data.pricePaise;
-    if (parsed.data.capacity !== undefined) patch.capacity = parsed.data.capacity;
+    if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers;
     if (parsed.data.venueId !== undefined) {
       // Re-scoping to a venue: the venue must belong to this tenant.
       if (parsed.data.venueId) {

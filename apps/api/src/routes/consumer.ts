@@ -11,6 +11,7 @@ import {
   getMyBookingDetail,
   getMyProfile,
   getPublicEventById,
+  getPublicMembershipById,
   getPublicVenueWithImages,
   listMyBookings,
   listPublicArenas,
@@ -92,6 +93,13 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return { rows };
   });
 
+  app.get('/v1/consumer/memberships/:membershipId', { config: publicLimit }, async (req) => {
+    const { membershipId } = req.params as { membershipId: string };
+    const m = await getPublicMembershipById(membershipId);
+    if (!m) throw new NotFound('Membership not found', 'membership_not_found');
+    return m;
+  });
+
   app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
     const venue = await getPublicVenueWithImages(venueId);
@@ -147,6 +155,9 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     name: z.string().max(200).optional(),
     contact: z.string().max(200).optional(),
     couponCode: z.string().min(1).max(64).optional(),
+    lines: z
+      .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
+      .min(1),
   });
   app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
@@ -160,6 +171,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
         name: parsed.data.name ?? null,
         contact: parsed.data.contact ?? null,
       },
+      parsed.data.lines,
       parsed.data.couponCode,
     );
   });

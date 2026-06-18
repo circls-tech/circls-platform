@@ -11,7 +11,11 @@ import {
 } from '../services/coupon_service.js';
 
 const itemSchema = z.union([
-  z.object({ itemType: z.literal('event'), eventId: z.string().uuid() }),
+  z.object({
+    itemType: z.literal('event'),
+    eventId: z.string().uuid(),
+    lines: z.array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) })).min(1),
+  }),
   z.object({ itemType: z.literal('membership'), membershipId: z.string().uuid() }),
   z.object({ itemType: z.literal('slot'), slotIds: z.array(z.string().uuid()).min(1) }),
 ]);

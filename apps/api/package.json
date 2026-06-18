@@ -22,6 +22,7 @@
     "migrate:prod": "node dist/migrate.js",
     "db:studio": "drizzle-kit studio",
     "openapi:emit": "tsx scripts/emit_openapi.ts",
+    "seed:sandbox": "tsx src/scripts/seed_sandbox.ts",
     "bootstrap:circls": "tsx src/scripts/bootstrap_circls_tenant.ts",
     "bootstrap:circls:prod": "node dist/scripts/bootstrap_circls_tenant.js",
     "migrate:platform-admins": "tsx scripts/migrate_platform_admin_users.ts"
@@ -40,6 +41,7 @@
     "fastify": "^5.1.0",
     "firebase-admin": "^13.0.0",
     "js-yaml": "^4.1.0",
+    "nodemailer": "^9.0.1",
     "pg-boss": "^12.18.2",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
@@ -50,6 +52,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.1",
+    "@types/nodemailer": "^8.0.1",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

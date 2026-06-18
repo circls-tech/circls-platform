@@ -16,6 +16,7 @@ import type {
   NotificationsPage,
   Payment,
   PresignedUpload,
+  ScheduleTemplate,
   Slot,
   SupportIssue,
   TeamMember,
@@ -236,6 +237,10 @@ export interface ReleaseInput {
   endDate: string;          // 'YYYY-MM-DD'
   quantizationMin: number;
   cells: ReleaseCell[];
+  /** Business-day boundary (min-of-day) to persist on the arena. */
+  businessDayStartMin?: number;
+  /** Last-used builder template to persist on the arena for prefill. */
+  template?: ScheduleTemplate;
 }
 
 export interface ReleaseResult {
@@ -252,7 +257,12 @@ export function useReleaseSlots(arenaId: string) {
         headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify(input),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['slots', arenaId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['slots', arenaId] });
+      // Release persists the template + day-start on the arena — refresh it so
+      // the builder prefills the latest on the next visit.
+      void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
+    },
   });
 }
 

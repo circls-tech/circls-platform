@@ -8,6 +8,7 @@ import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { coupons, type Coupon, type NewCoupon } from '../db/schema/coupons.js';
 import { events } from '../db/schema/events.js';
+import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import { memberships } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { arenas } from '../db/schema/arenas.js';
@@ -279,14 +280,43 @@ export interface PricedItem {
 
 /** Resolve base price + tenant + scope-item for a quote/booking request. */
 export async function priceItem(req:
-  | { itemType: 'event'; eventId: string }
+  | { itemType: 'event'; eventId: string; lines?: { tierId: string; quantity: number }[] }
   | { itemType: 'membership'; membershipId: string }
   | { itemType: 'slot'; slotIds: string[] },
 ): Promise<PricedItem> {
   if (req.itemType === 'event') {
     const [ev] = await db.select().from(events).where(eq(events.id, req.eventId)).limit(1);
     if (!ev) throw new NotFound('Event not found', 'event_not_found');
-    return { tenantId: ev.tenantId, basePaise: ev.pricePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
+
+    // With explicit lines (quote/booking): base = sum(tier price * qty), and the
+    // referenced tiers must belong to this event and be live.
+    if (req.lines && req.lines.length > 0) {
+      const tierIds = req.lines.map((l) => l.tierId);
+      const tiers = await db
+        .select()
+        .from(eventTicketTiers)
+        .where(and(inArray(eventTicketTiers.id, tierIds), isNull(eventTicketTiers.deletedAt)));
+      const byId = new Map(tiers.map((t) => [t.id, t]));
+      let basePaise = 0;
+      for (const line of req.lines) {
+        const tier = byId.get(line.tierId);
+        if (!tier || tier.eventId !== ev.id) {
+          throw new BadRequest('Unknown ticket tier for this event', 'bad_request');
+        }
+        if (line.quantity <= 0) throw new BadRequest('Quantity must be positive', 'bad_request');
+        basePaise += tier.pricePaise * line.quantity;
+      }
+      return { tenantId: ev.tenantId, basePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
+    }
+
+    // No lines (coupon-listing endpoint, which only needs a base to test
+    // min-order): use the cheapest tier price as a safe lower bound.
+    const live = await db
+      .select({ p: eventTicketTiers.pricePaise })
+      .from(eventTicketTiers)
+      .where(and(eq(eventTicketTiers.eventId, ev.id), isNull(eventTicketTiers.deletedAt)));
+    const basePaise = live.length ? Math.min(...live.map((r) => r.p)) : ev.pricePaise;
+    return { tenantId: ev.tenantId, basePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
   }
   if (req.itemType === 'membership') {
     const [m] = await db.select().from(memberships).where(eq(memberships.id, req.membershipId)).limit(1);
