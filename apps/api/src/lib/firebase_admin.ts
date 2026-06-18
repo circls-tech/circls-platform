@@ -28,6 +28,14 @@ function app(): App {
     cached = existing[0];
     return cached;
   }
+  // Local sandbox: when the Auth Emulator host is set, the Admin SDK auto-routes
+  // all auth calls to the emulator (it reads FIREBASE_AUTH_EMULATOR_HOST from the
+  // process env itself) and needs only a projectId — no service-account cert.
+  // This branch is never taken in prod, where the var is unset.
+  if (env.FIREBASE_AUTH_EMULATOR_HOST) {
+    cached = initializeApp({ projectId: env.FIREBASE_PROJECT_ID ?? 'demo-circls' });
+    return cached;
+  }
   if (!env.FIREBASE_SERVICE_ACCOUNT) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT is not configured');
   }
