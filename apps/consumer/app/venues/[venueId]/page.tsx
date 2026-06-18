@@ -5,13 +5,14 @@ import { Header } from '@/components/Header';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { matchSport } from '@/lib/sportImages';
+import { MembershipCard } from '@/components/cards/MembershipCard';
 import {
   useArenaSlots,
   useVenue,
   useVenueEvents,
   useVenueMemberships,
 } from '@/lib/api/consumer';
-import type { PublicArena, PublicEvent, PublicMembership } from '@/lib/api/types';
+import type { PublicArena, PublicEvent } from '@/lib/api/types';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDateTime, formatPaise, formatTime } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
@@ -269,36 +270,6 @@ function EventCard({ event }: { event: PublicEvent }) {
         <Link href={`/events/${event.id}`}>
           <Button size="sm">{isFree ? 'View & register' : 'View tickets'}</Button>
         </Link>
-      </div>
-    </Card>
-  );
-}
-
-function MembershipCard({ membership }: { membership: PublicMembership }) {
-  const { user } = useAuth();
-  const { openCheckout } = useCheckoutModal();
-  return (
-    <Card className="flex h-full flex-col">
-      <h3 className="text-base font-semibold text-ink">{membership.name}</h3>
-      {membership.description && (
-        <p className="mt-1 text-sm text-text-secondary line-clamp-3">{membership.description}</p>
-      )}
-      <div className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
-        <span className="font-medium text-ink">{formatPaise(membership.pricePaise)}</span>
-        <span>· {membership.durationDays} days</span>
-      </div>
-      <div className="mt-auto pt-4">
-        <Button
-          size="sm"
-          onClick={() => {
-            const prefill: { name?: string; contact?: string } = {};
-            if (user?.displayName) prefill.name = user.displayName;
-            if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-            openCheckout({ kind: 'membership', membershipId: membership.id, title: membership.name }, prefill);
-          }}
-        >
-          Buy
-        </Button>
       </div>
     </Card>
   );

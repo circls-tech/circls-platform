@@ -1,10 +1,11 @@
+import nodemailer from 'nodemailer';
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { renderTemplate } from './templates.js';
 import type { ProviderSendInput, ProviderSendResult } from './types.js';
 
 export interface EmailProvider {
-  readonly mode: 'stub' | 'resend';
+  readonly mode: 'stub' | 'resend' | 'smtp';
   send(input: ProviderSendInput): Promise<ProviderSendResult>;
 }
 
@@ -21,6 +22,33 @@ class StubEmail implements EmailProvider {
       'email_stub',
     );
     return { providerMessageId: `stub_email_${Date.now()}` };
+  }
+}
+
+/**
+ * Local sandbox only. Delivers to a local SMTP sink (Mailpit) so non-dev team
+ * members can read the exact rendered email at the Mailpit web inbox instead of
+ * it being silently logged. Selected when SANDBOX_SMTP_HOST is set.
+ */
+class SmtpEmail implements EmailProvider {
+  readonly mode = 'smtp' as const;
+  private readonly transport: ReturnType<typeof nodemailer.createTransport>;
+  constructor(
+    host: string,
+    port: number,
+    private readonly from: string,
+  ) {
+    this.transport = nodemailer.createTransport({ host, port, secure: false });
+  }
+  async send(input: ProviderSendInput): Promise<ProviderSendResult> {
+    const rendered = renderTemplate('email', input.templateKey, input.payload);
+    const info = await this.transport.sendMail({
+      from: this.from,
+      to: input.recipient,
+      subject: rendered.subject ?? '(no subject)',
+      text: rendered.body,
+    });
+    return { providerMessageId: info.messageId };
   }
 }
 
@@ -69,6 +97,11 @@ class ResendEmail implements EmailProvider {
 }
 
 export function getEmailProvider(): EmailProvider {
+  // Local sandbox short-circuit: deliver to the Mailpit SMTP sink.
+  if (env.SANDBOX_SMTP_HOST) {
+    return new SmtpEmail(env.SANDBOX_SMTP_HOST, env.SANDBOX_SMTP_PORT, env.RESEND_FROM ?? 'Circls Sandbox <no-reply@sandbox.local>');
+  }
+
   const { RESEND_API_KEY, RESEND_FROM } = env;
 
   // Fully configured → real delivery.

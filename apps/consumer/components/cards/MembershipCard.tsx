@@ -9,7 +9,7 @@ export function MembershipCard({
   membership: PublicMembershipWithScope;
   className?: string;
 }) {
-  const href = membership.venueId ? `/venues/${membership.venueId}` : '/venues';
+  const href = `/memberships/${membership.id}`;
   return (
     <Link
       href={href}

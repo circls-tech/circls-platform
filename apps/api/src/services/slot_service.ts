@@ -1,7 +1,7 @@
 import { and, eq, getTableColumns, inArray, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isExclusionViolation } from '../db/errors.js';
-import { type Slot, slotReleases, slots } from '../db/schema/index.js';
+import { arenas, type ScheduleTemplate, type Slot, slotReleases, slots } from '../db/schema/index.js';
 import { Conflict } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { resolvePricePaise } from './pricing_service.js';
@@ -24,6 +24,10 @@ export interface ReleaseInput {
   endDate: string;
   quantizationMin: number;
   cells: ReleaseCell[];
+  /** Persisted on the arena so the builder & reception grid agree on the day boundary. */
+  businessDayStartMin?: number;
+  /** Last-used builder template, persisted on the arena for prefill next time. */
+  template?: ScheduleTemplate;
 }
 
 export interface Occurrence {
@@ -192,6 +196,16 @@ export async function releaseSlots(
   const tz = venue?.tzName ?? 'Asia/Kolkata';
 
   return db.transaction(async (tx) => {
+    // Persist the day boundary + builder template on the arena so the builder
+    // prefills next time and the reception grid renders the same business day.
+    const arenaPatch: Partial<typeof arenas.$inferInsert> = {};
+    if (input.businessDayStartMin !== undefined)
+      arenaPatch.businessDayStartMin = input.businessDayStartMin;
+    if (input.template !== undefined) arenaPatch.scheduleTemplate = input.template;
+    if (Object.keys(arenaPatch).length > 0) {
+      await tx.update(arenas).set(arenaPatch).where(eq(arenas.id, arenaId));
+    }
+
     const [rel] = await tx
       .insert(slotReleases)
       .values({

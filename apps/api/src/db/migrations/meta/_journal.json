@@ -162,7 +162,14 @@
       "idx": 23,
       "version": "7",
       "when": 1780880000000,
-      "tag": "0023_ticket_tiers",
+      "tag": "0023_schedule_builder_bands",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780960000000,
+      "tag": "0024_ticket_tiers",
       "breakpoints": true
     }
   ]

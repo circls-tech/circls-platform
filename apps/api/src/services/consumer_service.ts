@@ -308,11 +308,13 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */
-export async function listPublicMemberships(venueId: string): Promise<Membership[]> {
+export async function listPublicMemberships(venueId: string): Promise<PublicMembershipWithScope[]> {
   const venue = await assertVenueVisible(venueId);
-  return db
-    .select()
+  const rows = await db
+    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
     .from(memberships)
+    .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+    .leftJoin(venues, eq(venues.id, memberships.venueId))
     .where(
       and(
         eq(memberships.tenantId, venue.tenantId),
@@ -320,6 +322,12 @@ export async function listPublicMemberships(venueId: string): Promise<Membership
         sql`(${memberships.venueId} is null or ${memberships.venueId} = ${venueId})`,
       ),
     );
+  return rows.map((r) => ({
+    ...r.m,
+    venueId: r.m.venueId,
+    scopeName: r.venueName ?? r.tenantName,
+    venueTags: r.venueTags ?? [],
+  }));
 }
 
 /** A public membership enriched with its scope (venue or tenant) for cross-venue cards. */
@@ -365,6 +373,36 @@ export async function listPublicMembershipsAcrossVenues(
     scopeName: r.venueName ?? r.tenantName,
     venueTags: r.venueTags ?? [],
   }));
+}
+
+/** A single public membership by id, enriched with scope, or null when it does
+ *  not exist or fails the public visibility gate (same rules as
+ *  listPublicMembershipsAcrossVenues). */
+export async function getPublicMembershipById(
+  id: string,
+): Promise<PublicMembershipWithScope | null> {
+  const rows = await db
+    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
+    .from(memberships)
+    .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+    .leftJoin(venues, eq(venues.id, memberships.venueId))
+    .where(
+      and(
+        eq(memberships.id, id),
+        eq(memberships.status, 'active'),
+        eq(tenants.status, 'active'),
+        sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
+      ),
+    )
+    .limit(1);
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    ...r.m,
+    venueId: r.m.venueId,
+    scopeName: r.venueName ?? r.tenantName,
+    venueTags: r.venueTags ?? [],
+  };
 }
 
 // ── Book / purchase ────────────────────────────────────────────────────────
