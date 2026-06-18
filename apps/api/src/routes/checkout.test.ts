@@ -135,3 +135,87 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     expect(body.totalPaise).toBe(51209);
   });
 });
+
+describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+  let eventId: string;
+  let vipTierId: string;
+  let gaTierId: string;
+  const SUFFIX = Date.now() + 1;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    // Bootstrap owner + tenant
+    await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('owner') });
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}` },
+    });
+    tenantId = (t.json() as { id: string }).id;
+
+    // Create event with two tiers: VIP (50000) + GA (20000)
+    const ev = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: { line1: '1 Test St', city: 'Mumbai' },
+        tzName: 'Asia/Kolkata',
+        name: 'Tier Quote Event',
+        startsAt: '2030-10-01T10:00:00.000Z',
+        endsAt: '2030-10-01T12:00:00.000Z',
+        tiers: [
+          { name: 'VIP', pricePaise: 50000 },
+          { name: 'GA', pricePaise: 20000 },
+        ],
+      },
+    });
+    expect(ev.statusCode).toBe(200);
+    eventId = (ev.json() as { id: string }).id;
+
+    // Read tier ids back by name (same pattern as bookings.test.ts)
+    const tierRows = (await db.execute(sql`
+      select id, name from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string; name: string }>;
+    vipTierId = tierRows.find((x) => x.name === 'VIP')!.id;
+    gaTierId = tierRows.find((x) => x.name === 'GA')!.id;
+
+    // Publish directly via DB (same as existing checkout test + bookings.test.ts)
+    await db.execute(sql`update events set status='published' where id = ${eventId}`);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from event_ticket_tiers where event_id = ${eventId}`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    await app.close();
+    await closeDb();
+  });
+
+  it('quote with lines → basePaise = 2×VIP + 1×GA = 120000', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/consumer/checkout/quote',
+      headers: bearer('consumer'),
+      payload: {
+        itemType: 'event',
+        eventId,
+        lines: [
+          { tierId: vipTierId, quantity: 2 },
+          { tierId: gaTierId, quantity: 1 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.basePaise).toBe(120000); // 2*50000 + 1*20000
+    expect(body.coupon).toBeNull();
+  });
+});
