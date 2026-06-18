@@ -194,6 +194,29 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       }
     });
 
+    it('persists businessDayStartMin + template onto the arena', async () => {
+      await releaseSlots(ctx, arenaId, {
+        startDate: '2027-01-02',
+        endDate: '2027-01-02',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000 }],
+        businessDayStartMin: 180,
+        template: {
+          quantizationMin: 60,
+          defaultPriceRupees: 500,
+          bands: [{ startMin: 360, endMin: 600, priceRupees: 400 }],
+        },
+      });
+
+      const [a] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+      expect(a?.businessDayStartMin).toBe(180);
+      expect(a?.scheduleTemplate).toMatchObject({
+        quantizationMin: 60,
+        defaultPriceRupees: 500,
+        bands: [{ startMin: 360, endMin: 600, priceRupees: 400 }],
+      });
+    });
+
     it('skips 2 overlapping slots on a second identical release', async () => {
       // Second release with same date range and cells → all should be skipped
       const result = await releaseSlots(ctx, arenaId, {
