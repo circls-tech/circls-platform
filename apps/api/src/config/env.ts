@@ -18,6 +18,7 @@ export const envSchema = z
   FIREBASE_PROJECT_ID: z.string().optional(),
   // Local sandbox only. When set, outbound email is delivered to a local SMTP
   // sink (Mailpit) instead of Resend/stub (see lib/notifications/email.ts).
+  // SANDBOX_SMTP_PORT's default is inert unless SANDBOX_SMTP_HOST is set.
   SANDBOX_SMTP_HOST: z.string().optional(),
   SANDBOX_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
 
@@ -106,6 +107,17 @@ export const envSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required in production`,
+          });
+        }
+      }
+      // Sandbox-only vars must NEVER be set in production: they silently reroute
+      // auth/email to local emulators that don't exist in prod. Refuse to boot.
+      for (const key of ['FIREBASE_AUTH_EMULATOR_HOST', 'SANDBOX_SMTP_HOST'] as const) {
+        if (val[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} must not be set in production (it is a local-sandbox-only variable)`,
           });
         }
       }
