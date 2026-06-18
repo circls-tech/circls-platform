@@ -2,7 +2,7 @@ import { resolveImage, type ResolveImageInput } from '@/lib/sportImages';
 
 const MOTIF_GRID: React.CSSProperties = {
   backgroundImage:
-    'linear-gradient(var(--color-gold-500) 2px, transparent 2px), linear-gradient(90deg, var(--color-gold-500) 2px, transparent 2px)',
+    'linear-gradient(var(--color-coral) 2px, transparent 2px), linear-gradient(90deg, var(--color-coral) 2px, transparent 2px)',
   backgroundSize: '30px 30px',
 };
 
@@ -36,7 +36,7 @@ export function SportImage({
       ) : (
         <>
           <div className="absolute inset-0 opacity-[0.16]" style={MOTIF_GRID} />
-          <div className="absolute inset-4 rounded-md border-2 border-gold-500/50" />
+          <div className="absolute inset-4 rounded-md border-2 border-coral/60" />
         </>
       )}
       {label && (

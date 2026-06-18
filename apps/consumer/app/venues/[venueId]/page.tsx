@@ -29,14 +29,14 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
         ) : venueQ.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {venueQ.error instanceof Error ? venueQ.error.message : 'Failed to load venue'}
           </p>
         ) : !venueQ.data ? (
           <p className="text-sm text-text-secondary">Venue not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border border-border">
+            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
               <ImageCarousel
                 images={venueQ.data.venue.images}
                 alt={venueQ.data.venue.name}
@@ -52,7 +52,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 }
               />
               <div className="bg-white p-5">
-                <h1 className="font-display text-3xl font-semibold text-ink">{venueQ.data.venue.name}</h1>
+                <h1 className="font-display text-4xl font-extrabold text-ink">{venueQ.data.venue.name}</h1>
                 {venueQ.data.venue.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {venueQ.data.venue.tags.map((tag) => (
@@ -66,7 +66,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
             {/* Arenas */}
             <section className="mb-8">
-              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Courts &amp; turfs</h2>
+              <h2 className="mb-3 font-display text-xl font-extrabold text-ink">Courts &amp; turfs</h2>
               {venueQ.data.arenas.length === 0 ? (
                 <Card><p className="text-sm text-text-secondary">No bookable arenas yet.</p></Card>
               ) : (
@@ -80,7 +80,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
             {/* Events */}
             <section className="mb-8">
-              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Events</h2>
+              <h2 className="mb-3 font-display text-xl font-extrabold text-ink">Events</h2>
               {eventsQ.isLoading ? (
                 <p className="text-sm text-text-secondary">Loading events…</p>
               ) : !eventsQ.data || eventsQ.data.length === 0 ? (
@@ -96,7 +96,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
             {/* Memberships */}
             <section>
-              <h2 className="mb-3 font-display text-lg font-semibold text-ink">Memberships</h2>
+              <h2 className="mb-3 font-display text-xl font-extrabold text-ink">Memberships</h2>
               {membershipsQ.isLoading ? (
                 <p className="text-sm text-text-secondary">Loading memberships…</p>
               ) : !membershipsQ.data || membershipsQ.data.length === 0 ? (
@@ -180,7 +180,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-ink">{arena.name}</h3>
+          <h3 className="font-display text-lg font-extrabold text-ink">{arena.name}</h3>
           <p className="mt-0.5 text-sm text-text-secondary">
             {arena.sport ?? 'General'} · {arena.slotDurationMin} min slots
             {arena.capacity != null ? ` · up to ${arena.capacity}` : ''}
@@ -193,7 +193,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
             value={date}
             min={todayLocal()}
             onChange={(e) => changeDate(e.target.value)}
-            className="rounded-[var(--radius)] border border-border px-2 py-1 text-sm text-ink"
+            className="rounded-[var(--radius)] border-[2px] border-ink px-2 py-1 text-sm text-ink"
           />
         </label>
       </div>
@@ -202,7 +202,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
         {slotsQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading slots…</p>
         ) : slotsQ.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {slotsQ.error instanceof Error ? slotsQ.error.message : 'Failed to load slots'}
           </p>
         ) : slots.length === 0 ? (
@@ -221,10 +221,10 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
                     onClick={() => toggle(slot.id)}
                     aria-pressed={isSelected}
                     className={[
-                      'flex flex-col items-start rounded-[var(--radius)] border px-3 py-2 text-left transition-colors',
+                      'flex flex-col items-start rounded-[var(--radius)] border-[2px] px-3 py-2 text-left transition-colors',
                       isSelected
-                        ? 'border-gold-600 bg-gold-100 ring-1 ring-gold-500'
-                        : 'border-border bg-white hover:border-gold-500 hover:bg-gold-100',
+                        ? 'border-ink bg-coral text-ink shadow-offset-sm'
+                        : 'border-ink bg-white hover:bg-coral-soft',
                     ].join(' ')}
                   >
                     <span className="text-sm font-medium text-ink">{slotLabel}</span>
@@ -256,7 +256,7 @@ function EventCard({ event }: { event: PublicEvent }) {
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
-      <h3 className="text-base font-semibold text-ink">{event.name}</h3>
+      <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
       <p className="mt-0.5 text-sm text-text-secondary">{formatDateTime(event.startsAt)}</p>
       {event.description && (
         <p className="mt-2 text-sm text-text-secondary line-clamp-3">{event.description}</p>
@@ -287,7 +287,7 @@ function MembershipCard({ membership }: { membership: PublicMembership }) {
   const { openCheckout } = useCheckoutModal();
   return (
     <Card className="flex h-full flex-col">
-      <h3 className="text-base font-semibold text-ink">{membership.name}</h3>
+      <h3 className="font-display text-lg font-extrabold text-ink">{membership.name}</h3>
       {membership.description && (
         <p className="mt-1 text-sm text-text-secondary line-clamp-3">{membership.description}</p>
       )}

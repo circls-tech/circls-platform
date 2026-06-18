@@ -30,7 +30,7 @@ export default function EventsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <h1 className="mb-1 font-display text-3xl font-semibold text-ink">What&apos;s on</h1>
+        <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">What&apos;s on</h1>
         <p className="mb-8 text-sm text-text-secondary">Upcoming events across every venue.</p>
 
         {events.isLoading ? (
@@ -38,7 +38,7 @@ export default function EventsPage() {
             {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : events.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {events.error instanceof Error ? events.error.message : 'Failed to load events'}
           </p>
         ) : upcoming.length === 0 ? (
@@ -47,7 +47,7 @@ export default function EventsPage() {
           <div className="space-y-8">
             {groups.map((g) => (
               <div key={g.events[0]!.id}>
-                <h2 className="mb-3 font-display text-lg font-semibold text-ink">{g.label}</h2>
+                <h2 className="mb-3 font-display text-lg font-extrabold text-ink">{g.label}</h2>
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {g.events.map((e) => <EventCard key={e.id} event={e} />)}
                 </div>

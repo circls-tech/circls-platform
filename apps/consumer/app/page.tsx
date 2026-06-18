@@ -9,9 +9,8 @@ import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consu
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
-  backgroundImage:
-    'linear-gradient(var(--color-gold-500) 2px, transparent 2px), linear-gradient(90deg, var(--color-gold-500) 2px, transparent 2px)',
-  backgroundSize: '46px 46px',
+  backgroundImage: 'radial-gradient(var(--color-ink) 1.5px, transparent 1.5px)',
+  backgroundSize: '22px 22px',
 };
 
 export default function LandingPage() {
@@ -24,18 +23,18 @@ export default function LandingPage() {
       <Header />
 
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-ink-deep to-ink-soft text-white">
-        <div className="absolute inset-0 opacity-10" style={MOTIF} />
+      <section className="relative overflow-hidden border-b-[2.5px] border-ink bg-surface text-ink">
+        <div className="pointer-events-none absolute inset-0 opacity-[0.06]" style={MOTIF} />
         <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-20">
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-gold-500">Welcome to circls</p>
-          <h1 className="max-w-2xl font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">
-            Find your circle. <span className="text-gold-500">Book your spot.</span>
+          <p className="mb-3 font-accent text-2xl font-bold text-coral-deep">your people are out there ✦</p>
+          <h1 className="max-w-2xl font-display text-5xl font-extrabold leading-[1.02] sm:text-6xl">
+            Find your circle. <span className="text-coral-deep">Book your spot.</span>
           </h1>
-          <p className="mt-3 max-w-lg text-base text-white/80">
+          <p className="mt-4 max-w-lg text-base text-text-secondary">
             Because &ldquo;we should do this sometime&rdquo; deserves an actual time.
           </p>
-          <div className="mt-6 flex gap-3">
-            <Link href="/venues"><Button variant="accent">Browse venues</Button></Link>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link href="/venues"><Button variant="primary">Browse venues</Button></Link>
             <Link href="/events"><Button variant="secondary">See what&apos;s on →</Button></Link>
           </div>
         </div>

@@ -38,14 +38,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         {eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
         ) : eventQ.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {eventQ.error instanceof Error ? eventQ.error.message : 'Failed to load event'}
           </p>
         ) : !ev ? (
           <p className="text-sm text-text-secondary">Event not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border border-border">
+            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
               <ImageCarousel
                 images={ev.images}
                 alt={ev.name}
@@ -56,19 +56,19 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               />
               <div className="bg-white p-5">
                 <div className="flex items-center gap-2">
-                  <h1 className="font-display text-3xl font-semibold text-ink">{ev.name}</h1>
+                  <h1 className="font-display text-4xl font-extrabold text-ink">{ev.name}</h1>
                   {ev.isStandalone && <Badge tone="neutral" label="Event" />}
                 </div>
                 <p className="mt-1 text-sm text-text-secondary">{formatDateTime(ev.startsAt)}</p>
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
                 <AddressLine addressJson={ev.locAddressJson} />
                 {mapsHref && (
-                  <a href={mapsHref} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm text-gold-600 underline">
+                  <a href={mapsHref} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-coral-deep underline">
                     View on map
                   </a>
                 )}
                 {!ev.isStandalone && ev.venueId && (
-                  <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm text-gold-600 underline">
+                  <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
                     More at {ev.venueName}
                   </Link>
                 )}

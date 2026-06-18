@@ -14,11 +14,11 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gold-600">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-coral-deep">
           <BrandMark className="h-4 w-4" />
           <span>circls · Gibbous Technologies Private Limited</span>
         </div>
-        <h1 className="mt-1 font-display text-3xl font-semibold text-ink">{doc.title}</h1>
+        <h1 className="mt-1 font-display text-3xl font-extrabold text-ink">{doc.title}</h1>
         <p className="mt-1 text-sm text-text-secondary">Last updated {doc.updated}</p>
         <p className="mt-1 text-sm text-text-secondary">
           Contact: contact@gibbous.io · Jurisdiction: Nagpur, Maharashtra, India
@@ -30,8 +30,8 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
               key={t.slug}
               href={`/${t.slug}`}
               aria-current={t.slug === doc.slug ? 'page' : undefined}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                t.slug === doc.slug ? 'bg-ink text-white' : 'bg-gold-100 text-gold-text hover:bg-gold-100/70'
+              className={`rounded-lg border-[1.5px] border-ink px-3 py-1.5 text-sm font-semibold ${
+                t.slug === doc.slug ? 'bg-ink text-surface' : 'bg-white text-ink hover:bg-coral-soft'
               }`}
             >
               {t.label}
@@ -39,7 +39,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           ))}
         </nav>
 
-        <div className="mt-6 rounded-card border border-border bg-white p-5 text-sm leading-relaxed text-ink/90">
+        <div className="mt-6 rounded-card border-[2.5px] border-ink bg-white p-5 text-sm leading-relaxed text-ink/90 shadow-offset-sm">
           {doc.intro}
         </div>
 
@@ -49,7 +49,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
               {s.group && (
                 <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-text-muted">{s.group}</p>
               )}
-              <h2 className="font-display text-lg font-semibold text-ink">
+              <h2 className="font-display text-lg font-extrabold text-ink">
                 {s.number != null ? `${s.number}. ` : ''}{s.title}
               </h2>
               {s.paragraphs.map((p, j) => (
@@ -64,7 +64,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           ))}
         </div>
 
-        <div className="mt-10 rounded-card border border-border bg-gold-100/40 p-5 text-sm text-ink">
+        <div className="mt-10 rounded-card border-[2.5px] border-ink bg-coral-soft p-5 text-sm text-ink shadow-offset-sm">
           Questions? Reach us at <a className="font-semibold underline" href="mailto:contact@gibbous.io">contact@gibbous.io</a>.
         </div>
       </main>

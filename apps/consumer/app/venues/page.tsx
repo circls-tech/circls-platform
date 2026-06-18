@@ -16,7 +16,7 @@ export default function VenuesPage() {
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="mb-8 max-w-xl">
-          <h1 className="font-display text-3xl font-semibold text-ink">Find a venue</h1>
+          <h1 className="font-display text-4xl font-extrabold text-ink">Find a venue</h1>
           <p className="mt-1 text-sm text-text-secondary">
             Book courts and turfs, join events, and grab memberships near you.
           </p>
@@ -35,7 +35,7 @@ export default function VenuesPage() {
             {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : venues.isError ? (
-          <p className="text-sm text-red-600">
+          <p className="text-sm font-semibold text-petal-red">
             {venues.error instanceof Error ? venues.error.message : 'Failed to load venues'}
           </p>
         ) : !venues.data || venues.data.length === 0 ? (

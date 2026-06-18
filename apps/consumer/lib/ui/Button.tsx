@@ -9,18 +9,24 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+// Signature style: 2.5px ink border + hard offset shadow that grows on hover
+// and presses flat on click.
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:   'bg-ink text-white hover:bg-ink-soft border-transparent',
-  accent:    'bg-gold-500 text-ink hover:bg-gold-600 border-transparent font-semibold',
-  secondary: 'bg-white text-ink border-border hover:bg-gold-100',
-  ghost:     'bg-transparent text-text-secondary border-transparent hover:bg-gold-100',
-  danger:    'bg-red-600 text-white hover:bg-red-700 border-transparent',
+  primary:   'bg-coral text-ink border-ink shadow-offset-sm hover:bg-coral-deep',
+  accent:    'bg-lav text-ink border-ink shadow-offset-sm hover:bg-lav-soft',
+  secondary: 'bg-white text-ink border-ink shadow-offset-sm hover:bg-surface-2',
+  ghost:     'bg-transparent text-ink border-transparent shadow-none hover:bg-surface-2',
+  danger:    'bg-petal-red text-white border-ink shadow-offset-sm hover:brightness-95',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-4 py-2 text-sm',
+  sm: 'px-3.5 py-1.5 text-xs',
+  md: 'px-5 py-2.5 text-sm',
 };
+
+const LIFT =
+  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ' +
+  'active:translate-x-0 active:translate-y-0 active:shadow-none';
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
@@ -36,6 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const isDisabled = disabled || loading;
+  const interactive = variant === 'ghost' ? '' : LIFT;
   return (
     <button
       ref={ref}
@@ -43,9 +50,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={isDisabled}
       className={[
         'inline-flex items-center justify-center gap-2 rounded-[var(--radius)]',
-        'border font-medium transition-colors duration-150',
-        'disabled:cursor-not-allowed disabled:opacity-50',
+        'border-[2.5px] font-display font-bold transition-[transform,box-shadow,background-color] duration-100',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:translate-x-0 disabled:translate-y-0',
         variantClasses[variant],
+        interactive,
         sizeClasses[size],
         className,
       ].join(' ')}

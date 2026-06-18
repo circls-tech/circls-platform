@@ -16,7 +16,7 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
   return (
     <Link
       href={`/venues/${venue.id}`}
-      className={`block overflow-hidden rounded-card border border-border bg-white transition-all hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(15,28,46,0.16)] ${className}`}
+      className={`block overflow-hidden rounded-card border-[2.5px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <ImageCarousel
         images={venue.images}
@@ -33,7 +33,7 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
         }
       />
       <div className="p-4">
-        <h3 className="font-display text-[19px] font-semibold text-ink">{venue.name}</h3>
+        <h3 className="font-display text-[19px] font-extrabold text-ink">{venue.name}</h3>
         {city && <p className="mt-0.5 text-sm text-text-secondary">{city}</p>}
         {venue.tags.length > 0 && (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
