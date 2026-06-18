@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiFetch } from './client';
 
 export type QuoteItem =
-  | { itemType: 'event'; eventId: string }
+  | { itemType: 'event'; eventId: string; lines: { tierId: string; quantity: number }[] }
   | { itemType: 'membership'; membershipId: string }
   | { itemType: 'slot'; slotIds: string[] };
 
