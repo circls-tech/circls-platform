@@ -48,7 +48,7 @@ export function useCreateTenantEvent(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTenantEventInput) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),
@@ -89,7 +89,7 @@ export function useCreateEvent(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateEventInput) =>
-      apiFetch<VenueEvent>(`/v1/venues/${venueId}/events`, {
+      apiFetch<VenueEventSummary>(`/v1/venues/${venueId}/events`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),
@@ -114,7 +114,7 @@ export function useUpdateEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ eventId, input }: { eventId: string; input: UpdateEventInput }) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
       }),
@@ -129,7 +129,7 @@ export function usePublishEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (eventId: string) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
         method: 'POST',
       }),
     onSuccess: (ev) => {
@@ -149,7 +149,7 @@ export function usePublishTenantEvent(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (eventId: string) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/publish`, {
         method: 'POST',
       }),
     onSuccess: (ev) => {
@@ -165,7 +165,7 @@ export function useCancelEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (eventId: string) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
         method: 'POST',
       }),
     onSuccess: (ev) => {
@@ -186,7 +186,7 @@ export function useUpdateTenantEvent(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ eventId, input }: { eventId: string; input: UpdateEventInput }) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
       }),
@@ -202,7 +202,7 @@ export function useCancelTenantEvent(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (eventId: string) =>
-      apiFetch<VenueEvent>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
         method: 'POST',
       }),
     onSuccess: (ev) => {
