@@ -138,6 +138,37 @@ export interface AdminListingListResponse {
   rows: AdminListingRow[];
 }
 
+export interface AdminListingDetail {
+  type: AdminListingType;
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  // Venue / standalone-event location
+  addressJson?: Record<string, unknown> | null;
+  lat?: number | null;
+  lng?: number | null;
+  tzName?: string | null;
+  tags?: string[];
+  // Arena
+  sport?: string | null;
+  capacity?: number | null;
+  slotDurationMin?: number | null;
+  // Event
+  description?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  pricePaise?: number | null;
+  // Membership
+  durationDays?: number | null;
+  benefits?: Record<string, unknown>;
+  // Venue link (arena / membership / venue-scoped event)
+  venueId?: string | null;
+  venueName?: string | null;
+}
+
 // ── Coupons ───────────────────────────────────────────────────────────────────
 
 export interface Coupon {

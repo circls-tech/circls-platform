@@ -1,13 +1,14 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
-import { BadRequest } from '../lib/errors.js';
+import { BadRequest, NotFound } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   approveListing,
+  getListingDetail,
   LISTING_TYPES,
   listListingsForReview,
   rejectListing,
@@ -54,6 +55,20 @@ export const adminListingRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
     });
     return { rows };
+  });
+
+  // ── GET /v1/admin/listings/:type/:id ──────────────────────────────────────
+  app.get('/v1/admin/listings/:type/:id', { preHandler: requireAuth }, async (req) => {
+    await reviewCtx(req);
+    const params = paramsSchema.safeParse(req.params);
+    if (!params.success) {
+      throw new BadRequest('Invalid listing ref', 'bad_request', { issues: params.error.issues });
+    }
+    const detail = await getListingDetail(params.data.type, params.data.id);
+    if (!detail) {
+      throw new NotFound(`${params.data.type} not found`, 'listing_not_found');
+    }
+    return detail;
   });
 
   // ── POST /v1/admin/listings/:type/:id/approve ──────────────────────────────

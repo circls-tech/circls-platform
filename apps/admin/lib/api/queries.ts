@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
+  AdminListingDetail,
   AdminListingListResponse,
   AdminListingType,
   AdminPayoutListPage,
@@ -146,6 +147,15 @@ export function useAdminListings(type: AdminListingType, status?: string) {
     enabled: Boolean(user),
     queryFn: () =>
       apiFetch<AdminListingListResponse>(`/v1/admin/listings${qs({ type, status })}`),
+  });
+}
+
+export function useAdminListingDetail(type: AdminListingType | null, id: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'listing-detail', type, id],
+    enabled: Boolean(user && type && id),
+    queryFn: () => apiFetch<AdminListingDetail>(`/v1/admin/listings/${type!}/${id!}`),
   });
 }
 
