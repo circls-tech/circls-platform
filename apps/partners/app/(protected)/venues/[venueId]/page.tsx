@@ -69,7 +69,7 @@ export default function VenuePage() {
               <div className="flex items-center gap-2">
                 <span className="font-medium">{a.name}</span>
                 <span className="text-xs text-gray-400">
-                  {a.sport ?? 'sport n/a'} · {a.slotDurationMin}min slots
+                  {a.sport ?? 'sport n/a'}
                 </span>
                 <span className="ml-auto">
                   <StatusPill status={a.status} />

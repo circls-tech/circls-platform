@@ -184,7 +184,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
         <div>
           <h3 className="font-display text-lg font-extrabold text-ink">{arena.name}</h3>
           <p className="mt-0.5 text-sm text-text-secondary">
-            {arena.sport ?? 'General'} · {arena.slotDurationMin} min slots
+            {arena.sport ?? 'General'}
             {arena.capacity != null ? ` · up to ${arena.capacity}` : ''}
           </p>
         </div>
