@@ -21,77 +21,128 @@ const NAV_LINKS = [
   { href: '/settings', label: 'Settings' },
 ] as const;
 
-function Sidebar({ pathname }: { pathname: string }) {
+function HamburgerIcon() {
   return (
-    <aside
-      className="fixed inset-y-0 left-0 flex w-[220px] flex-col bg-[#0f172a]"
-      style={{ zIndex: 40 }}
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
     >
-      {/* Wordmark */}
-      <div className="flex h-14 items-center gap-2 px-6">
-        <BrandMark className="h-7 w-7" />
-        <span className="text-lg font-bold tracking-tight text-white">circls</span>
-      </div>
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
 
-      {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-2">
-        {NAV_LINKS.map(({ href, label }) => {
-          const isActive = pathname === href || pathname.startsWith(href + '/');
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={[
-                'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white',
-              ].join(' ')}
-            >
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
+function Sidebar({
+  pathname,
+  open,
+  onClose,
+}: {
+  pathname: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {/* Mobile backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Help link at the bottom */}
-      <div className="px-3 pb-4 pt-2 border-t border-white/10 mt-2">
-        <Link
-          href="/help"
-          className={[
-            'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-            pathname === '/help'
-              ? 'bg-white/10 text-white'
-              : 'text-slate-400 hover:bg-white/5 hover:text-white',
-          ].join(' ')}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+      <aside
+        className={[
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col bg-[#0f172a] transition-transform duration-200',
+          open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        ].join(' ')}
+        style={{ zIndex: 50 }}
+      >
+        {/* Wordmark */}
+        <div className="flex h-14 items-center gap-2 px-6">
+          <BrandMark className="h-7 w-7" />
+          <span className="text-lg font-bold tracking-tight text-white">circls</span>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-2">
+          {NAV_LINKS.map(({ href, label }) => {
+            const isActive = pathname === href || pathname.startsWith(href + '/');
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className={[
+                  'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-white/10 text-white'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white',
+                ].join(' ')}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Help link at the bottom */}
+        <div className="mt-2 border-t border-white/10 px-3 pb-4 pt-2">
+          <Link
+            href="/help"
+            onClick={onClose}
+            className={[
+              'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              pathname === '/help'
+                ? 'bg-white/10 text-white'
+                : 'text-slate-400 hover:bg-white/5 hover:text-white',
+            ].join(' ')}
           >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          Help
-        </Link>
-      </div>
-    </aside>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            Help
+          </Link>
+        </div>
+      </aside>
+    </>
   );
 }
 
 function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; pathname: string }) {
   const [showOrgSelector, setShowOrgSelector] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { data: tenants } = useMyTenants();
   const { signOut } = useAuth();
+
+  // Close sidebar whenever the route changes
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
 
   // Show org selector modal once per session when user has multiple orgs.
   useEffect(() => {
@@ -107,14 +158,24 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
     <OrgProvider>
       <div className="min-h-screen">
         {/* Left sidebar */}
-        <Sidebar pathname={pathname} />
+        <Sidebar pathname={pathname} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         {/* Right of sidebar */}
-        <div className="ml-[220px] flex min-h-screen flex-col">
+        <div className="md:ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
           <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-6">
-            <ContextBar />
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden -ml-1 shrink-0 rounded p-1 text-slate-600 hover:text-slate-900"
+                aria-label="Open navigation"
+              >
+                <HamburgerIcon />
+              </button>
+              <ContextBar />
+            </div>
+            <div className="flex shrink-0 items-center gap-4">
               <TimezoneSelect />
               <Button
                 variant="ghost"
