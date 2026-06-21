@@ -183,6 +183,166 @@ export async function listListingsForReview(input: {
   }));
 }
 
+export interface ListingDetail {
+  type: ListingType;
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  // Venue / standalone-event address
+  addressJson?: Record<string, unknown> | null;
+  lat?: number | null;
+  lng?: number | null;
+  tzName?: string | null;
+  tags?: string[];
+  // Arena
+  sport?: string | null;
+  capacity?: number | null;
+  slotDurationMin?: number | null;
+  // Event
+  description?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  pricePaise?: number | null;
+  // Membership
+  durationDays?: number | null;
+  benefits?: Record<string, unknown>;
+  // Venue link (for arena / membership / venue-scoped event)
+  venueId?: string | null;
+  venueName?: string | null;
+}
+
+/** Fetch full detail for a single listing, used by the admin review panel. */
+export async function getListingDetail(
+  type: ListingType,
+  id: string,
+): Promise<ListingDetail | null> {
+  switch (type) {
+    case 'venue': {
+      const [r] = await db
+        .select({
+          id: venues.id,
+          tenantId: venues.tenantId,
+          tenantName: tenants.name,
+          name: venues.name,
+          addressJson: venues.addressJson,
+          lat: venues.lat,
+          lng: venues.lng,
+          tzName: venues.tzName,
+          tags: venues.tags,
+          status: venues.status,
+          createdAt: venues.createdAt,
+        })
+        .from(venues)
+        .innerJoin(tenants, eq(tenants.id, venues.tenantId))
+        .where(eq(venues.id, id))
+        .limit(1);
+      if (!r) return null;
+      return { type, ...r, createdAt: r.createdAt.toISOString() };
+    }
+    case 'arena': {
+      const [r] = await db
+        .select({
+          id: arenas.id,
+          tenantId: venues.tenantId,
+          tenantName: tenants.name,
+          name: arenas.name,
+          sport: arenas.sport,
+          capacity: arenas.capacity,
+          slotDurationMin: arenas.slotDurationMin,
+          tags: arenas.tags,
+          status: arenas.status,
+          createdAt: arenas.createdAt,
+          venueId: arenas.venueId,
+          venueName: venues.name,
+        })
+        .from(arenas)
+        .innerJoin(venues, eq(venues.id, arenas.venueId))
+        .innerJoin(tenants, eq(tenants.id, venues.tenantId))
+        .where(eq(arenas.id, id))
+        .limit(1);
+      if (!r) return null;
+      return { type, ...r, createdAt: r.createdAt.toISOString() };
+    }
+    case 'event': {
+      const [r] = await db
+        .select({
+          id: events.id,
+          tenantId: events.tenantId,
+          tenantName: tenants.name,
+          name: events.name,
+          description: events.description,
+          startsAt: events.startsAt,
+          endsAt: events.endsAt,
+          pricePaise: events.pricePaise,
+          capacity: events.capacity,
+          venueId: events.venueId,
+          addressJson: events.addressJson,
+          lat: events.lat,
+          lng: events.lng,
+          tzName: events.tzName,
+          status: events.status,
+          createdAt: events.createdAt,
+        })
+        .from(events)
+        .innerJoin(tenants, eq(tenants.id, events.tenantId))
+        .where(eq(events.id, id))
+        .limit(1);
+      if (!r) return null;
+      let venueName: string | null = null;
+      if (r.venueId) {
+        const [v] = await db
+          .select({ name: venues.name })
+          .from(venues)
+          .where(eq(venues.id, r.venueId))
+          .limit(1);
+        venueName = v?.name ?? null;
+      }
+      return {
+        type,
+        ...r,
+        venueName,
+        startsAt: r.startsAt.toISOString(),
+        endsAt: r.endsAt.toISOString(),
+        createdAt: r.createdAt.toISOString(),
+      };
+    }
+    case 'membership': {
+      const [r] = await db
+        .select({
+          id: memberships.id,
+          tenantId: memberships.tenantId,
+          tenantName: tenants.name,
+          name: memberships.name,
+          description: memberships.description,
+          pricePaise: memberships.pricePaise,
+          durationDays: memberships.durationDays,
+          benefits: memberships.benefits,
+          venueId: memberships.venueId,
+          status: memberships.status,
+          createdAt: memberships.createdAt,
+        })
+        .from(memberships)
+        .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+        .where(eq(memberships.id, id))
+        .limit(1);
+      if (!r) return null;
+      let venueName: string | null = null;
+      if (r.venueId) {
+        const [v] = await db
+          .select({ name: venues.name })
+          .from(venues)
+          .where(eq(venues.id, r.venueId))
+          .limit(1);
+        venueName = v?.name ?? null;
+      }
+      return { type, ...r, venueName, createdAt: r.createdAt.toISOString() };
+    }
+  }
+}
+
 /**
  * SQL predicate for "the owning tenant is operationally live" — i.e. not
  * suspended. Consumer reads AND this with the listing's approved status.
