@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AuthProvider } from '@/lib/firebase/auth_context';
 import { CheckoutProvider } from '@/lib/checkout/CheckoutProvider';
+import { LocationProvider } from '@/lib/location/LocationProvider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -11,7 +12,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <AuthProvider>
-        <CheckoutProvider>{children}</CheckoutProvider>
+        <LocationProvider>
+          <CheckoutProvider>{children}</CheckoutProvider>
+        </LocationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
