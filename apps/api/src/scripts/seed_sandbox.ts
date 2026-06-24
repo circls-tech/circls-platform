@@ -99,17 +99,23 @@ async function main(): Promise<void> {
   await firebaseAuth().setCustomUserClaims(DEMO.admin.uid, { admin: true });
 
   // 2. Tenants: the platform tenant + a demo venue tenant.
-  await ensureTenant(env.CIRCLS_INTERNAL_TENANT_SLUG, 'Circls', true);
+  const platformTenantId = await ensureTenant(env.CIRCLS_INTERNAL_TENANT_SLUG, 'Circls', true);
   const demoTenantId = await ensureTenant('demo-venue', 'Demo Venue Co', false);
 
   // 3. Postgres users rows linked to the emulator UIDs.
-  await ensureUserRow(DEMO.admin);
+  const adminUserId = await ensureUserRow(DEMO.admin);
   const partnerUserId = await ensureUserRow(DEMO.partner);
   await ensureUserRow(DEMO.consumer);
 
   // 4. Make the partner an owner of the demo tenant so the partner portal has a
   //    venue to act on (otherwise it lands on an empty onboarding state).
   await ensureMembership(partnerUserId, demoTenantId, 'owner');
+
+  // 5. Make the admin an owner of the platform tenant. Admin routes (e.g.
+  //    /v1/admin/stats) require platform-tenant membership with admin caps;
+  //    the `admin:true` Firebase claim alone is not enough, so without this
+  //    the admin console logs in then 403s and bounces the user out.
+  await ensureMembership(adminUserId, platformTenantId, 'owner');
 
   logger.info('sandbox_seed_complete');
   process.stdout.write(
