@@ -171,6 +171,13 @@
       "when": 1780960000000,
       "tag": "0024_ticket_tiers",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781040000000,
+      "tag": "0025_login_events",
+      "breakpoints": true
     }
   ]
 }

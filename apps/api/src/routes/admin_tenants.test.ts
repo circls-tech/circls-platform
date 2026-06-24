@@ -222,7 +222,35 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(typeof body['tenantsSuspended']).toBe('number');
     expect(typeof body['bookings24h']).toBe('number');
     expect(typeof body['bookings7d']).toBe('number');
+    expect(typeof body['usersTotal']).toBe('number');
+    expect(typeof body['usersNew24h']).toBe('number');
+    expect(typeof body['usersNew7d']).toBe('number');
+    expect(typeof body['activeUsers24h']).toBe('number');
+    expect(typeof body['activeUsers30d']).toBe('number');
+    expect(typeof body['logins24h']).toBe('number');
+    expect(typeof body['logins7d']).toBe('number');
     expect(body['tenantsTotal']).toBeGreaterThanOrEqual(2);
+    expect(body['usersTotal']).toBeGreaterThanOrEqual(1);
+  });
+
+  it('POST /v1/me/login — records a login that shows in stats', async () => {
+    const before = (
+      await app.inject({ method: 'GET', url: '/v1/admin/stats', headers: bearer('padmin') })
+    ).json() as Record<string, number>;
+
+    const rec = await app.inject({
+      method: 'POST',
+      url: '/v1/me/login',
+      headers: bearer('padmin'),
+      payload: { source: 'admin' },
+    });
+    expect(rec.statusCode).toBe(204);
+
+    const after = (
+      await app.inject({ method: 'GET', url: '/v1/admin/stats', headers: bearer('padmin') })
+    ).json() as Record<string, number>;
+    expect(after['logins24h']).toBeGreaterThan(before['logins24h']!);
+    expect(after['logins7d']).toBeGreaterThan(before['logins7d']!);
   });
 
   it('non-admin caller gets 403', async () => {

@@ -279,7 +279,20 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           (SELECT count(*) FROM bookings
              WHERE created_at >= now() - interval '24 hours')                             AS bookings_24h,
           (SELECT count(*) FROM bookings
-             WHERE created_at >= now() - interval '7 days')                               AS bookings_7d
+             WHERE created_at >= now() - interval '7 days')                               AS bookings_7d,
+          (SELECT count(*) FROM users)                                                    AS users_total,
+          (SELECT count(*) FROM users
+             WHERE created_at >= now() - interval '24 hours')                             AS users_new_24h,
+          (SELECT count(*) FROM users
+             WHERE created_at >= now() - interval '7 days')                               AS users_new_7d,
+          (SELECT count(DISTINCT user_id) FROM consumer_activity
+             WHERE created_at >= now() - interval '24 hours')                             AS active_users_24h,
+          (SELECT count(DISTINCT user_id) FROM consumer_activity
+             WHERE created_at >= now() - interval '30 days')                              AS active_users_30d,
+          (SELECT count(*) FROM login_events
+             WHERE created_at >= now() - interval '24 hours')                             AS logins_24h,
+          (SELECT count(*) FROM login_events
+             WHERE created_at >= now() - interval '7 days')                               AS logins_7d
       `);
       const r = (rows as unknown as Record<string, unknown>[])[0] ?? {};
       return {
@@ -288,6 +301,13 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         tenantsSuspended: Number(r['tenants_suspended'] ?? 0),
         bookings24h: Number(r['bookings_24h'] ?? 0),
         bookings7d: Number(r['bookings_7d'] ?? 0),
+        usersTotal: Number(r['users_total'] ?? 0),
+        usersNew24h: Number(r['users_new_24h'] ?? 0),
+        usersNew7d: Number(r['users_new_7d'] ?? 0),
+        activeUsers24h: Number(r['active_users_24h'] ?? 0),
+        activeUsers30d: Number(r['active_users_30d'] ?? 0),
+        logins24h: Number(r['logins_24h'] ?? 0),
+        logins7d: Number(r['logins_7d'] ?? 0),
       };
     },
   );
