@@ -208,10 +208,10 @@ async function main(): Promise<void> {
   //    venue to act on (otherwise it lands on an empty onboarding state).
   await ensureMembership(partnerUserId, demoTenantId, 'owner');
 
-  // Make the admin an owner of the platform tenant. Admin routes (e.g.
-  // /v1/admin/stats) require platform-tenant membership with admin caps; the
-  // `admin:true` Firebase claim alone is not enough, so without this the admin
-  // console logs in then 403s and bounces the user out.
+  // 5. Make the admin an owner of the platform tenant. Admin routes (e.g.
+  //    /v1/admin/stats) require platform-tenant membership with admin caps;
+  //    the `admin:true` Firebase claim alone is not enough, so without this
+  //    the admin console logs in then 403s and bounces the user out.
   await ensureMembership(adminUserId, platformTenantId, 'owner');
 
   // 5. Browse content for the consumer site, in two countries — the location
