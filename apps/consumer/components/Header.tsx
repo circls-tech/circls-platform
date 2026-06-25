@@ -2,11 +2,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useLocation } from '@/lib/location/LocationProvider';
 import { Button, BrandMark } from '@/lib/ui';
 
 export function Header() {
   const { user, loading, signOut } = useAuth();
+  const { city, country, openPicker } = useLocation();
   const router = useRouter();
+  const locationLabel = city ?? country ?? 'Set location';
 
   return (
     <header className="sticky top-0 z-40 border-b-[2.5px] border-ink bg-surface/90 backdrop-blur">
@@ -19,6 +22,14 @@ export function Header() {
           <span>circls</span>
         </Link>
         <nav className="flex items-center gap-3 sm:gap-5">
+          <button
+            onClick={openPicker}
+            className="flex items-center gap-1 text-sm font-semibold text-ink-soft hover:text-ink"
+            aria-label={city || country ? `Location: ${locationLabel}. Change location` : 'Set your location'}
+          >
+            <span aria-hidden>📍</span>
+            <span className="max-w-[7rem] truncate">{locationLabel}</span>
+          </button>
           <Link href="/venues" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Venues</Link>
           <Link href="/events" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Events</Link>
           {loading ? null : user ? (

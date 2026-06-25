@@ -3,12 +3,8 @@ import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { Badge } from '@/lib/ui';
 import { matchSport } from '@/lib/sportImages';
+import { cityOf } from '@/lib/location/geo';
 import type { PublicVenue } from '@/lib/api/types';
-
-function cityOf(addressJson: Record<string, unknown> | null): string | null {
-  const c = addressJson?.['city'];
-  return typeof c === 'string' && c ? c : null;
-}
 
 export function VenueCard({ venue, className = '' }: { venue: PublicVenue; className?: string }) {
   const sport = matchSport(venue.tags);

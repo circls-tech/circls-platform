@@ -6,6 +6,8 @@ import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
+import { useLocation } from '@/lib/location/LocationProvider';
+import { inArea, inCountry } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
@@ -14,9 +16,20 @@ const MOTIF: React.CSSProperties = {
 };
 
 export default function LandingPage() {
-  const venues = useVenues('', 10);
-  const events = useUpcomingEvents(10);
+  const { city, country } = useLocation();
+  // Fetch a wider set so location filtering still has cards to show, then cap to 10.
+  const venues = useVenues('', 100);
+  const events = useUpcomingEvents(100);
   const memberships = useAllMemberships(10);
+
+  // Venues filter by area (country, then city); events filter by country alone
+  // (a country is one "market", events don't cross borders).
+  const nearbyVenues = (venues.data ?? [])
+    .filter((v) => inArea(v.addressJson, { city, country }))
+    .slice(0, 10);
+  const nearbyEvents = (events.data ?? [])
+    .filter((e) => inCountry(e.locAddressJson, country))
+    .slice(0, 10);
 
   return (
     <div className="min-h-screen">
@@ -41,15 +54,15 @@ export default function LandingPage() {
       </section>
 
       <main className="py-6">
-        {(venues.data?.length ?? 0) > 0 && (
-          <HScroll title="Venues near you" viewAllHref="/venues">
-            {venues.data!.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
+        {nearbyVenues.length > 0 && (
+          <HScroll title={city ? `Venues in ${city}` : country ? `Venues in ${country}` : 'Venues near you'} viewAllHref="/venues">
+            {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
 
-        {(events.data?.length ?? 0) > 0 && (
-          <HScroll title="Upcoming events" viewAllHref="/events">
-            {events.data!.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
+        {nearbyEvents.length > 0 && (
+          <HScroll title={country ? `What's on in ${country}` : 'Upcoming events'} viewAllHref="/events">
+            {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
 
