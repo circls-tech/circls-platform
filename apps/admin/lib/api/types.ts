@@ -15,6 +15,16 @@ export interface AdminStats {
   tenantsSuspended: number;
   bookings24h: number;
   bookings7d: number;
+  // Users / accounts.
+  usersTotal: number;
+  usersNew24h: number;
+  usersNew7d: number;
+  // Distinct users with logged consumer activity in the window.
+  activeUsers24h: number;
+  activeUsers30d: number;
+  // Fresh sign-ins recorded via POST /v1/me/login.
+  logins24h: number;
+  logins7d: number;
 }
 
 export interface AdminTenantListItem {

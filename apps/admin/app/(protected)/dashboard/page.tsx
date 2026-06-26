@@ -98,6 +98,36 @@ export default function AdminDashboard() {
       </section>
 
       <section>
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Users</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Tile
+            label="Accounts made"
+            value={data.usersTotal}
+            sub={`+${data.usersNew7d} in 7d`}
+          />
+          <Tile label="New (24h)" value={data.usersNew24h} tone="good" />
+          <Tile
+            label="Active users (24h)"
+            value={data.activeUsers24h}
+            sub="with activity"
+          />
+          <Tile
+            label="Active users (30d)"
+            value={data.activeUsers30d}
+            sub="with activity"
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Logins</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Tile label="Last 24 hours" value={data.logins24h} />
+          <Tile label="Last 7 days" value={data.logins7d} />
+        </div>
+      </section>
+
+      <section>
         <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Bookings</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label="Last 24 hours" value={data.bookings24h} />

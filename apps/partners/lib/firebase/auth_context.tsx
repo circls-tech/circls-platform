@@ -8,7 +8,16 @@ import {
   signOut as fbSignOut,
 } from 'firebase/auth';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { apiFetch } from '@/lib/api/client';
 import { auth } from './client';
+
+/** Best-effort login audit — must never block or fail the sign-in flow. */
+function recordLogin(): void {
+  void apiFetch('/v1/me/login', {
+    method: 'POST',
+    body: JSON.stringify({ source: 'partners' }),
+  }).catch(() => {});
+}
 
 interface AuthContextValue {
   user: User | null;
@@ -38,10 +47,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       async signInWithEmail(email, password) {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        recordLogin();
         return cred.user;
       },
       async signUpWithEmail(email, password) {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        recordLogin();
         return cred.user;
       },
       async sendPasswordReset(email) {
