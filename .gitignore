@@ -45,3 +45,7 @@ coverage/
 
 # Brainstorm visual-companion scratch
 .superpowers/
+
+# Per-developer sandbox seed data (copy seed_local.example.ts → seed_local.ts).
+# Keeps personal demo data out of the shared seed so it can't cause conflicts.
+apps/api/src/scripts/seed_local.ts

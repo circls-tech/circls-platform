@@ -8,8 +8,16 @@
  *   - Partner portal (email/password) → partner user, owner of the demo tenant.
  *   - Consumer web (phone OTP)        → consumer phone user.
  *
+ * Per-developer demo data (your own venues/courts/slots) does NOT belong here —
+ * editing this shared file is what causes merge conflicts. Put it in a personal
+ * `seed_local.ts` instead (git-ignored; copy `seed_local.example.ts` to start).
+ * This script runs it automatically at the end if present.
+ *
  * Run:  pnpm --filter @circls/api seed:sandbox
  */
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { closeDb, db } from '../db/client.js';
 import { env } from '../config/env.js';
@@ -86,6 +94,37 @@ async function ensureMembership(userId: string, tenantId: string, role: 'owner')
   await db.insert(tenantMembers).values({ userId, tenantId, role });
 }
 
+/**
+ * What the core seed hands a personal `seed_local.ts` to build on. The `db`
+ * handle and the two tenant ids are enough to attach venues/courts/slots without
+ * the local seed having to re-resolve them.
+ */
+export interface LocalSeedContext {
+  db: typeof db;
+  platformTenantId: string;
+  demoTenantId: string;
+}
+
+/**
+ * Run an optional, git-ignored `seed_local.ts` if the developer has one. Its
+ * edits live outside this shared file, so personal demo data can't cause merge
+ * conflicts here. Absent file (fresh clone / CI) is a no-op. The module
+ * specifier is held in a variable so the compiler doesn't require the
+ * (git-ignored, possibly missing) file to exist at build time.
+ */
+async function runLocalSeed(ctx: LocalSeedContext): Promise<void> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  if (!existsSync(join(here, 'seed_local.ts'))) return;
+  const specifier = './seed_local.js';
+  const mod = (await import(specifier)) as { seedLocal?: (c: LocalSeedContext) => Promise<void> };
+  if (typeof mod.seedLocal !== 'function') {
+    logger.warn('seed_local.ts found but it exports no seedLocal(ctx) function — skipping');
+    return;
+  }
+  await mod.seedLocal(ctx);
+  logger.info('local_seed_complete');
+}
+
 async function main(): Promise<void> {
   if (!env.FIREBASE_AUTH_EMULATOR_HOST) {
     process.stderr.write('Refusing to seed: FIREBASE_AUTH_EMULATOR_HOST is not set (sandbox only).\n');
@@ -116,6 +155,10 @@ async function main(): Promise<void> {
   //    the `admin:true` Firebase claim alone is not enough, so without this
   //    the admin console logs in then 403s and bounces the user out.
   await ensureMembership(adminUserId, platformTenantId, 'owner');
+
+  // 6. Optional per-developer seed (git-ignored seed_local.ts) — your own demo
+  //    venues/courts/slots, kept out of this shared file so they don't conflict.
+  await runLocalSeed({ db, platformTenantId, demoTenantId });
 
   logger.info('sandbox_seed_complete');
   process.stdout.write(

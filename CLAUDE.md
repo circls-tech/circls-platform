@@ -30,3 +30,17 @@ them (`--no-verify` is not allowed).
 
 Run the app with `./sandbox up` (see `SANDBOX.md`). All payments, storage, SMS,
 and email are simulated locally — nothing reaches real users or money.
+
+## Sandbox seed data
+
+Personal/demo seed data — venues, courts, arenas, slots, or any other demo
+content — goes in `apps/api/src/scripts/seed_local.ts` (git-ignored), **never**
+in the shared `apps/api/src/scripts/seed_sandbox.ts`. `seed_sandbox.ts` seeds
+only the shared baseline (login users, tenants, memberships) and is identical for
+everyone; editing it to add demo data causes merge conflicts.
+
+`seed_local.ts` runs automatically at the end of `./sandbox seed` if it exists
+(absent file is a silent no-op). If it doesn't exist, copy
+`seed_local.example.ts` to `seed_local.ts` and edit its exported
+`seedLocal({ db, platformTenantId, demoTenantId })` function. Keep it idempotent
+(the seed can be re-run), and never `git add` `seed_local.ts`.
