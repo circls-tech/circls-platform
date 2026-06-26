@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
@@ -32,7 +32,7 @@ function quoteItem(item: CheckoutItem): QuoteRequest {
   }
 }
 
-export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; prefill: CheckoutPrefill; onClose: () => void }) {
+export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: CheckoutItem; prefill: CheckoutPrefill; onSuccess?: () => void; onClose: () => void }) {
   const { user } = useAuth();
   const quote = useCheckoutQuote();
   const bookSlots = useBookSlots();
@@ -66,6 +66,17 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedCode]);
+
+  // Fire onSuccess once the booking exists (paid / reserved / free-confirmed) so
+  // callers like the cart can clear themselves. 'error' means no booking was
+  // created (e.g. payment cancelled), so we deliberately don't fire there.
+  const firedSuccess = useRef(false);
+  useEffect(() => {
+    if (!firedSuccess.current && (phase.kind === 'success' || phase.kind === 'reserved')) {
+      firedSuccess.current = true;
+      onSuccess?.();
+    }
+  }, [phase, onSuccess]);
 
   function applyCode(code: string) {
     const c = code.trim().toUpperCase();

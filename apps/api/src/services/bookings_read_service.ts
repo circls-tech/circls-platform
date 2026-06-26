@@ -74,8 +74,10 @@ export async function listBookings(
       b.channel                       as channel,
       b.total_paise                   as total_paise,
       b.created_at                    as created_at,
-      coalesce(min(s.arena_id::text), b.slot_arena_id::text)              as arena_id,
-      coalesce(min(a.name), max(a2.name))                                 as arena_name,
+      case when count(distinct s.arena_id) > 1 then null
+           else coalesce(min(s.arena_id::text), b.slot_arena_id::text) end as arena_id,
+      case when count(distinct s.arena_id) > 1 then 'Multiple courts'
+           else coalesce(min(a.name), max(a2.name)) end                    as arena_name,
       coalesce(min(lower(s.time_range)), lower(b.time_range))             as first_start_at,
       coalesce(max(upper(s.time_range)), upper(b.time_range))             as last_end_at,
       count(s.id)                                                          as slot_count
@@ -114,6 +116,8 @@ export interface BookingDetailSlot {
   endAt: string;
   pricePaise: number;
   status: string;
+  /** The court this slot is on — lets a multi-court (cart) booking stay legible. */
+  arenaName: string;
 }
 
 export interface BookingDetail {
@@ -187,18 +191,24 @@ export async function getBookingDetail(
     endAt: new Date(row['end_at'] as string).toISOString(),
     pricePaise: Number(row['price_paise']),
     status: row['status'] as string,
+    arenaName: row['arena_name'] as string,
   }));
 
-  // Walk-in slots all share one arena; prefer the slot-side value when present
-  // (active bookings), otherwise fall back to the booking-side join (cancelled
-  // bookings, whose slots.booking_id has been nulled).
+  // Booking-level arena: prefer the slot-side value when present (active
+  // bookings), otherwise fall back to the booking-side join (cancelled bookings,
+  // whose slots.booking_id has been nulled). A consumer cart can span courts, so
+  // a booking whose slots have >1 arena has no single arena — surface null rather
+  // than mislabelling it as the first slot's court.
+  const slotArenaIds = new Set(slotArr.map((r) => r['arena_id'] as string));
   const arenaId =
     slotArr.length > 0
-      ? (slotArr[0]!['arena_id'] as string)
+      ? (slotArenaIds.size === 1 ? (slotArr[0]!['arena_id'] as string) : null)
       : ((booking['booking_arena_id'] as string | null) ?? null);
+  // A multi-court (cart) booking has no single arena: label it so the list/detail
+  // read legibly instead of blank. The per-slot list above carries each court.
   const arenaName =
     slotArr.length > 0
-      ? (slotArr[0]!['arena_name'] as string)
+      ? (slotArenaIds.size === 1 ? (slotArr[0]!['arena_name'] as string) : 'Multiple courts')
       : ((booking['booking_arena_name'] as string | null) ?? null);
 
   return {

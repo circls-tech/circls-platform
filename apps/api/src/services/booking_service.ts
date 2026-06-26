@@ -271,16 +271,22 @@ export async function prepareOnlineBookingWithPayment(
       throw new Conflict('Slot already taken', 'slot_taken');
     }
 
-    const claimedArenaId = claimed[0]!.arenaId;
-    if (!claimed.every((c) => c.arenaId === claimedArenaId)) {
-      throw new Conflict('Multi-arena booking not supported', 'multi_arena_booking');
-    }
+    // Single-court bookings record their arena + time-span on the booking row so
+    // the per-arena GIST overlap guard applies and a later cancellation (which
+    // nulls slots.booking_id) keeps a fallback arena/window for the read paths.
+    // A cart can span arenas: such a booking leaves slot_arena_id NULL — the
+    // GIST exclusion's `=` skips NULLs, and the atomic per-slot claim above is
+    // the real double-booking guard. The slots keep their own arena for display.
+    const distinctArenas = new Set(claimed.map((c) => c.arenaId));
+    const singleArenaId = distinctArenas.size === 1 ? claimed[0]!.arenaId : null;
 
     await tx
       .update(bookings)
       .set({
-        slotArenaId: claimedArenaId,
-        timeRange: sql`(select tstzrange(min(lower(time_range)), max(upper(time_range)), '[)') from slots where booking_id = ${booking!.id})`,
+        slotArenaId: singleArenaId,
+        timeRange: singleArenaId
+          ? sql`(select tstzrange(min(lower(time_range)), max(upper(time_range)), '[)') from slots where booking_id = ${booking!.id})`
+          : null,
       })
       .where(eq(bookings.id, booking!.id));
 

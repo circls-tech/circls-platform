@@ -323,19 +323,30 @@ export async function priceItem(req:
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
     return { tenantId: m.tenantId, basePaise: m.pricePaise ?? 0, item: { type: 'membership', id: m.id, venueId: m.venueId ?? null } };
   }
-  // slots: sum prices, all must share one arena + tenant
+  // slots: sum prices. A cart may span multiple arenas of ONE venue (single
+  // multi-arena booking), so we no longer require one arena — but all slots must
+  // share one tenant + venue. Coupon scope: an arena-scoped coupon only matches a
+  // single-court cart (id = that arena); a mixed cart passes a non-arena id so
+  // arena scopes miss while org/venue coupons still apply to the whole total.
   const rows = await db.select().from(slots).where(inArray(slots.id, req.slotIds));
   if (rows.length === 0 || rows.length !== req.slotIds.length) throw new NotFound('Slot not found', 'slot_not_found');
-  const arenaId = rows[0]!.arenaId;
   const tenantId = rows[0]!.tenantId;
-  if (!rows.every((r) => r.arenaId === arenaId && r.tenantId === tenantId)) {
-    throw new BadRequest('Slots must share one arena', 'multi_arena_booking');
+  if (!rows.every((r) => r.tenantId === tenantId)) {
+    throw new BadRequest('Slots must share one tenant', 'mixed_venue_slots');
   }
+  const arenaIds = [...new Set(rows.map((r) => r.arenaId))];
   const basePaise = rows.reduce((s, r) => s + r.pricePaise, 0);
-  // Resolve the arena's venue so venue-scoped coupons can match a slot booking.
-  const [arena] = await db.select().from(arenas).where(eq(arenas.id, arenaId)).limit(1);
-  const venueId = arena?.venueId ?? null;
-  return { tenantId, basePaise, item: { type: 'slot', id: arenaId, venueId } };
+  // All referenced arenas must belong to one venue (venue/arena coupon scoping
+  // and the booking model are venue-bound).
+  const arenaRows = await db
+    .select({ id: arenas.id, venueId: arenas.venueId })
+    .from(arenas)
+    .where(inArray(arenas.id, arenaIds));
+  const venueIds = [...new Set(arenaRows.map((a) => a.venueId))];
+  if (venueIds.length !== 1) throw new Conflict('Slots span multiple venues', 'mixed_venue_slots');
+  const venueId = venueIds[0] ?? null;
+  const scopeArenaId = arenaIds.length === 1 ? arenaIds[0]! : '';
+  return { tenantId, basePaise, item: { type: 'slot', id: scopeArenaId, venueId } };
 }
 
 /**

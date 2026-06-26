@@ -147,6 +147,8 @@ export interface BookingSlot {
   endAt: string;
   pricePaise: number;
   status: string;
+  /** Court for this slot — set so multi-court (cart) bookings stay legible. */
+  arenaName: string;
 }
 
 export interface BookingDetail {

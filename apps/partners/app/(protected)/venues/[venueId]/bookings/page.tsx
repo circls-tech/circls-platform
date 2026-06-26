@@ -304,17 +304,23 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
                 Slots ({detail.slots.length})
               </p>
               <div className="flex flex-col gap-1.5">
-                {detail.slots.map((slot) => (
-                  <div
-                    key={slot.id}
-                    className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
-                  >
-                    <span className="text-slate-700">
-                      {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
-                    </span>
-                    <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
-                  </div>
-                ))}
+                {detail.slots.map((slot) => {
+                  // A cart booking can span courts; show each slot's court so the
+                  // list stays legible (single-court bookings keep it implicit).
+                  const multiCourt = new Set(detail.slots.map((s) => s.arenaName)).size > 1;
+                  return (
+                    <div
+                      key={slot.id}
+                      className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
+                    >
+                      <span className="text-slate-700">
+                        {multiCourt && <span className="font-medium text-slate-800">{slot.arenaName} · </span>}
+                        {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
+                      </span>
+                      <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
