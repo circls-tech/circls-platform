@@ -1,0 +1,21 @@
+name: Change request
+description: Ask for a new feature or a change to existing behaviour.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which app?
+      options: [consumer, partners, admin, api, multiple, not sure]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What do you want, and why?
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How will we know it's done?
+      description: A short list of "it works when…" bullets.
+    validations: { required: true }
