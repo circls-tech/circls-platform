@@ -73,10 +73,22 @@ function safeParse(s) {
   }
 }
 
-/** Given GitHub check-runs JSON and required check names, report whether all passed. */
+/**
+ * Given GitHub check-runs JSON and required check names, report the overall CI status.
+ *
+ * Returns { status: 'success'|'failed'|'pending', ok: boolean, details: [...] }
+ *   - 'success': every required check is completed/success  → ok=true, safe to release.
+ *   - 'failed':  at least one required check is completed but not success → ok=false, abort.
+ *   - 'pending': no failures but at least one check is not yet completed  → ok=false, wait.
+ *
+ * Empty requiredNames always returns 'failed' (fail-closed on misconfiguration).
+ *
+ * Each detail entry carries: { name, ok, result: 'success'|'failed'|'pending', status, conclusion }
+ * `ok` and `details[n].ok` are kept for backward compatibility.
+ */
 export function allChecksPassed(checkRunsJson, requiredNames) {
   if (!Array.isArray(requiredNames) || requiredNames.length === 0) {
-    return { ok: false, details: [] };
+    return { status: 'failed', ok: false, details: [] };
   }
   const data = typeof checkRunsJson === 'string' ? safeParse(checkRunsJson) : checkRunsJson;
   const runs = data && Array.isArray(data.check_runs) ? data.check_runs : [];
@@ -87,10 +99,28 @@ export function allChecksPassed(checkRunsJson, requiredNames) {
   }
   const details = requiredNames.map((name) => {
     const run = byName.get(name);
-    const ok = !!run && run.status === 'completed' && run.conclusion === 'success';
-    return { name, ok, status: run?.status ?? null, conclusion: run?.conclusion ?? null };
+    const completed = !!run && run.status === 'completed';
+    const succeeded = completed && run.conclusion === 'success';
+    // A completed check that did not succeed is an immediate abort; not-yet-completed is a wait.
+    const result = succeeded ? 'success' : completed ? 'failed' : 'pending';
+    return {
+      name,
+      ok: succeeded,
+      result,
+      status: run?.status ?? null,
+      conclusion: run?.conclusion ?? null,
+    };
   });
-  return { ok: details.every((d) => d.ok), details };
+  // A single failed (completed-non-success) check takes priority over any pending ones.
+  let status;
+  if (details.every((d) => d.result === 'success')) {
+    status = 'success';
+  } else if (details.some((d) => d.result === 'failed')) {
+    status = 'failed';
+  } else {
+    status = 'pending';
+  }
+  return { status, ok: status === 'success', details };
 }
 
 /** Next `release-<date>.N` tag given existing tag names and an ISO date (YYYY-MM-DD). */
