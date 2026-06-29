@@ -9,6 +9,7 @@ import type {
   AdminPayoutListPage,
   AdminStats,
   AdminSupportIssue,
+  AdminSupportIssueFilters,
   AdminTenantDetail,
   AdminTenantListPage,
   Coupon,
@@ -204,12 +205,19 @@ export function useTenantAuditLog(tenantId: string | null) {
 
 // ── Support issues ────────────────────────────────────────────────────────────
 
-export function useAdminSupportIssues() {
+export function useAdminSupportIssues(filters: AdminSupportIssueFilters = {}) {
   const { user } = useAuth();
   return useQuery({
-    queryKey: ['admin', 'support-issues'],
+    queryKey: ['admin', 'support-issues', filters.source ?? '', filters.category ?? '', filters.status ?? ''],
     enabled: Boolean(user),
-    queryFn: () => apiFetch<AdminSupportIssue[]>('/v1/admin/support-issues'),
+    queryFn: () =>
+      apiFetch<AdminSupportIssue[]>(
+        `/v1/admin/support-issues${qs({
+          source: filters.source,
+          category: filters.category,
+          status: filters.status,
+        })}`,
+      ),
   });
 }
 

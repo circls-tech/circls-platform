@@ -178,6 +178,13 @@
       "when": 1781040000000,
       "tag": "0025_login_events",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781120000000,
+      "tag": "0026_support_concerns",
+      "breakpoints": true
     }
   ]
 }

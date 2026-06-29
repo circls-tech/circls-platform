@@ -213,3 +213,38 @@ export interface PublicMembershipWithScope extends PublicMembership {
   scopeName: string;
   venueTags: string[];
 }
+
+// ── Help concerns (#115) ──────────────────────────────────────────────────────
+
+export type ConcernCategory =
+  | 'booking_issue'
+  | 'refund_request'
+  | 'reschedule'
+  | 'venue_question'
+  | 'payment'
+  | 'other';
+
+/** Body of POST /v1/consumer/support/concerns. */
+export interface SubmitConcernInput {
+  category: ConcernCategory;
+  bookingId?: string;
+  flowAnswers: { question: string; answer: string }[];
+  message: string;
+}
+
+/** A consumer support concern as returned by the API (the support_issues row). */
+export interface ConsumerConcern {
+  id: string;
+  userId: string;
+  message: string;
+  status: string;
+  priority: string;
+  source: string;
+  category: ConcernCategory | null;
+  bookingId: string | null;
+  flowAnswers: { question: string; answer: string }[] | null;
+  /** ISO-8601 */
+  createdAt: string;
+  /** ISO-8601 */
+  updatedAt: string;
+}
