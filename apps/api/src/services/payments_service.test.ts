@@ -30,6 +30,11 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   let arenaId: string;
   let userId: string;
 
+  // Monotonically-increasing day counter for seedPendingRefund so that each
+  // call produces a distinct November 2031 date and never triggers the
+  // slots_no_overlap exclusion constraint on the shared arenaId.
+  let _refundSlotDay = 1;
+
   beforeAll(async () => {
     await pingDb();
     __resetRazorpayForTesting();
@@ -357,8 +362,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       bookingId: string;
       refundRowId: string;
     }> {
-      const dd = String(Math.floor(1 + Math.random() * 28)).padStart(2, '0');
-      const dateIso = `2031-11-${dd}T05:00:00.000Z`;
+      const dateIso = `2031-11-${String(_refundSlotDay++).padStart(2, '0')}T05:00:00.000Z`;
       const { bookingId } = await seedPendingBookingWithOrder(dateIso);
       const [r] = await db
         .insert(payments)
