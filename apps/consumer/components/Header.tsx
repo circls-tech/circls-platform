@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { Button, BrandMark } from '@/lib/ui';
+import { HelpWidget } from '@/components/HelpWidget';
 
 export function Header() {
   const { user, loading, signOut } = useAuth();
@@ -43,9 +44,15 @@ export function Header() {
               >
                 Sign out
               </Button>
+              {/* Help entry point — top-right of Sign out (#115). */}
+              <HelpWidget />
             </>
           ) : (
-            <Link href="/login"><Button variant="primary" size="sm">Sign in</Button></Link>
+            <>
+              <Link href="/login"><Button variant="primary" size="sm">Sign in</Button></Link>
+              {/* Help entry point — top-right of Sign in in the signed-out branch (#115). */}
+              <HelpWidget />
+            </>
           )}
         </nav>
       </div>
