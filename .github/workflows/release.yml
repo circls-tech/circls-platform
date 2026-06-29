@@ -41,7 +41,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          # Push to the ruleset-protected `release` branch as VedantS01 (a bypass
+          # actor) instead of github-actions[bot] (which the protect-release ruleset
+          # blocks). persist-credentials keeps this token for the later git pushes.
+          token: ${{ secrets.RELEASE_DEPLOY_TOKEN }}
+          persist-credentials: true
 
       - name: Resolve target SHA
         id: target
