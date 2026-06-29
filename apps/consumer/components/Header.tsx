@@ -32,6 +32,7 @@ export function Header() {
           </button>
           <Link href="/venues" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Venues</Link>
           <Link href="/events" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Events</Link>
+          <Link href="/memberships" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Memberships</Link>
           {loading ? null : user ? (
             <>
               <Link href="/me/bookings" className="text-sm font-semibold text-ink-soft hover:text-ink">My bookings</Link>
