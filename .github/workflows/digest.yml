@@ -1,0 +1,69 @@
+name: Status digest
+
+# Twice-daily async status to MS Teams (+ the pinned GitHub tracker is the
+# always-there fallback). One card: review queue, blocked, needs-vedant, pending
+# release. Timed to each end of the IST<->US gap.
+on:
+  schedule:
+    - cron: '30 2 * * *'  # 08:00 IST — maintainer morning
+    - cron: '30 15 * * *' # 08:00 US Pacific-ish — team morning
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gather state and post to Teams
+        uses: actions/github-script@v7
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          SCHEDULE: ${{ github.event.schedule }}
+        with:
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const audience = process.env.SCHEDULE === '30 2 * * *' ? 'Maintainer morning (IST)' : 'Team morning (US)';
+
+            const { data: prs } = await github.rest.pulls.list({ owner, repo, state: 'open', per_page: 100 });
+            const awaitingReview = [], failing = [], conflicted = [];
+            for (const pr of prs) {
+              const { data: full } = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
+              if (full.mergeable_state === 'dirty') conflicted.push(pr);
+              else if (full.mergeable_state === 'blocked' || full.mergeable_state === 'unstable') failing.push(pr);
+              if (pr.requested_reviewers?.some(r => r.login === 'VedantS01')) awaitingReview.push(pr);
+            }
+            const { data: triage } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: 'needs-triage', per_page: 50 });
+            const { data: needsV } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: 'needs-vedant', per_page: 50 });
+
+            const line = (xs) => xs.length ? xs.map(x => `- #${x.number} ${x.title}`).join('\n') : '_none_';
+            const md = [
+              `**📋 Circls status — ${audience}**`,
+              ``, `**Awaiting @VedantS01 review (${awaitingReview.length})**`, line(awaitingReview),
+              ``, `**Failing CI (${failing.length})**`, line(failing),
+              ``, `**Conflicts — ask @claude to rebase (${conflicted.length})**`, line(conflicted),
+              ``, `**Blocked on product decision (${needsV.length})**`, line(needsV),
+              ``, `**Untriaged issues (${triage.length})**`, line(triage),
+              ``, `See the pinned 🚀 Release tracker for what's pending release.`,
+            ].join('\n');
+
+            const card = {
+              type: 'message',
+              attachments: [{
+                contentType: 'application/vnd.microsoft.card.adaptive',
+                content: {
+                  type: 'AdaptiveCard', version: '1.4',
+                  $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+                  body: [{ type: 'TextBlock', wrap: true, text: md }],
+                },
+              }],
+            };
+            if (!process.env.TEAMS_WEBHOOK_URL) { core.warning('TEAMS_WEBHOOK_URL not set — skipping post.'); return; }
+            const res = await fetch(process.env.TEAMS_WEBHOOK_URL, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card),
+            });
+            if (!res.ok) { core.setFailed(`Teams POST failed: ${res.status} ${await res.text()}`); }
+            else { core.info('Digest posted to Teams.'); }

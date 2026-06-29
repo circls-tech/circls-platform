@@ -1,19 +1,26 @@
-name: Release candidate
+name: Release tracker
 
-# Opens/updates a "Release candidate <date>" issue each morning: the diff release..main,
-# the migrations in the batch, and how to ship. This is the daily-sprint surface — it
-# deploys nothing. Safe before the release branch exists (it skips gracefully).
+# Maintains ONE rolling "🚀 Release tracker" issue showing release..main: the
+# commits that would ship, the migrations in the batch, and how to ship. Updated
+# every morning AND on every push to main, so it's current within minutes.
+# Deploys nothing. Safe before the release branch exists (skips gracefully).
 on:
   schedule:
     - cron: '30 2 * * *' # 08:00 IST
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: release-tracker
+  cancel-in-progress: true
+
 jobs:
-  candidate:
+  tracker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +32,7 @@ jobs:
           set -euo pipefail
           git fetch origin main --tags
           if ! git fetch origin release 2>/dev/null || ! git rev-parse --verify --quiet origin/release >/dev/null; then
-            echo "release branch not created yet — skipping candidate." >&2
+            echo "release branch not created yet — skipping tracker." >&2
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -34,34 +41,35 @@ jobs:
           node scripts/release/release-notes.mjs "$BASE" "$HEAD" > notes.md
           echo "head=$HEAD" >> "$GITHUB_OUTPUT"
 
-      - name: Open or update the candidate issue
+      - name: Upsert the rolling tracker issue
         if: steps.notes.outputs.skip != 'true'
         uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.notes.outputs.head }}
         with:
           script: |
             const fs = require('fs');
-            const head = '${{ steps.notes.outputs.head }}';
+            const head = process.env.HEAD_SHA;
             const body = fs.readFileSync('notes.md', 'utf8') +
               `\n\n---\n**To ship:** Actions → **Release** → Run workflow ` +
-              `(target defaults to \`main\` tip \`${head.slice(0,7)}\`).\n` +
+              `(target defaults to \`main\` tip \`${head.slice(0, 7)}\`).\n` +
               `**To roll back:** Actions → **Rollback** → Run workflow (defaults to \`lkg\`).`;
-            const today = new Date().toISOString().slice(0, 10);
-            const title = `Release candidate ${today}`;
+            const TITLE = '🚀 Release tracker';
             const open = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo,
               state: 'open', labels: 'release-candidate',
             });
-            const mine = open.data.find((i) => i.title === title);
+            const mine = open.data.find((i) => i.title === TITLE);
             if (mine) {
               await github.rest.issues.update({
                 owner: context.repo.owner, repo: context.repo.repo,
                 issue_number: mine.number, body,
               });
-              core.info(`Updated #${mine.number}`);
+              core.info(`Updated rolling tracker #${mine.number}`);
             } else {
               const created = await github.rest.issues.create({
                 owner: context.repo.owner, repo: context.repo.repo,
-                title, body, labels: ['release-candidate'],
+                title: TITLE, body, labels: ['release-candidate'],
               });
-              core.info(`Created #${created.data.number}`);
+              core.info(`Created rolling tracker #${created.data.number}`);
             }

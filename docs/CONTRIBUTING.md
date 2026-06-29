@@ -2,19 +2,16 @@
 
 **Every change to `main` goes through a PR that passes CI. Do not push to `main` directly.**
 
-> **Enforcement status:** hard server-side blocking (the `protect-main` ruleset) needs
-> GitHub Pro for this private repo. Until that's enabled, enforcement is **soft**:
-> `.github/workflows/guard-main.yml` runs on every push to `main` and opens a loud
-> `main-guard` alert issue if a commit lands without a PR. CI also runs on every push to
-> `main`, so a bad direct push turns `main` red immediately. Treat a direct push as a
-> process violation — open a retroactive PR or revert.
+> **Enforcement status:** the `protect-main` ruleset hard-blocks direct pushes to `main`
+> and requires at least one approval from **@VedantS01** plus green `verify`/`db` checks.
+> This is enforced server-side — no bypass is possible.
 
 ## The loop
 1. Branch off `main` (or use a git worktree).
 2. Make your change. Keep migrations correctly numbered (see below).
 3. Open a PR to `main`. CI runs automatically.
-4. When **both** checks are green — `verify` and `db` — merge. (Solo: 0 approvals required,
-   so you can merge your own PR once CI passes.)
+4. When **both** checks are green — `verify` and `db` — and **@VedantS01 has approved**,
+   the maintainer merges on their next review pass.
 
 ## CI (`.github/workflows/ci.yml`)
 - **verify** (no DB): migration-numbering check, `pnpm -r typecheck`, `pnpm -r test`
@@ -30,9 +27,22 @@ skipped); **duplicates are not**. Because parallel branches can each grab the sa
 number, treat your migration number as tentative and renumber at merge if needed. CI's
 migration-numbering check (`scripts/release/check-migrations.mjs`) enforces this.
 
-## Enabling hard branch protection (one-time, admin — needs GitHub Pro)
-Once the repo is on GitHub Pro (required for rulesets/branch protection on private repos),
-run `bash scripts/release/protect-main.sh` as a repo admin (active gh account `VedantS01`).
-It creates/updates the `protect-main` ruleset: PR required, `verify`/`db` checks must pass,
-no direct/force push, no bypass (applies to admins too). Idempotent — safe to re-run. On the
-free plan it returns HTTP 403; the `guard-main.yml` soft check covers the gap until then.
+## Branch protection
+The `protect-main` ruleset is active: PR required, `verify`/`db` checks must pass,
+no direct/force push, no bypass (applies to admins too). The ruleset was created by running
+`bash scripts/release/protect-main.sh` as a repo admin (active gh account `VedantS01`).
+Idempotent — safe to re-run if the ruleset ever needs to be refreshed.
+
+## Async working agreement
+
+We work across timezones. To keep things moving without calls:
+
+- **Status lives on the [Circls Delivery board](https://github.com/orgs/circls-tech/projects/1)
+  (`Backlog → Ready to release → Released`) and the pinned 🚀 Release tracker — look there, don't ask.**
+- **Stuck on tech (conflicts, failing checks)?** Comment `@claude …` on your PR
+  (see the PR template). Don't wait on a human.
+- **Need a decision or review?** Add the **`needs-vedant`** label and write the
+  question on the issue/PR. @VedantS01 reviews once per day (~08:00 IST) and in
+  the twice-daily Teams digest. No calls needed.
+- **Only the maintainer merges.** A green PR + approval ships on the maintainer's
+  next pass.

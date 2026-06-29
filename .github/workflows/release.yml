@@ -33,6 +33,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: production
     env:
       REQUIRED_CHECKS: 'verify,db'
       HEALTH_URL: 'https://api.circls.app/v1/health'
@@ -40,7 +41,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          # Push to the ruleset-protected `release` branch as VedantS01 (a bypass
+          # actor) instead of github-actions[bot] (which the protect-release ruleset
+          # blocks). persist-credentials keeps this token for the later git pushes.
+          token: ${{ secrets.RELEASE_DEPLOY_TOKEN }}
+          persist-credentials: true
 
       - name: Resolve target SHA
         id: target
@@ -53,6 +60,8 @@ jobs:
           if [ -z "$SHA" ]; then SHA=$(git rev-parse origin/main); fi
           SHA=$(git rev-parse "$SHA")
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          PREV=$(git rev-parse --verify --quiet origin/release || true)
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
           echo "Target SHA: $SHA"
 
       - name: Pre-flight — target is on main and fast-forward from release
@@ -72,8 +81,35 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/commits/$TARGET_SHA/check-runs" > checks.json
-          node scripts/release/check-ci.mjs < checks.json
+          # Poll until every required check completes rather than failing immediately on
+          # in-progress checks (fixes the timing race when a release is triggered shortly
+          # after the merge, before CI has finished on that commit).
+          #   exit 0 from check-ci.mjs = all required checks green       → proceed
+          #   exit 1 from check-ci.mjs = a required check concluded bad   → abort now
+          #   exit 2 from check-ci.mjs = required check(s) still running  → wait and retry
+          DEADLINE=$(( $(date +%s) + 900 ))  # 15-minute wait budget
+          while true; do
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/check-runs" > checks.json
+            CODE=0
+            node scripts/release/check-ci.mjs < checks.json || CODE=$?
+            if [ "$CODE" -eq 0 ]; then
+              echo "All required checks are green — proceeding."
+              break
+            elif [ "$CODE" -eq 1 ]; then
+              echo "::error::A required check has failed — refusing to release."
+              exit 1
+            else
+              # exit 2: one or more required checks are still queued / in-progress
+              NOW=$(date +%s)
+              if [ "$NOW" -ge "$DEADLINE" ]; then
+                echo "::error::Timed out after 15 minutes waiting for required checks to complete."
+                exit 1
+              fi
+              REMAINING=$(( DEADLINE - NOW ))
+              echo "Required checks still in progress — retrying in 15 s (${REMAINING}s left)..."
+              sleep 15
+            fi
+          done
 
       - name: Pre-flight — prod is currently healthy
         run: |
@@ -125,7 +161,7 @@ jobs:
           git push -f origin refs/tags/lkg || echo "::warning::lkg tag push failed; the release itself succeeded"
           echo "lkg → $TARGET_SHA"
 
-      - name: Comment success on today's candidate issue
+      - name: Update the rolling release tracker
         if: success()
         uses: actions/github-script@v7
         env:
@@ -133,19 +169,122 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         with:
           script: |
-            const today = new Date().toISOString().slice(0, 10);
+            const TITLE = '🚀 Release tracker';
             const open = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo,
               state: 'open', labels: 'release-candidate',
             });
-            const issue = open.data.find((i) => i.title === `Release candidate ${today}`);
-            if (issue) {
-              const tag = process.env.DEPLOY_TAG;
-              const sha = process.env.TARGET_SHA;
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
-                body: `✅ Released \`${tag}\` (\`${sha.slice(0, 7)}\`). lkg updated.`,
-              });
+            const issue = open.data.find((i) => i.title === TITLE);
+            if (!issue) { core.info('No rolling tracker to update.'); return; }
+            const tag = process.env.DEPLOY_TAG;
+            const sha = process.env.TARGET_SHA;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+              body: `✅ Released \`${tag}\` (\`${sha.slice(0, 7)}\`). lkg updated.`,
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+              body: `Nothing pending release as of \`${tag}\` (\`${sha.slice(0, 7)}\`).\n\nThe next push to \`main\` will repopulate this tracker.`,
+            });
+
+      - name: Post release notes to Teams
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          DEPLOY_TAG: ${{ steps.deploy.outputs.tag }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          PREV_RELEASE: ${{ steps.target.outputs.prev }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        with:
+          script: |
+            if (!process.env.TEAMS_WEBHOOK_URL) { core.warning('TEAMS_WEBHOOK_URL not set — skipping release notes.'); return; }
+            const { execFileSync } = require('node:child_process');
+            const target = process.env.TARGET_SHA;
+            const prev = process.env.PREV_RELEASE;
+            const base = prev && prev.length ? prev : `${target}^`;
+            let notes = '';
+            try {
+              notes = execFileSync('node', ['scripts/release/release-notes.mjs', base, target], { encoding: 'utf8' });
+            } catch (e) {
+              core.warning(`release-notes generation failed: ${e.message}`);
+              notes = '_(release notes unavailable)_';
+            }
+            const text = `**✅ Released \`${process.env.DEPLOY_TAG}\`**\n\n${notes}`;
+            const card = {
+              type: 'message',
+              attachments: [{
+                contentType: 'application/vnd.microsoft.card.adaptive',
+                content: {
+                  type: 'AdaptiveCard', version: '1.4',
+                  $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+                  body: [{ type: 'TextBlock', wrap: true, text }],
+                },
+              }],
+            };
+            const res = await fetch(process.env.TEAMS_WEBHOOK_URL, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card),
+            });
+            if (!res.ok) core.warning(`Teams release-notes POST failed: ${res.status} ${await res.text()}`);
+            else core.info('Release notes posted to Teams.');
+
+      - name: Mark shipped items Released on the project board
+        if: success()
+        env:
+          PROJECT_NUMBER: '1'
+        uses: actions/github-script@v7
+        with:
+          # Needs a token with org project write — the RELEASE_DEPLOY_TOKEN PAT
+          # (classic, with the `project` scope). The default GITHUB_TOKEN can't
+          # write org-level Projects. Board update is best-effort: a delivered
+          # release is never failed for a board hiccup (warn, don't setFailed).
+          github-token: ${{ secrets.RELEASE_DEPLOY_TOKEN }}
+          script: |
+            const org = context.repo.owner;
+            const number = parseInt(process.env.PROJECT_NUMBER, 10);
+            let meta;
+            try {
+              meta = await github.graphql(`
+                query($org:String!, $number:Int!){
+                  organization(login:$org){
+                    projectV2(number:$number){
+                      id
+                      field(name:"Status"){ ... on ProjectV2SingleSelectField { id options { id name } } }
+                    }
+                  }
+                }`, { org, number });
+            } catch (e) { core.warning(`Project lookup failed: ${e.message}`); return; }
+            const project = meta.organization && meta.organization.projectV2;
+            if (!project || !project.field) { core.warning('Project or Status field not found — skipping board update.'); return; }
+            const ready = project.field.options.find((o) => o.name === 'Ready to release');
+            const released = project.field.options.find((o) => o.name === 'Released');
+            if (!ready || !released) { core.warning('Ready to release / Released options not found — skipping.'); return; }
+            // Best-effort: never fail a delivered release for a board hiccup.
+            try {
+              const toMove = [];
+              let cursor = null;
+              do {
+                const page = await github.graphql(`
+                  query($id:ID!, $cursor:String){
+                    node(id:$id){ ... on ProjectV2 { items(first:100, after:$cursor){
+                      pageInfo{ hasNextPage endCursor }
+                      nodes{ id fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { optionId } } }
+                    } } }
+                  }`, { id: project.id, cursor });
+                const conn = page.node.items;
+                for (const it of conn.nodes) {
+                  if (it.fieldValueByName && it.fieldValueByName.optionId === ready.id) toMove.push(it.id);
+                }
+                cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+              } while (cursor);
+              for (const itemId of toMove) {
+                await github.graphql(`
+                  mutation($project:ID!, $item:ID!, $field:ID!, $option:String!){
+                    updateProjectV2ItemFieldValue(input:{ projectId:$project, itemId:$item, fieldId:$field, value:{ singleSelectOptionId:$option } }){ projectV2Item { id } }
+                  }`, { project: project.id, item: itemId, field: project.field.id, option: released.id });
+              }
+              core.info(`Moved ${toMove.length} item(s) from "Ready to release" to "Released".`);
+            } catch (e) {
+              core.warning(`Board update failed (release still succeeded): ${e.message}`);
             }
 
       - name: Alert on failure
@@ -169,3 +308,31 @@ jobs:
               ].join('\n'),
               labels: ['release'],
             });
+
+      - name: Ping Teams on failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        with:
+          script: |
+            if (!process.env.TEAMS_WEBHOOK_URL) return;
+            const sha = (process.env.TARGET_SHA || 'unknown').slice(0, 7);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const text = `**🔴 Release failed (\`${sha}\`)**\n\nProd may be mid-deploy. Run: ${runUrl}\n\n**If prod is unhealthy, trigger Rollback (defaults to \`lkg\`).**`;
+            const card = {
+              type: 'message',
+              attachments: [{
+                contentType: 'application/vnd.microsoft.card.adaptive',
+                content: {
+                  type: 'AdaptiveCard', version: '1.4',
+                  $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+                  body: [{ type: 'TextBlock', wrap: true, text }],
+                },
+              }],
+            };
+            const res = await fetch(process.env.TEAMS_WEBHOOK_URL, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card),
+            });
+            if (!res.ok) core.warning(`Teams failure POST failed: ${res.status}`);

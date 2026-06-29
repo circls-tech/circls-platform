@@ -6,7 +6,16 @@ import {
   signOut as fbSignOut,
 } from 'firebase/auth';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { apiFetch } from '@/lib/api/client';
 import { auth } from './client';
+
+/** Best-effort login audit — must never block or fail the sign-in flow. */
+function recordLogin(): void {
+  void apiFetch('/v1/me/login', {
+    method: 'POST',
+    body: JSON.stringify({ source: 'admin' }),
+  }).catch(() => {});
+}
 
 /**
  * Email + password Firebase Auth — staff-only console. Tenant onboarding
@@ -39,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       async signInWithEmail(email: string, password: string) {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        recordLogin();
         return cred.user;
       },
       async signOut() {
