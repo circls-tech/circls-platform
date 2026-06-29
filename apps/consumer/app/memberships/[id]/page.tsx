@@ -2,6 +2,7 @@
 import { use } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { useMembership } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatPaise } from '@/lib/format';
@@ -34,7 +35,8 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-3xl px-4 pt-8 pb-8">
+        <BackBar />
         {membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (

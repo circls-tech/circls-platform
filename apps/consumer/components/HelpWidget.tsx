@@ -1,5 +1,6 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyBookings, useSubmitConcern } from '@/lib/api/consumer';
@@ -226,6 +227,10 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
 export function HelpWidget() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Portal target is only available in the browser.
+  useEffect(() => setMounted(true), []);
 
   return (
     <>
@@ -236,10 +241,10 @@ export function HelpWidget() {
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        Help
+        Support
       </Button>
 
-      {open && (
+      {open && mounted && createPortal(
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Help">
           <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-[2.5px] border-ink bg-surface shadow-offset">
@@ -272,7 +277,8 @@ export function HelpWidget() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
