@@ -75,8 +75,35 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/commits/$TARGET_SHA/check-runs" > checks.json
-          node scripts/release/check-ci.mjs < checks.json
+          # Poll until every required check completes rather than failing immediately on
+          # in-progress checks (fixes the timing race when a release is triggered shortly
+          # after the merge, before CI has finished on that commit).
+          #   exit 0 from check-ci.mjs = all required checks green       → proceed
+          #   exit 1 from check-ci.mjs = a required check concluded bad   → abort now
+          #   exit 2 from check-ci.mjs = required check(s) still running  → wait and retry
+          DEADLINE=$(( $(date +%s) + 900 ))  # 15-minute wait budget
+          while true; do
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/check-runs" > checks.json
+            CODE=0
+            node scripts/release/check-ci.mjs < checks.json || CODE=$?
+            if [ "$CODE" -eq 0 ]; then
+              echo "All required checks are green — proceeding."
+              break
+            elif [ "$CODE" -eq 1 ]; then
+              echo "::error::A required check has failed — refusing to release."
+              exit 1
+            else
+              # exit 2: one or more required checks are still queued / in-progress
+              NOW=$(date +%s)
+              if [ "$NOW" -ge "$DEADLINE" ]; then
+                echo "::error::Timed out after 15 minutes waiting for required checks to complete."
+                exit 1
+              fi
+              REMAINING=$(( DEADLINE - NOW ))
+              echo "Required checks still in progress — retrying in 15 s (${REMAINING}s left)..."
+              sleep 15
+            fi
+          done
 
       - name: Pre-flight — prod is currently healthy
         run: |

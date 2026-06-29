@@ -119,6 +119,83 @@ test('allChecksPassed: empty requiredNames fails closed (misconfig, not vacuousl
   assert.equal(allChecksPassed('{"check_runs":[{"name":"verify","status":"completed","conclusion":"success"}]}', []).ok, false);
 });
 
+// --- 3-state status field tests (success / failed / pending) ---
+
+test('allChecksPassed: all required green → status success', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'completed', conclusion: 'success' },
+    { name: 'db', status: 'completed', conclusion: 'success' },
+  ] });
+  const r = allChecksPassed(json, ['verify', 'db']);
+  assert.equal(r.status, 'success');
+  assert.equal(r.ok, true);
+});
+
+test('allChecksPassed: completed non-success → status failed (abort immediately)', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'completed', conclusion: 'success' },
+    { name: 'db', status: 'completed', conclusion: 'failure' },
+  ] });
+  const r = allChecksPassed(json, ['verify', 'db']);
+  assert.equal(r.status, 'failed');
+  assert.equal(r.ok, false);
+});
+
+test('allChecksPassed: cancelled/timed_out conclusions → status failed', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'completed', conclusion: 'cancelled' },
+    { name: 'db', status: 'completed', conclusion: 'success' },
+  ] });
+  assert.equal(allChecksPassed(json, ['verify', 'db']).status, 'failed');
+});
+
+test('allChecksPassed: in_progress required check → status pending (wait, not abort)', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'in_progress', conclusion: null },
+    { name: 'db', status: 'completed', conclusion: 'success' },
+  ] });
+  const r = allChecksPassed(json, ['verify', 'db']);
+  assert.equal(r.status, 'pending');
+  assert.equal(r.ok, false);
+});
+
+test('allChecksPassed: queued required check → status pending', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'queued', conclusion: null },
+    { name: 'db', status: 'completed', conclusion: 'success' },
+  ] });
+  assert.equal(allChecksPassed(json, ['verify', 'db']).status, 'pending');
+});
+
+test('allChecksPassed: missing required check → status pending (not yet started)', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'db', status: 'completed', conclusion: 'success' },
+  ] });
+  assert.equal(allChecksPassed(json, ['verify', 'db']).status, 'pending');
+});
+
+test('allChecksPassed: failed check takes priority over pending (abort, do not wait)', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'in_progress', conclusion: null },
+    { name: 'db', status: 'completed', conclusion: 'failure' },
+  ] });
+  assert.equal(allChecksPassed(json, ['verify', 'db']).status, 'failed');
+});
+
+test('allChecksPassed: empty requiredNames → status failed (fail closed on misconfig)', () => {
+  assert.equal(allChecksPassed('{"check_runs":[]}', []).status, 'failed');
+});
+
+test('allChecksPassed: detail entries carry result field', () => {
+  const json = JSON.stringify({ check_runs: [
+    { name: 'verify', status: 'completed', conclusion: 'success' },
+    { name: 'db', status: 'in_progress', conclusion: null },
+  ] });
+  const { details } = allChecksPassed(json, ['verify', 'db']);
+  assert.equal(details.find((d) => d.name === 'verify').result, 'success');
+  assert.equal(details.find((d) => d.name === 'db').result, 'pending');
+});
+
 test('formatReleaseNotes: title reads "Pending release"', () => {
   const md = formatReleaseNotes({
     baseSha: 'aaaaaaa0', headSha: 'bbbbbbb0',
