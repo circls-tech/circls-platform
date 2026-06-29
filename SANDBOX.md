@@ -5,19 +5,19 @@ real payments, or send real emails/SMS. Break things freely — `./sandbox reset
 puts it back.
 
 ## One-time setup
-1. Ask the maintainer to give your GitHub account **Read** access to the `circls-tech` org repo (one-time).
+1. Ask the maintainer to give your GitHub account **Write** access to the `circls-tech/circls-platform` repo (one-time).
 2. Install **Docker Desktop** and the **GitHub CLI** (`gh`). Open Docker Desktop so it's running.
 3. Sign in to GitHub: `gh auth login`.
 4. Get the project:
    ```
-   gh repo clone circls-tech/circls-platform
+   git clone https://github.com/circls-tech/circls-platform.git
    cd circls-platform
    ```
-5. Run the setup (forks the repo to **your** account, installs the safety guard, builds the app — a few minutes):
+5. Run the setup (builds the app — a few minutes):
    ```
    ./sandbox setup
    ```
-6. Quick check it worked: run `git remote -v`. The **origin** line should show **your-username/circls-platform** (your personal fork). If it still shows `circls-tech`, tell the maintainer before continuing.
+6. Quick check it worked: run `git remote -v`. The **origin** line should show `circls-tech/circls-platform`.
 
 ## Daily use
 - Start everything:  `./sandbox up`
@@ -36,5 +36,6 @@ puts it back.
 - Stop: `./sandbox down`
 
 ## Shipping your work
-Ask Claude Code to commit your changes and **open a pull request**. You cannot
-push to the main project — that is intentional. A maintainer reviews and merges.
+Ask Claude Code to commit your changes, create a feature **branch in this repo**,
+push the branch to `origin`, and **open a pull request against `main`**. A
+maintainer reviews and merges.

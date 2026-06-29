@@ -16,17 +16,18 @@ Adding a brand-new partner feature usually means adding a new article: add an en
 
 ## Sandbox & contribution rules (read first if you are a team member)
 
-You are working in a **local sandbox**. Your only path to ship work is a pull
-request from your fork. You must NEVER:
+You are a contributor with **Write** access to this repo. Your only path to ship
+work is a pull request. You must NEVER:
 
 - push to `main` or `release` (a push to `release` deploys to production),
 - merge a pull request (`gh pr merge`), or
-- force-push or delete branches on any shared remote.
+- force-push or delete `main`/`release`.
 
-Always: create a branch → commit → push to **your fork** (`origin`) → open a PR
-against the upstream repo. A maintainer reviews and merges. These rules are also
-enforced by a pre-push git hook and a Claude Code guard; do not try to bypass
-them (`--no-verify` is not allowed).
+Always: create a feature **branch in this repo** → commit → push the branch →
+open a PR against `main`. CI must be green and **@VedantS01 must approve** — a
+GitHub ruleset enforces this. If your PR has conflicts or a failing check,
+comment `@claude …` on the PR (see the PR template) instead of calling the
+maintainer. (`--no-verify` is not allowed.)
 
 Run the app with `./sandbox up` (see `SANDBOX.md`). All payments, storage, SMS,
 and email are simulated locally — nothing reaches real users or money.
