@@ -13,7 +13,20 @@ New venues start in **pending review**. You can edit details, add a map location
 
 ## Editing a venue
 
-Open a venue from the **Venues** list to reach its detail page. From there you can update its name, timezone, location coordinates and tags, manage its photos, and jump to its **Events** and **Bookings**.
+Open a venue from the **Venues** list to reach its detail page. The **Venue details** panel at the top of that page lets you edit everything customers see and save it in place — name, timezone (read-only here), tags and map coordinates, plus the trust details below. You can also manage photos and jump to **Events** and **Bookings**.
+
+### Venue details (description, amenities, hours, contact, address)
+
+These fields appear on your public venue page, so keep them accurate — stale details erode trust.
+
+- **Description** — a free-text summary of the venue and what makes it great (up to 2000 characters).
+- **Amenities** — tap the chips to toggle the facilities you offer (parking, restrooms, changing rooms, showers, drinking water, café, equipment rental, first aid, Wi-Fi, lockers, seating, floodlights, air conditioning, wheelchair access, pro shop, coaching). Only this canonical list is accepted.
+- **Opening hours** — set an open and close time for each weekday, or tick **Closed** for days you do not operate. Times are in the venue's timezone.
+- **Contact** — a public phone number and/or email for the venue.
+- **Address** — structured street address (line 1/2, city, state, postal code, country).
+- **Map location** — latitude/longitude for the map pin (optional).
+
+Click **Save details** to apply. Editing these does not change your venue's approval status.
 
 ## Adding and managing arenas
 

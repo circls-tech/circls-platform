@@ -33,8 +33,18 @@ import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { CouponPricing } from './booking_service.js';
 
-export async function listMembershipsForTenant(tenantId: string): Promise<Membership[]> {
-  return db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
+/** Partner-facing membership row enriched with the derived artwork URL (PR #110). */
+export interface PartnerMembership extends Membership {
+  coverUrl: string | null;
+}
+
+function withCoverUrl(m: Membership): PartnerMembership {
+  return { ...m, coverUrl: m.coverStorageKey ? getStorage().publicUrl(m.coverStorageKey) : null };
+}
+
+export async function listMembershipsForTenant(tenantId: string): Promise<PartnerMembership[]> {
+  const rows = await db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
+  return rows.map(withCoverUrl);
 }
 
 export async function getMembership(
@@ -560,7 +570,7 @@ export async function finalizeMembershipCover(
   tenantId: string,
   membershipId: string,
   storageKey: string,
-): Promise<Membership> {
+): Promise<PartnerMembership> {
   const existing = await getMembershipForTenant(tenantId, membershipId);
   if (!storageKey.startsWith(coverPrefix(membershipId))) {
     throw new Conflict('storageKey does not belong to this membership', 'bad_storage_key');
@@ -588,13 +598,13 @@ export async function finalizeMembershipCover(
   if (existing.coverStorageKey && existing.coverStorageKey !== storageKey) {
     await storage.delete(existing.coverStorageKey).catch(() => {});
   }
-  return row;
+  return withCoverUrl(row);
 }
 
 export async function removeMembershipCover(
   tenantId: string,
   membershipId: string,
-): Promise<Membership> {
+): Promise<PartnerMembership> {
   const existing = await getMembershipForTenant(tenantId, membershipId);
   const [row] = await db
     .update(memberships)
@@ -605,5 +615,5 @@ export async function removeMembershipCover(
   if (existing.coverStorageKey) {
     await getStorage().delete(existing.coverStorageKey).catch(() => {});
   }
-  return row;
+  return withCoverUrl(row);
 }

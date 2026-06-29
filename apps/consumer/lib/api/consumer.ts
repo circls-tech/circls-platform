@@ -9,6 +9,7 @@ import type {
   PublicEvent,
   PublicEventWithVenue,
   PublicMembershipWithScope,
+  PublicOrg,
   PublicSlot,
   PublicVenue,
   PurchaseMembershipInput,
@@ -17,6 +18,15 @@ import type {
 } from './types';
 
 // ── Browse (public, no auth) ──────────────────────────────────────────────────
+
+/** A public org/brand profile by slug (PR #108). 404s for inactive/missing orgs. */
+export function usePublicOrg(slug: string) {
+  return useQuery({
+    queryKey: ['org', slug],
+    queryFn: () => apiFetch<PublicOrg>(`/v1/consumer/orgs/${slug}`),
+    enabled: Boolean(slug),
+  });
+}
 
 export function useVenues(search: string, limit = 50) {
   const trimmed = search.trim();

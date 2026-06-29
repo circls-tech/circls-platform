@@ -73,12 +73,20 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 6,
   },
   {
+    slug: 'organisation',
+    title: 'Managing your organisation profile',
+    category: 'Settings',
+    summary:
+      'Edit your organisation’s brand profile — logo, description, contact details, website, socials and address — that customers see across Circls.',
+    order: 7,
+  },
+  {
     slug: 'team',
     title: 'Inviting and managing team members',
     category: 'Settings',
     summary:
       'How to invite colleagues to your organisation, assign roles (owner, manager, staff, read-only), and revoke access.',
-    order: 7,
+    order: 8,
   },
   {
     slug: 'api-keys',
@@ -86,7 +94,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     category: 'Developer',
     summary:
       'How to generate API keys, configure outbound webhooks, and integrate circls with your own systems.',
-    order: 8,
+    order: 9,
   },
   {
     slug: 'coupons',
@@ -94,7 +102,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     category: 'Discounts',
     summary:
       'Create percentage or fixed-amount discount codes, scope them to your org / a venue / a specific event, arena or membership, set validity and redemption limits, and choose whether they are public or private.',
-    order: 9,
+    order: 10,
   },
 ];
 
