@@ -258,29 +258,34 @@ jobs:
             const ready = project.field.options.find((o) => o.name === 'Ready to release');
             const released = project.field.options.find((o) => o.name === 'Released');
             if (!ready || !released) { core.warning('Ready to release / Released options not found — skipping.'); return; }
-            const toMove = [];
-            let cursor = null;
-            do {
-              const page = await github.graphql(`
-                query($id:ID!, $cursor:String){
-                  node(id:$id){ ... on ProjectV2 { items(first:100, after:$cursor){
-                    pageInfo{ hasNextPage endCursor }
-                    nodes{ id fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { optionId } } }
-                  } } }
-                }`, { id: project.id, cursor });
-              const conn = page.node.items;
-              for (const it of conn.nodes) {
-                if (it.fieldValueByName && it.fieldValueByName.optionId === ready.id) toMove.push(it.id);
+            // Best-effort: never fail a delivered release for a board hiccup.
+            try {
+              const toMove = [];
+              let cursor = null;
+              do {
+                const page = await github.graphql(`
+                  query($id:ID!, $cursor:String){
+                    node(id:$id){ ... on ProjectV2 { items(first:100, after:$cursor){
+                      pageInfo{ hasNextPage endCursor }
+                      nodes{ id fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { optionId } } }
+                    } } }
+                  }`, { id: project.id, cursor });
+                const conn = page.node.items;
+                for (const it of conn.nodes) {
+                  if (it.fieldValueByName && it.fieldValueByName.optionId === ready.id) toMove.push(it.id);
+                }
+                cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+              } while (cursor);
+              for (const itemId of toMove) {
+                await github.graphql(`
+                  mutation($project:ID!, $item:ID!, $field:ID!, $option:String!){
+                    updateProjectV2ItemFieldValue(input:{ projectId:$project, itemId:$item, fieldId:$field, value:{ singleSelectOptionId:$option } }){ projectV2Item { id } }
+                  }`, { project: project.id, item: itemId, field: project.field.id, option: released.id });
               }
-              cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
-            } while (cursor);
-            for (const itemId of toMove) {
-              await github.graphql(`
-                mutation($project:ID!, $item:ID!, $field:ID!, $option:String!){
-                  updateProjectV2ItemFieldValue(input:{ projectId:$project, itemId:$item, fieldId:$field, value:{ singleSelectOptionId:$option } }){ projectV2Item { id } }
-                }`, { project: project.id, item: itemId, field: project.field.id, option: released.id });
+              core.info(`Moved ${toMove.length} item(s) from "Ready to release" to "Released".`);
+            } catch (e) {
+              core.warning(`Board update failed (release still succeeded): ${e.message}`);
             }
-            core.info(`Moved ${toMove.length} item(s) from "Ready to release" to "Released".`);
 
       - name: Alert on failure
         if: failure()
