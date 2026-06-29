@@ -227,6 +227,61 @@ jobs:
             if (!res.ok) core.warning(`Teams release-notes POST failed: ${res.status} ${await res.text()}`);
             else core.info('Release notes posted to Teams.');
 
+      - name: Mark shipped items Released on the project board
+        if: success()
+        env:
+          PROJECT_NUMBER: '1'
+        uses: actions/github-script@v7
+        with:
+          # Needs a token with org project write — the RELEASE_DEPLOY_TOKEN PAT
+          # (classic, with the `project` scope). The default GITHUB_TOKEN can't
+          # write org-level Projects. Board update is best-effort: a delivered
+          # release is never failed for a board hiccup (warn, don't setFailed).
+          github-token: ${{ secrets.RELEASE_DEPLOY_TOKEN }}
+          script: |
+            const org = context.repo.owner;
+            const number = parseInt(process.env.PROJECT_NUMBER, 10);
+            let meta;
+            try {
+              meta = await github.graphql(`
+                query($org:String!, $number:Int!){
+                  organization(login:$org){
+                    projectV2(number:$number){
+                      id
+                      field(name:"Status"){ ... on ProjectV2SingleSelectField { id options { id name } } }
+                    }
+                  }
+                }`, { org, number });
+            } catch (e) { core.warning(`Project lookup failed: ${e.message}`); return; }
+            const project = meta.organization && meta.organization.projectV2;
+            if (!project || !project.field) { core.warning('Project or Status field not found — skipping board update.'); return; }
+            const ready = project.field.options.find((o) => o.name === 'Ready to release');
+            const released = project.field.options.find((o) => o.name === 'Released');
+            if (!ready || !released) { core.warning('Ready to release / Released options not found — skipping.'); return; }
+            const toMove = [];
+            let cursor = null;
+            do {
+              const page = await github.graphql(`
+                query($id:ID!, $cursor:String){
+                  node(id:$id){ ... on ProjectV2 { items(first:100, after:$cursor){
+                    pageInfo{ hasNextPage endCursor }
+                    nodes{ id fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue { optionId } } }
+                  } } }
+                }`, { id: project.id, cursor });
+              const conn = page.node.items;
+              for (const it of conn.nodes) {
+                if (it.fieldValueByName && it.fieldValueByName.optionId === ready.id) toMove.push(it.id);
+              }
+              cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+            } while (cursor);
+            for (const itemId of toMove) {
+              await github.graphql(`
+                mutation($project:ID!, $item:ID!, $field:ID!, $option:String!){
+                  updateProjectV2ItemFieldValue(input:{ projectId:$project, itemId:$item, fieldId:$field, value:{ singleSelectOptionId:$option } }){ projectV2Item { id } }
+                }`, { project: project.id, item: itemId, field: project.field.id, option: released.id });
+            }
+            core.info(`Moved ${toMove.length} item(s) from "Ready to release" to "Released".`);
+
       - name: Alert on failure
         if: failure()
         uses: actions/github-script@v7
