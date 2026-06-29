@@ -35,7 +35,7 @@ export function parseCommits(text) {
 
 /** Render the release-candidate / release-notes markdown body. */
 export function formatReleaseNotes({ baseSha, headSha, commits, migrations }) {
-  const lines = [`### Release candidate: \`${short(baseSha)}\` → \`${short(headSha)}\``, ''];
+  const lines = [`### Pending release: \`${short(baseSha)}\` → \`${short(headSha)}\``, ''];
   if (commits.length === 0) {
     lines.push('_No new commits — `release` is already at `main`. Nothing to ship._');
     return lines.join('\n');
