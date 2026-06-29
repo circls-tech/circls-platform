@@ -18,6 +18,20 @@ export const membershipStatus = pgEnum('membership_status', [
   'rejected',
 ]);
 
+/**
+ * Typed membership benefits (PR #110). Replaces the opaque jsonb blob with an
+ * ordered list of labelled perks; `detail` is an optional secondary line. The
+ * `MembershipBenefits` wrapper keeps the column extensible (e.g. future
+ * grouping) without another migration.
+ */
+export interface MembershipBenefitItem {
+  label: string;
+  detail?: string;
+}
+export interface MembershipBenefits {
+  items: MembershipBenefitItem[];
+}
+
 export const memberships = pgTable('memberships', {
   id: uuidPk(),
   tenantId: uuid('tenant_id')
@@ -29,7 +43,14 @@ export const memberships = pgTable('memberships', {
   description: text('description'),
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   durationDays: integer('duration_days').notNull(),
-  benefits: jsonb('benefits').$type<Record<string, unknown>>().notNull().default({}),
+  /** Typed list of perks ({ items: [...] }); see MembershipBenefits + the
+   *  coercion helper in lib/membership_benefits.ts. */
+  benefits: jsonb('benefits').$type<MembershipBenefits>().notNull().default({ items: [] }),
+  /** Optional plan terms & conditions (free text). */
+  terms: text('terms'),
+  /** R2 object key of the single cover/artwork image; public URL derived at the
+   *  service layer (finalized via presign+HEAD like venue images). */
+  coverStorageKey: text('cover_storage_key'),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: membershipStatus('status').notNull().default('active'),
   createdAt: createdAt(),

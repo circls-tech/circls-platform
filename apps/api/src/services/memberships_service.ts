@@ -13,14 +13,21 @@
  * webhook can flip it to 'active'. For the walk-in/MVP flow this is good
  * enough; the consumer Flutter app will gate access via payment status.
  */
+import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { env } from '../config/env.js';
-import { memberships, type Membership, userMemberships } from '../db/schema/memberships.js';
+import {
+  memberships,
+  type Membership,
+  type MembershipBenefits,
+  userMemberships,
+} from '../db/schema/memberships.js';
 import { bookings } from '../db/schema/bookings.js';
 import { tenants } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
+import { getStorage } from '../lib/storage.js';
 import * as paymentsService from './payments_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
@@ -91,7 +98,8 @@ export interface CreateMembershipInput {
   description?: string | undefined;
   pricePaise: number;
   durationDays: number;
-  benefits?: Record<string, unknown> | undefined;
+  benefits?: MembershipBenefits | undefined;
+  terms?: string | null | undefined;
 }
 
 export async function createMembership(input: CreateMembershipInput): Promise<Membership> {
@@ -105,7 +113,8 @@ export async function createMembership(input: CreateMembershipInput): Promise<Me
         description: input.description ?? null,
         pricePaise: input.pricePaise,
         durationDays: input.durationDays,
-        benefits: input.benefits ?? {},
+        benefits: input.benefits ?? { items: [] },
+        terms: input.terms ?? null,
         // New listings await Circls review before going live (subproject B).
         status: 'pending_review',
       })
@@ -137,7 +146,8 @@ export interface UpdateMembershipPatch {
   pricePaise?: number;
   durationDays?: number;
   venueId?: string | null;
-  benefits?: Record<string, unknown>;
+  benefits?: MembershipBenefits;
+  terms?: string | null;
 }
 
 /**
@@ -172,6 +182,7 @@ export async function updateMembership(
     if (patch.durationDays !== undefined) set.durationDays = patch.durationDays;
     if (patch.venueId !== undefined) set.venueId = patch.venueId;
     if (patch.benefits !== undefined) set.benefits = patch.benefits;
+    if (patch.terms !== undefined) set.terms = patch.terms;
     if (Object.keys(set).length > 0) {
       await tx.update(memberships).set(set).where(eq(memberships.id, membershipId));
     }
@@ -500,4 +511,99 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
       durationDays: r.m.durationDays,
     },
   }));
+}
+
+// ── Membership artwork (PR #110) ──────────────────────────────────────────────
+// Single cover image per membership, finalized via presign+HEAD like venue
+// images. JPEG/PNG/WebP, ≤10 MiB.
+
+const COVER_TYPES: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+const MAX_COVER_BYTES = 10 * 1024 * 1024; // 10 MiB
+
+function coverPrefix(membershipId: string): string {
+  return `memberships/${membershipId}/cover/`;
+}
+
+/** Tenant-scoped fetch so the route can authz before touching artwork. */
+async function getMembershipForTenant(tenantId: string, membershipId: string): Promise<Membership> {
+  const [m] = await db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, tenantId)))
+    .limit(1);
+  if (!m) throw new NotFound('Membership not found', 'membership_not_found');
+  return m;
+}
+
+export async function presignMembershipCover(
+  tenantId: string,
+  membershipId: string,
+  contentType: string,
+) {
+  await getMembershipForTenant(tenantId, membershipId);
+  const ext = COVER_TYPES[contentType];
+  if (!ext) {
+    throw new Conflict(
+      `Unsupported image type "${contentType}" (allowed: ${Object.keys(COVER_TYPES).join(', ')})`,
+      'unsupported_media_type',
+    );
+  }
+  const key = `${coverPrefix(membershipId)}${randomUUID()}.${ext}`;
+  return getStorage().presignUpload({ key, contentType });
+}
+
+export async function finalizeMembershipCover(
+  tenantId: string,
+  membershipId: string,
+  storageKey: string,
+): Promise<Membership> {
+  const existing = await getMembershipForTenant(tenantId, membershipId);
+  if (!storageKey.startsWith(coverPrefix(membershipId))) {
+    throw new Conflict('storageKey does not belong to this membership', 'bad_storage_key');
+  }
+  const storage = getStorage();
+  const head = await storage.head(storageKey);
+  if (!head) throw new Conflict('No uploaded object found for that storageKey', 'upload_not_found');
+  if (!COVER_TYPES[head.contentType]) {
+    await storage.delete(storageKey);
+    throw new Conflict(
+      `Uploaded object is "${head.contentType}", not an allowed image type`,
+      'unsupported_media_type',
+    );
+  }
+  if (head.sizeBytes > MAX_COVER_BYTES) {
+    await storage.delete(storageKey);
+    throw new Conflict(`Image is ${head.sizeBytes} bytes; max is ${MAX_COVER_BYTES}`, 'image_too_large');
+  }
+  const [row] = await db
+    .update(memberships)
+    .set({ coverStorageKey: storageKey })
+    .where(eq(memberships.id, membershipId))
+    .returning();
+  if (!row) throw new NotFound('Membership not found', 'membership_not_found');
+  if (existing.coverStorageKey && existing.coverStorageKey !== storageKey) {
+    await storage.delete(existing.coverStorageKey).catch(() => {});
+  }
+  return row;
+}
+
+export async function removeMembershipCover(
+  tenantId: string,
+  membershipId: string,
+): Promise<Membership> {
+  const existing = await getMembershipForTenant(tenantId, membershipId);
+  const [row] = await db
+    .update(memberships)
+    .set({ coverStorageKey: null })
+    .where(eq(memberships.id, membershipId))
+    .returning();
+  if (!row) throw new NotFound('Membership not found', 'membership_not_found');
+  if (existing.coverStorageKey) {
+    await getStorage().delete(existing.coverStorageKey).catch(() => {});
+  }
+  return row;
 }

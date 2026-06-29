@@ -12,6 +12,7 @@ import {
   getMyProfile,
   getPublicEventById,
   getPublicMembershipById,
+  getPublicOrgBySlug,
   getPublicVenueWithImages,
   listMyBookings,
   listPublicArenas,
@@ -98,6 +99,15 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const m = await getPublicMembershipById(membershipId);
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
     return m;
+  });
+
+  // Public org/brand profile (PR #108). Only active orgs are returned; inactive
+  // or missing → 404. Never carries private/billing fields.
+  app.get('/v1/consumer/orgs/:slug', { config: publicLimit }, async (req) => {
+    const { slug } = req.params as { slug: string };
+    const org = await getPublicOrgBySlug(slug);
+    if (!org) throw new NotFound('Organisation not found', 'org_not_found');
+    return org;
   });
 
   app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
