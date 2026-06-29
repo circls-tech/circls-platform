@@ -33,6 +33,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: production
     env:
       REQUIRED_CHECKS: 'verify,db'
       HEALTH_URL: 'https://api.circls.app/v1/health'
@@ -125,7 +126,7 @@ jobs:
           git push -f origin refs/tags/lkg || echo "::warning::lkg tag push failed; the release itself succeeded"
           echo "lkg → $TARGET_SHA"
 
-      - name: Comment success on today's candidate issue
+      - name: Update the rolling release tracker
         if: success()
         uses: actions/github-script@v7
         env:
@@ -133,20 +134,23 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         with:
           script: |
-            const today = new Date().toISOString().slice(0, 10);
+            const TITLE = '🚀 Release tracker';
             const open = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo,
               state: 'open', labels: 'release-candidate',
             });
-            const issue = open.data.find((i) => i.title === `Release candidate ${today}`);
-            if (issue) {
-              const tag = process.env.DEPLOY_TAG;
-              const sha = process.env.TARGET_SHA;
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
-                body: `✅ Released \`${tag}\` (\`${sha.slice(0, 7)}\`). lkg updated.`,
-              });
-            }
+            const issue = open.data.find((i) => i.title === TITLE);
+            if (!issue) { core.info('No rolling tracker to update.'); return; }
+            const tag = process.env.DEPLOY_TAG;
+            const sha = process.env.TARGET_SHA;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+              body: `✅ Released \`${tag}\` (\`${sha.slice(0, 7)}\`). lkg updated.`,
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+              body: `Nothing pending release as of \`${tag}\` (\`${sha.slice(0, 7)}\`).\n\nThe next push to \`main\` will repopulate this tracker.`,
+            });
 
       - name: Alert on failure
         if: failure()
