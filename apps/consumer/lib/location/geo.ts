@@ -50,6 +50,12 @@ export function sameCountry(a: string | null, b: string | null): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
+/** Case-insensitive city equality (trim-tolerant). Null on either side is false. */
+export function sameCity(a: string | null, b: string | null): boolean {
+  if (a == null || b == null) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export function venueToLocatable(v: PublicVenue): Locatable {
   return { city: cityOf(v.addressJson), country: countryOf(v.addressJson), lat: v.lat, lng: v.lng };
 }
@@ -135,6 +141,36 @@ export function inArea(
   if (!inCountry(addressJson, sel.country)) return false;
   if (sel.city && cityOf(addressJson) !== sel.city) return false;
   return true;
+}
+
+/** Whether a venue's city matches the selected city (a soft "near you" signal). */
+export function venueInCity(
+  addressJson: Record<string, unknown> | null,
+  city: string | null,
+): boolean {
+  if (!city) return false;
+  return sameCity(cityOf(addressJson), city);
+}
+
+/**
+ * In-country venues for the selected area, with the user's city used as a SOFT
+ * signal — same-city venues are sorted first (a "near you" hint), but no venue
+ * is dropped for being in another city of the same country. This keeps a country
+ * with venues from ever rendering an empty list just because the user's exact
+ * city has none. Country is still a hard boundary (USA users never see India
+ * venues); untagged venues stay visible (lenient, per `inCountry`). The input
+ * array is not mutated. Pass the already-search-filtered rows from the API.
+ */
+export function venuesForArea(venues: PublicVenue[], sel: AreaSelection): PublicVenue[] {
+  const inSel = venues.filter((v) => inCountry(v.addressJson, sel.country));
+  if (!sel.city) return inSel;
+  // Stable partition: same-city venues first, everything else after, each in
+  // its original (API) order. Array.prototype.sort is stable in modern engines.
+  return [...inSel].sort(
+    (a, b) =>
+      Number(venueInCity(b.addressJson, sel.city)) -
+      Number(venueInCity(a.addressJson, sel.city)),
+  );
 }
 
 const EARTH_RADIUS_KM = 6371;

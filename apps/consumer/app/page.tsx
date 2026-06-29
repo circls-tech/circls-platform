@@ -7,7 +7,7 @@ import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { inArea, inCountry } from '@/lib/location/geo';
+import { inCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
@@ -22,11 +22,18 @@ export default function LandingPage() {
   const events = useUpcomingEvents(100);
   const memberships = useAllMemberships(10);
 
-  // Venues filter by area (country, then city); events filter by country alone
-  // (a country is one "market", events don't cross borders).
-  const nearbyVenues = (venues.data ?? [])
-    .filter((v) => inArea(v.addressJson, { city, country }))
-    .slice(0, 10);
+  // Venues and events both scope to the COUNTRY (one "market" — discovery never
+  // crosses borders). The user's city is only a soft signal for venues: same-city
+  // venues sort first, but we fall back to all in-country venues so this rail is
+  // never silently empty for a country that has venues.
+  const areaVenues = venuesForArea(venues.data ?? [], { city, country });
+  const nearbyVenues = areaVenues.slice(0, 10);
+  const hasCityVenues = areaVenues.some((v) => venueInCity(v.addressJson, city));
+  const venuesTitle = hasCityVenues
+    ? `Venues in ${city}`
+    : country
+      ? `Venues in ${country}`
+      : 'Venues near you';
   const nearbyEvents = (events.data ?? [])
     .filter((e) => inCountry(e.locAddressJson, country))
     .slice(0, 10);
@@ -55,7 +62,7 @@ export default function LandingPage() {
 
       <main className="py-6">
         {nearbyVenues.length > 0 && (
-          <HScroll title={city ? `Venues in ${city}` : country ? `Venues in ${country}` : 'Venues near you'} viewAllHref="/venues">
+          <HScroll title={venuesTitle} viewAllHref="/venues">
             {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}

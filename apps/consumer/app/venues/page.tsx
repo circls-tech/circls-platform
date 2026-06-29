@@ -6,15 +6,19 @@ import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useVenues } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { inArea } from '@/lib/location/geo';
-import { Input } from '@/lib/ui';
+import { venueInCity, venuesForArea } from '@/lib/location/geo';
+import { Badge, Input } from '@/lib/ui';
 
 export default function VenuesPage() {
   const [search, setSearch] = useState('');
   const { city, country, openPicker } = useLocation();
-  const areaLabel = city ?? country;
+  // We scope the list to the COUNTRY (a single market). The user's city is only a
+  // soft signal — same-city venues are sorted first and flagged "Near you" — so a
+  // country with venues never shows an empty list just because the exact city has
+  // none. The empty state is reserved for a country that genuinely has no venues.
+  const areaLabel = country ?? city;
   const venues = useVenues(search);
-  const filtered = (venues.data ?? []).filter((v) => inArea(v.addressJson, { city, country }));
+  const filtered = venuesForArea(venues.data ?? [], { city, country });
 
   return (
     <div className="min-h-screen">
@@ -36,7 +40,8 @@ export default function VenuesPage() {
           <p className="mt-3 text-sm text-text-secondary">
             {areaLabel ? (
               <>
-                Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
+                Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>
+                {city ? <> — closest to <span className="font-semibold text-ink">{city}</span> first</> : null}.{' '}
                 <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                   Change
                 </button>
@@ -68,7 +73,18 @@ export default function VenuesPage() {
           />
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((v) => <VenueCard key={v.id} venue={v} />)}
+            {filtered.map((v) => (
+              <div key={v.id} className="relative">
+                {venueInCity(v.addressJson, city) && (
+                  <Badge
+                    tone="success"
+                    label="Near you"
+                    className="absolute right-2 top-2 z-10 shadow-offset-sm"
+                  />
+                )}
+                <VenueCard venue={v} />
+              </div>
+            ))}
           </div>
         )}
       </main>

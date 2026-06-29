@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { Button, BrandMark } from '@/lib/ui';
 import { HelpWidget } from '@/components/HelpWidget';
+import { MobileMenu } from '@/components/MobileMenu';
 
 export function Header() {
   const { user, loading, signOut } = useAuth();
@@ -31,29 +32,36 @@ export function Header() {
             <span aria-hidden>📍</span>
             <span className="max-w-[7rem] truncate">{locationLabel}</span>
           </button>
+          {/* Desktop nav (sm+). On mobile these collapse into the hamburger menu. */}
           <Link href="/venues" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Venues</Link>
           <Link href="/events" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Events</Link>
           <Link href="/memberships" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Memberships</Link>
-          {loading ? null : user ? (
-            <>
-              <Link href="/me/bookings" className="text-sm font-semibold text-ink-soft hover:text-ink">My bookings</Link>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={async () => { await signOut(); router.replace('/'); }}
-              >
-                Sign out
-              </Button>
-              {/* Help entry point — top-right of Sign out (#115). */}
-              <HelpWidget />
-            </>
-          ) : (
-            <>
-              <Link href="/login"><Button variant="primary" size="sm">Sign in</Button></Link>
-              {/* Help entry point — top-right of Sign in in the signed-out branch (#115). */}
-              <HelpWidget />
-            </>
-          )}
+          <Link href="/help" className="hidden text-sm font-semibold text-ink-soft hover:text-ink sm:inline">Help</Link>
+          {/* Auth actions + help chatbot — desktop only; mobile moves these into the menu. */}
+          <div className="hidden items-center gap-3 sm:flex sm:gap-5">
+            {loading ? null : user ? (
+              <>
+                <Link href="/me/bookings" className="text-sm font-semibold text-ink-soft hover:text-ink">My bookings</Link>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => { await signOut(); router.replace('/'); }}
+                >
+                  Sign out
+                </Button>
+                {/* Help entry point — top-right of Sign out (#115). */}
+                <HelpWidget />
+              </>
+            ) : (
+              <>
+                <Link href="/login"><Button variant="primary" size="sm">Sign in</Button></Link>
+                {/* Help entry point — top-right of Sign in in the signed-out branch (#115). */}
+                <HelpWidget />
+              </>
+            )}
+          </div>
+          {/* Mobile hamburger (sm:hidden internally). */}
+          <MobileMenu />
         </nav>
       </div>
     </header>

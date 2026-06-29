@@ -4,6 +4,8 @@ import { BrandMark } from '@/lib/ui';
 const LINKS = [
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
+  { href: '/memberships', label: 'Memberships' },
+  { href: '/help', label: 'Help' },
   { href: '/privacy', label: 'Privacy Policy' },
   { href: '/terms', label: 'Terms & Conditions' },
   { href: '/refund', label: 'Refund Policy' },

@@ -1,7 +1,9 @@
 'use client';
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
+import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
@@ -21,11 +23,24 @@ import { formatDateTime, formatPaise, formatTime } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
+/** The arena currently driving the page-level sticky Book bar. Booking is
+ *  per-arena, so only one arena's selection is "active" at a time. */
+type ActiveSelection = {
+  arenaId: string;
+  arenaName: string;
+  slotIds: string[];
+  totalPaise: number;
+};
+
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
   const { venueId } = use(params);
   const venueQ = useVenue(venueId);
   const eventsQ = useVenueEvents(venueId);
   const membershipsQ = useVenueMemberships(venueId);
+  const { openCheckout } = useCheckoutModal();
+  // Whichever arena the user is currently picking slots in. Selecting in a
+  // different arena replaces this (the other arena clears its highlight).
+  const [active, setActive] = useState<ActiveSelection | null>(null);
   // Owning-org profile, enriches the "Hosted by" byline. Degrades to the
   // compact brand summary when still loading or the org is unavailable.
   const orgQ = usePublicOrg(venueQ.data?.venue.brand?.slug ?? '');
@@ -33,7 +48,8 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 pt-8 pb-28">
+        <BackBar />
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
         ) : venueQ.isError ? (
@@ -88,7 +104,12 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               ) : (
                 <div className="flex flex-col gap-4">
                   {venueQ.data.arenas.map((arena) => (
-                    <ArenaCard key={arena.id} arena={arena} />
+                    <ArenaCard
+                      key={arena.id}
+                      arena={arena}
+                      isActive={active?.arenaId === arena.id}
+                      onSelectionChange={setActive}
+                    />
                   ))}
                 </div>
               )}
@@ -128,6 +149,33 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
           </>
         )}
       </main>
+
+      {active && (
+        <StickyActionBar
+          summary={
+            <>
+              <span className="font-display font-extrabold text-ink">{active.arenaName}</span>
+              <span className="text-text-secondary">
+                {' · '}
+                {active.slotIds.length} slot{active.slotIds.length > 1 ? 's' : ''} · {formatPaise(active.totalPaise)}
+              </span>
+            </>
+          }
+          action={
+            <Button
+              onClick={() =>
+                openCheckout({
+                  kind: 'slot',
+                  slotIds: active.slotIds,
+                  title: `${active.arenaName} · ${active.slotIds.length} slot${active.slotIds.length > 1 ? 's' : ''}`,
+                })
+              }
+            >
+              Book {active.slotIds.length} slot{active.slotIds.length > 1 ? 's' : ''}
+            </Button>
+          }
+        />
+      )}
     </div>
   );
 }
@@ -225,41 +273,61 @@ function dayBounds(date: string): { from: string; to: string } {
   return { from: start.toISOString(), to: end.toISOString() };
 }
 
-function ArenaCard({ arena }: { arena: PublicArena }) {
-  const { openCheckout } = useCheckoutModal();
+function ArenaCard({
+  arena,
+  isActive,
+  onSelectionChange,
+}: {
+  arena: PublicArena;
+  /** True when THIS arena owns the page-level sticky Book bar. */
+  isActive: boolean;
+  /** Report this arena's current selection (or null when it clears). */
+  onSelectionChange: (sel: ActiveSelection | null) => void;
+}) {
   const [date, setDate] = useState(todayLocal());
   const { from, to } = dayBounds(date);
   const slotsQ = useArenaSlots(arena.id, from, to);
   // Selected slot ids for THIS arena+date. Backend books multiple slots in one
   // arena atomically (POST /v1/consumer/bookings takes slotIds[]), so we let the
-  // user pick several and check out together.
+  // user pick several and check out together. The booking CTA lives in a single
+  // page-level sticky bar, so we lift the active selection up via onSelectionChange.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  function changeDate(d: string) {
-    setDate(d);
-    setSelected(new Set()); // selection is per-day; slots differ across dates
-  }
-  function toggle(slotId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(slotId)) next.delete(slotId);
-      else next.add(slotId);
-      return next;
-    });
-  }
 
   const slots = slotsQ.data ?? [];
   const selectedSlots = slots.filter((s) => selected.has(s.id));
   const selectedTotal = selectedSlots.reduce((sum, s) => sum + s.pricePaise, 0);
 
-  function book() {
-    if (selectedSlots.length === 0) return;
-    const n = selectedSlots.length;
-    openCheckout({
-      kind: 'slot',
-      slotIds: selectedSlots.map((s) => s.id),
-      title: `${arena.name} · ${n} slot${n > 1 ? 's' : ''}`,
+  // When another arena takes over the active selection, drop our highlight.
+  useEffect(() => {
+    if (!isActive) setSelected((prev) => (prev.size ? new Set() : prev));
+  }, [isActive]);
+
+  /** Push the given selection up to the page so it can render the sticky bar. */
+  function report(next: Set<string>) {
+    const sel = slots.filter((s) => next.has(s.id));
+    if (sel.length === 0) {
+      if (isActive) onSelectionChange(null);
+      return;
+    }
+    onSelectionChange({
+      arenaId: arena.id,
+      arenaName: arena.name,
+      slotIds: sel.map((s) => s.id),
+      totalPaise: sel.reduce((sum, s) => sum + s.pricePaise, 0),
     });
+  }
+
+  function changeDate(d: string) {
+    setDate(d);
+    setSelected(new Set()); // selection is per-day; slots differ across dates
+    if (isActive) onSelectionChange(null);
+  }
+  function toggle(slotId: string) {
+    const next = new Set(selected);
+    if (next.has(slotId)) next.delete(slotId);
+    else next.add(slotId);
+    setSelected(next);
+    report(next);
   }
 
   return (
@@ -296,7 +364,7 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
         ) : (
           <>
             <p className="mb-2 text-xs text-text-secondary">Tap to select one or more slots, then book them together.</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {slots.map((slot) => {
                 const slotLabel = `${formatTime(slot.startAt)} – ${formatTime(slot.endAt)}`;
                 const isSelected = selected.has(slot.id);
@@ -320,14 +388,9 @@ function ArenaCard({ arena }: { arena: PublicArena }) {
               })}
             </div>
             {selectedSlots.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm text-text-secondary">
-                  {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''} · {formatPaise(selectedTotal)}
-                </span>
-                <Button onClick={book}>
-                  Book {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''}
-                </Button>
-              </div>
+              <p className="mt-3 text-sm text-text-secondary">
+                {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''} selected · {formatPaise(selectedTotal)}
+              </p>
             )}
           </>
         )}

@@ -2,6 +2,8 @@
 import { use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
+import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
@@ -48,6 +50,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setQty((q) => ({ ...q, [tierId]: capped }));
   }
 
+  function book() {
+    if (!ev || totalSelected === 0) return;
+    const prefill: { name?: string; contact?: string } = {};
+    if (user?.displayName) prefill.name = user.displayName;
+    if (user?.phoneNumber) prefill.contact = user.phoneNumber;
+    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines }, prefill);
+  }
+
   const mapsHref =
     ev && ev.locLat != null && ev.locLng != null
       ? `https://www.google.com/maps/search/?api=1&query=${ev.locLat},${ev.locLng}`
@@ -56,7 +66,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
+        <BackBar />
         {eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
         ) : eventQ.isError ? (
@@ -155,20 +166,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     <span className="font-medium text-ink">Subtotal</span>
                     <span className="font-display font-extrabold text-ink">{formatPaiseExact(subtotalPaise)}</span>
                   </div>
-
-                  <div className="pt-2">
-                    <Button
-                      disabled={totalSelected === 0}
-                      onClick={() => {
-                        const prefill: { name?: string; contact?: string } = {};
-                        if (user?.displayName) prefill.name = user.displayName;
-                        if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-                        openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines }, prefill);
-                      }}
-                    >
-                      {subtotalPaise === 0 ? 'Register' : `Book · ${formatPaiseExact(subtotalPaise)}`}
-                    </Button>
-                  </div>
+                  <p className="text-xs text-text-secondary">
+                    {totalSelected === 0
+                      ? 'Pick your tickets to continue.'
+                      : `Review and confirm in the bar below.`}
+                  </p>
                 </div>
               )}
             </Card>
@@ -183,6 +185,25 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           </>
         )}
       </main>
+
+      {ev && totalSelected > 0 && (
+        <StickyActionBar
+          maxWidthClass="max-w-3xl"
+          summary={
+            <>
+              <span className="font-display font-extrabold text-ink">
+                {totalSelected} ticket{totalSelected > 1 ? 's' : ''}
+              </span>
+              <span className="text-text-secondary"> · {formatPaiseExact(subtotalPaise)}</span>
+            </>
+          }
+          action={
+            <Button onClick={book}>
+              {subtotalPaise === 0 ? 'Register' : `Book · ${formatPaiseExact(subtotalPaise)}`}
+            </Button>
+          }
+        />
+      )}
     </div>
   );
 }
