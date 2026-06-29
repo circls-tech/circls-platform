@@ -119,6 +119,15 @@ test('allChecksPassed: empty requiredNames fails closed (misconfig, not vacuousl
   assert.equal(allChecksPassed('{"check_runs":[{"name":"verify","status":"completed","conclusion":"success"}]}', []).ok, false);
 });
 
+test('formatReleaseNotes: title reads "Pending release"', () => {
+  const md = formatReleaseNotes({
+    baseSha: 'aaaaaaa0', headSha: 'bbbbbbb0',
+    commits: [{ sha: 'bbbbbbb0', subject: 'feat: thing' }], migrations: [],
+  });
+  assert.match(md, /### Pending release:/);
+  assert.doesNotMatch(md, /Release candidate/);
+});
+
 test('nextReleaseTag: first of the day is .1', () => {
   assert.equal(nextReleaseTag([], '2026-06-01'), 'release-2026-06-01.1');
 });
