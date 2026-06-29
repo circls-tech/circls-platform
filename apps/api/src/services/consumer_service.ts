@@ -32,6 +32,25 @@ import type { PurchaseMembershipResult } from './memberships_service.js';
 import { imagesForEvents } from './event_image_service.js';
 import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
+import { coerceBenefits } from '../lib/membership_benefits.js';
+import { getStorage } from '../lib/storage.js';
+import { type BrandSummary, getPublicOrgBySlug, type PublicOrg, toBrandSummary } from './tenant_service.js';
+import type { MembershipBenefits } from '../db/schema/memberships.js';
+
+export { getPublicOrgBySlug };
+export type { PublicOrg, BrandSummary };
+
+/**
+ * Compact brand columns selected alongside public listings so each card can show
+ * "by {org}" without a second query. Mapped to a {@link BrandSummary} via
+ * {@link toBrandSummary}.
+ */
+const BRAND_COLUMNS = {
+  id: tenants.id,
+  slug: tenants.slug,
+  name: tenants.name,
+  logoStorageKey: tenants.logoStorageKey,
+} as const;
 
 // ── Browse ───────────────────────────────────────────────────────────────────
 
@@ -42,11 +61,27 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** Trust metadata (PR #109). */
+  description: string | null;
+  amenities: string[];
+  openingHours: Record<string, { open: string; close: string }[]> | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  address: {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  };
+  /** Compact owning-org summary (PR #108). */
+  brand: BrandSummary;
   /** Uploaded venue photos (public R2 URLs), ordered by position; [] if none. */
   images: PublicImageRef[];
 }
 
-function toPublicVenue(v: Venue, images: PublicImageRef[] = []): PublicVenue {
+function toPublicVenue(v: Venue, brand: BrandSummary, images: PublicImageRef[] = []): PublicVenue {
   return {
     id: v.id,
     name: v.name,
@@ -54,6 +89,20 @@ function toPublicVenue(v: Venue, images: PublicImageRef[] = []): PublicVenue {
     lat: v.lat,
     lng: v.lng,
     addressJson: v.addressJson ?? null,
+    description: v.description,
+    amenities: v.amenities,
+    openingHours: v.openingHours ?? null,
+    contactPhone: v.contactPhone,
+    contactEmail: v.contactEmail,
+    address: {
+      line1: v.addressLine1,
+      line2: v.addressLine2,
+      city: v.city,
+      state: v.state,
+      postalCode: v.postalCode,
+      country: v.country,
+    },
+    brand,
     images,
   };
 }
@@ -74,22 +123,29 @@ export async function listPublicVenues(opts: { search?: string; limit?: number }
     ))`);
   }
   const rows = await db
-    .select({ v: venues })
+    .select({ v: venues, brand: BRAND_COLUMNS })
     .from(venues)
     .innerJoin(tenants, eq(tenants.id, venues.tenantId))
     .where(and(...conds))
     .orderBy(sql`${venues.createdAt} desc`)
     .limit(limit);
   const imagesByVenue = await imagesForVenues(rows.map((r) => r.v.id));
-  return rows.map((r) => toPublicVenue(r.v, imagesByVenue.get(r.v.id) ?? []));
+  return rows.map((r) =>
+    toPublicVenue(r.v, toBrandSummary(r.brand), imagesByVenue.get(r.v.id) ?? []),
+  );
 }
 
 /** A single approved + tenant-active venue in card shape (with images), or null. */
 export async function getPublicVenueWithImages(venueId: string): Promise<PublicVenue | null> {
-  const v = await getPublicVenue(venueId);
-  if (!v) return null;
-  const imagesByVenue = await imagesForVenues([v.id]);
-  return toPublicVenue(v, imagesByVenue.get(v.id) ?? []);
+  const [row] = await db
+    .select({ v: venues, brand: BRAND_COLUMNS })
+    .from(venues)
+    .innerJoin(tenants, eq(tenants.id, venues.tenantId))
+    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active')))
+    .limit(1);
+  if (!row) return null;
+  const imagesByVenue = await imagesForVenues([row.v.id]);
+  return toPublicVenue(row.v, toBrandSummary(row.brand), imagesByVenue.get(row.v.id) ?? []);
 }
 
 /** A single approved + tenant-active venue, or null. */
@@ -186,6 +242,8 @@ export interface PublicEventWithVenue extends Event {
   locLng: number | null;
   locTzName: string;
   locAddressJson: Record<string, unknown> | null;
+  /** Compact owning-org summary (PR #108). */
+  brand: BrandSummary;
   /** Uploaded event photos (public R2 URLs), ordered by position; [] if none. */
   images: PublicImageRef[];
   /** Purchasable ticket tiers (public projection); [] on list rows (single-event read only). */
@@ -226,6 +284,7 @@ interface EventJoinRow {
   venueTz: string | null;
   venueAddr: Record<string, unknown> | null;
   tenantName: string;
+  brand: { id: string; slug: string; name: string; logoStorageKey: string | null };
 }
 
 function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
@@ -240,6 +299,7 @@ function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEv
     locLng: isStandalone ? r.e.lng : r.venueLng,
     locTzName: (isStandalone ? r.e.tzName : r.venueTz) ?? 'Asia/Kolkata',
     locAddressJson: isStandalone ? (r.e.addressJson ?? null) : r.venueAddr,
+    brand: toBrandSummary(r.brand),
     images,
     tiers: [],
   };
@@ -254,6 +314,7 @@ const PUBLIC_EVENT_COLUMNS = {
   venueTz: venues.tzName,
   venueAddr: venues.addressJson,
   tenantName: tenants.name,
+  brand: BRAND_COLUMNS,
 } as const;
 
 /**
@@ -311,7 +372,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
 export async function listPublicMemberships(venueId: string): Promise<PublicMembershipWithScope[]> {
   const venue = await assertVenueVisible(venueId);
   const rows = await db
-    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
+    .select(PUBLIC_MEMBERSHIP_COLUMNS)
     .from(memberships)
     .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
     .leftJoin(venues, eq(venues.id, memberships.venueId))
@@ -322,12 +383,7 @@ export async function listPublicMemberships(venueId: string): Promise<PublicMemb
         sql`(${memberships.venueId} is null or ${memberships.venueId} = ${venueId})`,
       ),
     );
-  return rows.map((r) => ({
-    ...r.m,
-    venueId: r.m.venueId,
-    scopeName: r.venueName ?? r.tenantName,
-    venueTags: r.venueTags ?? [],
-  }));
+  return (rows as MembershipJoinRow[]).map(toPublicMembership);
 }
 
 /** A public membership enriched with its scope (venue or tenant) for cross-venue cards. */
@@ -338,6 +394,41 @@ export interface PublicMembershipWithScope extends Membership {
   scopeName: string;
   /** Owning venue's tags; empty for tenant-wide (card falls back to motif). */
   venueTags: string[];
+  /** Typed benefits (PR #110) — always coerced to { items: [...] } on read. */
+  benefits: MembershipBenefits;
+  /** Public artwork URL (PR #110), or null when no cover is set. */
+  artworkUrl: string | null;
+  /** Compact owning-org summary (PR #108). */
+  brand: BrandSummary;
+}
+
+interface MembershipJoinRow {
+  m: Membership;
+  venueName: string | null;
+  venueTags: string[] | null;
+  tenantName: string;
+  brand: { id: string; slug: string; name: string; logoStorageKey: string | null };
+}
+
+/** Columns selected by every public-membership query. */
+const PUBLIC_MEMBERSHIP_COLUMNS = {
+  m: memberships,
+  venueName: venues.name,
+  venueTags: venues.tags,
+  tenantName: tenants.name,
+  brand: BRAND_COLUMNS,
+} as const;
+
+function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
+  return {
+    ...r.m,
+    venueId: r.m.venueId,
+    scopeName: r.venueName ?? r.tenantName,
+    venueTags: r.venueTags ?? [],
+    benefits: coerceBenefits(r.m.benefits),
+    artworkUrl: r.m.coverStorageKey ? getStorage().publicUrl(r.m.coverStorageKey) : null,
+    brand: toBrandSummary(r.brand),
+  };
 }
 
 /**
@@ -360,19 +451,14 @@ export async function listPublicMembershipsAcrossVenues(
     sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
   ];
   const rows = await db
-    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
+    .select(PUBLIC_MEMBERSHIP_COLUMNS)
     .from(memberships)
     .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
     .leftJoin(venues, eq(venues.id, memberships.venueId))
     .where(and(...conds))
     .orderBy(sql`${memberships.createdAt} desc`)
     .limit(limit);
-  return rows.map((r) => ({
-    ...r.m,
-    venueId: r.m.venueId,
-    scopeName: r.venueName ?? r.tenantName,
-    venueTags: r.venueTags ?? [],
-  }));
+  return (rows as MembershipJoinRow[]).map(toPublicMembership);
 }
 
 /** A single public membership by id, enriched with scope, or null when it does
@@ -382,7 +468,7 @@ export async function getPublicMembershipById(
   id: string,
 ): Promise<PublicMembershipWithScope | null> {
   const rows = await db
-    .select({ m: memberships, venueName: venues.name, venueTags: venues.tags, tenantName: tenants.name })
+    .select(PUBLIC_MEMBERSHIP_COLUMNS)
     .from(memberships)
     .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
     .leftJoin(venues, eq(venues.id, memberships.venueId))
@@ -395,14 +481,9 @@ export async function getPublicMembershipById(
       ),
     )
     .limit(1);
-  const r = rows[0];
+  const r = rows[0] as MembershipJoinRow | undefined;
   if (!r) return null;
-  return {
-    ...r.m,
-    venueId: r.m.venueId,
-    scopeName: r.venueName ?? r.tenantName,
-    venueTags: r.venueTags ?? [],
-  };
+  return toPublicMembership(r);
 }
 
 // ── Book / purchase ────────────────────────────────────────────────────────

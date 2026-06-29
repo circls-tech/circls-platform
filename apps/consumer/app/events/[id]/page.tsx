@@ -6,7 +6,8 @@ import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
-import { useEvent } from '@/lib/api/consumer';
+import { OrgBrandBlock } from '@/components/OrgBrandBlock';
+import { useEvent, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
@@ -27,6 +28,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const ev = eventQ.data;
+  // Owning-org profile for the "Organised by" block; degrades to the compact
+  // brand summary while loading or when the org is unavailable.
+  const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
   const [qty, setQty] = useState<Record<string, number>>({});
 
   const tiers = ev?.tiers ?? [];
@@ -170,6 +174,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               )}
             </Card>
+
+            {ev.brand && (
+              <section className="mt-6">
+                <Card>
+                  <OrgBrandBlock brand={ev.brand} org={orgQ.data} variant="byline" label="Organised by" />
+                </Card>
+              </section>
+            )}
           </>
         )}
       </main>

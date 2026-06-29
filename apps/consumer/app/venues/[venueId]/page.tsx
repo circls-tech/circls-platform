@@ -6,16 +6,19 @@ import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
+import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { matchSport } from '@/lib/sportImages';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import {
   useArenaSlots,
+  usePublicOrg,
   useVenue,
   useVenueEvents,
   useVenueMemberships,
 } from '@/lib/api/consumer';
-import type { PublicArena, PublicEvent } from '@/lib/api/types';
+import type { PublicArena, PublicEvent, PublicVenue } from '@/lib/api/types';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { formatAddress, formatOpeningHours } from '@/lib/trust';
 import { formatDateTime, formatPaise, formatTime } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -38,6 +41,9 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   // Whichever arena the user is currently picking slots in. Selecting in a
   // different arena replaces this (the other arena clears its highlight).
   const [active, setActive] = useState<ActiveSelection | null>(null);
+  // Owning-org profile, enriches the "Hosted by" byline. Degrades to the
+  // compact brand summary when still loading or the org is unavailable.
+  const orgQ = usePublicOrg(venueQ.data?.venue.brand?.slug ?? '');
 
   return (
     <div className="min-h-screen">
@@ -79,8 +85,16 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                   </div>
                 )}
                 <AddressLine addressJson={venueQ.data.venue.addressJson} />
+                {venueQ.data.venue.brand && (
+                  <div className="mt-4 border-t-[1.5px] border-dashed border-ink/15 pt-4">
+                    <OrgBrandBlock brand={venueQ.data.venue.brand} org={orgQ.data} label="Hosted by" />
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* About the venue */}
+            <AboutVenue venue={venueQ.data.venue} />
 
             {/* Arenas */}
             <section className="mb-8">
@@ -163,6 +177,76 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
         />
       )}
     </div>
+  );
+}
+
+/** "About the venue" — the trust metadata (PR #109). Renders only the sections
+ *  that have data, and nothing at all when the venue carries no metadata. */
+function AboutVenue({ venue }: { venue: PublicVenue }) {
+  const address = formatAddress(venue.address);
+  const hours = formatOpeningHours(venue.openingHours);
+  const hasContact = Boolean(venue.contactPhone || venue.contactEmail);
+  const hasContent =
+    Boolean(venue.description) ||
+    venue.amenities.length > 0 ||
+    Boolean(hours) ||
+    hasContact ||
+    Boolean(address);
+  if (!hasContent) return null;
+
+  return (
+    <section className="mb-8">
+      <h2 className="mb-3 font-display text-xl font-extrabold text-ink">About the venue</h2>
+      <Card className="flex flex-col gap-4">
+        {venue.description && (
+          <p className="whitespace-pre-line text-sm text-text-secondary">{venue.description}</p>
+        )}
+
+        {venue.amenities.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Amenities</h3>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {venue.amenities.map((a) => (
+                <Badge key={a} tone="neutral" label={a} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hours && (
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Opening hours</h3>
+            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+              {hours.map((row) => (
+                <div key={row.day} className="flex justify-between gap-3">
+                  <dt className="text-ink-soft">{row.day}</dt>
+                  <dd className={row.closed ? 'text-text-secondary' : 'text-ink'}>{row.label}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
+        {(hasContact || address) && (
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Contact</h3>
+            <ul className="mt-2 space-y-1 text-sm">
+              {address && <li className="text-text-secondary">{address}</li>}
+              {venue.contactPhone && (
+                <li>
+                  <a href={`tel:${venue.contactPhone}`} className="text-coral-deep underline">{venue.contactPhone}</a>
+                </li>
+              )}
+              {venue.contactEmail && (
+                <li>
+                  <a href={`mailto:${venue.contactEmail}`} className="text-coral-deep underline">{venue.contactEmail}</a>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+      </Card>
+    </section>
   );
 }
 
