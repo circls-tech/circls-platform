@@ -208,6 +208,28 @@ export interface Coupon {
 
 export type SupportIssueStatus = 'unresolved' | 'in_progress' | 'backlog' | 'resolved';
 export type SupportIssuePriority = 'low' | 'medium' | 'high';
+export type SupportIssueSource = 'partner_help' | 'consumer_chatbot';
+export type SupportIssueCategory =
+  | 'booking_issue'
+  | 'refund_request'
+  | 'reschedule'
+  | 'venue_question'
+  | 'payment'
+  | 'other';
+
+/** One step of the consumer's MCQ flow (question shown → answer chosen). */
+export interface SupportFlowAnswer {
+  question: string;
+  answer: string;
+}
+
+/** Resolved context for the booking a consumer concern is linked to. */
+export interface SupportIssueBooking {
+  id: string;
+  venueName: string | null;
+  status: string;
+  itemType: string;
+}
 
 export interface AdminSupportIssue {
   id: string;
@@ -215,6 +237,22 @@ export interface AdminSupportIssue {
   message: string;
   status: SupportIssueStatus;
   priority: SupportIssuePriority;
+  /** Channel the issue arrived on: partner Help Centre vs consumer Help chatbot. */
+  source: SupportIssueSource;
+  /** Triage category — only consumer-chatbot concerns carry one. */
+  category: SupportIssueCategory | null;
+  bookingId: string | null;
+  /** The MCQ transcript for a consumer concern; null for partner issues. */
+  flowAnswers: SupportFlowAnswer[] | null;
+  /** Resolved booking context (null when no booking is linked). */
+  booking: SupportIssueBooking | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Optional filters for the admin support-issues list (#114/#116). */
+export interface AdminSupportIssueFilters {
+  source?: SupportIssueSource;
+  category?: SupportIssueCategory;
+  status?: SupportIssueStatus;
 }
