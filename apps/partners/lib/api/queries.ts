@@ -22,7 +22,9 @@ import type {
   TeamMember,
   Tenant,
   TenantInvitation,
+  TenantProfile,
   TenantRole,
+  TenantSocials,
   User,
   Venue,
   VenueImage,
@@ -58,11 +60,122 @@ export function useCreateTenant() {
   });
 }
 
+// ── Org/brand profile (PR #107) ───────────────────────────────────────────────
+
+export interface UpdateTenantProfileInput {
+  name?: string;
+  description?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  websiteUrl?: string | null;
+  socials?: TenantSocials | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}
+
+export function useTenantProfile(tenantId: string) {
+  return useQuery({
+    queryKey: ['tenant-profile', tenantId],
+    queryFn: () => apiFetch<TenantProfile>(`/v1/tenants/${tenantId}`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useUpdateTenantProfile(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateTenantProfileInput) =>
+      apiFetch<TenantProfile>(`/v1/tenants/${tenantId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tenant-profile', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['tenants'] });
+    },
+  });
+}
+
+/** Three-step logo upload mirroring useUploadVenueImage, against the tenant. */
+export function useUploadTenantLogo(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File): Promise<TenantProfile> => {
+      if (!VENUE_IMAGE_TYPES.includes(file.type)) throw new Error('Use a JPEG, PNG, or WebP image.');
+      if (file.size > VENUE_IMAGE_MAX_BYTES) throw new Error('Image is too large (max 10 MB).');
+      const presign = await apiFetch<PresignedUpload>(`/v1/tenants/${tenantId}/logo/upload-presign`, {
+        method: 'POST',
+        body: JSON.stringify({ contentType: file.type }),
+      });
+      const put = await fetch(presign.uploadUrl, { method: 'PUT', headers: presign.headers, body: file });
+      if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+      return apiFetch<TenantProfile>(`/v1/tenants/${tenantId}/logo`, {
+        method: 'POST',
+        body: JSON.stringify({ storageKey: presign.storageKey }),
+      });
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenant-profile', tenantId] }),
+  });
+}
+
+export function useRemoveTenantLogo(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<TenantProfile>(`/v1/tenants/${tenantId}/logo`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenant-profile', tenantId] }),
+  });
+}
+
 export function useVenues(tenantId: string) {
   return useQuery({
     queryKey: ['venues', tenantId],
     queryFn: () => apiFetch<Venue[]>(`/v1/tenants/${tenantId}/venues`),
     enabled: Boolean(tenantId),
+  });
+}
+
+// ── Single venue + trust metadata editing (PR #109) ───────────────────────────
+
+export function useVenue(venueId: string) {
+  return useQuery({
+    queryKey: ['venue', venueId],
+    queryFn: () => apiFetch<Venue>(`/v1/venues/${venueId}`),
+    enabled: Boolean(venueId),
+  });
+}
+
+export interface UpdateVenueInput {
+  name?: string;
+  tzName?: string;
+  lat?: number | null;
+  lng?: number | null;
+  tags?: string[];
+  description?: string | null;
+  amenities?: string[];
+  openingHours?: Venue['openingHours'];
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}
+
+export function useUpdateVenue(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateVenueInput) =>
+      apiFetch<Venue>(`/v1/venues/${venueId}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: ['venue', venueId] });
+      if (v?.tenantId) void qc.invalidateQueries({ queryKey: ['venues', v.tenantId] });
+    },
   });
 }
 

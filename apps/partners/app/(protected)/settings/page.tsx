@@ -6,8 +6,16 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-semibold text-[#0f172a]">Settings</h1>
-      <Card title="Settings" subtitle="Organization and account configuration.">
-        <p className="text-sm text-slate-500">Coming soon.</p>
+      <Card
+        title="Organisation profile"
+        subtitle="Your logo, description, contact details, links and address — how customers see you on Circls."
+      >
+        <Link
+          href="/settings/organization"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          Edit organisation profile &rarr;
+        </Link>
       </Card>
       <Card
         title="Team"

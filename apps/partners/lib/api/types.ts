@@ -18,6 +18,39 @@ export interface Tenant {
   status: string;
 }
 
+/** Social handles/URLs an org advertises (PR #107). All optional. */
+export interface TenantSocials {
+  instagram?: string;
+  facebook?: string;
+  x?: string;
+  youtube?: string;
+}
+
+/**
+ * The editable org/brand profile (PR #107) as returned by GET /v1/tenants/:id
+ * and PATCH /v1/tenants/:id. `logoUrl` is the derived public R2 URL (null when
+ * no logo is set).
+ */
+export interface TenantProfile {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  websiteUrl: string | null;
+  socials: TenantSocials | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+  logoStorageKey: string | null;
+  logoUrl: string | null;
+  status: string;
+}
+
 /**
  * Listing lifecycle status (subproject B). New venues/arenas are created as
  * `pending_review` and must be approved by Circls before they go live; admins
@@ -30,6 +63,10 @@ export type ListingStatus =
   | 'suspended'
   | 'inactive';
 
+/** Per-weekday opening hours (PR #109): keys "0"–"6" (0 = Sunday); empty/missing
+ *  array = closed that day; times are venue-local "HH:MM". */
+export type OpeningHours = Record<string, { open: string; close: string }[]>;
+
 export interface Venue {
   id: string;
   tenantId: string;
@@ -39,6 +76,18 @@ export interface Venue {
   lng: number | null;
   status: ListingStatus;
   tags: string[];
+  // Trust metadata (PR #109). Present on GET /v1/venues/:id; nullable.
+  description?: string | null;
+  amenities?: string[];
+  openingHours?: OpeningHours | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
 }
 
 /** Last-used schedule-builder template, persisted per arena for prefill. */
@@ -324,6 +373,16 @@ export interface EventBooking {
 
 // ── Memberships (Phase 15) ───────────────────────────────────────────────────
 
+/** A single membership perk (PR #110). */
+export interface MembershipBenefitItem {
+  label: string;
+  detail?: string;
+}
+/** Typed membership benefits (PR #110). */
+export interface MembershipBenefits {
+  items: MembershipBenefitItem[];
+}
+
 export interface Membership {
   id: string;
   tenantId: string;
@@ -332,7 +391,13 @@ export interface Membership {
   description: string | null;
   pricePaise: number;
   durationDays: number;
-  benefits: Record<string, unknown>;
+  benefits: MembershipBenefits;
+  /** Plan terms & conditions (PR #110). */
+  terms?: string | null;
+  /** R2 object key of the cover artwork (PR #110); use derived URLs via the API. */
+  coverStorageKey?: string | null;
+  /** Derived public artwork URL on partner list/cover responses (PR #110). */
+  coverUrl?: string | null;
   status: 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
 }
 

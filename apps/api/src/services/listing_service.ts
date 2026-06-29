@@ -11,7 +11,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { arenas, events, memberships, tenants, venues } from '../db/schema/index.js';
+import { arenas, events, memberships, type MembershipBenefits, tenants, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 
@@ -208,7 +208,7 @@ export interface ListingDetail {
   pricePaise?: number | null;
   // Membership
   durationDays?: number | null;
-  benefits?: Record<string, unknown>;
+  benefits?: MembershipBenefits;
   // Venue link (for arena / membership / venue-scoped event)
   venueId?: string | null;
   venueName?: string | null;

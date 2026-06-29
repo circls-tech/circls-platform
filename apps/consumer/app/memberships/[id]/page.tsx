@@ -6,20 +6,22 @@ import { useMembership } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatPaise } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
+import type { MembershipBenefits } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
-/** Render benefits only when they are a simple string[] or a flat string→string/number
- *  map. The field is an opaque JSONB blob, so anything else is skipped. */
-function Benefits({ benefits }: { benefits: Record<string, unknown> }) {
-  const items: string[] = Array.isArray(benefits)
-    ? (benefits as unknown[]).filter((b): b is string => typeof b === 'string')
-    : Object.entries(benefits)
-        .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
-        .map(([k, v]) => `${k}: ${v}`);
+/** Render the typed benefits list (PR #110): each item has a label and an
+ *  optional detail line. Nothing renders when there are no benefits. */
+function Benefits({ benefits }: { benefits: MembershipBenefits }) {
+  const items = benefits?.items ?? [];
   if (items.length === 0) return null;
   return (
     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-text-secondary">
-      {items.map((b) => <li key={b}>{b}</li>)}
+      {items.map((b, i) => (
+        <li key={i}>
+          <span className="font-medium text-text-primary">{b.label}</span>
+          {b.detail && <span className="text-text-secondary"> — {b.detail}</span>}
+        </li>
+      ))}
     </ul>
   );
 }

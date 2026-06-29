@@ -14,7 +14,9 @@ import {
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
-import type { Membership } from '@/lib/api/types';
+import { BenefitsEditor, cleanBenefits } from '@/components/BenefitsEditor';
+import { MembershipArtwork } from '@/components/MembershipArtwork';
+import type { Membership, MembershipBenefitItem } from '@/lib/api/types';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
@@ -39,6 +41,8 @@ export default function MembershipsPage() {
   const [priceRupees, setPriceRupees] = useState('0');
   const [durationDays, setDurationDays] = useState('30');
   const [venueId, setVenueId] = useState(''); // '' = org-wide
+  const [benefits, setBenefits] = useState<MembershipBenefitItem[]>([]);
+  const [terms, setTerms] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -63,12 +67,16 @@ export default function MembershipsPage() {
         pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
         durationDays: parseInt(durationDays || '30', 10),
         ...(venueId ? { venueId } : {}),
+        benefits: { items: cleanBenefits(benefits) },
+        ...(terms.trim() ? { terms: terms.trim() } : {}),
       });
       setName('');
       setDescription('');
       setPriceRupees('0');
       setDurationDays('30');
       setVenueId('');
+      setBenefits([]);
+      setTerms('');
       setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -203,6 +211,7 @@ export default function MembershipsPage() {
                         {editingId === m.id && editable && (
                           <EditMembershipForm
                             membership={m}
+                            tenantId={tenantId}
                             venues={venues ?? []}
                             pending={updateMembership.isPending}
                             onCancel={() => setEditingId(null)}
@@ -290,6 +299,23 @@ export default function MembershipsPage() {
               required
             />
           </div>
+          <BenefitsEditor items={benefits} onChange={setBenefits} />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+              Terms &amp; conditions
+            </label>
+            <textarea
+              value={terms}
+              onChange={(e) => setTerms(e.target.value)}
+              rows={2}
+              maxLength={5000}
+              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+              placeholder="Optional plan terms (refunds, validity, transferability…)."
+            />
+          </div>
+          <p className="text-xs text-slate-400">
+            You can upload plan artwork from the Edit panel once the plan is created.
+          </p>
           {created && (
             <p className="text-sm text-amber-700">
               Membership created. It’s now pending review by Circls before it goes live.
@@ -309,6 +335,7 @@ export default function MembershipsPage() {
 
 interface EditMembershipFormProps {
   membership: Membership;
+  tenantId: string;
   venues: { id: string; name: string }[];
   pending: boolean;
   onCancel: () => void;
@@ -318,11 +345,14 @@ interface EditMembershipFormProps {
     description: string;
     pricePaise: number;
     durationDays: number;
+    benefits: { items: MembershipBenefitItem[] };
+    terms: string | null;
   }) => void | Promise<void>;
 }
 
 function EditMembershipForm({
   membership,
+  tenantId,
   venues,
   pending,
   onCancel,
@@ -333,6 +363,8 @@ function EditMembershipForm({
   const [priceRupees, setPriceRupees] = useState((membership.pricePaise / 100).toString());
   const [durationDays, setDurationDays] = useState(String(membership.durationDays));
   const [venueId, setVenueId] = useState(membership.venueId ?? '');
+  const [benefits, setBenefits] = useState<MembershipBenefitItem[]>(membership.benefits?.items ?? []);
+  const [terms, setTerms] = useState(membership.terms ?? '');
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -342,6 +374,8 @@ function EditMembershipForm({
       description,
       pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
       durationDays: parseInt(durationDays || '30', 10),
+      benefits: { items: cleanBenefits(benefits) },
+      terms: terms.trim() ? terms.trim() : null,
     });
   }
 
@@ -398,6 +432,25 @@ function EditMembershipForm({
           required
         />
       </div>
+      <BenefitsEditor items={benefits} onChange={setBenefits} />
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+          Terms &amp; conditions
+        </label>
+        <textarea
+          value={terms}
+          onChange={(e) => setTerms(e.target.value)}
+          rows={2}
+          maxLength={5000}
+          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+          placeholder="Optional"
+        />
+      </div>
+      <MembershipArtwork
+        tenantId={tenantId}
+        membershipId={membership.id}
+        coverUrl={membership.coverUrl ?? null}
+      />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
           Cancel

@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { Membership, MembershipPurchase, UserMembership } from './types';
+import { VENUE_IMAGE_MAX_BYTES, VENUE_IMAGE_TYPES } from './queries';
+import type {
+  Membership,
+  MembershipBenefits,
+  MembershipPurchase,
+  PresignedUpload,
+  UserMembership,
+} from './types';
 
 export function useMemberships(tenantId: string) {
   return useQuery({
@@ -30,7 +37,8 @@ export interface CreateMembershipInput {
   description?: string;
   pricePaise: number;
   durationDays: number;
-  benefits?: Record<string, unknown>;
+  benefits?: MembershipBenefits;
+  terms?: string | null;
 }
 
 export function useCreateMembership(tenantId: string) {
@@ -52,7 +60,8 @@ export interface UpdateMembershipInput {
   description?: string;
   pricePaise?: number;
   durationDays?: number;
-  benefits?: Record<string, unknown>;
+  benefits?: MembershipBenefits;
+  terms?: string | null;
 }
 
 /**
@@ -99,5 +108,39 @@ export function useMyMemberships() {
   return useQuery({
     queryKey: ['my-memberships'],
     queryFn: () => apiFetch<UserMembership[]>('/v1/users/me/memberships'),
+  });
+}
+
+// ── Artwork (PR #110): single cover image, presign → PUT → finalize. ───────────
+
+export function useUploadMembershipCover(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ membershipId, file }: { membershipId: string; file: File }): Promise<Membership> => {
+      if (!VENUE_IMAGE_TYPES.includes(file.type)) throw new Error('Use a JPEG, PNG, or WebP image.');
+      if (file.size > VENUE_IMAGE_MAX_BYTES) throw new Error('Image is too large (max 10 MB).');
+      const presign = await apiFetch<PresignedUpload>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/cover/upload-presign`,
+        { method: 'POST', body: JSON.stringify({ contentType: file.type }) },
+      );
+      const put = await fetch(presign.uploadUrl, { method: 'PUT', headers: presign.headers, body: file });
+      if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+      return apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${membershipId}/cover`, {
+        method: 'POST',
+        body: JSON.stringify({ storageKey: presign.storageKey }),
+      });
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['memberships', tenantId] }),
+  });
+}
+
+export function useRemoveMembershipCover(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (membershipId: string) =>
+      apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${membershipId}/cover`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['memberships', tenantId] }),
   });
 }

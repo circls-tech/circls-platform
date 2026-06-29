@@ -8,6 +8,53 @@ export interface ImageRef {
   position: number;
 }
 
+/** Social handles/URLs an org advertises (PR #108). */
+export interface OrgSocials {
+  instagram?: string;
+  facebook?: string;
+  x?: string;
+  youtube?: string;
+}
+
+/**
+ * Compact owning-org summary (PR #108) attached to public venue/event/
+ * membership payloads so a card can show "by {org}" without a second request.
+ */
+export interface Brand {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+}
+
+/** Per-weekday opening hours (PR #109): keys "0"–"6" (0 = Sunday); empty/missing
+ *  array = closed; times are venue-local "HH:MM". */
+export type OpeningHours = Record<string, { open: string; close: string }[]>;
+
+/**
+ * Full public org/brand profile (PR #108), from GET /v1/consumer/orgs/:slug.
+ * Never includes billing/internal fields.
+ */
+export interface PublicOrg {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  socials: OrgSocials | null;
+  address: {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  };
+}
+
 export interface PublicVenue {
   id: string;
   name: string;
@@ -15,6 +62,22 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** Trust metadata (PR #109). */
+  description: string | null;
+  amenities: string[];
+  openingHours: OpeningHours | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  address: {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  };
+  /** Owning-org summary (PR #108). */
+  brand: Brand;
   /** Uploaded venue photos, ordered by position; [] when none (card falls back). */
   images: ImageRef[];
 }
@@ -68,8 +131,20 @@ export interface PublicEvent {
   pricePaise: number;
   capacity: number | null;
   status: 'published';
+  /** Owning-org summary (PR #108). */
+  brand: Brand;
   /** Ticket tiers; [] on list/upcoming responses, populated on the detail view. */
   tiers: PublicTier[];
+}
+
+/** A single membership perk (PR #110). */
+export interface MembershipBenefitItem {
+  label: string;
+  detail?: string;
+}
+/** Typed membership benefits (PR #110). */
+export interface MembershipBenefits {
+  items: MembershipBenefitItem[];
 }
 
 export interface PublicMembership {
@@ -80,7 +155,14 @@ export interface PublicMembership {
   description: string | null;
   pricePaise: number;
   durationDays: number;
-  benefits: Record<string, unknown>;
+  /** Typed benefits (PR #110) — always { items: [...] }. */
+  benefits: MembershipBenefits;
+  /** Plan terms & conditions (PR #110). */
+  terms: string | null;
+  /** Public artwork URL (PR #110), or null. */
+  artworkUrl: string | null;
+  /** Owning-org summary (PR #108). */
+  brand: Brand;
   status: 'active';
 }
 
