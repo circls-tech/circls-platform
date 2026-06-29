@@ -9,8 +9,6 @@ case "${1:-help}" in
   setup)
     command -v gh >/dev/null || { echo "Install GitHub CLI (gh) first: https://cli.github.com"; exit 1; }
     gh auth status >/dev/null 2>&1 || { echo "Run 'gh auth login' first."; exit 1; }
-    echo "→ Forking the repo (creates your own copy; you cannot push to the main repo)…"
-    gh repo fork --remote --remote-name origin || true
     echo "→ Installing the PR-only git guard…"
     git config core.hooksPath .githooks
     echo "→ Building images (first time pulls deps; a few minutes)…"
@@ -44,7 +42,7 @@ case "${1:-help}" in
   *)
     cat <<'EOF'
 Circls sandbox — usage:
-  ./sandbox setup        First-time: fork the repo, install the git guard, build images
+  ./sandbox setup        First-time: install the git guard, build images
   ./sandbox up [apps…]   Start everything (or a subset, e.g. ./sandbox up partners)
   ./sandbox seed         Create demo login users + tenants
   ./sandbox reset        Wipe everything and reseed (use after you break things)
