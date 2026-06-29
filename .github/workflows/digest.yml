@@ -45,7 +45,7 @@ jobs:
               ``, `**Awaiting @VedantS01 review (${awaitingReview.length})**`, line(awaitingReview),
               ``, `**Failing CI (${failing.length})**`, line(failing),
               ``, `**Conflicts — ask @claude to rebase (${conflicted.length})**`, line(conflicted),
-              ``, `**Needs Vedant decision (${needsV.length})**`, line(needsV),
+              ``, `**Blocked on product decision (${needsV.length})**`, line(needsV),
               ``, `**Untriaged issues (${triage.length})**`, line(triage),
               ``, `See the pinned 🚀 Release tracker for what's pending release.`,
             ].join('\n');
