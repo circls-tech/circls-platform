@@ -37,7 +37,8 @@ Idempotent — safe to re-run if the ruleset ever needs to be refreshed.
 
 We work across timezones. To keep things moving without calls:
 
-- **Status lives on the board / pinned 🚀 Release tracker — look there, don't ask.**
+- **Status lives on the [Circls Delivery board](https://github.com/orgs/circls-tech/projects/1)
+  (`Backlog → Ready to release → Released`) and the pinned 🚀 Release tracker — look there, don't ask.**
 - **Stuck on tech (conflicts, failing checks)?** Comment `@claude …` on your PR
   (see the PR template). Don't wait on a human.
 - **Need a decision or review?** Add the **`needs-vedant`** label and write the

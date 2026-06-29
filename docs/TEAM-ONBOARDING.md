@@ -56,7 +56,8 @@ on the issue page.)
 
 ## Where to check status (instead of asking)
 
-- The **project board** — every issue/PR and its stage.
+- The **[Circls Delivery board](https://github.com/orgs/circls-tech/projects/1)** —
+  every issue/PR flows through `Backlog → Ready to release → Released`.
 - The pinned **🚀 Release tracker** issue — what's merged and waiting to go live.
 - The **twice-daily Teams digest** — review queue, failing checks, conflicts,
   and anything blocked.
