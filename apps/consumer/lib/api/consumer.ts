@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
+  ConsumerConcern,
   EventBookingResult,
   MembershipPurchaseResult,
   MyBooking,
@@ -14,6 +15,7 @@ import type {
   PublicVenue,
   PurchaseMembershipInput,
   SlotBookingResult,
+  SubmitConcernInput,
   VenueDetail,
 } from './types';
 
@@ -207,5 +209,31 @@ export function useMyBooking(id: string) {
       apiFetch<{ booking: MyBookingDetail }>(`/v1/consumer/me/bookings/${id}`),
     enabled: Boolean(user) && Boolean(id),
     select: (data) => data.booking,
+  });
+}
+
+// ── Help concerns (#115) ──────────────────────────────────────────────────────
+
+/** Submit a Help-chatbot concern. Returns the created concern (with its id/ref). */
+export function useSubmitConcern() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SubmitConcernInput) =>
+      apiFetch<ConsumerConcern>('/v1/consumer/support/concerns', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['my-concerns'] }),
+  });
+}
+
+/** The signed-in user's past Help concerns, newest first. */
+export function useMyConcerns() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['my-concerns', user?.uid],
+    queryFn: () => apiFetch<{ rows: ConsumerConcern[] }>('/v1/consumer/support/concerns'),
+    enabled: Boolean(user),
+    select: (data) => data.rows,
   });
 }
