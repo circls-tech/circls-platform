@@ -1,0 +1,9 @@
+name: Question
+description: Ask a question (check the Help Centre first).
+labels: ["question", "needs-triage"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations: { required: true }

@@ -1,0 +1,30 @@
+name: Bug report
+description: Something in the product is broken or behaving wrong.
+labels: ["bug", "needs-triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which app?
+      options: [consumer, partners, admin, api, not sure]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see? What did you expect instead?
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations: { required: true }
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot / link (optional)
+    validations: { required: false }
