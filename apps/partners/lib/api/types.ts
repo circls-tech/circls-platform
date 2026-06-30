@@ -383,12 +383,26 @@ export interface MembershipBenefits {
   items: MembershipBenefitItem[];
 }
 
+/** A plan tier on a membership, with live sold/remaining counts. */
+export interface MembershipTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+  capacity: number | null;
+  sold: number;
+  remaining: number | null;
+}
+
 export interface Membership {
   id: string;
   tenantId: string;
   venueId: string | null;
   name: string;
   description: string | null;
+  /** Legacy display fields — mirror the cheapest tier. */
   pricePaise: number;
   durationDays: number;
   benefits: MembershipBenefits;
@@ -399,6 +413,8 @@ export interface Membership {
   /** Derived public artwork URL on partner list/cover responses (PR #110). */
   coverUrl?: string | null;
   status: 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
+  /** Plan tiers (min 1). Present on list + detail endpoints. */
+  tiers: MembershipTier[];
 }
 
 export interface UserMembership {
@@ -425,6 +441,8 @@ export interface MembershipPurchase {
   userMembershipId: string;
   buyerName: string;
   buyerContact: string;
+  /** The tier the buyer purchased, or null for legacy purchases. */
+  tierName: string | null;
   status: string;
   /** ISO-8601 */
   startsAt: string;

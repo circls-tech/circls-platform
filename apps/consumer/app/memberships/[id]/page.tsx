@@ -1,5 +1,5 @@
 'use client';
-import { use } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
-import type { MembershipBenefits } from '@/lib/api/types';
+import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
 /** Render the typed benefits list (PR #110) as a "What's included" list: each
@@ -47,6 +47,28 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
 
   const scope = m ? membershipScope(m) : null;
 
+  const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
+  const tiers = m?.tiers ?? [];
+  const multiTier = tiers.length > 1;
+  const selectedTier: PublicMembershipTier | undefined =
+    tiers.find((t) => t.id === selectedTierId) ?? tiers[0];
+
+  function buy(tier: PublicMembershipTier | undefined) {
+    if (!m) return;
+    const prefill: { name?: string; contact?: string } = {};
+    if (user?.displayName) prefill.name = user.displayName;
+    if (user?.phoneNumber) prefill.contact = user.phoneNumber;
+    openCheckout(
+      {
+        kind: 'membership',
+        membershipId: m.id,
+        title: tier ? `${m.name} — ${tier.name}` : m.name,
+        ...(tier ? { membershipTierId: tier.id } : {}),
+      },
+      prefill,
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <Header />
@@ -79,6 +101,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                 <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
                 {m.description && <p className="mt-2 text-sm text-ink-soft">{m.description}</p>}
                 <div className="mt-4 font-display text-2xl font-extrabold">
+                  {multiTier && <span className="font-sans text-xs font-medium text-ink-soft">from </span>}
                   {formatPaise(m.pricePaise)}{' '}
                   <span className="font-sans text-xs font-medium text-ink-soft">/ {m.durationDays} days</span>
                 </div>
@@ -86,7 +109,51 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
             </div>
 
             <Card className="flex flex-col gap-5">
-              <Benefits benefits={m.benefits} />
+              {multiTier && (
+                <div className="flex flex-col gap-3">
+                  <h2 className="font-display text-lg font-extrabold text-ink">Choose a tier</h2>
+                  {tiers.map((t) => {
+                    const selected = selectedTier?.id === t.id;
+                    const soldOut = t.remaining === 0;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedTierId(t.id)}
+                        disabled={soldOut}
+                        aria-pressed={selected}
+                        className={[
+                          'flex w-full items-start justify-between gap-4 rounded-card border-[2.5px] bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow,border-color] duration-150',
+                          selected ? 'border-coral-deep' : 'border-ink',
+                          soldOut
+                            ? 'opacity-60'
+                            : 'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
+                        ].join(' ')}
+                      >
+                        <div className="min-w-0">
+                          <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
+                          {t.description && (
+                            <p className="mt-0.5 text-sm text-text-secondary">{t.description}</p>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="font-display text-xl font-extrabold text-ink">{formatPaise(t.pricePaise)}</p>
+                          <p className="text-xs text-ink-soft">/ {t.durationDays} days</p>
+                          {soldOut ? (
+                            <p className="mt-1 text-xs font-semibold text-petal-red">Sold out</p>
+                          ) : (
+                            t.remaining != null && (
+                              <p className="mt-1 text-xs text-ink-soft">{t.remaining} left</p>
+                            )
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Benefits benefits={selectedTier?.benefits ?? m.benefits} />
 
               {m.terms && (
                 <div>
@@ -103,14 +170,11 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
 
               <div className="pt-1">
                 <Button
-                  onClick={() => {
-                    const prefill: { name?: string; contact?: string } = {};
-                    if (user?.displayName) prefill.name = user.displayName;
-                    if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-                    openCheckout({ kind: 'membership', membershipId: m.id, title: m.name }, prefill);
-                  }}
+                  disabled={!selectedTier || selectedTier.remaining === 0}
+                  onClick={() => buy(selectedTier)}
                 >
-                  {m.pricePaise === 0 ? 'Get membership' : 'Buy'}
+                  {selectedTier && selectedTier.pricePaise === 0 ? 'Get membership' : 'Buy'}
+                  {multiTier && selectedTier ? ` — ${selectedTier.name}` : ''}
                 </Button>
               </div>
             </Card>

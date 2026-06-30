@@ -3,7 +3,7 @@ import { apiFetch } from './client';
 
 export type QuoteItem =
   | { itemType: 'event'; eventId: string; lines: { tierId: string; quantity: number }[] }
-  | { itemType: 'membership'; membershipId: string }
+  | { itemType: 'membership'; membershipId: string; membershipTierId?: string }
   | { itemType: 'slot'; slotIds: string[] };
 
 export type QuoteRequest = QuoteItem & { couponCode?: string };

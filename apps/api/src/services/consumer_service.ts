@@ -29,6 +29,10 @@ import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
+import {
+  tiersWithRemainingByMembership,
+  type MembershipTierWithRemaining,
+} from './membership_tiers_service.js';
 import { imagesForEvents } from './event_image_service.js';
 import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
@@ -383,7 +387,7 @@ export async function listPublicMemberships(venueId: string): Promise<PublicMemb
         sql`(${memberships.venueId} is null or ${memberships.venueId} = ${venueId})`,
       ),
     );
-  return (rows as MembershipJoinRow[]).map(toPublicMembership);
+  return attachMembershipTiers(rows as MembershipJoinRow[]);
 }
 
 /** A public membership enriched with its scope (venue or tenant) for cross-venue cards. */
@@ -400,6 +404,46 @@ export interface PublicMembershipWithScope extends Membership {
   artworkUrl: string | null;
   /** Compact owning-org summary (PR #108). */
   brand: BrandSummary;
+  /** Live plan tiers (min 1). `pricePaise`/`durationDays` above mirror the cheapest. */
+  tiers: PublicMembershipTier[];
+}
+
+/**
+ * Public-facing membership tier — the consumer-safe slice of a tier row. Carries
+ * duration + typed benefits (a membership tier is a plan, not a ticket).
+ */
+export interface PublicMembershipTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+  capacity: number | null;
+  remaining: number | null;
+}
+
+function toPublicMembershipTier(t: MembershipTierWithRemaining): PublicMembershipTier {
+  return {
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    durationDays: t.durationDays,
+    benefits: coerceBenefits(t.benefits),
+    capacity: t.capacity,
+    remaining: t.remaining,
+  };
+}
+
+/** Map join rows to public memberships and attach live tiers (one grouped query). */
+async function attachMembershipTiers(
+  rows: MembershipJoinRow[],
+): Promise<PublicMembershipWithScope[]> {
+  const base = rows.map(toPublicMembership);
+  const byMembership = await tiersWithRemainingByMembership(db, base.map((m) => m.id));
+  for (const m of base) m.tiers = (byMembership.get(m.id) ?? []).map(toPublicMembershipTier);
+  return base;
 }
 
 interface MembershipJoinRow {
@@ -428,6 +472,7 @@ function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
     benefits: coerceBenefits(r.m.benefits),
     artworkUrl: r.m.coverStorageKey ? getStorage().publicUrl(r.m.coverStorageKey) : null,
     brand: toBrandSummary(r.brand),
+    tiers: [],
   };
 }
 
@@ -458,7 +503,7 @@ export async function listPublicMembershipsAcrossVenues(
     .where(and(...conds))
     .orderBy(sql`${memberships.createdAt} desc`)
     .limit(limit);
-  return (rows as MembershipJoinRow[]).map(toPublicMembership);
+  return attachMembershipTiers(rows as MembershipJoinRow[]);
 }
 
 /** A single public membership by id, enriched with scope, or null when it does
@@ -483,7 +528,8 @@ export async function getPublicMembershipById(
     .limit(1);
   const r = rows[0] as MembershipJoinRow | undefined;
   if (!r) return null;
-  return toPublicMembership(r);
+  const [withTiers] = await attachMembershipTiers([r]);
+  return withTiers ?? null;
 }
 
 // ── Book / purchase ────────────────────────────────────────────────────────
@@ -507,7 +553,7 @@ async function resolvePricing(
   req:
     | { itemType: 'slot'; slotIds: string[] }
     | { itemType: 'event'; eventId: string; lines?: { tierId: string; quantity: number }[] }
-    | { itemType: 'membership'; membershipId: string },
+    | { itemType: 'membership'; membershipId: string; membershipTierId?: string },
   userId: string,
   couponCode: string,
 ): Promise<CouponPricing> {
@@ -606,6 +652,7 @@ export async function consumerPurchaseMembership(
   membershipId: string,
   userId: string,
   couponCode?: string,
+  membershipTierId?: string,
 ): Promise<PurchaseMembershipResult> {
   const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
   if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
@@ -613,9 +660,13 @@ export async function consumerPurchaseMembership(
   const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
   if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
   const pricing = couponCode
-    ? await resolvePricing({ itemType: 'membership', membershipId }, userId, couponCode)
+    ? await resolvePricing(
+        { itemType: 'membership', membershipId, ...(membershipTierId ? { membershipTierId } : {}) },
+        userId,
+        couponCode,
+      )
     : null;
-  return purchaseMembership({ membershipId, userId }, pricing);
+  return purchaseMembership({ membershipId, userId, membershipTierId }, pricing);
 }
 
 // ── My bookings ──────────────────────────────────────────────────────────────

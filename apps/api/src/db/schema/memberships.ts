@@ -74,6 +74,12 @@ export const userMemberships = pgTable('user_memberships', {
   membershipId: uuid('membership_id')
     .notNull()
     .references(() => memberships.id),
+  /**
+   * The tier the buyer purchased (null for legacy purchases predating tiers).
+   * Drives per-tier sold/capacity counts. Not an FK so a soft-deleted tier can
+   * still be referenced historically.
+   */
+  membershipTierId: uuid('membership_tier_id'),
   paymentId: uuid('payment_id').references(() => payments.id),
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
   endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),

@@ -16,7 +16,11 @@ const itemSchema = z.union([
     eventId: z.string().uuid(),
     lines: z.array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) })).min(1),
   }),
-  z.object({ itemType: z.literal('membership'), membershipId: z.string().uuid() }),
+  z.object({
+    itemType: z.literal('membership'),
+    membershipId: z.string().uuid(),
+    membershipTierId: z.string().uuid().optional(),
+  }),
   z.object({ itemType: z.literal('slot'), slotIds: z.array(z.string().uuid()).min(1) }),
 ]);
 const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().min(1).max(64).optional() }));

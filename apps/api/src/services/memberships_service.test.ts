@@ -133,4 +133,48 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
     expect(result.paymentId).toBeTruthy();
     expect(result.orderId).toMatch(/^order_stub_/);
   });
+
+  it('createMembership with tiers exposes them and syncs the cheapest as the plan price', async () => {
+    const m = await createMembership({
+      tenantId,
+      actorUserId,
+      name: 'Tiered Pass',
+      tiers: [
+        { name: 'Gold', pricePaise: 200000, durationDays: 90, benefits: { items: [{ label: 'Priority booking' }] }, capacity: null },
+        { name: 'Silver', pricePaise: 100000, durationDays: 30, benefits: { items: [] }, capacity: 1 },
+      ],
+    });
+    expect(m.tiers).toHaveLength(2);
+    // Legacy display fields mirror the cheapest tier.
+    expect(m.pricePaise).toBe(100000);
+    expect(m.durationDays).toBe(30);
+
+    const list = await listMembershipsForTenant(tenantId);
+    const found = list.find((r) => r.id === m.id);
+    expect(found?.tiers.map((t) => t.name).sort()).toEqual(['Gold', 'Silver']);
+  });
+
+  it('purchaseMembership records the chosen tier and enforces tier capacity', async () => {
+    const m = await createMembership({
+      tenantId,
+      actorUserId,
+      name: 'Capped Plan',
+      tiers: [{ name: 'Solo', pricePaise: 0, durationDays: 30, benefits: { items: [] }, capacity: 1 }],
+    });
+    const soloTier = m.tiers[0]!;
+
+    const first = await purchaseMembership({
+      membershipId: m.id,
+      userId: buyerId,
+      membershipTierId: soloTier.id,
+    });
+    expect(first.userMembershipId).toBeTruthy();
+    const mine = await listUserMemberships(buyerId);
+    expect(mine.find((r) => r.id === first.userMembershipId)?.tier?.name).toBe('Solo');
+
+    // Capacity is 1 — the second buy is rejected.
+    await expect(
+      purchaseMembership({ membershipId: m.id, userId: actorUserId, membershipTierId: soloTier.id }),
+    ).rejects.toMatchObject({ code: 'membership_tier_sold_out' });
+  });
 });

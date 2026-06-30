@@ -14,12 +14,23 @@ import {
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
-import { BenefitsEditor, cleanBenefits } from '@/components/BenefitsEditor';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
-import type { Membership, MembershipBenefitItem } from '@/lib/api/types';
+import {
+  MembershipTiersEditor,
+  emptyMembershipTier,
+  membershipTierDraftFromApi,
+  membershipTiersToPayload,
+  type MembershipTierDraft,
+} from '@/components/MembershipTiersEditor';
+import type { Membership } from '@/lib/api/types';
+import type { MembershipTierInput } from '@/lib/api/memberships';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
+}
+
+function fmtPrice(pricePaise: number) {
+  return pricePaise === 0 ? 'Free' : `₹${(pricePaise / 100).toFixed(2)}`;
 }
 
 export default function MembershipsPage() {
@@ -38,11 +49,9 @@ export default function MembershipsPage() {
   // Create form.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [priceRupees, setPriceRupees] = useState('0');
-  const [durationDays, setDurationDays] = useState('30');
   const [venueId, setVenueId] = useState(''); // '' = org-wide
-  const [benefits, setBenefits] = useState<MembershipBenefitItem[]>([]);
   const [terms, setTerms] = useState('');
+  const [tiers, setTiers] = useState<MembershipTierDraft[]>([emptyMembershipTier()]);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -64,19 +73,15 @@ export default function MembershipsPage() {
       await createMembership.mutateAsync({
         name,
         ...(description ? { description } : {}),
-        pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
-        durationDays: parseInt(durationDays || '30', 10),
         ...(venueId ? { venueId } : {}),
-        benefits: { items: cleanBenefits(benefits) },
         ...(terms.trim() ? { terms: terms.trim() } : {}),
+        tiers: membershipTiersToPayload(tiers),
       });
       setName('');
       setDescription('');
-      setPriceRupees('0');
-      setDurationDays('30');
       setVenueId('');
-      setBenefits([]);
       setTerms('');
+      setTiers([emptyMembershipTier()]);
       setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -121,8 +126,7 @@ export default function MembershipsPage() {
                 <tr className="border-b border-[#e5e7eb] text-left">
                   <th className="pb-2 pr-4 font-medium text-slate-500">Name</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Scope</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Price</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Duration</th>
+                  <th className="pb-2 pr-4 font-medium text-slate-500">Tiers</th>
                   <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                   <th className="pb-2 font-medium text-slate-500">Actions</th>
                 </tr>
@@ -148,13 +152,26 @@ export default function MembershipsPage() {
                         )}
                       </td>
                       <td className="py-2.5 pr-4 text-slate-700">
-                        {m.pricePaise === 0 ? (
-                          <span className="text-emerald-600">Free</span>
-                        ) : (
-                          `₹${(m.pricePaise / 100).toFixed(2)}`
-                        )}
+                        <ul className="flex flex-col gap-1">
+                          {m.tiers.map((t) => (
+                            <li key={t.id} className="flex flex-wrap items-baseline gap-x-1.5">
+                              <span className="font-medium text-slate-700">{t.name}</span>
+                              <span className="text-slate-500">
+                                {t.pricePaise === 0 ? (
+                                  <span className="text-emerald-600">Free</span>
+                                ) : (
+                                  fmtPrice(t.pricePaise)
+                                )}{' '}
+                                · {t.durationDays}d
+                                {t.capacity != null && (
+                                  <span className="text-slate-400"> · {t.remaining ?? 0}/{t.capacity} left</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                          {m.tiers.length === 0 && <li className="text-slate-400">—</li>}
+                        </ul>
                       </td>
-                      <td className="py-2.5 pr-4 text-slate-700">{m.durationDays}d</td>
                       <td className="py-2.5 pr-4">
                         <StatusPill status={m.status} />
                       </td>
@@ -240,7 +257,7 @@ export default function MembershipsPage() {
       </Card>
 
       <Card title="Create a plan">
-        <form onSubmit={onCreate} className="flex max-w-lg flex-col gap-3">
+        <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-3">
           <Input
             label="Name"
             value={name}
@@ -257,7 +274,7 @@ export default function MembershipsPage() {
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
-              placeholder="Optional benefits, perks, etc."
+              placeholder="Optional summary shown above the tiers."
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -280,26 +297,7 @@ export default function MembershipsPage() {
               Org-wide plans apply across every venue; otherwise scope it to one venue.
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input
-              label="Price (₹)"
-              type="number"
-              min={0}
-              step="0.01"
-              value={priceRupees}
-              onChange={(e) => setPriceRupees(e.target.value)}
-              hint="0 = free."
-            />
-            <Input
-              label="Duration (days)"
-              type="number"
-              min={1}
-              value={durationDays}
-              onChange={(e) => setDurationDays(e.target.value)}
-              required
-            />
-          </div>
-          <BenefitsEditor items={benefits} onChange={setBenefits} />
+          <MembershipTiersEditor value={tiers} onChange={setTiers} />
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
               Terms &amp; conditions
@@ -343,10 +341,8 @@ interface EditMembershipFormProps {
     venueId: string | null;
     name: string;
     description: string;
-    pricePaise: number;
-    durationDays: number;
-    benefits: { items: MembershipBenefitItem[] };
     terms: string | null;
+    tiers: MembershipTierInput[];
   }) => void | Promise<void>;
 }
 
@@ -360,11 +356,13 @@ function EditMembershipForm({
 }: EditMembershipFormProps) {
   const [name, setName] = useState(membership.name);
   const [description, setDescription] = useState(membership.description ?? '');
-  const [priceRupees, setPriceRupees] = useState((membership.pricePaise / 100).toString());
-  const [durationDays, setDurationDays] = useState(String(membership.durationDays));
   const [venueId, setVenueId] = useState(membership.venueId ?? '');
-  const [benefits, setBenefits] = useState<MembershipBenefitItem[]>(membership.benefits?.items ?? []);
   const [terms, setTerms] = useState(membership.terms ?? '');
+  const [tiers, setTiers] = useState<MembershipTierDraft[]>(() =>
+    membership.tiers.length > 0
+      ? membership.tiers.map(membershipTierDraftFromApi)
+      : [emptyMembershipTier()],
+  );
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -372,17 +370,15 @@ function EditMembershipForm({
       venueId: venueId || null,
       name,
       description,
-      pricePaise: Math.round(parseFloat(priceRupees || '0') * 100),
-      durationDays: parseInt(durationDays || '30', 10),
-      benefits: { items: cleanBenefits(benefits) },
       terms: terms.trim() ? terms.trim() : null,
+      tiers: membershipTiersToPayload(tiers),
     });
   }
 
   return (
     <form
       onSubmit={submit}
-      className="mt-3 flex max-w-lg flex-col gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4"
+      className="mt-3 flex max-w-2xl flex-col gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4"
     >
       <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
       <div className="flex flex-col gap-1">
@@ -414,25 +410,7 @@ function EditMembershipForm({
           ))}
         </select>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Input
-          label="Price (₹)"
-          type="number"
-          min={0}
-          step="0.01"
-          value={priceRupees}
-          onChange={(e) => setPriceRupees(e.target.value)}
-        />
-        <Input
-          label="Duration (days)"
-          type="number"
-          min={1}
-          value={durationDays}
-          onChange={(e) => setDurationDays(e.target.value)}
-          required
-        />
-      </div>
-      <BenefitsEditor items={benefits} onChange={setBenefits} />
+      <MembershipTiersEditor value={tiers} onChange={setTiers} />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
           Terms &amp; conditions
@@ -483,7 +461,7 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
   );
 
   return (
-    <div className="mt-3 max-w-2xl rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4">
+    <div className="mt-3 max-w-3xl rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4">
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#475569]">
         Buyers{data ? ` (${data.rows.length})` : ''}
       </h3>
@@ -503,6 +481,7 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
               <tr className="border-b border-[#e5e7eb] text-left">
                 <th className="pb-2 pr-4 font-medium text-slate-500">Buyer</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Tier</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Valid</th>
                 <th className="pb-2 font-medium text-slate-500">Purchased</th>
@@ -513,6 +492,7 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
                 <tr key={p.userMembershipId}>
                   <td className="py-2.5 pr-4 font-medium text-slate-700">{p.buyerName}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{p.buyerContact}</td>
+                  <td className="py-2.5 pr-4 text-slate-700">{p.tierName ?? '—'}</td>
                   <td className="py-2.5 pr-4">
                     <StatusPill status={p.status} />
                   </td>
