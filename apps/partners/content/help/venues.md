@@ -23,7 +23,7 @@ These fields appear on your public venue page, so keep them accurate — stale d
 - **Amenities** — tap the chips to toggle the facilities you offer (parking, restrooms, changing rooms, showers, drinking water, café, equipment rental, first aid, Wi-Fi, lockers, seating, floodlights, air conditioning, wheelchair access, pro shop, coaching). Only this canonical list is accepted.
 - **Opening hours** — set an open and close time for each weekday, or tick **Closed** for days you do not operate. Times are in the venue's timezone.
 - **Contact** — a public phone number and/or email for the venue.
-- **Address** — structured street address (line 1/2, city, state, postal code). **Country** is chosen from a dropdown (currently India or the USA — the regions circls serves). Your **map location is set automatically** from the address when you save, so there's no need to enter latitude/longitude by hand. Setting the city and country is what places your venue on the map and lets nearby customers find it, so keep them accurate.
+- **Address** — start typing in **Search address** and pick a suggestion to fill the street, city, state, postal code and country automatically (results are limited to the regions circls serves). You can still edit any field by hand. **Country** is chosen from a dropdown (currently India or the USA). Your **map location is set automatically** — either from the address you pick or derived from the address when you save — so there's no need to enter latitude/longitude by hand. Setting the city and country is what places your venue on the map and lets nearby customers find it, so keep them accurate.
 
 Click **Save details** to apply. Editing these does not change your venue's approval status.
 

@@ -94,6 +94,45 @@ const CITIES: Record<CountryKey, Record<string, GeoPoint>> = {
   },
 };
 
+/** A single gazetteer autocomplete hit. */
+export interface GazetteerHit {
+  city: string;
+  country: CountryKey;
+  lat: number;
+  lng: number;
+}
+
+const titleCase = (s: string): string => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+/**
+ * Prefix/substring search over the gazetteer's cities — the offline stand-in for
+ * a real autocomplete provider (used in the sandbox + tests). Optionally scoped
+ * to one country; prefix matches rank above substring matches.
+ */
+export function searchGazetteer(
+  query: string,
+  country?: string | null,
+  limit = 5,
+): GazetteerHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const scoped = normalizeCountry(country ?? null);
+  const buckets: CountryKey[] = scoped ? [scoped] : (['India', 'USA'] as CountryKey[]);
+
+  const hits: GazetteerHit[] = [];
+  for (const ck of buckets) {
+    for (const [city, pt] of Object.entries(CITIES[ck])) {
+      if (city.includes(q)) hits.push({ city: titleCase(city), country: ck, lat: pt.lat, lng: pt.lng });
+    }
+  }
+  hits.sort((a, b) => {
+    const ap = a.city.toLowerCase().startsWith(q) ? 0 : 1;
+    const bp = b.city.toLowerCase().startsWith(q) ? 0 : 1;
+    return ap - bp || a.city.localeCompare(b.city);
+  });
+  return hits.slice(0, limit);
+}
+
 /**
  * Resolve a city (within a known country) to coordinates using the gazetteer.
  * Falls back to the country centroid when the city is unknown but the country

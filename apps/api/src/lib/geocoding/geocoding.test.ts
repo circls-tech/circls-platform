@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { COUNTRY_CENTROID, lookupGazetteer, normalizeCountry } from './gazetteer.js';
+import { COUNTRY_CENTROID, lookupGazetteer, normalizeCountry, searchGazetteer } from './gazetteer.js';
 import { __resetGeocoderForTesting, getGeocoder, hasGeocodableAddress } from './index.js';
 
 afterEach(() => __resetGeocoderForTesting());
@@ -56,6 +56,25 @@ describe('hasGeocodableAddress', () => {
   });
 });
 
+describe('searchGazetteer', () => {
+  it('prefix-matches cities, ranking prefixes above substrings', () => {
+    const hits = searchGazetteer('ben');
+    expect(hits[0]?.city).toBe('Bengaluru');
+    expect(hits[0]?.country).toBe('India');
+  });
+
+  it('scopes to a country when given', () => {
+    const all = searchGazetteer('san');
+    const us = searchGazetteer('san', 'USA');
+    expect(us.every((h) => h.country === 'USA')).toBe(true);
+    expect(all.length).toBeGreaterThanOrEqual(us.length);
+  });
+
+  it('returns nothing for a blank query', () => {
+    expect(searchGazetteer('')).toEqual([]);
+  });
+});
+
 describe('getGeocoder (stub default)', () => {
   it('defaults to the stub gazetteer geocoder', async () => {
     const g = getGeocoder();
@@ -68,5 +87,13 @@ describe('getGeocoder (stub default)', () => {
   it('returns null for an address it cannot resolve', async () => {
     const point = await getGeocoder().geocode({ city: 'Lyon', country: 'France' });
     expect(point).toBeNull();
+  });
+
+  it('search() returns fillable suggestions with coordinates', async () => {
+    const out = await getGeocoder().search('mumb', { country: 'India' });
+    expect(out.length).toBeGreaterThan(0);
+    expect(out[0]).toMatchObject({ city: 'Mumbai', country: 'India' });
+    expect(typeof out[0]!.lat).toBe('number');
+    expect(out[0]!.label).toContain('Mumbai');
   });
 });
