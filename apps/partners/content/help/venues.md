@@ -9,11 +9,11 @@ Venues and arenas are the foundation of your circls listing. A **venue** is a ph
    - **Tags** (optional) — short descriptors like `indoor` or `floodlit`.
 3. Save. You'll be taken to the venue's detail page.
 
-New venues start in **pending review**. You can edit details, add a map location and upload photos while you wait for approval.
+New venues start in **pending review**. You can edit details, fill in the address and upload photos while you wait for approval.
 
 ## Editing a venue
 
-Open a venue from the **Venues** list to reach its detail page. The **Venue details** panel at the top of that page lets you edit everything customers see and save it in place — name, timezone (read-only here), tags and map coordinates, plus the trust details below. You can also manage photos and jump to **Events** and **Bookings**.
+Open a venue from the **Venues** list to reach its detail page. The **Venue details** panel at the top of that page lets you edit everything customers see and save it in place — name, timezone (read-only here), tags and address, plus the trust details below. You can also manage photos and jump to **Events** and **Bookings**.
 
 ### Venue details (description, amenities, hours, contact, address)
 
@@ -23,8 +23,7 @@ These fields appear on your public venue page, so keep them accurate — stale d
 - **Amenities** — tap the chips to toggle the facilities you offer (parking, restrooms, changing rooms, showers, drinking water, café, equipment rental, first aid, Wi-Fi, lockers, seating, floodlights, air conditioning, wheelchair access, pro shop, coaching). Only this canonical list is accepted.
 - **Opening hours** — set an open and close time for each weekday, or tick **Closed** for days you do not operate. Times are in the venue's timezone.
 - **Contact** — a public phone number and/or email for the venue.
-- **Address** — structured street address (line 1/2, city, state, postal code, country).
-- **Map location** — latitude/longitude for the map pin (optional).
+- **Address** — structured street address (line 1/2, city, state, postal code). **Country** is chosen from a dropdown (currently India or the USA — the regions circls serves). Your **map location is set automatically** from the address when you save, so there's no need to enter latitude/longitude by hand. Setting the city and country is what places your venue on the map and lets nearby customers find it, so keep them accurate.
 
 Click **Save details** to apply. Editing these does not change your venue's approval status.
 

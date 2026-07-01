@@ -53,6 +53,15 @@ export const envSchema = z
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 
+  // Geocoding (venue address → lat/lng). Default 'stub' resolves against a
+  // built-in IN/US city gazetteer (offline; used in the sandbox + tests). Set
+  // GEOCODER_PROVIDER='nominatim' in prod to resolve arbitrary addresses via
+  // OpenStreetMap Nominatim (free/keyless; ODbL permits storing results — see
+  // lib/geocoding/). GEOCODER_USER_AGENT is required by Nominatim's usage policy.
+  GEOCODER_PROVIDER: z.enum(['stub', 'nominatim']).default('stub'),
+  GEOCODER_BASE_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
+  GEOCODER_USER_AGENT: z.string().default('circls-platform/1.0 (+https://circls.app)'),
+
   // Partner portal base URL (used to build invite acceptance links).
   PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
 

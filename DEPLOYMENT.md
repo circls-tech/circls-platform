@@ -55,6 +55,9 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `R2_SECRET_ACCESS_KEY` | for media | — | R2 API token S3 secret. |
 | `R2_BUCKET` | for media | — | `circls-media` (public venue-media bucket). |
 | `R2_PUBLIC_BASE_URL` | for media | — | bucket public URL, e.g. `https://pub-….r2.dev`. Venue-image URLs are built from this. |
+| `GEOCODER_PROVIDER` | no | `stub` | `stub` resolves venue addresses against a built-in India/USA city gazetteer (no external calls). Set `nominatim` in prod to geocode arbitrary addresses via OpenStreetMap (free/keyless; ODbL permits storing results). |
+| `GEOCODER_BASE_URL` | no | `https://nominatim.openstreetmap.org` | Nominatim endpoint. Point at a self-hosted instance if you outgrow the public one's ~1 req/s policy. |
+| `GEOCODER_USER_AGENT` | with nominatim | `circls-platform/1.0 (+https://circls.app)` | Required by Nominatim's usage policy — identify the app + a contact URL. |
 
 ## Gotchas captured this session
 

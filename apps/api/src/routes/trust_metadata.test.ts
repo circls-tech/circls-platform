@@ -154,11 +154,17 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
         openingHours: { '1': [{ open: '09:00', close: '22:00' }], '0': [] },
         contactPhone: '+911234567890',
         city: 'Nagpur',
+        country: 'India',
         status: 'active',
       },
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().amenities).toEqual(['parking', 'wifi']);
+    // Coordinates are derived from the address by the geocoder (stub gazetteer),
+    // and the structured address is mirrored into address_json for the consumer.
+    expect(ok.json().lat).toBeCloseTo(21.15, 1);
+    expect(ok.json().lng).toBeCloseTo(79.09, 1);
+    expect(ok.json().addressJson).toMatchObject({ city: 'Nagpur', country: 'India' });
 
     const bad = await app.inject({
       method: 'PATCH',

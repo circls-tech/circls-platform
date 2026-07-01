@@ -28,6 +28,13 @@ const AMENITIES: { value: string; label: string }[] = [
   { value: 'coaching', label: 'Coaching' },
 ];
 
+/**
+ * Countries the product serves. Must stay in sync with the API geocoder's
+ * recognised countries (apps/api/src/lib/geocoding/gazetteer.ts) — an unlisted
+ * country won't resolve to a map location.
+ */
+const COUNTRIES = ['India', 'USA'] as const;
+
 const WEEKDAYS = [
   { key: '1', label: 'Monday' },
   { key: '2', label: 'Tuesday' },
@@ -82,8 +89,6 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
   const [postalCode, setPostalCode] = useState(venue.postalCode ?? '');
   const [country, setCountry] = useState(venue.country ?? '');
   const [tags, setTags] = useState<string[]>(venue.tags ?? []);
-  const [lat, setLat] = useState(venue.lat != null ? String(venue.lat) : '');
-  const [lng, setLng] = useState(venue.lng != null ? String(venue.lng) : '');
 
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -100,11 +105,9 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
     e.preventDefault();
     setErr(null);
     setSaved(false);
-    const latNum = lat.trim() === '' ? null : Number(lat);
-    const lngNum = lng.trim() === '' ? null : Number(lng);
-    if (latNum != null && Number.isNaN(latNum)) return setErr('Latitude must be a number.');
-    if (lngNum != null && Number.isNaN(lngNum)) return setErr('Longitude must be a number.');
     try {
+      // Coordinates are derived server-side from the address (see the API's
+      // geocoder) — organisers no longer enter lat/lng by hand.
       await update.mutateAsync({
         name: name.trim(),
         description,
@@ -119,8 +122,6 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         postalCode,
         country,
         tags,
-        lat: latNum,
-        lng: lngNum,
       });
       setSaved(true);
     } catch (e) {
@@ -231,17 +232,29 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
         <Input label="State" value={state} onChange={(e) => setState(e.target.value)} />
         <Input label="Postal code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-        <Input label="Country" value={country} onChange={(e) => setCountry(e.target.value)} />
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Country</label>
+          <select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+          >
+            <option value="">Select country…</option>
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-400">
+            Sets your map location automatically — customers browse by country.
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Tags</label>
         <TagsInput value={tags} onChange={setTags} placeholder="e.g. indoor, premium…" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Input label="Latitude" value={lat} onChange={(e) => setLat(e.target.value)} hint="Map location (optional)" />
-        <Input label="Longitude" value={lng} onChange={(e) => setLng(e.target.value)} />
       </div>
 
       <div className="flex items-center gap-3">
