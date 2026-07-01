@@ -53,6 +53,16 @@ export const envSchema = z
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 
+  // Geocoding + address autocomplete (venue address → lat/lng, and type-ahead
+  // suggestions). Default 'stub' resolves against a built-in IN/US city
+  // gazetteer (offline; used in the sandbox + tests). Set GEOCODER_PROVIDER=
+  // 'photon' in prod to resolve/search arbitrary addresses via OpenStreetMap
+  // Photon (free/keyless; ODbL permits storing results; built for autocomplete
+  // — see lib/geocoding/). GEOCODER_USER_AGENT identifies the app per OSM policy.
+  GEOCODER_PROVIDER: z.enum(['stub', 'photon']).default('stub'),
+  GEOCODER_BASE_URL: z.string().url().default('https://photon.komoot.io'),
+  GEOCODER_USER_AGENT: z.string().default('circls-platform/1.0 (+https://circls.app)'),
+
   // Partner portal base URL (used to build invite acceptance links).
   PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
 

@@ -6,6 +6,7 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
+import { getGeocoder } from '../lib/geocoding/index.js';
 import {
   createVenue,
   getVenueById,
@@ -73,7 +74,27 @@ function pickMetadata(p: z.infer<typeof updateVenueSchema>): VenueMetadataInput 
   };
 }
 
+const geocodeSearchSchema = z.object({
+  q: z.string().trim().min(2).max(120),
+  country: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(10).optional(),
+});
+
 export const venueRoutes: FastifyPluginAsync = async (app) => {
+  // Address autocomplete for the venue form. Auth-gated (partner-only) so the
+  // upstream geocoder isn't an open proxy; results are normalised + restricted
+  // to the countries we serve inside the provider (see lib/geocoding).
+  app.get('/v1/venues/geocode/search', { preHandler: requireAuth }, async (req) => {
+    const parsed = geocodeSearchSchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid search query', 'bad_request', { issues: parsed.error.issues });
+    }
+    await currentUser(req); // any authenticated partner may search
+    const { q, country, limit } = parsed.data;
+    const suggestions = await getGeocoder().search(q, { country: country ?? null, limit: limit ?? 5 });
+    return { suggestions };
+  });
+
   app.post('/v1/tenants/:tenantId/venues', { preHandler: requireAuth }, async (req) => {
     const { tenantId } = req.params as { tenantId: string };
     const parsed = createVenueSchema.safeParse(req.body);

@@ -28,6 +28,25 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
   let slotId: string;
   let bookingId: string;
 
+  // Pick safely-future dates at runtime so a released 10:00 slot is always still
+  // 'open' whenever CI runs. (Previously these were hardcoded to 2026-07-01/-02,
+  // which turned into a time bomb: once that day passed, the 10:00 slot was in
+  // the past and no slot came back 'open'.) `wed` is the next Wednesday at least
+  // a week out; `thu` is the day after it.
+  const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+  const dayAfter = (d: Date) => {
+    const x = new Date(d);
+    x.setUTCDate(d.getUTCDate() + 1);
+    return x;
+  };
+  const wed = (() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + 7); // at least a week out
+    while (d.getUTCDay() !== 3) d.setUTCDate(d.getUTCDate() + 1); // 3 = Wednesday
+    return d;
+  })();
+  const thu = dayAfter(wed); // 4 = Thursday
+
   beforeAll(async () => {
     app = await buildServer();
     await app.ready();
@@ -56,14 +75,14 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     });
     arenaId = a.json().id;
 
-    // Release one slot (Wednesday 2026-07-01 is a Wednesday)
+    // Release one slot on the next future Wednesday (10:00).
     await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup-${Date.now()}`),
       payload: {
-        startDate: '2026-07-01',
-        endDate: '2026-07-01',
+        startDate: isoDay(wed),
+        endDate: isoDay(wed),
         quantizationMin: 60,
         cells: [{ dayOfWeek: 3, startTimeMin: 600, durationMin: 60, price: 50000 }], // 10:00 Wed
       },
@@ -72,7 +91,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     // Grab the slot id
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2026-07-01T00:00:00Z&to=2026-07-02T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=${isoDay(wed)}T00:00:00Z&to=${isoDay(dayAfter(wed))}T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots = slotsRes.json() as Array<{ id: string; status: string }>;
@@ -124,15 +143,15 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
   });
 
   it('is idempotent: same key returns the same booking', async () => {
-    // We need a fresh open slot for this idempotency test
-    // Release an extra slot on Thursday 2026-07-02
+    // We need a fresh open slot for this idempotency test.
+    // Release an extra slot on the Thursday after `wed` (10:00).
     const relRes = await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup2-${Date.now()}`),
       payload: {
-        startDate: '2026-07-02',
-        endDate: '2026-07-02',
+        startDate: isoDay(thu),
+        endDate: isoDay(thu),
         quantizationMin: 60,
         cells: [{ dayOfWeek: 4, startTimeMin: 600, durationMin: 60, price: 20000 }], // 10:00 Thu
       },
@@ -141,7 +160,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2026-07-02T00:00:00Z&to=2026-07-03T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=${isoDay(thu)}T00:00:00Z&to=${isoDay(dayAfter(thu))}T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots2 = slotsRes.json() as Array<{ id: string; status: string }>;
