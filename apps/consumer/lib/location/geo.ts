@@ -57,7 +57,16 @@ export function sameCity(a: string | null, b: string | null): boolean {
 }
 
 export function venueToLocatable(v: PublicVenue): Locatable {
-  return { city: cityOf(v.addressJson), country: countryOf(v.addressJson), lat: v.lat, lng: v.lng };
+  // Prefer the structured address columns (what the partner form writes) and
+  // fall back to the freeform address_json. Older venues have their city/country
+  // only in `address` with a null `addressJson`, so reading addressJson alone
+  // would drop them from the location picker ("No cities available yet").
+  return {
+    city: v.address.city ?? cityOf(v.addressJson),
+    country: v.address.country ?? countryOf(v.addressJson),
+    lat: v.lat,
+    lng: v.lng,
+  };
 }
 
 export function eventToLocatable(e: PublicEventWithVenue): Locatable {
