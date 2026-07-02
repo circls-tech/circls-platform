@@ -8,6 +8,7 @@ import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { createRouteOrder } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
+import { onBookingConfirmed } from './notification_hooks.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { Coupon } from '../db/schema/coupons.js';
@@ -161,6 +162,10 @@ export interface PrepareOnlineBookingInput {
   customerName: string;
   customerContact: string;
   note?: string | null;
+  /** The customer's own user id when they book for themselves (consumer flow).
+   *  Distinct from the audit actor: a staff-created booking must NOT stamp the
+   *  staff member as the customer. Drives notification contact lookup. */
+  customerUserId?: string | null;
 }
 
 export interface PrepareOnlineBookingResult {
@@ -235,6 +240,7 @@ export async function prepareOnlineBookingWithPayment(
         channel: 'circls',
         paymentMethod: free ? 'free' : 'razorpay_route',
         status: free ? 'confirmed' : 'pending',
+        customerUserId: input.customerUserId ?? null,
         customerName: input.customerName,
         customerContact: input.customerContact,
         note: input.note ?? null,
@@ -317,7 +323,10 @@ export async function prepareOnlineBookingWithPayment(
   });
 
   // Free booking (e.g. a 100%-off coupon): no Razorpay order, no payment row.
+  // Confirmed inline, so there's no payment-captured webhook to send the
+  // confirmation — dispatch it here (best-effort, never throws).
   if (isFree) {
+    await onBookingConfirmed(bookingId);
     return {
       bookingId,
       payment: { orderId: '', keyId: '', amountPaise: 0, currency: 'INR' },
@@ -558,6 +567,8 @@ export async function bookEvent(
   });
 
   if (reserved.isFree) {
+    // Free events confirm inline (no payment webhook) — notify from here.
+    await onBookingConfirmed(reserved.booking.id);
     return { booking: reserved.booking };
   }
 

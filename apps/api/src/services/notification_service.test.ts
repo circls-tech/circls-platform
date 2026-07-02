@@ -23,6 +23,7 @@ describe.skipIf(!runIntegration)('notification_service integration', () => {
   let venueId: string;
   let arenaId: string;
   let ownerUserId: string;
+  let consumerUserId: string | undefined;
 
   beforeAll(async () => {
     await pingDb();
@@ -70,6 +71,10 @@ describe.skipIf(!runIntegration)('notification_service integration', () => {
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await db.execute(sql`delete from users where id = ${ownerUserId}`);
+    // After bookings are gone — a bookings.customer_user_id FK points here.
+    if (consumerUserId) {
+      await db.execute(sql`delete from users where id = ${consumerUserId}`);
+    }
     await closeDb();
   });
 
@@ -170,6 +175,54 @@ describe.skipIf(!runIntegration)('notification_service integration', () => {
     expect(rows).toHaveLength(2);
     const tplKeys = rows.map((r) => `${r.channel}:${r.templateKey}`).sort();
     expect(tplKeys).toEqual(['email:booking.cancelled', 'sms:booking.cancelled']);
+  });
+
+  it('notifyBookingConfirmed falls back to the customer user profile for phone + email', async () => {
+    // Consumer-style booking: only the phone in customer_contact, no
+    // customer_contact_json — the email must come from the users row.
+    const [consumer] = await db
+      .insert(users)
+      .values({
+        firebaseUid: `notif-consumer-${Date.now()}`,
+        phoneE164: '+917777777777',
+        email: `consumer-${Date.now()}@test.x`,
+        displayName: 'Profile Person',
+      })
+      .returning();
+    consumerUserId = consumer!.id;
+
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'slot',
+        slotArenaId: arenaId,
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        customerUserId: consumer!.id,
+        customerName: 'Profile Person',
+        customerContact: '+917777777777',
+        totalPaise: 50000,
+      })
+      .returning();
+    const bookingId = b!.id;
+
+    await notifyBookingConfirmed(bookingId);
+
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(sql`tenant_id = ${tenantId} and payload->>'bookingId' = ${bookingId}`);
+
+    const confirmKeys = rows
+      .filter((r) => r.templateKey === 'booking.confirmed')
+      .map((r) => `${r.channel}`)
+      .sort();
+    expect(confirmKeys).toEqual(['email', 'sms']);
+    const emailRow = rows.find((r) => r.channel === 'email')!;
+    expect(emailRow.recipient).toBe(consumer!.email);
   });
 
   it('notifyBookingConfirmed without contacts is a silent no-op (no rows for that booking)', async () => {

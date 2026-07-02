@@ -569,6 +569,9 @@ export async function consumerBookSlots(
       customerName: input.customerName,
       customerContact: input.customerContact,
       note: input.note ?? null,
+      // The consumer books for themselves — the actor IS the customer. Lets
+      // notifications resolve the profile's phone + email.
+      customerUserId: input.actorUserId,
     },
     pricing,
   );
