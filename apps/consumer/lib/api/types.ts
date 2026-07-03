@@ -330,3 +330,14 @@ export interface ConsumerConcern {
   /** ISO-8601 */
   updatedAt: string;
 }
+
+// ── My profile ────────────────────────────────────────────────────────────────
+
+/** The signed-in consumer's own profile (GET/PATCH /v1/consumer/me). */
+export interface MyProfile {
+  id: string;
+  phoneE164: string | null;
+  email: string | null;
+  displayName: string | null;
+  interests: string[];
+}
