@@ -30,6 +30,7 @@ import { writeAudit } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage } from '../lib/storage.js';
 import * as paymentsService from './payments_service.js';
+import { onBookingConfirmed } from './notification_hooks.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { CouponPricing } from './booking_service.js';
@@ -521,9 +522,11 @@ export async function purchaseMembership(
       { membershipId: m.id, membershipTierId: tierId, pricePaise: basePaise, totalPaise: breakdown.totalPaise, free: isFree, bookingId: b.id },
     );
 
-    // A coupon-driven free membership finishes here — no Razorpay order.
+    // A coupon-driven free membership finishes here — no Razorpay order. Carry
+    // the booking id out so the caller can send the confirmation (there's no
+    // payment webhook to do it).
     if (isFree) {
-      return { kind: 'free' as const, userMembershipId: um.id };
+      return { kind: 'free' as const, userMembershipId: um.id, bookingId: b.id };
     }
 
     return {
@@ -538,6 +541,11 @@ export async function purchaseMembership(
   });
 
   if (reserved.kind === 'free') {
+    // Only the coupon-made-free path mints a booking row; the plain free path
+    // has nothing for the booking-keyed notification helpers to anchor on.
+    if ('bookingId' in reserved && reserved.bookingId) {
+      await onBookingConfirmed(reserved.bookingId);
+    }
     return { userMembershipId: reserved.userMembershipId };
   }
 

@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
-import { useBookSlots, useBookEvent, usePurchaseMembership } from '@/lib/api/consumer';
+import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { ContactDetailsForm } from './ContactDetailsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
 
 type Phase =
@@ -34,6 +35,7 @@ function quoteItem(item: CheckoutItem): QuoteRequest {
 
 export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; prefill: CheckoutPrefill; onClose: () => void }) {
   const { user } = useAuth();
+  const profile = useMyProfile();
   const quote = useCheckoutQuote();
   const bookSlots = useBookSlots();
   const bookEvent = useBookEvent();
@@ -81,17 +83,19 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
       if (item.kind === 'slot') {
         const r = await bookSlots.mutateAsync({
           slotIds: item.slotIds,
-          customerName: prefill.name ?? user?.displayName ?? 'Guest',
-          customerContact: prefill.contact ?? user?.phoneNumber ?? user?.email ?? '',
+          customerName: prefill.name ?? profile.data?.displayName ?? user?.displayName ?? 'Guest',
+          customerContact: prefill.contact ?? user?.phoneNumber ?? profile.data?.email ?? user?.email ?? '',
           ...(appliedCode ? { couponCode: appliedCode } : {}),
         });
         order = { ...r.payment };
       } else if (item.kind === 'event') {
+        const name = prefill.name ?? profile.data?.displayName;
+        const contact = prefill.contact ?? user?.phoneNumber ?? profile.data?.email;
         const r = await bookEvent.mutateAsync({
           eventId: item.eventId,
           lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })),
-          ...(prefill.name ? { name: prefill.name } : {}),
-          ...(prefill.contact ? { contact: prefill.contact } : {}),
+          ...(name ? { name } : {}),
+          ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
         });
         order = { orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', amountPaise: r.amountPaise ?? 0, currency: 'INR' };
@@ -123,10 +127,23 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
   const busy = phase.kind === 'quoting' || phase.kind === 'paying';
   const done = phase.kind === 'success' || phase.kind === 'reserved' || phase.kind === 'error';
 
+  // First booking only: the profile has just a phone number, so collect name +
+  // email before showing the pay button. Once saved (the mutation writes the
+  // fresh profile into the cache) this gate never reappears. A failed profile
+  // fetch does not block payment — the gate only engages on a loaded profile.
+  const needsContactDetails =
+    profile.isSuccess &&
+    (!(profile.data.displayName ?? '').trim() || !(profile.data.email ?? '').trim());
+
   return (
     <Modal open onClose={onClose} title="Checkout">
       <p className="mb-4 text-sm text-[var(--color-text-secondary)]">{item.title}</p>
-      {done ? (
+      {!done && needsContactDetails ? (
+        <ContactDetailsForm
+          initialName={(profile.data?.displayName ?? prefill.name ?? user?.displayName ?? '').trim()}
+          initialEmail={(profile.data?.email ?? user?.email ?? '').trim()}
+        />
+      ) : done ? (
         <div className="flex flex-col gap-4">
           <div className={[
             'rounded-[var(--radius)] border-[2.5px] border-ink px-4 py-3 text-sm font-medium shadow-offset-sm',
@@ -177,7 +194,9 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
           )}
           {couponMsg && <p className="text-xs font-semibold text-petal-red">{couponMsg}</p>}
 
-          <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy}>
+          {/* profile.isLoading keeps a first-time booker from paying before the
+              contact-details gate has had a chance to engage. */}
+          <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy || profile.isLoading}>
             {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise) : ''}`}
           </Button>
         </div>

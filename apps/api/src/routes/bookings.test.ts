@@ -21,12 +21,32 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 const withKey = (t: string, key: string) => ({ ...bearer(t), 'idempotency-key': key });
 
+/** YYYY-MM-DD string, `minDaysOut` days from now (UTC), advanced to the next
+ *  occurrence of `targetDow` (0=Sun..6=Sat) — slot release refuses to create
+ *  slots that start in the past, so tests can't hardcode a fixed calendar date. */
+function futureWeekday(minDaysOut: number, targetDow: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + minDaysOut);
+  while (d.getUTCDay() !== targetDow) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Advance a YYYY-MM-DD date string by `days` calendar days. */
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
   let app: FastifyInstance;
   let tenantId: string;
   let arenaId: string;
   let slotId: string;
   let bookingId: string;
+  // Wednesday + the following Thursday, at least two weeks out.
+  const wedDate = futureWeekday(14, 3);
+  const thuDate = addDays(wedDate, 1);
 
   beforeAll(async () => {
     app = await buildServer();
@@ -56,14 +76,14 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     });
     arenaId = a.json().id;
 
-    // Release one slot (2030-09-04 is a Wednesday — far enough out to never land in the past)
+    // Release one slot on wedDate (a Wednesday)
     await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup-${Date.now()}`),
       payload: {
-        startDate: '2030-09-04',
-        endDate: '2030-09-04',
+        startDate: wedDate,
+        endDate: wedDate,
         quantizationMin: 60,
         cells: [{ dayOfWeek: 3, startTimeMin: 600, durationMin: 60, price: 50000 }], // 10:00 Wed
       },
@@ -72,7 +92,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     // Grab the slot id
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2030-09-04T00:00:00Z&to=2030-09-05T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=${wedDate}T00:00:00Z&to=${thuDate}T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots = slotsRes.json() as Array<{ id: string; status: string }>;
@@ -125,14 +145,14 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
   it('is idempotent: same key returns the same booking', async () => {
     // We need a fresh open slot for this idempotency test
-    // Release an extra slot on Thursday 2030-09-05
+    // Release an extra slot on thuDate (the following Thursday)
     const relRes = await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup2-${Date.now()}`),
       payload: {
-        startDate: '2030-09-05',
-        endDate: '2030-09-05',
+        startDate: thuDate,
+        endDate: thuDate,
         quantizationMin: 60,
         cells: [{ dayOfWeek: 4, startTimeMin: 600, durationMin: 60, price: 20000 }], // 10:00 Thu
       },
@@ -141,7 +161,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2030-09-05T00:00:00Z&to=2030-09-06T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=${thuDate}T00:00:00Z&to=${addDays(thuDate, 1)}T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots2 = slotsRes.json() as Array<{ id: string; status: string }>;

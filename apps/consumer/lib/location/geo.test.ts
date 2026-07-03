@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PublicVenue } from '@/lib/api/types';
 import {
   cityOf,
   countryForCity,
@@ -9,12 +10,59 @@ import {
   inCountry,
   nearestCity,
   sameCountry,
+  venueToLocatable,
   type Locatable,
 } from './geo';
 
 function place(p: Partial<Locatable>): Locatable {
   return { city: null, country: null, lat: null, lng: null, ...p };
 }
+
+function venue(over: {
+  lat?: number | null;
+  lng?: number | null;
+  addressJson?: Record<string, unknown> | null;
+  address?: Partial<PublicVenue['address']>;
+} = {}): PublicVenue {
+  return {
+    id: 'v1',
+    name: 'V',
+    tags: [],
+    lat: over.lat ?? null,
+    lng: over.lng ?? null,
+    addressJson: over.addressJson ?? null,
+    description: null,
+    amenities: [],
+    openingHours: null,
+    contactPhone: null,
+    contactEmail: null,
+    address: { line1: null, line2: null, city: null, state: null, postalCode: null, country: null, ...over.address },
+    brand: { id: 't1', slug: 's', name: 'B', logoUrl: null },
+    images: [],
+  } as PublicVenue;
+}
+
+describe('venueToLocatable', () => {
+  it('reads the structured address when address_json is null (existing venues)', () => {
+    const loc = venueToLocatable(
+      venue({ lat: 21.13, lng: 79.05, addressJson: null, address: { city: 'Nagpur', country: 'India' } }),
+    );
+    expect(loc).toEqual({ city: 'Nagpur', country: 'India', lat: 21.13, lng: 79.05 });
+  });
+
+  it('falls back to address_json when structured columns are empty', () => {
+    const loc = venueToLocatable(venue({ addressJson: { city: 'Pune', country: 'India' } }));
+    expect(loc.city).toBe('Pune');
+    expect(loc.country).toBe('India');
+  });
+
+  it('prefers structured over address_json when both are present', () => {
+    const loc = venueToLocatable(
+      venue({ addressJson: { city: 'Stale', country: 'India' }, address: { city: 'Nagpur', country: 'India' } }),
+    );
+    expect(loc.city).toBe('Nagpur');
+  });
+});
 
 describe('cityOf / countryOf', () => {
   it('reads and trims string fields', () => {

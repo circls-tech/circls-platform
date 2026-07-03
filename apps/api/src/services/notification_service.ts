@@ -12,8 +12,13 @@
  *   booking confirmed/cancelled:
  *     - if contact looks like phone → SMS
  *     - if contact looks like email → email
- *     - if both phone + email present (via customer_contact_json) → fan out to
- *       both, plus WhatsApp when phone is present AND a WA provider is configured
+ *     - if both phone + email present → fan out to both, plus WhatsApp when
+ *       phone is present AND a WA provider is configured
+ *     - contact sources, in priority order: customer_contact_json (structured),
+ *       the legacy customer_contact string, then the booking customer's own
+ *       user profile (users.phone_e164 / users.email via customer_user_id) —
+ *       consumer bookings only store a phone, so the profile is what lets the
+ *       confirmation reach both mobile and email
  *   booking reminders (T-24h, T-1h):
  *     - only when phone is present; SMS always, WhatsApp when provider is set
  *   kyc state change:
@@ -127,10 +132,14 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
            b.total_paise              as total_paise,
            lower(b.time_range)        as booking_start_at,
            v.name                     as venue_name,
-           ab_fallback.name           as fallback_arena_name
+           ab_fallback.name           as fallback_arena_name,
+           u.phone_e164               as user_phone,
+           u.email                    as user_email,
+           u.display_name             as user_display_name
       from bookings b
       left join venues v           on v.id = b.venue_id
       left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
+      left join users u            on u.id = b.customer_user_id
      where b.id = ${bookingId}
      limit 1
   `);
@@ -155,6 +164,14 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
     (r['customer_contact'] as string | null) ?? null,
   );
 
+  // The booking row usually carries a single contact string (consumer flows
+  // send the phone). Fill whichever channel is missing from the customer's own
+  // user profile so a confirmation reaches both mobile and email.
+  const userPhone = (r['user_phone'] as string | null) ?? null;
+  const userEmail = (r['user_email'] as string | null) ?? null;
+  const resolvedPhone = phone ?? (userPhone && isPhone(userPhone) ? userPhone : null);
+  const resolvedEmail = email ?? (userEmail && isEmail(userEmail) ? userEmail : null);
+
   const totalPaise = Number(r['total_paise'] ?? 0);
   const startAtRaw =
     (slotAgg['slot_start_at'] as string | null) ??
@@ -169,10 +186,13 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
   return {
     bookingId: r['id'] as string,
     tenantId: r['tenant_id'] as string,
-    customerName: (r['customer_name'] as string | null) ?? 'Guest',
+    customerName:
+      (r['customer_name'] as string | null) ??
+      (r['user_display_name'] as string | null) ??
+      'Guest',
     customerUserId: (r['customer_user_id'] as string | null) ?? null,
-    phone,
-    email,
+    phone: resolvedPhone,
+    email: resolvedEmail,
     venueName: (r['venue_name'] as string | null) ?? 'the venue',
     arenaName,
     startAt,

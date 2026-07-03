@@ -7,6 +7,7 @@ import type {
   MembershipPurchaseResult,
   MyBooking,
   MyBookingDetail,
+  MyProfile,
   PublicEvent,
   PublicEventWithVenue,
   PublicMembershipWithScope,
@@ -194,6 +195,41 @@ export function usePurchaseMembership() {
         },
       ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['my-bookings'] }),
+  });
+}
+
+// ── My profile ────────────────────────────────────────────────────────────────
+
+/** The signed-in user's profile row (phone, name, email). */
+export function useMyProfile() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['my-profile', user?.uid],
+    queryFn: () => apiFetch<{ profile: MyProfile }>('/v1/consumer/me'),
+    enabled: Boolean(user),
+    select: (data) => data.profile,
+  });
+}
+
+/** Fields a consumer may change about themselves. Phone is identity — not editable. */
+export interface UpdateMyProfileInput {
+  displayName?: string;
+  email?: string;
+}
+
+export function useUpdateMyProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateMyProfileInput) =>
+      apiFetch<{ profile: MyProfile }>('/v1/consumer/me', {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    // Write the fresh profile straight into the cache so gates that depend on it
+    // (e.g. the pre-payment contact-details step) unblock without a refetch.
+    onSuccess: (data) => {
+      qc.setQueriesData({ queryKey: ['my-profile'] }, data);
+    },
   });
 }
 
