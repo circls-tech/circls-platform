@@ -56,14 +56,14 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     });
     arenaId = a.json().id;
 
-    // Release one slot (Wednesday 2026-07-01 is a Wednesday)
+    // Release one slot (2030-09-04 is a Wednesday — far enough out to never land in the past)
     await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup-${Date.now()}`),
       payload: {
-        startDate: '2026-07-01',
-        endDate: '2026-07-01',
+        startDate: '2030-09-04',
+        endDate: '2030-09-04',
         quantizationMin: 60,
         cells: [{ dayOfWeek: 3, startTimeMin: 600, durationMin: 60, price: 50000 }], // 10:00 Wed
       },
@@ -72,7 +72,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
     // Grab the slot id
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2026-07-01T00:00:00Z&to=2026-07-02T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=2030-09-04T00:00:00Z&to=2030-09-05T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots = slotsRes.json() as Array<{ id: string; status: string }>;
@@ -125,14 +125,14 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
   it('is idempotent: same key returns the same booking', async () => {
     // We need a fresh open slot for this idempotency test
-    // Release an extra slot on Thursday 2026-07-02
+    // Release an extra slot on Thursday 2030-09-05
     const relRes = await app.inject({
       method: 'POST',
       url: `/v1/arenas/${arenaId}/slots/release`,
       headers: withKey('owner', `setup2-${Date.now()}`),
       payload: {
-        startDate: '2026-07-02',
-        endDate: '2026-07-02',
+        startDate: '2030-09-05',
+        endDate: '2030-09-05',
         quantizationMin: 60,
         cells: [{ dayOfWeek: 4, startTimeMin: 600, durationMin: 60, price: 20000 }], // 10:00 Thu
       },
@@ -141,7 +141,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
 
     const slotsRes = await app.inject({
       method: 'GET',
-      url: `/v1/arenas/${arenaId}/slots?from=2026-07-02T00:00:00Z&to=2026-07-03T00:00:00Z`,
+      url: `/v1/arenas/${arenaId}/slots?from=2030-09-05T00:00:00Z&to=2030-09-06T00:00:00Z`,
       headers: bearer('owner'),
     });
     const slots2 = slotsRes.json() as Array<{ id: string; status: string }>;
