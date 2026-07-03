@@ -2,8 +2,10 @@
 
 import { type FormEvent, useState } from 'react';
 import { useUpdateVenue } from '@/lib/api/queries';
+import type { AddressSuggestion } from '@/lib/api/geocode';
 import type { OpeningHours, Venue } from '@/lib/api/types';
 import { Button, Input, TagsInput } from '@/lib/ui';
+import { AddressAutocomplete } from './AddressAutocomplete';
 
 /**
  * Canonical amenity vocabulary — must mirror VENUE_AMENITIES in
@@ -27,6 +29,13 @@ const AMENITIES: { value: string; label: string }[] = [
   { value: 'pro_shop', label: 'Pro shop' },
   { value: 'coaching', label: 'Coaching' },
 ];
+
+/**
+ * Countries the product serves. Must stay in sync with the API geocoder's
+ * recognised countries (apps/api/src/lib/geocoding/gazetteer.ts) — an unlisted
+ * country won't resolve to a map location.
+ */
+const COUNTRIES = ['India', 'USA'] as const;
 
 const WEEKDAYS = [
   { key: '1', label: 'Monday' },
@@ -82,14 +91,28 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
   const [postalCode, setPostalCode] = useState(venue.postalCode ?? '');
   const [country, setCountry] = useState(venue.country ?? '');
   const [tags, setTags] = useState<string[]>(venue.tags ?? []);
-  const [lat, setLat] = useState(venue.lat != null ? String(venue.lat) : '');
-  const [lng, setLng] = useState(venue.lng != null ? String(venue.lng) : '');
+  // Coordinates are held here (never shown) — set from an autocomplete pick or
+  // the venue's existing value, and cleared on any manual address edit so the
+  // server re-geocodes from the typed address on save.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    venue.lat != null && venue.lng != null ? { lat: venue.lat, lng: venue.lng } : null,
+  );
 
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   function toggleAmenity(value: string) {
     setAmenities((prev) => (prev.includes(value) ? prev.filter((a) => a !== value) : [...prev, value]));
+  }
+
+  /** Fill the structured fields + coordinates from a chosen autocomplete result. */
+  function applySuggestion(s: AddressSuggestion) {
+    if (s.line1) setAddressLine1(s.line1);
+    setCity(s.city ?? '');
+    setState(s.state ?? '');
+    if (s.postalCode) setPostalCode(s.postalCode);
+    if (s.country) setCountry(s.country);
+    setCoords({ lat: s.lat, lng: s.lng });
   }
 
   function setDay(key: string, patch: Partial<DayState>) {
@@ -100,11 +123,10 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
     e.preventDefault();
     setErr(null);
     setSaved(false);
-    const latNum = lat.trim() === '' ? null : Number(lat);
-    const lngNum = lng.trim() === '' ? null : Number(lng);
-    if (latNum != null && Number.isNaN(latNum)) return setErr('Latitude must be a number.');
-    if (lngNum != null && Number.isNaN(lngNum)) return setErr('Longitude must be a number.');
     try {
+      // Coordinates come from an autocomplete pick when available; otherwise
+      // they're omitted and the API derives them from the address (its geocoder).
+      // Organisers never enter lat/lng by hand.
       await update.mutateAsync({
         name: name.trim(),
         description,
@@ -119,8 +141,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         postalCode,
         country,
         tags,
-        lat: latNum,
-        lng: lngNum,
+        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
       });
       setSaved(true);
     } catch (e) {
@@ -221,27 +242,72 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         <Input label="Contact email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
       </div>
 
+      <AddressAutocomplete country={country || null} onSelect={applySuggestion} />
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <Input label="Address line 1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} />
+          <Input
+            label="Address line 1"
+            value={addressLine1}
+            onChange={(e) => {
+              setAddressLine1(e.target.value);
+              setCoords(null);
+            }}
+          />
         </div>
         <div className="sm:col-span-2">
           <Input label="Address line 2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
         </div>
-        <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
-        <Input label="State" value={state} onChange={(e) => setState(e.target.value)} />
-        <Input label="Postal code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-        <Input label="Country" value={country} onChange={(e) => setCountry(e.target.value)} />
+        <Input
+          label="City"
+          value={city}
+          onChange={(e) => {
+            setCity(e.target.value);
+            setCoords(null);
+          }}
+        />
+        <Input
+          label="State"
+          value={state}
+          onChange={(e) => {
+            setState(e.target.value);
+            setCoords(null);
+          }}
+        />
+        <Input
+          label="Postal code"
+          value={postalCode}
+          onChange={(e) => {
+            setPostalCode(e.target.value);
+            setCoords(null);
+          }}
+        />
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Country</label>
+          <select
+            value={country}
+            onChange={(e) => {
+              setCountry(e.target.value);
+              setCoords(null);
+            }}
+            className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+          >
+            <option value="">Select country…</option>
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-400">
+            Sets your map location automatically — customers browse by country.
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Tags</label>
         <TagsInput value={tags} onChange={setTags} placeholder="e.g. indoor, premium…" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Input label="Latitude" value={lat} onChange={(e) => setLat(e.target.value)} hint="Map location (optional)" />
-        <Input label="Longitude" value={lng} onChange={(e) => setLng(e.target.value)} />
       </div>
 
       <div className="flex items-center gap-3">
