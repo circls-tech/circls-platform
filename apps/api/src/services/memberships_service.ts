@@ -14,7 +14,7 @@
  * enough; the consumer Flutter app will gate access via payment status.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { env } from '../config/env.js';
 import {
@@ -23,47 +23,67 @@ import {
   type MembershipBenefits,
   userMemberships,
 } from '../db/schema/memberships.js';
+import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { bookings } from '../db/schema/bookings.js';
 import { tenants } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
-import { Conflict, NotFound } from '../lib/errors.js';
+import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage } from '../lib/storage.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { CouponPricing } from './booking_service.js';
+import {
+  listTiersWithRemaining,
+  replaceTiers,
+  tiersWithRemainingByMembership,
+  type MembershipTierInput,
+  type MembershipTierWithRemaining,
+} from './membership_tiers_service.js';
 
 /** Partner-facing membership row enriched with the derived artwork URL (PR #110). */
 export interface PartnerMembership extends Membership {
   coverUrl: string | null;
 }
 
+/** Partner-facing membership with its live plan tiers attached. */
+export type PartnerMembershipWithTiers = PartnerMembership & {
+  tiers: MembershipTierWithRemaining[];
+};
+
 function withCoverUrl(m: Membership): PartnerMembership {
   return { ...m, coverUrl: m.coverStorageKey ? getStorage().publicUrl(m.coverStorageKey) : null };
 }
 
-export async function listMembershipsForTenant(tenantId: string): Promise<PartnerMembership[]> {
+export async function listMembershipsForTenant(
+  tenantId: string,
+): Promise<PartnerMembershipWithTiers[]> {
   const rows = await db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
-  return rows.map(withCoverUrl);
+  const byMembership = await tiersWithRemainingByMembership(db, rows.map((r) => r.id));
+  return rows.map((r) => ({ ...withCoverUrl(r), tiers: byMembership.get(r.id) ?? [] }));
 }
 
 export async function getMembership(
   membershipId: string,
   tenantId: string,
-): Promise<Membership | null> {
+): Promise<PartnerMembershipWithTiers | null> {
   const [row] = await db
     .select()
     .from(memberships)
     .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, tenantId)))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const tiers = await listTiersWithRemaining(db, membershipId);
+  return { ...withCoverUrl(row), tiers };
 }
 
 export interface MembershipPurchaseRow {
   userMembershipId: string;
   buyerName: string | null;
   buyerContact: string | null;
+  /** The tier the buyer purchased, or null for legacy/no-tier purchases. */
+  tierName: string | null;
   status: string;
   startsAt: string;
   endsAt: string;
@@ -81,10 +101,11 @@ export async function listMembershipPurchases(
 ): Promise<MembershipPurchaseRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
     select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
-           u.display_name, u.phone_e164, u.email
+           u.display_name, u.phone_e164, u.email, mt.name as tier_name
     from user_memberships um
     join memberships m on m.id = um.membership_id
     join users u on u.id = um.user_id
+    left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
     order by um.created_at desc
     limit 500
@@ -94,6 +115,7 @@ export async function listMembershipPurchases(
     userMembershipId: r['id'] as string,
     buyerName: (r['display_name'] as string | null) ?? null,
     buyerContact: ((r['phone_e164'] as string | null) ?? (r['email'] as string | null)) ?? null,
+    tierName: (r['tier_name'] as string | null) ?? null,
     status: r['status'] as string,
     startsAt: new Date(r['starts_at'] as string).toISOString(),
     endsAt: new Date(r['ends_at'] as string).toISOString(),
@@ -107,13 +129,41 @@ export interface CreateMembershipInput {
   venueId?: string | undefined;
   name: string;
   description?: string | undefined;
-  pricePaise: number;
-  durationDays: number;
-  benefits?: MembershipBenefits | undefined;
   terms?: string | null | undefined;
+  /**
+   * Plan tiers (min 1). When omitted, a single "Standard" tier is synthesized
+   * from the legacy `pricePaise`/`durationDays`/`benefits` fields so older
+   * callers and tests keep working.
+   */
+  tiers?: MembershipTierInput[] | undefined;
+  pricePaise?: number | undefined;
+  durationDays?: number | undefined;
+  benefits?: MembershipBenefits | undefined;
 }
 
-export async function createMembership(input: CreateMembershipInput): Promise<Membership> {
+/** Resolve the create payload's tiers, falling back to a single legacy tier. */
+function resolveCreateTiers(input: CreateMembershipInput): MembershipTierInput[] {
+  if (input.tiers && input.tiers.length > 0) return input.tiers;
+  if (input.pricePaise === undefined || input.durationDays === undefined) {
+    throw new BadRequest('A membership needs at least one tier', 'membership_tiers_required');
+  }
+  return [
+    {
+      name: 'Standard',
+      description: input.description ?? null,
+      pricePaise: input.pricePaise,
+      durationDays: input.durationDays,
+      benefits: input.benefits ?? { items: [] },
+      capacity: null,
+    },
+  ];
+}
+
+export async function createMembership(
+  input: CreateMembershipInput,
+): Promise<PartnerMembershipWithTiers> {
+  const tiers = resolveCreateTiers(input);
+  const cheapest = tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a));
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(memberships)
@@ -122,15 +172,18 @@ export async function createMembership(input: CreateMembershipInput): Promise<Me
         venueId: input.venueId ?? null,
         name: input.name,
         description: input.description ?? null,
-        pricePaise: input.pricePaise,
-        durationDays: input.durationDays,
-        benefits: input.benefits ?? { items: [] },
+        // Legacy display fields, kept in sync with the cheapest tier.
+        pricePaise: cheapest.pricePaise,
+        durationDays: cheapest.durationDays,
+        benefits: cheapest.benefits ?? { items: [] },
         terms: input.terms ?? null,
         // New listings await Circls review before going live (subproject B).
         status: 'pending_review',
       })
       .returning();
     if (!row) throw new Error('membership insert returned no row');
+
+    const liveTiers = await replaceTiers(tx, row.id, input.tenantId, tiers);
 
     await writeAudit(
       tx,
@@ -144,10 +197,14 @@ export async function createMembership(input: CreateMembershipInput): Promise<Me
         pricePaise: row.pricePaise,
         durationDays: row.durationDays,
         venueId: row.venueId,
+        tierCount: liveTiers.length,
       },
     );
 
-    return row;
+    return {
+      ...withCoverUrl(row),
+      tiers: liveTiers.map((t) => ({ ...t, sold: 0, remaining: t.capacity })),
+    };
   });
 }
 
@@ -159,6 +216,8 @@ export interface UpdateMembershipPatch {
   venueId?: string | null;
   benefits?: MembershipBenefits;
   terms?: string | null;
+  /** When provided, replaces all plan tiers (editable states only). */
+  tiers?: MembershipTierInput[];
 }
 
 /**
@@ -170,7 +229,7 @@ export async function updateMembership(
   ctx: { tenantId: string; actorUserId: string },
   membershipId: string,
   patch: UpdateMembershipPatch,
-): Promise<Membership> {
+): Promise<PartnerMembershipWithTiers> {
   return db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -198,6 +257,11 @@ export async function updateMembership(
       await tx.update(memberships).set(set).where(eq(memberships.id, membershipId));
     }
 
+    // Replacing tiers also re-syncs the membership's legacy price/duration/benefits.
+    if (patch.tiers !== undefined) {
+      await replaceTiers(tx, membershipId, ctx.tenantId, patch.tiers);
+    }
+
     const [updated] = await tx
       .select()
       .from(memberships)
@@ -212,7 +276,8 @@ export async function updateMembership(
       existing as unknown as Record<string, unknown>,
       set,
     );
-    return updated!;
+    const tiers = await listTiersWithRemaining(tx, membershipId);
+    return { ...withCoverUrl(updated!), tiers };
   });
 }
 
@@ -263,6 +328,12 @@ export async function setMembershipActive(
 export interface PurchaseMembershipInput {
   membershipId: string;
   userId: string;
+  /**
+   * The tier to buy. When omitted, the cheapest live tier is used (so a
+   * single-tier membership "just works"). Price, duration and capacity come
+   * from the resolved tier.
+   */
+  membershipTierId?: string | undefined;
 }
 
 export interface PurchaseMembershipResult {
@@ -307,12 +378,46 @@ export async function purchaseMembership(
       .limit(1);
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
 
+    // Resolve the tier being bought: the requested one, else the cheapest live
+    // tier. Price/duration/capacity all come from this tier.
+    const liveTiers = await tx
+      .select()
+      .from(membershipTiers)
+      .where(and(eq(membershipTiers.membershipId, m.id), isNull(membershipTiers.deletedAt)))
+      .orderBy(membershipTiers.pricePaise);
+    const tier = input.membershipTierId
+      ? liveTiers.find((t) => t.id === input.membershipTierId)
+      : liveTiers[0];
+    if (input.membershipTierId && !tier) {
+      throw new NotFound('Membership tier not found', 'membership_tier_not_found');
+    }
+
+    // Capacity is per-tier (null = unlimited). Count non-cancelled holders of
+    // this tier inside the tx so concurrent buys can't oversell (best-effort).
+    if (tier && tier.capacity != null) {
+      const [{ sold } = { sold: 0 }] = await tx
+        .select({ sold: sql<number>`count(*)::int` })
+        .from(userMemberships)
+        .where(
+          and(
+            eq(userMemberships.membershipTierId, tier.id),
+            sql`${userMemberships.status} <> 'cancelled'`,
+          ),
+        );
+      if (sold >= tier.capacity) {
+        throw new Conflict('This tier is sold out', 'membership_tier_sold_out');
+      }
+    }
+
+    // Fall back to the membership's legacy fields only when it has no tiers.
+    const tierId = tier?.id ?? null;
+    const durationDays = tier?.durationDays ?? m.durationDays;
     const now = new Date();
-    const endsAt = new Date(now.getTime() + m.durationDays * 24 * 60 * 60 * 1000);
+    const endsAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
     // Money model: discount + gross-up. A 100%/over-base coupon makes a paid
     // membership free; isFree derives from the grossed-up total, not the base.
-    const basePaise = m.pricePaise;
+    const basePaise = tier?.pricePaise ?? m.pricePaise;
     const breakdown = computeCheckout(
       basePaise,
       pricing
@@ -336,6 +441,7 @@ export async function purchaseMembership(
         .values({
           userId: input.userId,
           membershipId: m.id,
+          membershipTierId: tierId,
           paymentId: null,
           startsAt: now,
           endsAt,
@@ -351,7 +457,7 @@ export async function purchaseMembership(
         'user_membership',
         um.id,
         null,
-        { membershipId: m.id, pricePaise: 0, free: true },
+        { membershipId: m.id, membershipTierId: tierId, pricePaise: 0, free: true },
       );
 
       return { kind: 'free' as const, userMembershipId: um.id };
@@ -385,6 +491,7 @@ export async function purchaseMembership(
       .values({
         userId: input.userId,
         membershipId: m.id,
+        membershipTierId: tierId,
         paymentId: null, // patched in Phase 2 once createRouteOrder returns
         startsAt: now,
         endsAt,
@@ -412,7 +519,7 @@ export async function purchaseMembership(
       'user_membership',
       um.id,
       null,
-      { membershipId: m.id, pricePaise: basePaise, totalPaise: breakdown.totalPaise, free: isFree, bookingId: b.id },
+      { membershipId: m.id, membershipTierId: tierId, pricePaise: basePaise, totalPaise: breakdown.totalPaise, free: isFree, bookingId: b.id },
     );
 
     // A coupon-driven free membership finishes here — no Razorpay order. Carry
@@ -498,6 +605,8 @@ export interface UserMembershipWithMembership {
     pricePaise: number;
     durationDays: number;
   };
+  /** The tier the user bought (null for legacy/no-tier purchases). */
+  tier: { id: string; name: string; pricePaise: number; durationDays: number } | null;
 }
 
 /** Returns the user's active memberships joined with the membership catalog row. */
@@ -506,9 +615,11 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
     .select({
       um: userMemberships,
       m: memberships,
+      t: membershipTiers,
     })
     .from(userMemberships)
     .innerJoin(memberships, eq(userMemberships.membershipId, memberships.id))
+    .leftJoin(membershipTiers, eq(userMemberships.membershipTierId, membershipTiers.id))
     .where(and(eq(userMemberships.userId, userId), eq(userMemberships.status, 'active')));
 
   return rows.map((r) => ({
@@ -525,9 +636,11 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
       venueId: r.m.venueId,
       name: r.m.name,
       description: r.m.description,
-      pricePaise: r.m.pricePaise,
-      durationDays: r.m.durationDays,
+      // Reflect the purchased tier when present; else the legacy plan fields.
+      pricePaise: r.t?.pricePaise ?? r.m.pricePaise,
+      durationDays: r.t?.durationDays ?? r.m.durationDays,
     },
+    tier: r.t ? { id: r.t.id, name: r.t.name, pricePaise: r.t.pricePaise, durationDays: r.t.durationDays } : null,
   }));
 }
 

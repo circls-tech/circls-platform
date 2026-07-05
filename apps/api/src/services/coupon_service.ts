@@ -10,6 +10,7 @@ import { coupons, type Coupon, type NewCoupon } from '../db/schema/coupons.js';
 import { events } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import { memberships } from '../db/schema/memberships.js';
+import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { slots } from '../db/schema/slots.js';
 import { arenas } from '../db/schema/arenas.js';
 import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
@@ -281,7 +282,7 @@ export interface PricedItem {
 /** Resolve base price + tenant + scope-item for a quote/booking request. */
 export async function priceItem(req:
   | { itemType: 'event'; eventId: string; lines?: { tierId: string; quantity: number }[] }
-  | { itemType: 'membership'; membershipId: string }
+  | { itemType: 'membership'; membershipId: string; membershipTierId?: string | undefined }
   | { itemType: 'slot'; slotIds: string[] },
 ): Promise<PricedItem> {
   if (req.itemType === 'event') {
@@ -321,7 +322,23 @@ export async function priceItem(req:
   if (req.itemType === 'membership') {
     const [m] = await db.select().from(memberships).where(eq(memberships.id, req.membershipId)).limit(1);
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
-    return { tenantId: m.tenantId, basePaise: m.pricePaise ?? 0, item: { type: 'membership', id: m.id, venueId: m.venueId ?? null } };
+    const live = await db
+      .select({ id: membershipTiers.id, p: membershipTiers.pricePaise })
+      .from(membershipTiers)
+      .where(and(eq(membershipTiers.membershipId, m.id), isNull(membershipTiers.deletedAt)));
+    let basePaise: number;
+    if (req.membershipTierId) {
+      // A specific tier (quote/purchase): its price is the base. It must belong
+      // to this membership and be live.
+      const tier = live.find((t) => t.id === req.membershipTierId);
+      if (!tier) throw new BadRequest('Unknown tier for this membership', 'bad_request');
+      basePaise = tier.p;
+    } else {
+      // No tier (coupon-listing, which only needs a base to test min-order): use
+      // the cheapest tier as a safe lower bound.
+      basePaise = live.length ? Math.min(...live.map((t) => t.p)) : (m.pricePaise ?? 0);
+    }
+    return { tenantId: m.tenantId, basePaise, item: { type: 'membership', id: m.id, venueId: m.venueId ?? null } };
   }
   // slots: sum prices, all must share one arena + tenant
   const rows = await db.select().from(slots).where(inArray(slots.id, req.slotIds));

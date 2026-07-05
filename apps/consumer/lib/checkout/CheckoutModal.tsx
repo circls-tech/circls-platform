@@ -29,7 +29,7 @@ function quoteItem(item: CheckoutItem): QuoteRequest {
   switch (item.kind) {
     case 'slot': return { itemType: 'slot', slotIds: item.slotIds };
     case 'event': return { itemType: 'event', eventId: item.eventId, lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })) };
-    case 'membership': return { itemType: 'membership', membershipId: item.membershipId };
+    case 'membership': return { itemType: 'membership', membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}) };
   }
 }
 
@@ -100,7 +100,7 @@ export function CheckoutModal({ item, prefill, onClose }: { item: CheckoutItem; 
         });
         order = { orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', amountPaise: r.amountPaise ?? 0, currency: 'INR' };
       } else {
-        const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(appliedCode ? { couponCode: appliedCode } : {}) });
+        const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}), ...(appliedCode ? { couponCode: appliedCode } : {}) });
         order = { orderId: r.orderId ?? '', keyId: r.keyId ?? '', amountPaise: r.amountPaise ?? 0, currency: 'INR' };
       }
 

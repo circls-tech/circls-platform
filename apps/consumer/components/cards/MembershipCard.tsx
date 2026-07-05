@@ -65,6 +65,9 @@ export function MembershipCard({
           <p className="mt-1 line-clamp-2 text-xs text-ink-soft">{membership.description}</p>
         )}
         <div className="mt-3 font-display text-2xl font-extrabold">
+          {(membership.tiers?.length ?? 0) > 1 && (
+            <span className="font-sans text-xs font-medium text-ink-soft">from </span>
+          )}
           {formatPaise(membership.pricePaise)}{' '}
           <span className="font-sans text-xs font-medium text-ink-soft">/ {membership.durationDays} days</span>
         </div>

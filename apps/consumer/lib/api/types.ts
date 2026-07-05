@@ -147,12 +147,26 @@ export interface MembershipBenefits {
   items: MembershipBenefitItem[];
 }
 
+/** A plan tier on a membership. `remaining` is `capacity - sold`, or null when
+ *  the tier is uncapped. */
+export interface PublicMembershipTier {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+  capacity: number | null;
+  remaining: number | null;
+}
+
 export interface PublicMembership {
   id: string;
   tenantId: string;
   venueId: string | null;
   name: string;
   description: string | null;
+  /** Legacy display fields — mirror the cheapest tier. */
   pricePaise: number;
   durationDays: number;
   /** Typed benefits (PR #110) — always { items: [...] }. */
@@ -164,6 +178,8 @@ export interface PublicMembership {
   /** Owning-org summary (PR #108). */
   brand: Brand;
   status: 'active';
+  /** Plan tiers (min 1). */
+  tiers: PublicMembershipTier[];
 }
 
 // ── Booking / purchase results ────────────────────────────────────────────────
@@ -209,6 +225,8 @@ export interface MembershipPurchaseResult {
 
 export interface PurchaseMembershipInput {
   membershipId: string;
+  /** The tier to buy; omit for a single-tier plan (server picks the cheapest). */
+  membershipTierId?: string;
   couponCode?: string;
 }
 

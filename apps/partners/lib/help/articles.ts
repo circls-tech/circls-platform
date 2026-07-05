@@ -69,7 +69,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up membership plans',
     category: 'Memberships',
     summary:
-      'How to create membership plans, define benefits and pricing, and manage active member subscriptions.',
+      'How to create membership plans with tiers (price, duration, benefits and capacity per tier), define artwork and terms, and manage active member subscriptions.',
     order: 6,
   },
   {

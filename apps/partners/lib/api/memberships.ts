@@ -31,14 +31,23 @@ export function useMembershipPurchases(tenantId: string, membershipId: string) {
   });
 }
 
-export interface CreateMembershipInput {
-  venueId?: string;
+/** A plan-tier payload for membership create/update. `capacity: null` = unlimited. */
+export interface MembershipTierInput {
   name: string;
   description?: string;
   pricePaise: number;
   durationDays: number;
   benefits?: MembershipBenefits;
+  capacity: number | null;
+}
+
+export interface CreateMembershipInput {
+  venueId?: string;
+  name: string;
+  description?: string;
   terms?: string | null;
+  /** Plan tiers (min 1). */
+  tiers: MembershipTierInput[];
 }
 
 export function useCreateMembership(tenantId: string) {
@@ -58,10 +67,9 @@ export interface UpdateMembershipInput {
   venueId?: string | null;
   name?: string;
   description?: string;
-  pricePaise?: number;
-  durationDays?: number;
-  benefits?: MembershipBenefits;
   terms?: string | null;
+  /** Replace-all plan tiers (editable states only). */
+  tiers?: MembershipTierInput[];
 }
 
 /**

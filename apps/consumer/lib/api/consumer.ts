@@ -183,10 +183,16 @@ export function useBookEvent() {
 export function usePurchaseMembership() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ membershipId, couponCode }: PurchaseMembershipInput) =>
+    mutationFn: ({ membershipId, membershipTierId, couponCode }: PurchaseMembershipInput) =>
       apiFetch<MembershipPurchaseResult>(
         `/v1/consumer/memberships/${membershipId}/purchase`,
-        { method: 'POST', body: JSON.stringify(couponCode ? { couponCode } : {}) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...(membershipTierId ? { membershipTierId } : {}),
+            ...(couponCode ? { couponCode } : {}),
+          }),
+        },
       ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['my-bookings'] }),
   });

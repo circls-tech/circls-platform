@@ -188,13 +188,19 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   const purchaseMembershipBody = z.object({
     couponCode: z.string().min(1).max(64).optional(),
+    membershipTierId: z.string().uuid().optional(),
   });
   app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
     const user = await currentUser(req);
     const parsed = purchaseMembershipBody.safeParse(req.body ?? {});
     if (!parsed.success) throw new BadRequest('Invalid payload', 'bad_request', { issues: parsed.error.issues });
-    return consumerPurchaseMembership(membershipId, user.id, parsed.data.couponCode);
+    return consumerPurchaseMembership(
+      membershipId,
+      user.id,
+      parsed.data.couponCode,
+      parsed.data.membershipTierId,
+    );
   });
 
   app.get('/v1/consumer/me', { preHandler: requireAuth }, async (req) => {
