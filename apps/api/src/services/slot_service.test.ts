@@ -170,9 +170,11 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
   // -------------------------------------------------------------------------
   describe('releaseSlots', () => {
     it('creates 2 slots for Sat-evening over 2-week window, priced from pricing rule', async () => {
+      // 2030-09-07 and 2030-09-14 are Saturdays — far enough out to never land
+      // in the past (releaseSlots skips any occurrence at/before "now").
       const result = await releaseSlots(ctx, arenaId, {
-        startDate: '2026-07-01',
-        endDate: '2026-07-14',
+        startDate: '2030-09-01',
+        endDate: '2030-09-14',
         quantizationMin: 60,
         cells: [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
         // no per-cell price → falls through to pricing rule
@@ -220,8 +222,8 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
     it('skips 2 overlapping slots on a second identical release', async () => {
       // Second release with same date range and cells → all should be skipped
       const result = await releaseSlots(ctx, arenaId, {
-        startDate: '2026-07-01',
-        endDate: '2026-07-14',
+        startDate: '2030-09-01',
+        endDate: '2030-09-14',
         quantizationMin: 60,
         cells: [{ dayOfWeek: 6, startTimeMin: 1080, durationMin: 60 }],
       });
