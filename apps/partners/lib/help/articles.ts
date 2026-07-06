@@ -97,6 +97,14 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 9,
   },
   {
+    slug: 'qr-tickets',
+    title: 'QR tickets and door check-in',
+    category: 'Bookings',
+    summary:
+      'Enable QR entry passes on events, arenas and membership plans — single or multi-use, with validity windows — and validate them at the door from the Check-in page.',
+    order: 11,
+  },
+  {
     slug: 'coupons',
     title: 'Creating and managing discount coupons',
     category: 'Discounts',

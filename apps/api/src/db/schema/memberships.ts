@@ -1,6 +1,7 @@
 import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { payments } from './payments.js';
+import type { QrTicketConfig } from './qr_ticket_config.js';
 import { tenants } from './tenants.js';
 import { users } from './users.js';
 import { venues } from './venues.js';
@@ -51,6 +52,8 @@ export const memberships = pgTable('memberships', {
   /** R2 object key of the single cover/artwork image; public URL derived at the
    *  service layer (finalized via presign+HEAD like venue images). */
   coverStorageKey: text('cover_storage_key'),
+  /** QR entry-ticket rules for purchases of this plan (null = disabled). */
+  qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: membershipStatus('status').notNull().default('active'),
   createdAt: createdAt(),

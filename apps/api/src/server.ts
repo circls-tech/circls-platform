@@ -50,6 +50,8 @@ import { supportIssueRoutes } from './routes/support_issues.js';
 import { couponRoutes } from './routes/coupons.js';
 // Consumer checkout quote + public coupons picker.
 import { checkoutRoutes } from './routes/checkout.js';
+// QR ticket door check-in (validate/consume scanned codes).
+import { qrTicketRoutes } from './routes/qr_tickets.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -289,6 +291,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(couponRoutes);
   // Consumer checkout quote + public coupons picker.
   await app.register(checkoutRoutes);
+  // QR ticket door check-in (validate/consume scanned codes).
+  await app.register(qrTicketRoutes);
 
   return app;
 }

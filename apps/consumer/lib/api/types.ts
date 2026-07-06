@@ -252,6 +252,25 @@ export interface MyBookingSlot {
   arenaName: string;
 }
 
+/** A scannable entry ticket attached to a confirmed booking. */
+export interface QrTicket {
+  id: string;
+  /** e.g. "General · 1 of 3", an arena name, or a plan name. */
+  label: string | null;
+  /** String to encode in the QR image (a check-in URL). */
+  qrData: string;
+  /** Short opaque token — shown as fallback text when the QR can't be scanned. */
+  code: string;
+  /** ISO-8601; null = valid immediately. */
+  validFrom: string | null;
+  /** ISO-8601; null = no expiry. */
+  validUntil: string | null;
+  multiUse: boolean;
+  maxScans: number | null;
+  scanCount: number;
+  status: 'active' | 'used' | 'revoked';
+}
+
 /**
  * The full view of a single booking (GET /v1/consumer/me/bookings/:id). Only the
  * block matching `itemType` is populated: `slots` for court bookings, `event`
@@ -287,6 +306,8 @@ export interface MyBookingDetail {
     durationDays: number;
     description: string | null;
   } | null;
+  /** Scannable entry tickets; [] until the booking is confirmed. */
+  qrTickets: QrTicket[];
 }
 
 /**

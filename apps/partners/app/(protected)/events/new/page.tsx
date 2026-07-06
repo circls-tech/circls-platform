@@ -7,6 +7,8 @@ import { useOrg } from '@/lib/org_context';
 import { useVenues } from '@/lib/api/queries';
 import { useCreateTenantEvent, type CreateTenantEventInput } from '@/lib/api/events';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import type { QrTicketConfig } from '@/lib/api/types';
 import { Button, Card, Input } from '@/lib/ui';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
@@ -45,6 +47,7 @@ export default function NewTenantEventPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
   const [city, setCity] = useState('');
@@ -84,6 +87,7 @@ export default function NewTenantEventPage() {
       startsAt: localToTzIso(startsAtLocal, effectiveTz),
       endsAt: localToTzIso(endsAtLocal, effectiveTz),
       tiers: tiersToPayload(tiers),
+      qrTicketConfig: qrConfig,
     };
 
     let input: CreateTenantEventInput;
@@ -194,6 +198,8 @@ export default function NewTenantEventPage() {
           </div>
 
           <TiersEditor value={tiers} onChange={setTiers} />
+
+          <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 

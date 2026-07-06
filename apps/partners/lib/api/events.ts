@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { EventBooking, VenueEvent, VenueEventSummary } from './types';
+import type { EventBooking, QrTicketConfig, VenueEvent, VenueEventSummary } from './types';
 
 export function useVenueEvents(venueId: string) {
   return useQuery({
@@ -42,6 +42,8 @@ export interface CreateTenantEventInput {
   endsAt: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** QR ticket rules; null/omitted = disabled. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export function useCreateTenantEvent(tenantId: string) {
@@ -83,6 +85,8 @@ export interface CreateEventInput {
   endsAt: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** QR ticket rules; null/omitted = disabled. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export function useCreateEvent(venueId: string) {
@@ -107,6 +111,8 @@ export interface UpdateEventInput {
   tiers?: TierInput[];
   /** Re-scope the event: a venue id → venue-scoped; null → standalone. */
   venueId?: string | null;
+  /** QR ticket rules; null = disable. Omit to leave unchanged. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 /** PATCH an event (draft only — API returns 409 event_not_draft otherwise). */

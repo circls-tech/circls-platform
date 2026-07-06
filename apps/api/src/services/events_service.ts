@@ -13,6 +13,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
+import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
@@ -106,6 +107,8 @@ export interface CreateEventInput {
   pricePaise?: number | undefined;
   capacity?: number | undefined;
   tiers: TierInput[];
+  /** QR entry-ticket rules (null/omitted = disabled). */
+  qrTicketConfig?: QrTicketConfig | null | undefined;
 }
 
 /**
@@ -143,6 +146,7 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
         endsAt: input.endsAt,
         pricePaise: input.pricePaise ?? 0,
         capacity: input.capacity ?? null,
+        qrTicketConfig: input.qrTicketConfig ?? null,
         status: 'draft',
       })
       .returning();
@@ -182,6 +186,8 @@ export interface UpdateEventPatch {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** null clears (QR tickets off); omitted = unchanged. */
+  qrTicketConfig?: QrTicketConfig | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
 }
@@ -218,6 +224,7 @@ export async function updateEvent(
     if (patch.description !== undefined) set.description = patch.description;
     if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
     if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
+    if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
 
     // Resolve the post-update scope: a venue id in the patch wins, otherwise the
     // event keeps whatever scope it already has.

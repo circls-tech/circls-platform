@@ -16,6 +16,7 @@ import type {
   NotificationsPage,
   Payment,
   PresignedUpload,
+  QrTicketConfig,
   ScheduleTemplate,
   Slot,
   SupportIssue,
@@ -316,12 +317,31 @@ export function useArena(arenaId: string | null) {
 export function useCreateArena(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; sport?: string; slotDurationMin?: number; tags?: string[] }) =>
+    mutationFn: (input: {
+      name: string;
+      sport?: string;
+      slotDurationMin?: number;
+      tags?: string[];
+      qrTicketConfig?: QrTicketConfig | null;
+    }) =>
       apiFetch<Arena>(`/v1/venues/${venueId}/arenas`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['arenas', venueId] }),
+  });
+}
+
+/** PATCH just the arena's QR ticket rules (null = disable). */
+export function useUpdateArenaQrConfig(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (qrTicketConfig: QrTicketConfig | null) =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ qrTicketConfig }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['arena', arenaId] }),
   });
 }
 

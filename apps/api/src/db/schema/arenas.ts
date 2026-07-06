@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { integer, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
+import type { QrTicketConfig } from './qr_ticket_config.js';
 import { venues } from './venues.js';
 
 /**
@@ -43,6 +44,8 @@ export const arenas = pgTable('arenas', {
   // Last-used builder template (bands + quantization + default price). See
   // ScheduleTemplate. Null until the first release.
   scheduleTemplate: jsonb('schedule_template').$type<ScheduleTemplate>(),
+  /** QR entry-ticket rules for bookings on this arena (null = disabled). */
+  qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: arenaStatus('status').notNull().default('active'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),

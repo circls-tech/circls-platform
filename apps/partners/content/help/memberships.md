@@ -41,6 +41,16 @@ Click **Edit** on a plan to change its name, description, venue scope, **terms**
 
 In the Edit panel, use **Upload** under **Artwork** to add a single cover image for the plan. Accepted formats are **JPEG, PNG and WebP**, up to **10 MB**. Use **Replace** to swap it or **Remove** to clear it. The artwork shows on the consumer plan page.
 
+## QR membership passes
+
+Turn on **QR tickets** on the plan form to give every buyer a scannable
+membership pass, valid for their whole membership period. Membership passes are
+typically **multi-use** (optionally capped at a number of scans) and are
+checked at the door from the portal's **Check-in** page. Like other plan
+fields, the setting is editable while the plan is pending review or inactive,
+and changes only affect future purchases. See [QR tickets and door
+check-in](/help/qr-tickets).
+
 ## Activating and deactivating
 
 - **Deactivate** an active plan to stop new purchases. Customers who already hold the membership keep it until it expires.

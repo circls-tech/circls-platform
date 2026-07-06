@@ -6,10 +6,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { useArena, useArenaSlots, useBulkSlots, useCancelBookingById, useVenues } from '@/lib/api/queries';
+import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import {
+  useArena,
+  useArenaSlots,
+  useBulkSlots,
+  useCancelBookingById,
+  useUpdateArenaQrConfig,
+  useVenues,
+} from '@/lib/api/queries';
+import type { QrTicketConfig } from '@/lib/api/types';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { Card } from '@/lib/ui';
+import { Button, Card } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -80,6 +89,31 @@ export default function ArenaReceptionPage() {
   // ── Mutations ──
   const bulk = useBulkSlots();
   const cancel = useCancelBookingById(arenaId);
+  const updateQrConfig = useUpdateArenaQrConfig(arenaId);
+
+  // ── QR ticket config editor state ──
+  // Local draft, hydrated once per arena load — a background refetch (same id)
+  // must not clobber in-progress edits.
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [qrLoadedFor, setQrLoadedFor] = useState<string | null>(null);
+  const [qrSaved, setQrSaved] = useState(false);
+  const [qrErr, setQrErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!arena || arena.id === qrLoadedFor) return;
+    setQrLoadedFor(arena.id);
+    setQrConfig(arena.qrTicketConfig ?? null);
+  }, [arena, qrLoadedFor]);
+
+  async function saveQrConfig() {
+    setQrErr(null);
+    setQrSaved(false);
+    try {
+      await updateQrConfig.mutateAsync(qrConfig);
+      setQrSaved(true);
+    } catch (e) {
+      setQrErr((e as Error).message);
+    }
+  }
 
   // ── Booking modal state ──
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -198,6 +232,34 @@ export default function ArenaReceptionPage() {
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
         />
+      )}
+
+      {/* QR ticket rules */}
+      {arena && (
+        <Card
+          title="QR tickets"
+          subtitle="Issue scannable door passes for bookings on this arena. Changes only affect future bookings."
+        >
+          <div className="flex max-w-2xl flex-col gap-3">
+            <QrTicketConfigEditor
+              value={qrConfig}
+              onChange={(v) => {
+                setQrConfig(v);
+                setQrSaved(false);
+              }}
+              itemNoun="booking"
+            />
+            {qrErr && <p className="text-sm text-red-600">{qrErr}</p>}
+            <div className="flex items-center justify-end gap-3">
+              {qrSaved && !updateQrConfig.isPending && (
+                <span className="text-xs text-emerald-600">Saved.</span>
+              )}
+              <Button size="sm" loading={updateQrConfig.isPending} onClick={() => void saveQrConfig()}>
+                Save
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Add booking modal */}

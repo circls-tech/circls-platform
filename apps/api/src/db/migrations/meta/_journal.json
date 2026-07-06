@@ -78,8 +78,7 @@
       "when": 1780000000000,
       "tag": "0010_track_b_scaffold",
       "breakpoints": true
-    }
-    ,
+    },
     {
       "idx": 11,
       "version": "7",
@@ -114,8 +113,7 @@
       "when": 1780400000000,
       "tag": "0016_user_interests",
       "breakpoints": true
-    }
-    ,
+    },
     {
       "idx": 17,
       "version": "7",
@@ -212,6 +210,13 @@
       "version": "7",
       "when": 1781440000000,
       "tag": "0030_membership_tiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0031_qr_tickets",
       "breakpoints": true
     }
   ]

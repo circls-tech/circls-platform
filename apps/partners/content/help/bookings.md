@@ -31,6 +31,14 @@ The detail view shows the customer's information, the arena, status, total, the 
 - **razorpay_route** — paid online. Refunds are processed back to the customer.
 - **free** — a free booking; nothing to refund.
 
+## QR entry passes for arena bookings
+
+If an arena has **QR tickets** enabled (on the arena's create form, or later
+from its reception page), every confirmed booking on it issues the customer a
+scannable entry pass covering their booked slots. Validate passes on the
+portal's **Check-in** page; cancelling a booking revokes its passes
+automatically. See [QR tickets and door check-in](/help/qr-tickets).
+
 ## Cancelling a booking and refunds
 
 1. From the booking detail, click **Cancel booking**.

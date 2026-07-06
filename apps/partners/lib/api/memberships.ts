@@ -7,6 +7,7 @@ import type {
   MembershipBenefits,
   MembershipPurchase,
   PresignedUpload,
+  QrTicketConfig,
   UserMembership,
 } from './types';
 
@@ -48,6 +49,8 @@ export interface CreateMembershipInput {
   terms?: string | null;
   /** Plan tiers (min 1). */
   tiers: MembershipTierInput[];
+  /** QR ticket rules; null/omitted = disabled. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export function useCreateMembership(tenantId: string) {
@@ -70,6 +73,8 @@ export interface UpdateMembershipInput {
   terms?: string | null;
   /** Replace-all plan tiers (editable states only). */
   tiers?: MembershipTierInput[];
+  /** QR ticket rules; null = disable. Omit to leave unchanged. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 /**

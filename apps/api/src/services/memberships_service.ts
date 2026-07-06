@@ -23,14 +23,18 @@ import {
   type MembershipBenefits,
   userMemberships,
 } from '../db/schema/memberships.js';
+import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { membershipTiers } from '../db/schema/membership_tiers.js';
+import { qrTickets } from '../db/schema/qr_tickets.js';
 import { bookings } from '../db/schema/bookings.js';
 import { tenants } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
+import { issueQrTicketsForUserMembership, qrTicketDataUrl } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { CouponPricing } from './booking_service.js';
@@ -139,6 +143,8 @@ export interface CreateMembershipInput {
   pricePaise?: number | undefined;
   durationDays?: number | undefined;
   benefits?: MembershipBenefits | undefined;
+  /** QR entry-ticket rules (null/omitted = disabled). */
+  qrTicketConfig?: QrTicketConfig | null | undefined;
 }
 
 /** Resolve the create payload's tiers, falling back to a single legacy tier. */
@@ -177,6 +183,7 @@ export async function createMembership(
         durationDays: cheapest.durationDays,
         benefits: cheapest.benefits ?? { items: [] },
         terms: input.terms ?? null,
+        qrTicketConfig: input.qrTicketConfig ?? null,
         // New listings await Circls review before going live (subproject B).
         status: 'pending_review',
       })
@@ -216,6 +223,8 @@ export interface UpdateMembershipPatch {
   venueId?: string | null;
   benefits?: MembershipBenefits;
   terms?: string | null;
+  /** null clears (QR tickets off); omitted = unchanged. */
+  qrTicketConfig?: QrTicketConfig | null;
   /** When provided, replaces all plan tiers (editable states only). */
   tiers?: MembershipTierInput[];
 }
@@ -253,6 +262,7 @@ export async function updateMembership(
     if (patch.venueId !== undefined) set.venueId = patch.venueId;
     if (patch.benefits !== undefined) set.benefits = patch.benefits;
     if (patch.terms !== undefined) set.terms = patch.terms;
+    if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
     if (Object.keys(set).length > 0) {
       await tx.update(memberships).set(set).where(eq(memberships.id, membershipId));
     }
@@ -500,6 +510,13 @@ export async function purchaseMembership(
       .returning();
     if (!um) throw new Error('user_membership insert returned no row');
 
+    // Stamp the user_membership onto the booking so booking-keyed consumers
+    // (QR issuance, reads) can resolve the purchase without a payment join.
+    await tx
+      .update(bookings)
+      .set({ itemData: { membershipId: m.id, userMembershipId: um.id } })
+      .where(eq(bookings.id, b.id));
+
     if (pricing) {
       await recordRedemption(tx, {
         coupon: pricing.coupon,
@@ -541,6 +558,21 @@ export async function purchaseMembership(
   });
 
   if (reserved.kind === 'free') {
+    // Free purchases confirm inline (no capture webhook), so mint the QR
+    // ticket here — keyed on the user_membership because the plain free path
+    // has no bookings row. Idempotent, so the booking-keyed hook below (which
+    // also issues) can't double-mint on the coupon-made-free path. Best-effort:
+    // the purchase is already committed, so a QR hiccup must not fail it.
+    try {
+      await issueQrTicketsForUserMembership(reserved.userMembershipId, {
+        bookingId: 'bookingId' in reserved ? (reserved.bookingId ?? null) : null,
+      });
+    } catch (err) {
+      logger.warn(
+        { err, userMembershipId: reserved.userMembershipId },
+        'membership_qr_issue_failed',
+      );
+    }
     // Only the coupon-made-free path mints a booking row; the plain free path
     // has nothing for the booking-keyed notification helpers to anchor on.
     if ('bookingId' in reserved && reserved.bookingId) {
@@ -607,6 +639,17 @@ export interface UserMembershipWithMembership {
   };
   /** The tier the user bought (null for legacy/no-tier purchases). */
   tier: { id: string; name: string; pricePaise: number; durationDays: number } | null;
+  /** The member's QR entry pass, when the plan has QR tickets enabled. */
+  qrTicket: {
+    code: string;
+    qrData: string;
+    validFrom: string | null;
+    validUntil: string | null;
+    multiUse: boolean;
+    maxScans: number | null;
+    scanCount: number;
+    status: string;
+  } | null;
 }
 
 /** Returns the user's active memberships joined with the membership catalog row. */
@@ -616,10 +659,12 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
       um: userMemberships,
       m: memberships,
       t: membershipTiers,
+      qr: qrTickets,
     })
     .from(userMemberships)
     .innerJoin(memberships, eq(userMemberships.membershipId, memberships.id))
     .leftJoin(membershipTiers, eq(userMemberships.membershipTierId, membershipTiers.id))
+    .leftJoin(qrTickets, eq(qrTickets.userMembershipId, userMemberships.id))
     .where(and(eq(userMemberships.userId, userId), eq(userMemberships.status, 'active')));
 
   return rows.map((r) => ({
@@ -641,6 +686,18 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
       durationDays: r.t?.durationDays ?? r.m.durationDays,
     },
     tier: r.t ? { id: r.t.id, name: r.t.name, pricePaise: r.t.pricePaise, durationDays: r.t.durationDays } : null,
+    qrTicket: r.qr
+      ? {
+          code: r.qr.code,
+          qrData: qrTicketDataUrl(r.qr.code),
+          validFrom: r.qr.validFrom?.toISOString() ?? null,
+          validUntil: r.qr.validUntil?.toISOString() ?? null,
+          multiUse: r.qr.multiUse,
+          maxScans: r.qr.maxScans,
+          scanCount: r.qr.scanCount,
+          status: r.qr.status,
+        }
+      : null,
   }));
 }
 

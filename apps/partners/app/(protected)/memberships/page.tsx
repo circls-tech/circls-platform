@@ -22,7 +22,8 @@ import {
   membershipTiersToPayload,
   type MembershipTierDraft,
 } from '@/components/MembershipTiersEditor';
-import type { Membership } from '@/lib/api/types';
+import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import type { Membership, QrTicketConfig } from '@/lib/api/types';
 import type { MembershipTierInput } from '@/lib/api/memberships';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
@@ -52,6 +53,7 @@ export default function MembershipsPage() {
   const [venueId, setVenueId] = useState(''); // '' = org-wide
   const [terms, setTerms] = useState('');
   const [tiers, setTiers] = useState<MembershipTierDraft[]>([emptyMembershipTier()]);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -76,12 +78,14 @@ export default function MembershipsPage() {
         ...(venueId ? { venueId } : {}),
         ...(terms.trim() ? { terms: terms.trim() } : {}),
         tiers: membershipTiersToPayload(tiers),
+        qrTicketConfig: qrConfig,
       });
       setName('');
       setDescription('');
       setVenueId('');
       setTerms('');
       setTiers([emptyMembershipTier()]);
+      setQrConfig(null);
       setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -298,6 +302,7 @@ export default function MembershipsPage() {
             </p>
           </div>
           <MembershipTiersEditor value={tiers} onChange={setTiers} />
+          <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
               Terms &amp; conditions
@@ -343,6 +348,7 @@ interface EditMembershipFormProps {
     description: string;
     terms: string | null;
     tiers: MembershipTierInput[];
+    qrTicketConfig: QrTicketConfig | null;
   }) => void | Promise<void>;
 }
 
@@ -363,6 +369,9 @@ function EditMembershipForm({
       ? membership.tiers.map(membershipTierDraftFromApi)
       : [emptyMembershipTier()],
   );
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(
+    membership.qrTicketConfig ?? null,
+  );
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -372,6 +381,7 @@ function EditMembershipForm({
       description,
       terms: terms.trim() ? terms.trim() : null,
       tiers: membershipTiersToPayload(tiers),
+      qrTicketConfig: qrConfig,
     });
   }
 
@@ -411,6 +421,7 @@ function EditMembershipForm({
         </select>
       </div>
       <MembershipTiersEditor value={tiers} onChange={setTiers} />
+      <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
           Terms &amp; conditions
