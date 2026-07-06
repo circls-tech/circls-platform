@@ -11,6 +11,8 @@ This guide covers viewing bookings, exporting them, and handling cancellations, 
 
 The table shows the customer, contact, arena, date/time, number of slots, total (₹) and status. Click any row to open the **booking detail**.
 
+A customer can book slots across several of your courts in one go (a single booking that spans multiple courts). These appear with **Multiple courts** in the arena column, count toward each court when you filter by **Arena**, and list every slot's court in the booking detail.
+
 ## Booking statuses
 
 | Status | Meaning |
@@ -23,7 +25,7 @@ The table shows the customer, contact, arena, date/time, number of slots, total 
 
 ## The booking detail
 
-The detail view shows the customer's information, the arena, status, total, the booking channel and payment method, the list of **slots** with their times and prices, and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Cancel booking** action.
+The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Cancel booking** action.
 
 ### Payment methods
 
