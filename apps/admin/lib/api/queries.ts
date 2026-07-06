@@ -3,9 +3,11 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
+  AdminConsumerUsersPage,
   AdminListingDetail,
   AdminListingListResponse,
   AdminListingType,
+  AdminPartnerUsersPage,
   AdminPayoutListPage,
   AdminStats,
   AdminSupportIssue,
@@ -81,6 +83,42 @@ export function useReactivateTenant() {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
       void qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
+  });
+}
+
+// ── User reports ──────────────────────────────────────────────────────────────
+
+export interface AdminUserReportFilters {
+  q?: string;
+  /** ISO instant; only rows created at/after it ("new since…"). */
+  since?: string;
+}
+
+export function useAdminConsumerUsers(filters: AdminUserReportFilters) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'users', 'consumers', filters],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminConsumerUsersPage>(
+        `/v1/admin/users/consumers${qs({ limit: 50, cursor: pageParam, ...filters })}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useAdminPartnerUsers(filters: AdminUserReportFilters) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'users', 'partners', filters],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminPartnerUsersPage>(
+        `/v1/admin/users/partners${qs({ limit: 50, cursor: pageParam, ...filters })}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }
 

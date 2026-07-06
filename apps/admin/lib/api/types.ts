@@ -179,6 +179,60 @@ export interface AdminListingDetail {
   venueName?: string | null;
 }
 
+// ── User reports (GET /v1/admin/users/*) ─────────────────────────────────────
+
+export interface AdminConsumerUserRow {
+  id: string;
+  displayName: string | null;
+  username: string | null;
+  email: string | null;
+  phoneE164: string | null;
+  interests: string[];
+  status: 'active' | 'suspended';
+  createdAt: string;
+  eventsBooked: number;
+  totalBookings: number;
+  /** Distinct events viewed, from consumer_activity telemetry. */
+  eventsOpened: number;
+  sessionCount: number;
+  /** Sum of per-session activity spans, in whole minutes. */
+  minutesInApp: number;
+  lastActiveAt: string | null;
+  loginCount: number;
+  lastLoginAt: string | null;
+}
+
+export interface AdminConsumerUsersPage {
+  rows: AdminConsumerUserRow[];
+  nextCursor: string | null;
+}
+
+export interface AdminPartnerUserRow {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+  phoneE164: string | null;
+  role: 'owner' | 'manager' | 'staff' | 'readonly';
+  memberSince: string;
+  userCreatedAt: string;
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  tenantStatus: 'active' | 'suspended';
+  subscriptionStatus: string;
+  teamSize: number;
+  venueCount: number;
+  tenantBookings30d: number;
+  /** Partner-portal logins only (login_events.source = 'partners'). */
+  loginCount: number;
+  lastLoginAt: string | null;
+}
+
+export interface AdminPartnerUsersPage {
+  rows: AdminPartnerUserRow[];
+  nextCursor: string | null;
+}
+
 // ── Coupons ───────────────────────────────────────────────────────────────────
 
 export interface Coupon {
