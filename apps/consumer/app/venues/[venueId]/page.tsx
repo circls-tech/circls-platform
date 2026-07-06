@@ -1,9 +1,8 @@
 'use client';
-import { use, useEffect, useState } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
-import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
@@ -17,38 +16,57 @@ import {
   useVenueMemberships,
 } from '@/lib/api/consumer';
 import type { PublicArena, PublicEvent, PublicVenue } from '@/lib/api/types';
-import { useAuth } from '@/lib/firebase/auth_context';
 import { formatAddress, formatOpeningHours } from '@/lib/trust';
-import { formatDateTime, formatPaise, formatTime } from '@/lib/format';
+import { formatDateTime, formatDayMonth, formatPaise, formatSlotRange } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
-/** The arena currently driving the page-level sticky Book bar. Booking is
- *  per-arena, so only one arena's selection is "active" at a time. */
-type ActiveSelection = {
+/** A slot held in the cart, with the display info the cart summary needs. */
+export interface CartSlot {
+  id: string;
   arenaId: string;
   arenaName: string;
-  slotIds: string[];
-  totalPaise: number;
-};
+  startAt: string;
+  endAt: string;
+  pricePaise: number;
+}
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
   const { venueId } = use(params);
   const venueQ = useVenue(venueId);
   const eventsQ = useVenueEvents(venueId);
   const membershipsQ = useVenueMemberships(venueId);
-  const { openCheckout } = useCheckoutModal();
-  // Whichever arena the user is currently picking slots in. Selecting in a
-  // different arena replaces this (the other arena clears its highlight).
-  const [active, setActive] = useState<ActiveSelection | null>(null);
   // Owning-org profile, enriches the "Hosted by" byline. Degrades to the
   // compact brand summary when still loading or the org is unavailable.
   const orgQ = usePublicOrg(venueQ.data?.venue.brand?.slug ?? '');
+  // Cart of slots across the courts of THIS venue. Keyed by slot id; the booking
+  // endpoint takes the combined slotIds and books them as one multi-arena
+  // booking with a single payment.
+  const [cart, setCart] = useState<Map<string, CartSlot>>(new Map());
+
+  function toggleCartSlot(slot: CartSlot) {
+    setCart((prev) => {
+      const next = new Map(prev);
+      if (next.has(slot.id)) next.delete(slot.id);
+      else next.set(slot.id, slot);
+      return next;
+    });
+  }
+  function removeFromCart(id: string) {
+    setCart((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+  function clearCart() {
+    setCart(new Map());
+  }
 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-5xl px-4 pt-8 pb-28">
+      <main className={`mx-auto max-w-5xl px-4 pt-8${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
         <BackBar />
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
@@ -107,8 +125,8 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     <ArenaCard
                       key={arena.id}
                       arena={arena}
-                      isActive={active?.arenaId === arena.id}
-                      onSelectionChange={setActive}
+                      cart={cart}
+                      onToggleSlot={toggleCartSlot}
                     />
                   ))}
                 </div>
@@ -146,36 +164,19 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 </div>
               )}
             </section>
+
+            {cart.size > 0 && (
+              <CartBar
+                cart={cart}
+                venueName={venueQ.data.venue.name}
+                onRemove={removeFromCart}
+                onClear={clearCart}
+              />
+            )}
           </>
         )}
       </main>
 
-      {active && (
-        <StickyActionBar
-          summary={
-            <>
-              <span className="font-display font-extrabold text-ink">{active.arenaName}</span>
-              <span className="text-text-secondary">
-                {' · '}
-                {active.slotIds.length} slot{active.slotIds.length > 1 ? 's' : ''} · {formatPaise(active.totalPaise)}
-              </span>
-            </>
-          }
-          action={
-            <Button
-              onClick={() =>
-                openCheckout({
-                  kind: 'slot',
-                  slotIds: active.slotIds,
-                  title: `${active.arenaName} · ${active.slotIds.length} slot${active.slotIds.length > 1 ? 's' : ''}`,
-                })
-              }
-            >
-              Book {active.slotIds.length} slot{active.slotIds.length > 1 ? 's' : ''}
-            </Button>
-          }
-        />
-      )}
     </div>
   );
 }
@@ -275,60 +276,17 @@ function dayBounds(date: string): { from: string; to: string } {
 
 function ArenaCard({
   arena,
-  isActive,
-  onSelectionChange,
+  cart,
+  onToggleSlot,
 }: {
   arena: PublicArena;
-  /** True when THIS arena owns the page-level sticky Book bar. */
-  isActive: boolean;
-  /** Report this arena's current selection (or null when it clears). */
-  onSelectionChange: (sel: ActiveSelection | null) => void;
+  cart: Map<string, CartSlot>;
+  onToggleSlot: (slot: CartSlot) => void;
 }) {
   const [date, setDate] = useState(todayLocal());
   const { from, to } = dayBounds(date);
   const slotsQ = useArenaSlots(arena.id, from, to);
-  // Selected slot ids for THIS arena+date. Backend books multiple slots in one
-  // arena atomically (POST /v1/consumer/bookings takes slotIds[]), so we let the
-  // user pick several and check out together. The booking CTA lives in a single
-  // page-level sticky bar, so we lift the active selection up via onSelectionChange.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
   const slots = slotsQ.data ?? [];
-  const selectedSlots = slots.filter((s) => selected.has(s.id));
-  const selectedTotal = selectedSlots.reduce((sum, s) => sum + s.pricePaise, 0);
-
-  // When another arena takes over the active selection, drop our highlight.
-  useEffect(() => {
-    if (!isActive) setSelected((prev) => (prev.size ? new Set() : prev));
-  }, [isActive]);
-
-  /** Push the given selection up to the page so it can render the sticky bar. */
-  function report(next: Set<string>) {
-    const sel = slots.filter((s) => next.has(s.id));
-    if (sel.length === 0) {
-      if (isActive) onSelectionChange(null);
-      return;
-    }
-    onSelectionChange({
-      arenaId: arena.id,
-      arenaName: arena.name,
-      slotIds: sel.map((s) => s.id),
-      totalPaise: sel.reduce((sum, s) => sum + s.pricePaise, 0),
-    });
-  }
-
-  function changeDate(d: string) {
-    setDate(d);
-    setSelected(new Set()); // selection is per-day; slots differ across dates
-    if (isActive) onSelectionChange(null);
-  }
-  function toggle(slotId: string) {
-    const next = new Set(selected);
-    if (next.has(slotId)) next.delete(slotId);
-    else next.add(slotId);
-    setSelected(next);
-    report(next);
-  }
 
   return (
     <Card>
@@ -346,7 +304,7 @@ function ArenaCard({
             type="date"
             value={date}
             min={todayLocal()}
-            onChange={(e) => changeDate(e.target.value)}
+            onChange={(e) => setDate(e.target.value)}
             className="rounded-[var(--radius)] border-[2px] border-ink px-2 py-1 text-sm text-ink"
           />
         </label>
@@ -363,39 +321,139 @@ function ArenaCard({
           <p className="text-sm text-text-secondary">No open slots for this day.</p>
         ) : (
           <>
-            <p className="mb-2 text-xs text-text-secondary">Tap to select one or more slots, then book them together.</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <p className="mb-2 text-xs text-text-secondary">Tap to add slots to your cart — mix courts and book them together.</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {slots.map((slot) => {
-                const slotLabel = `${formatTime(slot.startAt)} – ${formatTime(slot.endAt)}`;
-                const isSelected = selected.has(slot.id);
+                const slotLabel = formatSlotRange(slot.startAt, slot.endAt);
+                const inCart = cart.has(slot.id);
                 return (
                   <button
                     key={slot.id}
                     type="button"
-                    onClick={() => toggle(slot.id)}
-                    aria-pressed={isSelected}
+                    onClick={() =>
+                      onToggleSlot({
+                        id: slot.id,
+                        arenaId: arena.id,
+                        arenaName: arena.name,
+                        startAt: slot.startAt,
+                        endAt: slot.endAt,
+                        pricePaise: slot.pricePaise,
+                      })
+                    }
+                    aria-pressed={inCart}
                     className={[
-                      'flex flex-col items-start rounded-[var(--radius)] border-[2px] px-3 py-2 text-left transition-colors',
-                      isSelected
+                      'flex min-h-[3rem] flex-col items-start justify-center rounded-[var(--radius)] border-[2px] px-3 py-2 text-left transition-colors',
+                      inCart
                         ? 'border-ink bg-coral text-ink shadow-offset-sm'
                         : 'border-ink bg-white hover:bg-coral-soft',
                     ].join(' ')}
                   >
-                    <span className="text-sm font-medium text-ink">{slotLabel}</span>
+                    <span className="text-xs font-medium leading-tight tabular-nums text-ink sm:text-sm">{slotLabel}</span>
                     <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
                   </button>
                 );
               })}
             </div>
-            {selectedSlots.length > 0 && (
-              <p className="mt-3 text-sm text-text-secondary">
-                {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''} selected · {formatPaise(selectedTotal)}
-              </p>
-            )}
           </>
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Floating cart bar (venue-scoped). Collects slots across courts; expands to a
+ * removable line-item list and checks out the whole cart as one booking + one
+ * payment. Fixed to the viewport bottom so it's reachable without scrolling —
+ * most useful on mobile, where the slot grids are tall.
+ */
+function CartBar({
+  cart,
+  venueName,
+  onRemove,
+  onClear,
+}: {
+  cart: Map<string, CartSlot>;
+  venueName: string;
+  onRemove: (id: string) => void;
+  onClear: () => void;
+}) {
+  const { openCheckout } = useCheckoutModal();
+  const [expanded, setExpanded] = useState(false);
+
+  // Stable order: by court name, then start time.
+  const items = [...cart.values()].sort(
+    (a, b) => a.arenaName.localeCompare(b.arenaName) || a.startAt.localeCompare(b.startAt),
+  );
+  const total = items.reduce((sum, i) => sum + i.pricePaise, 0);
+  const courts = new Set(items.map((i) => i.arenaId)).size;
+  const n = items.length;
+
+  function book() {
+    openCheckout(
+      {
+        kind: 'slot',
+        slotIds: items.map((i) => i.id),
+        title: `${venueName} · ${n} slot${n > 1 ? 's' : ''}${courts > 1 ? ` · ${courts} courts` : ''}`,
+      },
+      {},
+      { onSuccess: onClear },
+    );
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t-[2px] border-ink bg-white shadow-offset-sm [padding-bottom:env(safe-area-inset-bottom)]">
+      <div className="mx-auto max-w-5xl px-4">
+        {expanded && (
+          <div className="max-h-64 overflow-y-auto border-b-[1.5px] border-dashed border-ink/20 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-display text-sm font-extrabold text-ink">Your cart</span>
+              <button type="button" onClick={onClear} className="text-xs font-medium text-text-secondary underline">
+                Clear all
+              </button>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {items.map((i) => {
+                const { day, month } = formatDayMonth(i.startAt);
+                return (
+                  <li key={i.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-ink">
+                      <span className="font-medium">{i.arenaName}</span>
+                      <span className="text-text-secondary"> · {day} {month} · {formatSlotRange(i.startAt, i.endAt)}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="tabular-nums text-text-secondary">{formatPaise(i.pricePaise)}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(i.id)}
+                        aria-label={`Remove ${i.arenaName} slot`}
+                        className="rounded px-1.5 text-lg leading-none text-text-secondary hover:text-petal-red"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3 py-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex min-w-0 flex-col items-start text-left"
+            aria-expanded={expanded}
+          >
+            <span className="font-display text-sm font-extrabold text-ink">
+              {n} slot{n > 1 ? 's' : ''} · {courts} court{courts > 1 ? 's' : ''} · {formatPaise(total)}
+            </span>
+            <span className="text-xs text-text-secondary underline">{expanded ? 'Hide cart' : 'View cart'}</span>
+          </button>
+          <Button onClick={book}>Book {n} slot{n > 1 ? 's' : ''}</Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useArenas, useBookingDetail, useBookingPayments, useVenueBookings, useVenues } from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
+import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
@@ -154,30 +155,23 @@ const STATUS_OPTIONS: { value: BookingStatus | ''; label: string }[] = [
 // CSV export
 // ──────────────────────────────────────────────────────────────────────────────
 
-/** Wrap a value as a CSV field, escaping quotes and forcing string type. */
-function csvField(value: unknown): string {
-  const s = value == null ? '' : String(value);
-  // Always quote: simplest correct handling of commas, quotes, and newlines.
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
 /** Build a CSV string from the currently-displayed (filtered) booking rows. */
 function bookingsToCsv(rows: BookingListItem[], tz: string): string {
-  const headers = [
-    'Booking ID',
-    'Customer',
-    'Contact',
-    'Arena',
-    'Start',
-    'End',
-    'Slots',
-    'Total (₹)',
-    'Status',
-    'Channel',
-    'Booked At',
-  ];
-  const lines = rows.map((b) =>
+  return toCsv(
     [
+      'Booking ID',
+      'Customer',
+      'Contact',
+      'Arena',
+      'Start',
+      'End',
+      'Slots',
+      'Total (₹)',
+      'Status',
+      'Channel',
+      'Booked At',
+    ],
+    rows.map((b) => [
       b.id,
       b.customerName ?? '',
       b.customerContact ?? '',
@@ -189,25 +183,8 @@ function bookingsToCsv(rows: BookingListItem[], tz: string): string {
       b.status,
       b.channel,
       fmtInTz(b.createdAt, tz),
-    ]
-      .map(csvField)
-      .join(','),
+    ]),
   );
-  return [headers.map(csvField).join(','), ...lines].join('\r\n');
-}
-
-/** Trigger a client-side download of `content` as a file named `filename`. */
-function downloadCsv(content: string, filename: string): void {
-  // Prepend a UTF-8 BOM so Excel renders the ₹ symbol and other characters correctly.
-  const blob = new Blob([`﻿${content}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -304,17 +281,23 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
                 Slots ({detail.slots.length})
               </p>
               <div className="flex flex-col gap-1.5">
-                {detail.slots.map((slot) => (
-                  <div
-                    key={slot.id}
-                    className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
-                  >
-                    <span className="text-slate-700">
-                      {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
-                    </span>
-                    <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
-                  </div>
-                ))}
+                {detail.slots.map((slot) => {
+                  // A cart booking can span courts; show each slot's court so the
+                  // list stays legible (single-court bookings keep it implicit).
+                  const multiCourt = new Set(detail.slots.map((s) => s.arenaName)).size > 1;
+                  return (
+                    <div
+                      key={slot.id}
+                      className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-sm"
+                    >
+                      <span className="text-slate-700">
+                        {multiCourt && <span className="font-medium text-slate-800">{slot.arenaName} · </span>}
+                        {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
+                      </span>
+                      <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
