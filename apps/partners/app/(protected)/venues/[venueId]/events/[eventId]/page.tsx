@@ -12,6 +12,7 @@ import {
   useUpdateEvent,
 } from '@/lib/api/events';
 import { EventImages } from '@/components/EventImages';
+import { EventRegistrations } from '@/components/EventRegistrations';
 import {
   TiersEditor,
   emptyTier,
@@ -361,65 +362,13 @@ export default function EventDetailPage() {
 
           <EventImages eventId={eventId} />
 
-          <Card title={`Registrations${bookings ? ` (${bookings.rows.length})` : ''}`}>
-            {ev.tiers.length > 0 && (
-              <div className="mb-4 flex flex-col gap-1 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3 text-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-                  Sold by tier
-                </div>
-                {ev.tiers.map((t) => (
-                  <div key={t.id} className="flex justify-between text-slate-700">
-                    <span>{t.name}</span>
-                    <span>
-                      {t.sold} sold{t.capacity != null ? ` / ${t.capacity}` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {bookingsLoading && (
-              <p className="py-6 text-center text-sm text-slate-400">Loading…</p>
-            )}
-            {!bookingsLoading && bookings && bookings.rows.length === 0 && (
-              <p className="py-6 text-center text-sm text-slate-400">No registrations yet.</p>
-            )}
-            {!bookingsLoading && bookings && bookings.rows.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[#e5e7eb] text-left">
-                      <th className="pb-2 pr-4 font-medium text-slate-500">Customer</th>
-                      <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
-                      <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
-                      <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
-                      <th className="pb-2 font-medium text-slate-500">Registered</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#f1f5f9]">
-                    {bookings.rows.map((b) => (
-                      <tr key={b.id}>
-                        <td className="py-2.5 pr-4 font-medium text-slate-700">
-                          {b.customerName}
-                        </td>
-                        <td className="py-2.5 pr-4 text-slate-700">{b.customerContact}</td>
-                        <td className="py-2.5 pr-4">
-                          <StatusPill status={b.status} />
-                        </td>
-                        <td className="py-2.5 pr-4 text-slate-700">
-                          {b.totalPaise === 0 ? (
-                            <span className="text-emerald-600">Free</span>
-                          ) : (
-                            `₹${(b.totalPaise / 100).toFixed(2)}`
-                          )}
-                        </td>
-                        <td className="py-2.5 text-slate-700">{fmt(b.createdAt, displayTz)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
+          <EventRegistrations
+            bookings={bookings?.rows}
+            isLoading={bookingsLoading}
+            tiers={ev.tiers}
+            eventName={ev.name}
+            tz={displayTz}
+          />
         </>
       )}
     </div>

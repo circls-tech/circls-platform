@@ -1,8 +1,13 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { tenants, users, venues } from '../db/schema/index.js';
-import { createEvent, listEventsForTenant, updateEvent } from './events_service.js';
+import { bookings, tenants, users, venues } from '../db/schema/index.js';
+import {
+  createEvent,
+  listEventBookings,
+  listEventsForTenant,
+  updateEvent,
+} from './events_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -33,6 +38,8 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from users where firebase_uid like ${'evtsvc-reg-%'}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
@@ -138,5 +145,57 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
     expect(moved.venueId).toBeNull();
     expect(moved.addressJson).toMatchObject({ line1: '9 New St', city: 'Mumbai' });
     expect(moved.tzName).toBe('Asia/Kolkata');
+  });
+
+  it('lists event registrations with contact details, including cancelled ones', async () => {
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      venueId,
+      name: 'Registrations Event',
+      startsAt: new Date('2030-08-01T10:00:00Z'),
+      endsAt: new Date('2030-08-01T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+
+    const suffix = Date.now();
+    const [linked] = await db
+      .insert(users)
+      .values({
+        firebaseUid: `evtsvc-reg-${suffix}`,
+        displayName: 'Linked User',
+        email: `linked-${suffix}@test.x`,
+        phoneE164: `+9198${String(suffix).slice(-8)}`,
+      })
+      .returning();
+    const base = {
+      tenantId,
+      venueId,
+      itemType: 'event' as const,
+      channel: 'circls' as const,
+      paymentMethod: 'free' as const,
+      itemData: { eventId: ev.id },
+      totalPaise: 0,
+    };
+    await db.insert(bookings).values([
+      { ...base, status: 'confirmed', customerUserId: linked!.id },
+      { ...base, status: 'confirmed', customerName: 'Email Walkin', customerContact: 'walkin@test.x' },
+      { ...base, status: 'cancelled', customerName: 'Phone Cancel', customerContact: '+919812345678' },
+    ]);
+
+    const rows = await listEventBookings(tenantId, ev.id);
+    expect(rows).toHaveLength(3);
+
+    const linkedRow = rows.find((r) => r.customerName === 'Linked User');
+    expect(linkedRow?.customerEmail).toBe(linked!.email);
+    expect(linkedRow?.customerPhone).toBe(linked!.phoneE164);
+
+    const emailRow = rows.find((r) => r.customerName === 'Email Walkin');
+    expect(emailRow?.customerEmail).toBe('walkin@test.x');
+    expect(emailRow?.customerPhone).toBeNull();
+
+    const cancelledRow = rows.find((r) => r.customerName === 'Phone Cancel');
+    expect(cancelledRow?.status).toBe('cancelled');
+    expect(cancelledRow?.customerEmail).toBeNull();
+    expect(cancelledRow?.customerPhone).toBe('+919812345678');
   });
 });

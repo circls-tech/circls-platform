@@ -21,6 +21,8 @@ export interface EventBookingRow {
   id: string;
   customerName: string | null;
   customerContact: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
   status: string;
   totalPaise: number;
   createdAt: string;
@@ -31,29 +33,42 @@ export interface EventBookingRow {
  * `bookings` table with item_type='event' and item_data->>'eventId' = the id —
  * they don't appear in the slot/time-window bookings grid, so this is their
  * dedicated read.
+ *
+ * Email/phone come from the linked user account when the booking has one;
+ * otherwise the free-text `customer_contact` is classified into whichever
+ * column it resembles so exports still carry the contact.
  */
 export async function listEventBookings(
   tenantId: string,
   eventId: string,
 ): Promise<EventBookingRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
-    select id, customer_name, customer_contact, status, total_paise, created_at
-    from bookings
-    where tenant_id = ${tenantId}
-      and item_type = 'event'
-      and item_data->>'eventId' = ${eventId}
-    order by created_at desc
+    select b.id, b.customer_name, b.customer_contact, b.status, b.total_paise, b.created_at,
+           u.display_name as user_display_name, u.email as user_email, u.phone_e164 as user_phone
+    from bookings b
+    left join users u on u.id = b.customer_user_id
+    where b.tenant_id = ${tenantId}
+      and b.item_type = 'event'
+      and b.item_data->>'eventId' = ${eventId}
+    order by b.created_at desc
     limit 500
   `);
   const rows = raw as unknown as Record<string, unknown>[];
-  return rows.map((r) => ({
-    id: r['id'] as string,
-    customerName: (r['customer_name'] as string | null) ?? null,
-    customerContact: (r['customer_contact'] as string | null) ?? null,
-    status: r['status'] as string,
-    totalPaise: Number(r['total_paise']),
-    createdAt: new Date(r['created_at'] as string).toISOString(),
-  }));
+  return rows.map((r) => {
+    const contact = (r['customer_contact'] as string | null) ?? null;
+    const contactIsEmail = contact !== null && contact.includes('@');
+    return {
+      id: r['id'] as string,
+      customerName:
+        (r['customer_name'] as string | null) ?? (r['user_display_name'] as string | null) ?? null,
+      customerContact: contact,
+      customerEmail: (r['user_email'] as string | null) ?? (contactIsEmail ? contact : null),
+      customerPhone: (r['user_phone'] as string | null) ?? (!contactIsEmail ? contact : null),
+      status: r['status'] as string,
+      totalPaise: Number(r['total_paise']),
+      createdAt: new Date(r['created_at'] as string).toISOString(),
+    };
+  });
 }
 
 export async function listEventsForVenue(venueId: string): Promise<Event[]> {
