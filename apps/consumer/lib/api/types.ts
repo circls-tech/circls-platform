@@ -357,5 +357,8 @@ export interface MyProfile {
   phoneE164: string | null;
   email: string | null;
   displayName: string | null;
+  /** Unique public handle (lowercase); null until the user picks one. */
+  username: string | null;
+  /** Interest category slugs — see lib/interests.ts for the full list. */
   interests: string[];
 }

@@ -23,6 +23,7 @@ import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { uniqueViolationConstraint } from '../db/errors.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
@@ -886,6 +887,7 @@ export interface MyProfile {
   phoneE164: string | null;
   email: string | null;
   displayName: string | null;
+  username: string | null;
   interests: string[];
 }
 
@@ -895,6 +897,7 @@ function toMyProfile(u: User): MyProfile {
     phoneE164: u.phoneE164,
     email: u.email,
     displayName: u.displayName,
+    username: u.username,
     interests: u.interests,
   };
 }
@@ -910,6 +913,7 @@ export async function getMyProfile(userId: string): Promise<MyProfile> {
 export interface UpdateMyProfileInput {
   displayName?: string;
   email?: string;
+  username?: string;
   interests?: string[];
 }
 
@@ -920,17 +924,43 @@ export async function updateMyProfile(
   const patch: Partial<typeof users.$inferInsert> = {};
   if (input.displayName !== undefined) patch.displayName = input.displayName;
   if (input.email !== undefined) patch.email = input.email;
-  if (input.interests !== undefined) patch.interests = input.interests;
+  if (input.username !== undefined) patch.username = input.username.toLowerCase();
+  if (input.interests !== undefined) patch.interests = [...new Set(input.interests)];
   if (Object.keys(patch).length === 0) return getMyProfile(userId);
 
-  const updated = await db
-    .update(users)
-    .set(patch)
-    .where(eq(users.id, userId))
-    .returning();
+  let updated: User[];
+  try {
+    updated = await db
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, userId))
+      .returning();
+  } catch (err) {
+    const constraint = uniqueViolationConstraint(err);
+    if (constraint === 'users_username_unique') {
+      throw new Conflict('That username is already taken', 'username_taken');
+    }
+    if (constraint === 'users_email_unique') {
+      throw new Conflict('That email is already in use', 'email_taken');
+    }
+    throw err;
+  }
   const row = updated[0];
   if (!row) throw new NotFound('User not found', 'user_not_found');
   return toMyProfile(row);
+}
+
+/** True when `username` (case-insensitive) is not held by anyone else.
+ * `excludeUserId` lets the check pass for the caller's own current username. */
+export async function isUsernameAvailable(
+  username: string,
+  excludeUserId?: string,
+): Promise<boolean> {
+  const row = await db.query.users.findFirst({
+    where: eq(users.username, username.toLowerCase()),
+    columns: { id: true },
+  });
+  return !row || row.id === excludeUserId;
 }
 
 // -- Behavioral telemetry (M6) ------------------------------------------------
