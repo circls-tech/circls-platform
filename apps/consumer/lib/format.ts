@@ -39,6 +39,33 @@ export function formatTime(iso: string): string {
   return timeFmt.format(new Date(iso));
 }
 
+/** Hour:minute in 12-hour form without the meridiem, e.g. "9:30", "12:00". */
+function hourMinute(d: Date): string {
+  const h = d.getHours() % 12 || 12;
+  return `${h}:${d.getMinutes().toString().padStart(2, '0')}`;
+}
+
+/** am/pm for a local time. */
+function meridiem(d: Date): 'am' | 'pm' {
+  return d.getHours() < 12 ? 'am' : 'pm';
+}
+
+/**
+ * Compact start–end range that collapses a shared meridiem so it fits a narrow
+ * (e.g. 2-column mobile) slot chip on one line:
+ *   same half-day  → "9:30 – 10:00 am"
+ *   crossing noon  → "11:30 am – 12:00 pm"
+ */
+export function formatSlotRange(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const sm = meridiem(start);
+  const em = meridiem(end);
+  return sm === em
+    ? `${hourMinute(start)} – ${hourMinute(end)} ${em}`
+    : `${hourMinute(start)} ${sm} – ${hourMinute(end)} ${em}`;
+}
+
 const dateTimeFmt = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
   month: 'short',
