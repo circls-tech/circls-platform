@@ -11,6 +11,8 @@ export const users = pgTable('users', {
   phoneE164: text('phone_e164').unique(),
   email: text('email').unique(),
   displayName: text('display_name'),
+  /** Public handle, unique across all users. Stored lowercase; null until chosen. */
+  username: text('username').unique(),
   interests: text('interests').array().notNull().default(sql`'{}'::text[]`),
   status: userStatus('status').notNull().default('active'),
   createdAt: createdAt(),

@@ -14,6 +14,7 @@ import {
   getPublicMembershipById,
   getPublicOrgBySlug,
   getPublicVenueWithImages,
+  isUsernameAvailable,
   listMyBookings,
   listPublicArenas,
   listPublicArenaSlots,
@@ -25,6 +26,15 @@ import {
   logConsumerActivity,
   updateMyProfile,
 } from '../services/consumer_service.js';
+import { INTEREST_SLUGS } from '../lib/interests.js';
+
+/** Public handle: 3–30 chars, letters/digits/underscores, must start with a
+ * letter or digit. Case-insensitive — normalised to lowercase before storage. */
+export const usernameSchema = z
+  .string()
+  .min(3)
+  .max(30)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_]*$/, 'Use letters, numbers and underscores only');
 
 /** Behavioral telemetry batch (M6). event_type/item_type kept open (telemetry,
  *  not domain) so new client signals never need a server change. */
@@ -211,7 +221,8 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   const updateProfileBody = z.object({
     displayName: z.string().min(1).max(120).optional(),
     email: z.string().email().optional(),
-    interests: z.array(z.string()).optional(),
+    username: usernameSchema.optional(),
+    interests: z.array(z.enum(INTEREST_SLUGS)).max(INTEREST_SLUGS.length).optional(),
   });
   app.patch('/v1/consumer/me', { preHandler: requireAuth }, async (req) => {
     const user = await currentUser(req);
@@ -224,9 +235,22 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const input = {
       ...(parsed.data.displayName !== undefined && { displayName: parsed.data.displayName }),
       ...(parsed.data.email !== undefined && { email: parsed.data.email }),
+      ...(parsed.data.username !== undefined && { username: parsed.data.username }),
       ...(parsed.data.interests !== undefined && { interests: parsed.data.interests }),
     };
     return { profile: await updateMyProfile(user.id, input) };
+  });
+
+  // Live "is this handle free?" check for the profile form. Only tells the
+  // caller about handles they could legally claim (validation runs first), and
+  // treats their own current username as available.
+  const usernameAvailableQuery = z.object({ username: usernameSchema });
+  app.get('/v1/consumer/me/username-available', { preHandler: requireAuth, config: publicLimit }, async (req) => {
+    const user = await currentUser(req);
+    const parsed = usernameAvailableQuery.safeParse(req.query);
+    if (!parsed.success) return { available: false, valid: false };
+    const available = await isUsernameAvailable(parsed.data.username, user.id);
+    return { available, valid: true };
   });
 
   app.get('/v1/consumer/me/bookings', { preHandler: requireAuth }, async (req) => {

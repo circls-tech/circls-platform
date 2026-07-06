@@ -215,6 +215,8 @@ export function useMyProfile() {
 export interface UpdateMyProfileInput {
   displayName?: string;
   email?: string;
+  username?: string;
+  interests?: string[];
 }
 
 export function useUpdateMyProfile() {
@@ -230,6 +232,20 @@ export function useUpdateMyProfile() {
     onSuccess: (data) => {
       qc.setQueriesData({ queryKey: ['my-profile'] }, data);
     },
+  });
+}
+
+/** Live availability check for the profile form. `username` should already
+ * pass client-side validation; the server re-validates anyway. */
+export function useUsernameAvailable(username: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['username-available', username.toLowerCase()],
+    queryFn: () =>
+      apiFetch<{ available: boolean; valid: boolean }>(
+        `/v1/consumer/me/username-available?username=${encodeURIComponent(username)}`,
+      ),
+    enabled,
+    staleTime: 30_000,
   });
 }
 
