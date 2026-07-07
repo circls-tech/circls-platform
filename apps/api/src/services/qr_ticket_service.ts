@@ -22,7 +22,7 @@
  * UPDATE, applies window/usage rules, and (by default) consumes a scan.
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { env } from '../config/env.js';
 import { bookings, type Booking } from '../db/schema/bookings.js';
@@ -86,12 +86,36 @@ function ticketValues(
  * Pass the surrounding tx when calling from inside one (the payment-captured
  * handler confirms the booking in its own tx; a plain `db` read there would
  * not see the uncommitted row).
+ *
+ * A booking can legitimately own several ticket rows (one per seat / per
+ * arena), so idempotency can't be a DB-level unique constraint on booking_id.
+ * Instead we lock the booking row for the whole check-then-insert below —
+ * same FOR UPDATE pattern as refund_service's double-refund guard — so two
+ * concurrent calls for the same booking (a client-retried confirm, a webhook
+ * replay racing the inline path) can't both pass the "no tickets yet" check.
+ * When called with the default `db` (no surrounding tx) we open one here so
+ * the lock is actually held across the check and the insert.
  */
 export async function issueQrTicketsForBooking(
   bookingId: string,
   dbx: Database = db,
 ): Promise<QrTicket[]> {
-  const [booking] = await dbx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+  if (dbx === db) {
+    return db.transaction((tx) => issueQrTicketsForBookingLocked(bookingId, tx));
+  }
+  return issueQrTicketsForBookingLocked(bookingId, dbx);
+}
+
+async function issueQrTicketsForBookingLocked(
+  bookingId: string,
+  dbx: Database,
+): Promise<QrTicket[]> {
+  const [booking] = await dbx
+    .select()
+    .from(bookings)
+    .where(eq(bookings.id, bookingId))
+    .limit(1)
+    .for('update');
   if (!booking || booking.status !== 'confirmed') return [];
 
   const existing = await dbx.select().from(qrTickets).where(eq(qrTickets.bookingId, bookingId));
@@ -216,12 +240,35 @@ async function resolveUserMembershipId(booking: Booking, dbx: Database): Promise
  * Mint the QR ticket for a membership purchase (idempotent per
  * user_membership). Used directly by the free-purchase path (no bookings row)
  * and via `issueQrTicketsForBooking` for paid ones.
+ *
+ * Unlike bookings, a user_membership owns at most one ticket, so this is
+ * additionally backed by a DB-level partial unique index (see migration
+ * 0031) — but we still lock the row for the check-then-insert so a race
+ * fails closed as a safe no-op read instead of a thrown unique-violation.
  */
 export async function issueQrTicketsForUserMembership(
   userMembershipId: string,
   opts: { bookingId?: string | null } = {},
   dbx: Database = db,
 ): Promise<QrTicket[]> {
+  if (dbx === db) {
+    return db.transaction((tx) => issueQrTicketsForUserMembershipLocked(userMembershipId, opts, tx));
+  }
+  return issueQrTicketsForUserMembershipLocked(userMembershipId, opts, dbx);
+}
+
+async function issueQrTicketsForUserMembershipLocked(
+  userMembershipId: string,
+  opts: { bookingId?: string | null },
+  dbx: Database,
+): Promise<QrTicket[]> {
+  await dbx
+    .select({ id: userMemberships.id })
+    .from(userMemberships)
+    .where(eq(userMemberships.id, userMembershipId))
+    .limit(1)
+    .for('update');
+
   const existing = await dbx
     .select()
     .from(qrTickets)
@@ -267,6 +314,21 @@ export async function revokeQrTicketsForBooking(
     .update(qrTickets)
     .set({ status: 'revoked' })
     .where(and(eq(qrTickets.bookingId, bookingId), eq(qrTickets.status, 'active')));
+}
+
+/** Revoke any still-active tickets issued for a cancelled event's bookings. */
+export async function revokeQrTicketsForEvent(eventId: string, dbx: Database = db): Promise<void> {
+  const eventBookings = await dbx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.itemType, 'event'), sql`${bookings.itemData}->>'eventId' = ${eventId}`));
+  const bookingIds = eventBookings.map((b) => b.id);
+  if (bookingIds.length === 0) return;
+
+  await dbx
+    .update(qrTickets)
+    .set({ status: 'revoked' })
+    .where(and(inArray(qrTickets.bookingId, bookingIds), eq(qrTickets.status, 'active')));
 }
 
 // ── Validation (door scan) ───────────────────────────────────────────────────

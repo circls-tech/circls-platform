@@ -14,6 +14,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
+import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
@@ -339,6 +340,8 @@ export async function cancelEvent(ctx: AuditCtx, eventId: string): Promise<Event
       .set({ status: 'cancelled' })
       .where(eq(events.id, eventId))
       .returning();
+
+    await revokeQrTicketsForEvent(eventId, tx);
 
     await writeAudit(tx, ctx, 'event.cancelled', 'event', eventId, { status: existing.status }, { status: 'cancelled' });
 

@@ -66,3 +66,9 @@ CREATE INDEX IF NOT EXISTS "qr_tickets_booking_id_idx" ON "qr_tickets" ("booking
 CREATE INDEX IF NOT EXISTS "qr_tickets_user_membership_id_idx" ON "qr_tickets" ("user_membership_id");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "qr_tickets_tenant_id_idx" ON "qr_tickets" ("tenant_id");
+--> statement-breakpoint
+-- A booking can legitimately own several tickets (one per seat / per arena),
+-- so booking_id can't be uniquely constrained. A user_membership owns at most
+-- one, so this partial unique index closes the issuance race at the DB layer
+-- (app-level locking in qr_ticket_service.ts backs booking_id instead).
+CREATE UNIQUE INDEX IF NOT EXISTS "qr_tickets_user_membership_id_unique" ON "qr_tickets" ("user_membership_id") WHERE "user_membership_id" IS NOT NULL;

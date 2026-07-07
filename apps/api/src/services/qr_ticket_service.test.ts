@@ -13,6 +13,8 @@ import {
   venues,
 } from '../db/schema/index.js';
 import { bookEvent, prepareOnlineBookingWithPayment } from './booking_service.js';
+import { cancelPaidBooking } from './cancellation_service.js';
+import { cancelEvent } from './events_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import {
   issueQrTicketsForBooking,
@@ -331,5 +333,57 @@ describe.skipIf(!runIntegration)('qr_ticket_service', () => {
       const scan = await validateQrTicket(ctx, issued[0]!.code);
       expect(scan).toMatchObject({ outcome: 'valid', ticket: { scanCount: i, status: 'active' } });
     }
+  });
+
+  it('cancelling a booking via cancelPaidBooking revokes its QR ticket (not just the direct revoke helper)', async () => {
+    const [arena] = await db
+      .insert(arenas)
+      .values({ venueId, name: 'Qr Cancel Court', qrTicketConfig: QR_ON as never })
+      .returning();
+    const [slotRow] = await db.execute<{ id: string }>(sql`
+      insert into slots (tenant_id, arena_id, time_range, price_paise, status)
+      values (${tenantId}::uuid, ${arena!.id}::uuid,
+        tstzrange('2032-08-01T05:00:00Z'::timestamptz, '2032-08-01T05:30:00Z'::timestamptz, '[)'), 0, 'open')
+      returning id`);
+
+    const ctx = { tenantId, actorUserId: userId };
+    const res = await prepareOnlineBookingWithPayment(ctx, venueId, {
+      slotIds: [(slotRow as { id: string }).id],
+      customerName: 'Cancel Buyer',
+      customerContact: '+15555550112',
+    });
+
+    const [issued] = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`booking_id = ${res.bookingId}`);
+    expect(issued).toBeDefined();
+    expect((await validateQrTicket(ctx, issued!.code, { consume: false })).outcome).toBe('valid');
+
+    await cancelPaidBooking({
+      bookingId: res.bookingId,
+      actorUserId: userId,
+      reason: 'test cancellation',
+      bySelf: true,
+    });
+
+    const scan = await validateQrTicket(ctx, issued!.code, { consume: false });
+    expect(scan.outcome).toBe('revoked');
+  });
+
+  it('cancelling an event via cancelEvent revokes QR tickets already issued for its bookings', async () => {
+    const { event, tier } = await makeEvent(QR_ON);
+    const res = await bookEvent(event.id, { userId }, null, [{ tierId: tier.id, quantity: 1 }]);
+    const [issued] = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`booking_id = ${res.booking.id}`);
+    expect(issued).toBeDefined();
+
+    const ctx = { tenantId, actorUserId: userId };
+    await cancelEvent(ctx, event.id);
+
+    const scan = await validateQrTicket(ctx, issued!.code, { consume: false });
+    expect(scan.outcome).toBe('revoked');
   });
 });
