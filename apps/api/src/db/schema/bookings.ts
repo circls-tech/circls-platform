@@ -60,6 +60,8 @@ export const bookings = pgTable('bookings', {
   note: text('note'),
   totalPaise: bigintPaise('total_paise'),
   basePaise: bigintPaise('base_paise'),
+  /** ISO 4217. The *_paise columns hold minor units of this currency. */
+  currency: text('currency').notNull().default('INR'),
   discountPaise: bigintPaise('discount_paise').default(0),
   couponId: uuid('coupon_id').references(() => coupons.id),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),

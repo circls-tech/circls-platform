@@ -3,9 +3,9 @@
  * `payments` table plus the Razorpay webhook handler.
  *
  * Contract surfaces (consumed by routes + booking flow):
- *   - createRouteOrder(): called by booking_service.prepareOnlineBookingWithPayment
- *     when paymentMethod='razorpay_route'. Inserts a `pending` charge row, calls
- *     Razorpay to create the Route order, and persists the provider_order_id.
+ *   - createPaymentOrder(): called by booking_service.prepareOnlineBookingWithPayment
+ *     when paymentMethod='razorpay_route'. Inserts a `pending` charge row, asks
+ *     the payment gateway to create the order, and persists the provider_order_id.
  *   - handleRazorpayWebhook(): called by POST /webhooks/razorpay (signature
  *     verified upstream). Idempotent on the event id — replays are no-ops.
  *   - listForBooking() / getPayment(): read endpoints used by partner + admin UIs.
@@ -21,13 +21,14 @@ import { db } from '../db/client.js';
 import { type Booking, bookings, payments, type Payment } from '../db/schema/index.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
-import { getRazorpay } from '../lib/razorpay.js';
+import { getGateway, type PaymentProviderId } from '../lib/gateway.js';
 import { notifyBookingConfirmed } from './notification_service.js';
 import { holdForBooking } from './settlement_hold_service.js';
 
-export interface CreateRouteOrderInput {
+export interface CreatePaymentOrderInput {
   bookingId: string;
   tenantId: string;
+  /** Charge total in the currency's minor unit (paise for INR). */
   amountPaise: number;
   /**
    * Org-settleable base for this charge (gross-up excluded; full base when
@@ -35,27 +36,36 @@ export interface CreateRouteOrderInput {
    * Defaults to amountPaise when omitted (legacy callers / no-gross-up path).
    */
   settleBasePaise?: number;
+  /**
+   * Gateway to charge through. Callers will resolve this from the venue's
+   * country (`providerForCountry`) once Stripe ships; today everything is
+   * Razorpay.
+   */
+  provider?: PaymentProviderId;
+  /** ISO 4217. Defaults to INR. */
+  currency?: string;
   /** Audit actor — usually the customer (or the admin impersonating them). */
   actorUserId: string;
 }
 
-export interface CreateRouteOrderResult {
+export interface CreatePaymentOrderResult {
   paymentId: string;
   providerOrderId: string;
 }
 
 /**
  * Two-step write: insert a `pending` charge row first so we have a paymentId to
- * audit even if Razorpay's create-order call later fails; then call Razorpay
- * and patch the row with the returned order id. The stub adapter never throws,
- * but the live adapter will when creds are missing — the pending row stays as
- * a forensic breadcrumb.
+ * audit even if the gateway's create-order call later fails; then call the
+ * gateway and patch the row with the returned order id. The stub adapter never
+ * throws, but a live adapter will when creds are missing — the pending row
+ * stays as a forensic breadcrumb.
  */
-export async function createRouteOrder(
-  input: CreateRouteOrderInput,
-): Promise<CreateRouteOrderResult> {
-  const adapter = getRazorpay();
-  const provider = adapter.mode === 'stub' ? 'stub' : 'razorpay';
+export async function createPaymentOrder(
+  input: CreatePaymentOrderInput,
+): Promise<CreatePaymentOrderResult> {
+  const gateway = getGateway(input.provider ?? 'razorpay');
+  const provider = gateway.mode === 'stub' ? 'stub' : gateway.provider;
+  const currency = input.currency ?? 'INR';
 
   const [row] = await db
     .insert(payments)
@@ -65,7 +75,7 @@ export async function createRouteOrder(
       provider,
       amountPaise: input.amountPaise,
       settleBasePaise: input.settleBasePaise ?? input.amountPaise,
-      currency: 'INR',
+      currency,
       status: 'pending',
       kind: 'charge',
       metadata: {},
@@ -73,9 +83,9 @@ export async function createRouteOrder(
     .returning();
   if (!row) throw new Error('payments insert returned no row');
 
-  const order = await adapter.createRouteOrder({
-    amountPaise: input.amountPaise,
-    currency: 'INR',
+  const order = await gateway.createOrder({
+    amountMinor: input.amountPaise,
+    currency,
     reference: input.bookingId,
   });
 
@@ -171,7 +181,7 @@ async function handlePaymentCaptured(event: WebhookEvent): Promise<void> {
 
     if (!pay) {
       // No payments row for this order id — log and ack. Could happen if we
-      // missed the createRouteOrder write but Razorpay still saw the payment.
+      // missed the createPaymentOrder write but Razorpay still saw the payment.
       logger.warn({ orderId, eventId: event.eventId }, 'razorpay_capture_unknown_order');
       return;
     }

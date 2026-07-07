@@ -6,7 +6,7 @@ import { payments } from '../db/schema/payments.js';
 import { env } from '../config/env.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
-import { createRouteOrder } from './payments_service.js';
+import { createPaymentOrder } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { computeCheckout } from './checkout_pricing.js';
@@ -150,7 +150,7 @@ export async function bookSlots(
  *     pending booking — abandoned-cart sweep frees them again if no capture
  *     arrives within `ABANDONED_CART_GRACE_MIN`.
  *   - a Razorpay order (Circls as merchant) is created via
- *     `payments_service.createRouteOrder` and its id is returned so the frontend
+ *     `payments_service.createPaymentOrder` and its id is returned so the frontend
  *     can hand off to Razorpay's checkout. Commission is taken at payout time,
  *     not at order time.
  *
@@ -340,10 +340,10 @@ export async function prepareOnlineBookingWithPayment(
   }
 
   // Create the order outside the booking transaction so a network blip talking
-  // to Razorpay doesn't roll back the pending booking + slot claim. If
-  // createRouteOrder ultimately fails, the abandoned-cart sweep will clean the
+  // to the gateway doesn't roll back the pending booking + slot claim. If
+  // createPaymentOrder ultimately fails, the abandoned-cart sweep will clean the
   // pending booking after the grace window.
-  const { paymentId: _paymentId, providerOrderId } = await createRouteOrder({
+  const { paymentId: _paymentId, providerOrderId } = await createPaymentOrder({
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
@@ -428,7 +428,7 @@ export interface BookEventResult {
  *
  * Paid path: Circls is the merchant (no per-tenant KYC / Linked Account).
  *   Inserts booking status='pending' + payments row kind='charge', then calls
- *   `payments_service.createRouteOrder`. If Phase 12 isn't ready, surfaces a
+ *   `payments_service.createPaymentOrder`. If Phase 12 isn't ready, surfaces a
  *   `payment_not_available` Conflict (the wrapping transaction rolls back).
  */
 export async function bookEvent(
@@ -578,14 +578,15 @@ export async function bookEvent(
     return { booking: reserved.booking };
   }
 
-  // Phase 2 — paid path: createRouteOrder runs OUTSIDE the booking tx so it can
-  // see the committed booking row (it inserts payments referencing it). Mirrors
-  // prepareOnlineBookingWithPayment's split-tx pattern; if Razorpay fails here,
-  // the abandoned-cart sweep cancels the pending booking after the grace window.
+  // Phase 2 — paid path: createPaymentOrder runs OUTSIDE the booking tx so it
+  // can see the committed booking row (it inserts payments referencing it).
+  // Mirrors prepareOnlineBookingWithPayment's split-tx pattern; if the gateway
+  // fails here, the abandoned-cart sweep cancels the pending booking after the
+  // grace window.
   let providerOrderId: string | undefined;
   let paymentId: string | undefined;
   try {
-    const result = await paymentsService.createRouteOrder({
+    const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.booking.id,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,

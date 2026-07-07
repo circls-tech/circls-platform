@@ -2,7 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { BadRequest, Unauthorized } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
-import { getRazorpay } from '../lib/razorpay.js';
+import { getGateway } from '../lib/gateway.js';
 import { handleRazorpayWebhook } from '../services/payments_service.js';
 
 /** Request augmented with the exact bytes we received, for HMAC verification. */
@@ -20,7 +20,8 @@ export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
   // verify the HMAC against what Razorpay actually signed — never a
   // re-stringified copy (key order / escaping / whitespace would break it).
   app.post('/webhooks/razorpay', async (req, reply) => {
-    if (env.NODE_ENV === 'production' && getRazorpay().mode === 'stub') {
+    const gateway = getGateway('razorpay');
+    if (env.NODE_ENV === 'production' && gateway.mode === 'stub') {
       logger.error('razorpay_webhook_stub_in_prod');
       return reply.status(503).send({ error: { code: 'payments_unconfigured' } });
     }
@@ -30,7 +31,7 @@ export const razorpayWebhookRoutes: FastifyPluginAsync = async (app) => {
     }
     // Verify the HMAC over the exact bytes Razorpay sent.
     const raw = (req as RawBodyRequest).rawBody ?? '';
-    const ok = getRazorpay().verifyWebhookSignature(raw, signature);
+    const ok = gateway.verifyWebhookSignature(raw, signature);
     if (!ok) throw new Unauthorized('Bad signature', 'bad_signature');
 
     const eventId = req.headers['x-razorpay-event-id'];
