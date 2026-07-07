@@ -250,6 +250,8 @@ export interface BookingSlot {
   endAt: string;
   pricePaise: number;
   status: string;
+  /** Court for this slot — set so multi-court (cart) bookings stay legible. */
+  arenaName: string;
 }
 
 export interface BookingDetail {
@@ -419,8 +421,12 @@ export interface EventTier {
 /** A consumer registration for an event (partner-facing). */
 export interface EventBooking {
   id: string;
-  customerName: string;
-  customerContact: string;
+  customerName: string | null;
+  customerContact: string | null;
+  /** From the linked user account, falling back to `customerContact` when it looks like an email. */
+  customerEmail: string | null;
+  /** From the linked user account, falling back to `customerContact` when it looks like a phone. */
+  customerPhone: string | null;
   status: string;
   totalPaise: number;
   /** ISO-8601 */

@@ -1,6 +1,7 @@
 /**
- * Razorpay port. Phases 12/14 (Track B).
+ * Razorpay gateway adapter. Phases 12/14 (Track B).
  *
+ * Implements the provider-agnostic `PaymentGateway` port (see gateway.ts).
  * Circls is the merchant — there are no per-tenant Linked Accounts or KYC.
  * Wraps the two calls we make today:
  *   1. `orders.create()`       — plain order for online booking (Phase 12).
@@ -14,59 +15,28 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { logger } from './logger.js';
-
-// ── Common types ────────────────────────────────────────────────────────────
-export type RazorpayMode = 'stub' | 'live';
-
-export interface RouteOrderInput {
-  /** Total to charge the customer, in paise. */
-  amountPaise: number;
-  currency?: 'INR' | undefined;
-  /** Our booking id — surfaces in Razorpay dashboard for reconciliation. */
-  reference: string;
-  notes?: Record<string, string> | undefined;
-}
-
-export interface RouteOrder {
-  id: string;
-  status: 'created' | 'attempted' | 'paid';
-  amountPaise: number;
-}
-
-export interface RefundInput {
-  paymentId: string;
-  amountPaise: number;
-  reason?: string | undefined;
-  reference: string;
-}
-
-export interface RefundResult {
-  id: string;
-  status: 'pending' | 'processed' | 'failed';
-  amountPaise: number;
-}
-
-export interface RazorpayAdapter {
-  readonly mode: RazorpayMode;
-  createRouteOrder(input: RouteOrderInput): Promise<RouteOrder>;
-  refundPayment(input: RefundInput): Promise<RefundResult>;
-  /** HMAC-SHA256 verify of a Razorpay webhook body. */
-  verifyWebhookSignature(rawBody: string, signature: string): boolean;
-}
+import type {
+  CreateOrderInput,
+  GatewayOrder,
+  GatewayRefundInput,
+  GatewayRefundResult,
+  PaymentGateway,
+} from './gateway.js';
 
 // ── Stub adapter ────────────────────────────────────────────────────────────
 let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
 
-class StubRazorpay implements RazorpayAdapter {
+class StubRazorpay implements PaymentGateway {
+  readonly provider = 'razorpay' as const;
   readonly mode = 'stub' as const;
 
-  async createRouteOrder(input: RouteOrderInput): Promise<RouteOrder> {
-    return { id: nextStubId('order'), status: 'created', amountPaise: input.amountPaise };
+  async createOrder(input: CreateOrderInput): Promise<GatewayOrder> {
+    return { id: nextStubId('order'), status: 'created', amountMinor: input.amountMinor };
   }
 
-  async refundPayment(input: RefundInput): Promise<RefundResult> {
-    return { id: nextStubId('rfnd'), status: 'processed', amountPaise: input.amountPaise };
+  async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
+    return { id: nextStubId('rfnd'), status: 'processed', amountMinor: input.amountMinor };
   }
 
   verifyWebhookSignature(_rawBody: string, _signature: string): boolean {
@@ -78,7 +48,8 @@ class StubRazorpay implements RazorpayAdapter {
 // ── Live adapter ────────────────────────────────────────────────────────────
 const RAZORPAY_API = 'https://api.razorpay.com/v1';
 
-class LiveRazorpay implements RazorpayAdapter {
+class LiveRazorpay implements PaymentGateway {
+  readonly provider = 'razorpay' as const;
   readonly mode = 'live' as const;
   constructor(
     private readonly keyId: string,
@@ -112,36 +83,36 @@ class LiveRazorpay implements RazorpayAdapter {
 
   // Circls is the merchant — a plain Orders API order (no Route/transfers).
   // https://razorpay.com/docs/api/orders/create/
-  async createRouteOrder(input: RouteOrderInput): Promise<RouteOrder> {
+  async createOrder(input: CreateOrderInput): Promise<GatewayOrder> {
     const order = await this.call<{ id: string; status: string; amount: number }>(
       'POST',
       '/orders',
       {
-        amount: input.amountPaise,
-        currency: input.currency ?? 'INR',
+        amount: input.amountMinor,
+        currency: input.currency,
         receipt: input.reference,
         ...(input.notes ? { notes: input.notes } : {}),
       },
     );
-    const status: RouteOrder['status'] =
+    const status: GatewayOrder['status'] =
       order.status === 'paid' ? 'paid' : order.status === 'attempted' ? 'attempted' : 'created';
-    return { id: order.id, status, amountPaise: Number(order.amount) };
+    return { id: order.id, status, amountMinor: Number(order.amount) };
   }
 
   // https://razorpay.com/docs/api/refunds/create-normal/
-  async refundPayment(input: RefundInput): Promise<RefundResult> {
+  async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
     const refund = await this.call<{ id: string; status: string; amount: number }>(
       'POST',
       `/payments/${encodeURIComponent(input.paymentId)}/refund`,
       {
-        amount: input.amountPaise,
+        amount: input.amountMinor,
         ...(input.reason ? { notes: { reason: input.reason } } : {}),
         ...(input.reference ? { receipt: input.reference } : {}),
       },
     );
-    const status: RefundResult['status'] =
+    const status: GatewayRefundResult['status'] =
       refund.status === 'processed' ? 'processed' : refund.status === 'failed' ? 'failed' : 'pending';
-    return { id: refund.id, status, amountPaise: Number(refund.amount) };
+    return { id: refund.id, status, amountMinor: Number(refund.amount) };
   }
 
   verifyWebhookSignature(rawBody: string, signature: string): boolean {
@@ -158,9 +129,9 @@ class LiveRazorpay implements RazorpayAdapter {
   }
 }
 
-let cached: RazorpayAdapter | undefined;
+let cached: PaymentGateway | undefined;
 
-export function getRazorpay(): RazorpayAdapter {
+export function getRazorpay(): PaymentGateway {
   if (cached) return cached;
   if (env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET) {
     cached = new LiveRazorpay(

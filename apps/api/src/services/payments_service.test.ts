@@ -14,7 +14,7 @@ import {
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 import { createPricingRule } from './pricing_service.js';
 import {
-  createRouteOrder,
+  createPaymentOrder,
   handleRazorpayWebhook,
   listForBooking,
 } from './payments_service.js';
@@ -125,7 +125,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       .where(sql`id = ${slotId}`);
 
     // Create the order via the service so we get the same flow real traffic uses.
-    const order = await createRouteOrder({
+    const order = await createPaymentOrder({
       bookingId: booking!.id,
       tenantId,
       amountPaise: 50000,
@@ -145,7 +145,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   // tests (same order_id), and the webhook lookup `WHERE provider_order_id=…
   // LIMIT 1` would then return the wrong payment. Reset once in beforeAll.
 
-  describe('createRouteOrder', () => {
+  describe('createPaymentOrder', () => {
     it('inserts a pending charge row and patches provider_order_id', async () => {
       // Zero-pad the day so the ISO string parses on Node's strict Date.
       const dd = String(Math.floor(1 + Math.random() * 28)).padStart(2, '0');

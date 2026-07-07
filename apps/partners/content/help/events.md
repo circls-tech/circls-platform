@@ -74,7 +74,14 @@ On the event detail page, use the **images** section to upload photos for the ev
 
 ## Managing registrations
 
-The **registrations** section on the event detail page lists everyone who has signed up: customer name, contact, status, amount paid (₹) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance. Use it to check turnout and reconcile payments.
+The event detail page shows registrations in two separate tables:
+
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (₹) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
+
+Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
+
+Use these tables to check turnout and reconcile payments.
 
 ## Where to find your events
 

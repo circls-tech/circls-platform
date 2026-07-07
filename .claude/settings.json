@@ -1,8 +1,8 @@
 {
   "permissions": {
     "deny": [
-      "Bash(git push:* main)",
-      "Bash(git push:* release)",
+      "Bash(git push* main*)",
+      "Bash(git push* release*)",
       "Bash(git push --force:*)",
       "Bash(gh pr merge:*)"
     ]

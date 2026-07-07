@@ -7,7 +7,7 @@ vi.mock('./payments_service.js', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    createRouteOrder: vi.fn(
+    createPaymentOrder: vi.fn(
       async (input: {
         bookingId: string;
         tenantId: string;

@@ -3,7 +3,7 @@
  *
  * Free memberships skip KYC and activate instantly. Paid memberships require
  * tenant.kyc_status='verified', insert a `payments` row of kind='charge', and
- * call `payments_service.createRouteOrder` so the Phase 12 webhook can move
+ * call `payments_service.createPaymentOrder` so the Phase 12 webhook can move
  * the payment from 'pending' → 'captured' once the customer pays.
  *
  * Simplification (documented): the `user_membership_status` enum doesn't have
@@ -369,7 +369,7 @@ export interface PurchaseMembershipResult {
  *     across the system, and memberships reuse that ledger to keep refund /
  *     reconciliation code paths identical.
  *   - Insert `user_memberships` status='active' with payment_id set.
- *   - Call `payments_service.createRouteOrder` to mint the Razorpay order.
+ *   - Call `payments_service.createPaymentOrder` to mint the gateway order.
  *
  * If the Phase 12 stub still throws, we surface `payment_not_available` so
  * callers (and tests) can distinguish "not implemented" from "really failed".
@@ -379,7 +379,7 @@ export async function purchaseMembership(
   pricing?: CouponPricing | null,
 ): Promise<PurchaseMembershipResult> {
   // Phase 1 — atomic reserve. Free memberships finish here; paid ones return
-  // their booking + user_membership ids for the Phase 2 createRouteOrder call.
+  // their booking + user_membership ids for the Phase 2 createPaymentOrder call.
   const reserved = await db.transaction(async (tx) => {
     const [m] = await tx
       .select()
@@ -502,7 +502,7 @@ export async function purchaseMembership(
         userId: input.userId,
         membershipId: m.id,
         membershipTierId: tierId,
-        paymentId: null, // patched in Phase 2 once createRouteOrder returns
+        paymentId: null, // patched in Phase 2 once createPaymentOrder returns
         startsAt: now,
         endsAt,
         status: 'active',
@@ -581,13 +581,13 @@ export async function purchaseMembership(
     return { userMembershipId: reserved.userMembershipId };
   }
 
-  // Phase 2 — paid: createRouteOrder runs OUTSIDE the booking tx so the FK to
-  // bookings is satisfied (createRouteOrder inserts a payments row referencing
+  // Phase 2 — paid: createPaymentOrder runs OUTSIDE the booking tx so the FK to
+  // bookings is satisfied (createPaymentOrder inserts a payments row referencing
   // bookingId). Mirrors the bookEvent / prepareOnlineBookingWithPayment split.
   let orderId: string | undefined;
   let paymentId: string | undefined;
   try {
-    const result = await paymentsService.createRouteOrder({
+    const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.bookingId,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,

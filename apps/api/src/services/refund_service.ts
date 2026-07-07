@@ -1,8 +1,9 @@
 /**
  * Refund service — Phase 14.
  *
- * Refund engine branches by provider:
- *   - razorpay  → call getRazorpay().refundPayment(); persist provider id.
+ * Refund engine branches by the charge row's provider:
+ *   - gateway providers (razorpay, stripe) → call the gateway's
+ *     refundPayment(); persist the provider refund id.
  *   - stub      → no provider call; status='processed' instantly.
  *   - external  → no provider call; cash refund handled offline at the venue.
  *
@@ -13,7 +14,7 @@ import { db } from '../db/client.js';
 import { payments } from '../db/schema/payments.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
-import { getRazorpay } from '../lib/razorpay.js';
+import { getGateway } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -132,9 +133,9 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
     throw new Error('refund_insert_failed');
   }
 
-  // 4. Provider call (only for razorpay charges that have a provider payment id).
+  // 4. Gateway call (only for gateway charges that have a provider payment id).
   //
-  // Razorpay's refund states (`pending`, `processed`, `failed`) map onto our
+  // Gateway refund states (`pending`, `processed`, `failed`) map onto our
   // payment_status enum as: processed→captured (money has moved),
   // pending→pending, failed→failed. We keep the wire-level return value
   // separate so the result type still surfaces `'processed'`.
@@ -142,11 +143,11 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
   let rowStatus: 'pending' | 'captured' | 'failed' = 'captured';
   let resultStatus: 'pending' | 'processed' | 'failed' = 'processed';
 
-  if (charge.provider === 'razorpay' && charge.providerPaymentId) {
+  if (charge.provider !== 'stub' && charge.provider !== 'external' && charge.providerPaymentId) {
     try {
-      const res = await getRazorpay().refundPayment({
+      const res = await getGateway(charge.provider).refundPayment({
         paymentId: charge.providerPaymentId,
-        amountPaise: input.amountPaise,
+        amountMinor: input.amountPaise,
         reason: input.reason,
         reference: input.bookingId,
       });
@@ -154,7 +155,10 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
       resultStatus = res.status;
       rowStatus = res.status === 'processed' ? 'captured' : res.status;
     } catch (err) {
-      logger.error({ err, bookingId: input.bookingId }, 'razorpay_refund_failed');
+      logger.error(
+        { err, bookingId: input.bookingId, provider: charge.provider },
+        'gateway_refund_failed',
+      );
       // Throwing inside the tx rolls everything back — caller's choice via
       // `exec`. The refund row will not be persisted.
       throw err;
