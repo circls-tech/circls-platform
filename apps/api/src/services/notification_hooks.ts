@@ -14,12 +14,22 @@ import {
   notifyBookingCancelled,
   notifyBookingConfirmed,
 } from './notification_service.js';
+import {
+  issueQrTicketsForBooking,
+  revokeQrTicketsForBooking,
+} from './qr_ticket_service.js';
 
 /**
  * Call after booking_service flips a row to `confirmed`. Never throws — the
  * notification path is best-effort and must not block the booking write.
  */
 export async function onBookingConfirmed(bookingId: string): Promise<void> {
+  try {
+    // Idempotent — the paid path already issues inside the capture webhook tx.
+    await issueQrTicketsForBooking(bookingId);
+  } catch (err) {
+    logger.warn({ err, bookingId }, 'on_booking_confirmed_qr_issue_failed');
+  }
   try {
     await notifyBookingConfirmed(bookingId);
   } catch (err) {
@@ -29,6 +39,11 @@ export async function onBookingConfirmed(bookingId: string): Promise<void> {
 
 /** Call after cancellation flow flips a row to `cancelled`. Never throws. */
 export async function onBookingCancelled(bookingId: string): Promise<void> {
+  try {
+    await revokeQrTicketsForBooking(bookingId);
+  } catch (err) {
+    logger.warn({ err, bookingId }, 'on_booking_cancelled_qr_revoke_failed');
+  }
   try {
     await notifyBookingCancelled(bookingId);
   } catch (err) {

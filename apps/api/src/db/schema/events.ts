@@ -9,6 +9,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
+import type { QrTicketConfig } from './qr_ticket_config.js';
 import { tenants } from './tenants.js';
 import { venues } from './venues.js';
 
@@ -47,6 +48,8 @@ export const events = pgTable('events', {
   endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   capacity: integer('capacity'),
+  /** QR entry-ticket rules for this event (null = QR tickets disabled). */
+  qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   status: eventStatus('status').notNull().default('draft'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

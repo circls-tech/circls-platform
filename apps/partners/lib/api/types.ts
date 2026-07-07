@@ -90,6 +90,58 @@ export interface Venue {
   country?: string | null;
 }
 
+// ── QR tickets ────────────────────────────────────────────────────────────────
+
+/**
+ * QR ticket issuance rules on an event / arena / membership. Stored as JSONB;
+ * `null` on the row = QR tickets disabled. The rules are frozen onto each pass
+ * at issuance — edits only affect future purchases.
+ */
+export interface QrTicketConfig {
+  enabled: boolean;
+  /** false = single-use (spent by the first successful scan). */
+  multiUse: boolean;
+  /** Scan cap for multi-use passes; null = unlimited. Ignored when single-use. */
+  maxScans: number | null;
+  /** Minutes before the item starts that the pass becomes valid; null = valid on issue. */
+  validFromOffsetMin: number | null;
+  /** Minutes after the item ends that the pass expires; null = expires at item end. */
+  validUntilOffsetMin: number | null;
+}
+
+export type QrScanOutcome =
+  | 'valid'
+  | 'not_found'
+  | 'revoked'
+  | 'expired'
+  | 'not_yet_valid'
+  | 'already_used';
+
+/** What door staff sees after a scan — enough to admit or turn away. */
+export interface QrScanTicket {
+  id: string;
+  itemType: string;
+  label: string | null;
+  bookingId: string | null;
+  customerName: string | null;
+  /** ISO-8601, or null = valid from issue. */
+  validFrom: string | null;
+  /** ISO-8601, or null = never expires. */
+  validUntil: string | null;
+  multiUse: boolean;
+  maxScans: number | null;
+  scanCount: number;
+  firstScannedAt: string | null;
+  lastScannedAt: string | null;
+  status: string;
+}
+
+export interface QrScanResult {
+  outcome: QrScanOutcome;
+  /** null only for not_found. */
+  ticket: QrScanTicket | null;
+}
+
 /** Last-used schedule-builder template, persisted per arena for prefill. */
 export interface ScheduleTemplate {
   quantizationMin: number;
@@ -107,6 +159,8 @@ export interface Arena {
   businessDayStartMin: number;
   /** Last-used builder template, or null before the first release. */
   scheduleTemplate: ScheduleTemplate | null;
+  /** QR ticket rules for bookings on this arena; null = disabled. */
+  qrTicketConfig: QrTicketConfig | null;
   status: ListingStatus;
   tags: string[];
 }
@@ -340,6 +394,8 @@ export interface VenueEvent {
   pricePaise: number;
   capacity: number | null;
   status: EventStatus;
+  /** QR ticket rules for registrations; null = disabled. */
+  qrTicketConfig: QrTicketConfig | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
 }
@@ -419,6 +475,8 @@ export interface Membership {
   /** Derived public artwork URL on partner list/cover responses (PR #110). */
   coverUrl?: string | null;
   status: 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
+  /** QR ticket rules for purchases of this plan; null = disabled. */
+  qrTicketConfig: QrTicketConfig | null;
   /** Plan tiers (min 1). Present on list + detail endpoints. */
   tiers: MembershipTier[];
 }

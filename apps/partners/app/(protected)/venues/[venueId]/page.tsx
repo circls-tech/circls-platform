@@ -4,8 +4,10 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
+import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { useArenas, useCreateArena, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
+import type { QrTicketConfig } from '@/lib/api/types';
 import { Badge, StatusPill, TagsInput } from '@/lib/ui';
 
 export default function VenuePage() {
@@ -17,6 +19,7 @@ export default function VenuePage() {
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -27,10 +30,16 @@ export default function VenuePage() {
     setErr(null);
     setCreated(false);
     try {
-      await createArena.mutateAsync({ name, ...(sport ? { sport } : {}), tags });
+      await createArena.mutateAsync({
+        name,
+        ...(sport ? { sport } : {}),
+        tags,
+        ...(qrConfig ? { qrTicketConfig: qrConfig } : {}),
+      });
       setName('');
       setSport('');
       setTags([]);
+      setQrConfig(null);
       setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -117,6 +126,7 @@ export default function VenuePage() {
             Will be classified as: <span className="font-semibold text-slate-700">{inferredSport}</span>
           </p>
         )}
+        <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="booking" />
         <button
           type="submit"
           disabled={createArena.isPending}

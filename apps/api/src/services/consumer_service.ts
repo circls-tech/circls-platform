@@ -29,6 +29,7 @@ import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
+import { qrTicketDataUrl } from './qr_ticket_service.js';
 import {
   tiersWithRemainingByMembership,
   type MembershipTierWithRemaining,
@@ -764,6 +765,24 @@ export interface MyBookingDetail {
     durationDays: number;
     description: string | null;
   } | null;
+  /** QR entry tickets issued for this booking (empty when the listing has QR
+   *  tickets disabled or the booking isn't confirmed yet). */
+  qrTickets: MyBookingQrTicket[];
+}
+
+/** One issued QR ticket, as shown on the consumer's booking page. */
+export interface MyBookingQrTicket {
+  id: string;
+  label: string | null;
+  /** The string to encode into the QR image (a partner check-in URL). */
+  qrData: string;
+  code: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  multiUse: boolean;
+  maxScans: number | null;
+  scanCount: number;
+  status: string;
 }
 
 /**
@@ -792,6 +811,7 @@ export async function getMyBookingDetail(
       b.customer_name            as customer_name,
       b.customer_contact         as customer_contact,
       b.created_at               as created_at,
+      b.item_data->>'userMembershipId' as user_membership_id,
       ev.id                      as event_id,
       ev.name                    as event_name,
       ev.description             as event_description,
@@ -849,6 +869,31 @@ export async function getMyBookingDetail(
         }
       : null;
 
+  // Issued QR tickets for this booking. Membership tickets are keyed on the
+  // user_membership (the plain-free path has no booking), so match either way.
+  const userMembershipId = (r['user_membership_id'] as string | null) ?? null;
+  const qrRaw = await db.execute<Record<string, unknown>>(sql`
+    select id, label, code, valid_from, valid_until, multi_use, max_scans, scan_count, status
+    from qr_tickets
+    where booking_id = ${bookingId}
+       or user_membership_id = nullif(${userMembershipId ?? ''}, '')::uuid
+    order by created_at, label
+  `);
+  const qrTicketRows: MyBookingQrTicket[] = (qrRaw as unknown as Record<string, unknown>[]).map(
+    (q) => ({
+      id: q['id'] as string,
+      label: (q['label'] as string | null) ?? null,
+      code: q['code'] as string,
+      qrData: qrTicketDataUrl(q['code'] as string),
+      validFrom: q['valid_from'] ? new Date(q['valid_from'] as string).toISOString() : null,
+      validUntil: q['valid_until'] ? new Date(q['valid_until'] as string).toISOString() : null,
+      multiUse: Boolean(q['multi_use']),
+      maxScans: q['max_scans'] == null ? null : Number(q['max_scans']),
+      scanCount: Number(q['scan_count']),
+      status: q['status'] as string,
+    }),
+  );
+
   const membership =
     itemType === 'membership' && r['membership_id'] != null
       ? {
@@ -875,6 +920,7 @@ export async function getMyBookingDetail(
     slots: bookingSlots,
     event,
     membership,
+    qrTickets: qrTicketRows,
   };
 }
 

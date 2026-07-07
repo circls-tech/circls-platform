@@ -15,6 +15,7 @@ import {
   updateEvent,
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
+import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 
 const tierSchema = z.object({
   name: z.string().min(1).max(120),
@@ -40,6 +41,7 @@ const createEventSchema = z.object({
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
   tiers: tiersField,
+  qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 
 const createTenantEventSchema = z
@@ -54,6 +56,7 @@ const createTenantEventSchema = z
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
     tiers: tiersField,
+    qrTicketConfig: qrTicketConfigSchema.optional(),
   })
   // Exactly one scope: a venue OR a standalone address (never both, never neither).
   .refine((d) => Boolean(d.venueId) !== Boolean(d.addressJson), {
@@ -82,6 +85,7 @@ const updateEventSchema = z.object({
   lng: z.number().nullable().optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
+  qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 
 export const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -115,6 +119,9 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         startsAt: new Date(parsed.data.startsAt),
         endsAt: new Date(parsed.data.endsAt),
         tiers: parsed.data.tiers,
+        ...(parsed.data.qrTicketConfig !== undefined
+          ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
+          : {}),
       },
     );
   });
@@ -166,6 +173,9 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         startsAt: new Date(parsed.data.startsAt),
         endsAt: new Date(parsed.data.endsAt),
         tiers: parsed.data.tiers,
+        ...(parsed.data.qrTicketConfig !== undefined
+          ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
+          : {}),
       },
     );
   });
@@ -185,6 +195,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers;
+    if (parsed.data.qrTicketConfig !== undefined)
+      patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
     if (parsed.data.venueId !== undefined) {
       // Re-scoping to a venue: the venue must belong to this tenant.
       if (parsed.data.venueId) {

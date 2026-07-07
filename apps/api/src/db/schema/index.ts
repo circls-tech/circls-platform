@@ -29,3 +29,5 @@ export * from './consumer_activity.js';
 export * from './login_events.js';
 export * from './coupons.js';
 export * from './coupon_redemptions.js';
+export * from './qr_ticket_config.js';
+export * from './qr_tickets.js';

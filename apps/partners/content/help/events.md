@@ -39,6 +39,15 @@ Ticket tiers can only be added or edited while the event is a **draft**. Once yo
 
 Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout.
 
+## QR entry tickets
+
+Turn on **QR tickets** on the event form (while the event is a draft) to have
+every confirmed registration issue scannable entry passes — one per seat, each
+labelled with its tier. You choose single- or multi-use, an optional scan cap,
+and how long before the start / after the end the passes work. Staff validate
+them on the portal's **Check-in** page. See [QR tickets and door
+check-in](/help/qr-tickets) for the full guide.
+
 ## Event statuses
 
 | Status | Meaning |

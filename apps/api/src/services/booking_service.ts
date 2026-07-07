@@ -9,6 +9,7 @@ import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { createPaymentOrder } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
+import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { Coupon } from '../db/schema/coupons.js';
@@ -380,6 +381,8 @@ export async function cancelBooking(ctx: AuditCtx, bookingId: string): Promise<B
       .update(slots)
       .set({ status: 'open', bookingId: null })
       .where(and(eq(slots.bookingId, bookingId), sql`${slots.deletedAt} is null`));
+
+    await revokeQrTicketsForBooking(bookingId, tx);
 
     await writeAudit(tx, ctx, 'booking.cancel', 'booking', bookingId, null, null);
 

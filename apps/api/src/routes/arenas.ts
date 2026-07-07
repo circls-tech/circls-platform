@@ -4,7 +4,13 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { createArena, getArenaById, listArenas } from '../services/arena_service.js';
+import {
+  createArena,
+  getArenaById,
+  listArenas,
+  updateArenaQrTicketConfig,
+} from '../services/arena_service.js';
+import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 import { getWeeklySchedule, setWeeklySchedule } from '../services/schedule_service.js';
 import { getVenueById } from '../services/venue_service.js';
 
@@ -14,6 +20,10 @@ const createArenaSchema = z.object({
   capacity: z.number().int().positive().optional(),
   slotDurationMin: z.number().int().min(5).max(1440).optional(),
   tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+  qrTicketConfig: qrTicketConfigSchema.optional(),
+});
+const patchArenaSchema = z.object({
+  qrTicketConfig: qrTicketConfigSchema,
 });
 const timeRe = /^\d{2}:\d{2}(:\d{2})?$/;
 const scheduleSchema = z.object({
@@ -49,14 +59,29 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
-    const { name, sport, capacity, slotDurationMin, tags } = parsed.data;
+    const { name, sport, capacity, slotDurationMin, tags, qrTicketConfig } = parsed.data;
     return createArena(venueId, {
       name,
       sport: sport ?? null,
       capacity: capacity ?? null,
       tags: tags ?? [],
       ...(slotDurationMin !== undefined ? { slotDurationMin } : {}),
+      ...(qrTicketConfig !== undefined
+        ? { qrTicketConfig: toQrTicketConfig(qrTicketConfig) }
+        : {}),
     });
+  });
+
+  // QR-ticket rules are the one arena field editable after creation (config
+  // changes only affect future bookings; issued tickets keep frozen rules).
+  app.patch('/v1/arenas/:arenaId', { preHandler: requireAuth }, async (req) => {
+    const { arenaId } = req.params as { arenaId: string };
+    const parsed = patchArenaSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid arena patch', 'bad_request', { issues: parsed.error.issues });
+    }
+    await authorizeArena(req, arenaId);
+    return updateArenaQrTicketConfig(arenaId, toQrTicketConfig(parsed.data.qrTicketConfig));
   });
 
   app.get('/v1/venues/:venueId/arenas', { preHandler: requireAuth }, async (req) => {

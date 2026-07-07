@@ -23,6 +23,7 @@ import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 import { getGateway, type PaymentProviderId } from '../lib/gateway.js';
 import { notifyBookingConfirmed } from './notification_service.js';
+import { issueQrTicketsForBooking } from './qr_ticket_service.js';
 import { holdForBooking } from './settlement_hold_service.js';
 
 export interface CreatePaymentOrderInput {
@@ -267,6 +268,9 @@ async function handlePaymentCaptured(event: WebhookEvent): Promise<void> {
     `);
 
     if (booking) {
+      // Mint QR tickets inside this tx (atomic with the confirm; a plain `db`
+      // call would not see the uncommitted status flip). Idempotent on replay.
+      await issueQrTicketsForBooking(booking.id, tx);
       // Phase 13 wires the actual SMS/email; today this is a no-op stub.
       await notifyBookingConfirmed(booking.id);
     }

@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { useMyBooking } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatDateTime, formatPaise, formatTime } from '@/lib/format';
+import { QrTicketCard } from '@/lib/QrTicketCard';
 import { Card, StatusPill } from '@/lib/ui';
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -130,6 +131,17 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {b.membership.description && (
                   <p className="mt-3 text-sm text-text-secondary">{b.membership.description}</p>
                 )}
+              </Card>
+            )}
+
+            {/* Entry tickets (only once the booking is confirmed) */}
+            {b.status !== 'pending' && b.qrTickets.length > 0 && (
+              <Card title="Your tickets" subtitle="Show these at the venue to check in">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {b.qrTickets.map((t) => (
+                    <QrTicketCard key={t.id} ticket={t} />
+                  ))}
+                </div>
               </Card>
             )}
 

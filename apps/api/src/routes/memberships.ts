@@ -6,6 +6,7 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { benefitsSchema, coerceBenefits } from '../lib/membership_benefits.js';
+import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 import {
   createMembership,
   finalizeMembershipCover,
@@ -72,6 +73,7 @@ const createSchema = z
     durationDays: z.number().int().min(1).max(3650).optional(),
     benefits: benefitsSchema.optional(),
     tiers: tiersField.optional(),
+    qrTicketConfig: qrTicketConfigSchema.optional(),
   })
   .refine(
     (d) => (d.tiers && d.tiers.length > 0) || (d.pricePaise !== undefined && d.durationDays !== undefined),
@@ -88,6 +90,7 @@ const updateSchema = z.object({
   durationDays: z.number().int().min(1).max(3650).optional(),
   benefits: benefitsSchema.optional(),
   tiers: tiersField.optional(),
+  qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 
 const purchaseSchema = z.object({
@@ -126,6 +129,9 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.pricePaise !== undefined ? { pricePaise: parsed.data.pricePaise } : {}),
       ...(parsed.data.durationDays !== undefined ? { durationDays: parsed.data.durationDays } : {}),
       ...(parsed.data.benefits !== undefined ? { benefits: coerceBenefits(parsed.data.benefits) } : {}),
+      ...(parsed.data.qrTicketConfig !== undefined
+        ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
+        : {}),
     });
   });
 
@@ -155,6 +161,8 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.durationDays !== undefined) patch.durationDays = parsed.data.durationDays;
     if (parsed.data.benefits !== undefined) patch.benefits = coerceBenefits(parsed.data.benefits);
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
+    if (parsed.data.qrTicketConfig !== undefined)
+      patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
     return updateMembership({ tenantId, actorUserId: user.id }, id, patch);
   });
 

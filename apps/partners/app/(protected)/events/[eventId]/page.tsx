@@ -22,6 +22,8 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import type { QrTicketConfig } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
 import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
@@ -104,6 +106,7 @@ export default function OrgEventDetailPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   // '' => standalone; otherwise a venue id.
   const [venueChoice, setVenueChoice] = useState('');
   // Standalone address fields (shown when venueChoice === '').
@@ -141,6 +144,7 @@ export default function OrgEventDetailPage() {
     setStartsAtLocal(isoToTzLocal(ev.startsAt, tz));
     setEndsAtLocal(isoToTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
+    setQrConfig(ev.qrTicketConfig ?? null);
     setVenueChoice(ev.venueId ?? '');
     // Prefill the standalone address from whatever the event already carries.
     const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
@@ -240,6 +244,7 @@ export default function OrgEventDetailPage() {
           startsAt: localToTzIso(startsAtLocal, editTz),
           endsAt: localToTzIso(endsAtLocal, editTz),
           tiers: tiersToPayload(tiers),
+          qrTicketConfig: qrConfig,
           ...scopePatch,
         },
       });
@@ -302,6 +307,22 @@ export default function OrgEventDetailPage() {
                   </dt>
                   <dd className="mt-1 text-sm text-slate-700">
                     {ev.description ?? <span className="text-slate-400">—</span>}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                    QR tickets
+                  </dt>
+                  <dd className="mt-1 text-sm text-slate-700">
+                    {ev.qrTicketConfig?.enabled ? (
+                      <>
+                        {ev.qrTicketConfig.multiUse
+                          ? `Multi-use${ev.qrTicketConfig.maxScans != null ? ` · max ${ev.qrTicketConfig.maxScans} scans` : ' · unlimited scans'}`
+                          : 'Single-use'}
+                      </>
+                    ) : (
+                      <span className="text-slate-400">Off</span>
+                    )}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
@@ -492,6 +513,8 @@ export default function OrgEventDetailPage() {
                 </div>
 
                 <TiersEditor value={tiers} onChange={setTiers} />
+
+                <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button

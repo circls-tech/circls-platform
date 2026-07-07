@@ -21,6 +21,7 @@ import {
   computeRefundPolicy,
 } from './cancellation_policy.js';
 import { type RefundExec, issueRefund } from './refund_service.js';
+import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 
 export interface CancelInput {
   bookingId: string;
@@ -114,6 +115,8 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
       .update(slots)
       .set({ status: 'open', bookingId: null })
       .where(and(eq(slots.bookingId, input.bookingId), sql`${slots.deletedAt} is null`));
+
+    await revokeQrTicketsForBooking(input.bookingId, tx);
 
     // 3. Refund, if any. issueRefund() runs in its own logical block but we
     //    pass the same `tx` so a refund failure rolls the whole cancel back.
