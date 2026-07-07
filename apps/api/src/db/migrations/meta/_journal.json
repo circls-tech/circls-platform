@@ -218,7 +218,21 @@
       "idx": 31,
       "version": "7",
       "when": 1781520000000,
-      "tag": "0031_user_username",
+      "tag": "0031_payment_gateway_prep",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0032_qr_tickets",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781680000000,
+      "tag": "0033_user_username",
       "breakpoints": true
     }
   ]
