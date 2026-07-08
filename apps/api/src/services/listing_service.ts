@@ -98,6 +98,48 @@ async function transitionListing(
       { status: opts.to, ...(opts.reason ? { reason: opts.reason } : {}) },
     );
 
+    // Recurring events are reviewed as one unit: the decision on one occurrence
+    // cascades to every sibling occurrence still awaiting review.
+    if (type === 'event') {
+      const [ev] = await tx
+        .select({ seriesId: events.seriesId })
+        .from(events)
+        .where(eq(events.id, id))
+        .limit(1);
+      if (ev?.seriesId) {
+        const siblings = await tx
+          .select({ id: events.id })
+          .from(events)
+          .where(
+            and(
+              eq(events.seriesId, ev.seriesId),
+              eq(events.status, opts.from as 'pending_review'),
+              sql`${events.id} <> ${id}`,
+            ),
+          );
+        for (const s of siblings) {
+          await tx
+            .update(events)
+            .set({ status: opts.to as 'published' })
+            .where(eq(events.id, s.id));
+          await writeAudit(
+            tx,
+            { tenantId: row.tenantId, actorUserId },
+            opts.action,
+            type,
+            s.id,
+            { status: opts.from },
+            {
+              status: opts.to,
+              seriesId: ev.seriesId,
+              cascadedFrom: id,
+              ...(opts.reason ? { reason: opts.reason } : {}),
+            },
+          );
+        }
+      }
+    }
+
     return { id, status: opts.to };
   });
 }
@@ -140,6 +182,8 @@ export interface ListingQueueItem {
   name: string;
   status: string;
   createdAt: string;
+  /** Recurring events only: dates in this series with the queried status. */
+  seriesCount?: number;
 }
 
 /**
@@ -162,14 +206,31 @@ export async function listListingsForReview(input: {
       : sql`JOIN tenants t ON t.id = l.tenant_id`;
   const tableName = sql.raw(`${type}s`); // venue→venues, arena→arenas, …
 
-  const raw = await db.execute<Record<string, unknown>>(sql`
-    SELECT l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at
-    FROM ${tableName} l
-    ${tenantJoin}
-    WHERE l.status = ${status}
-    ORDER BY l.created_at DESC, l.id DESC
-    LIMIT ${limit}
-  `);
+  // Recurring events queue as one row per series (the earliest date represents
+  // it) — the approve/reject decision cascades to the whole series anyway.
+  const raw =
+    type === 'event'
+      ? await db.execute<Record<string, unknown>>(sql`
+          SELECT q.* FROM (
+            SELECT DISTINCT ON (coalesce(l.series_id, l.id))
+              l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at,
+              count(*) OVER (PARTITION BY coalesce(l.series_id, l.id))::int AS series_count
+            FROM events l
+            ${tenantJoin}
+            WHERE l.status = ${status}
+            ORDER BY coalesce(l.series_id, l.id), l.starts_at ASC
+          ) q
+          ORDER BY q.created_at DESC, q.id DESC
+          LIMIT ${limit}
+        `)
+      : await db.execute<Record<string, unknown>>(sql`
+          SELECT l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at
+          FROM ${tableName} l
+          ${tenantJoin}
+          WHERE l.status = ${status}
+          ORDER BY l.created_at DESC, l.id DESC
+          LIMIT ${limit}
+        `);
 
   const rows = raw as unknown as Record<string, unknown>[];
   return rows.map((r) => ({
@@ -180,6 +241,9 @@ export async function listListingsForReview(input: {
     name: r['name'] as string,
     status: r['status'] as string,
     createdAt: new Date(r['created_at'] as string).toISOString(),
+    ...(typeof r['series_count'] === 'number' && r['series_count'] > 1
+      ? { seriesCount: r['series_count'] }
+      : {}),
   }));
 }
 
@@ -206,6 +270,9 @@ export interface ListingDetail {
   startsAt?: string | null;
   endsAt?: string | null;
   pricePaise?: number | null;
+  /** Recurring events: series grouping + total dates in the series. */
+  seriesId?: string | null;
+  seriesCount?: number;
   // Membership
   durationDays?: number | null;
   benefits?: MembershipBenefits;
@@ -283,6 +350,7 @@ export async function getListingDetail(
           lat: events.lat,
           lng: events.lng,
           tzName: events.tzName,
+          seriesId: events.seriesId,
           status: events.status,
           createdAt: events.createdAt,
         })
@@ -300,10 +368,19 @@ export async function getListingDetail(
           .limit(1);
         venueName = v?.name ?? null;
       }
+      let seriesCount: number | undefined;
+      if (r.seriesId) {
+        const [c] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(events)
+          .where(eq(events.seriesId, r.seriesId));
+        seriesCount = c?.count;
+      }
       return {
         type,
         ...r,
         venueName,
+        ...(seriesCount !== undefined ? { seriesCount } : {}),
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
         createdAt: r.createdAt.toISOString(),

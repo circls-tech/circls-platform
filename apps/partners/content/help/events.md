@@ -1,4 +1,4 @@
-Events are one-off or scheduled happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event, defining ticket tiers, adding images, submitting it for review, and managing registrations.
+Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding photos, submitting it for review, and managing registrations.
 
 ## Creating an event
 
@@ -10,9 +10,36 @@ Events are one-off or scheduled happenings — tournaments, classes, socials, sc
    - **Name** (required).
    - **Description** (optional).
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
+   - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
+   - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover.
 4. Click **Create event**.
 
 The event is created as a **draft** and you're returned to the Events list. Add ticket tiers next (see below) before submitting.
+
+## Recurring events
+
+For something that happens regularly — say a dance workshop every Thursday and Friday — switch **Repeats** to **Repeats weekly**:
+
+1. Pick the **days of the week** it runs on.
+2. Pick the **last date** (**Until**). The first date comes from the **Starts** field.
+3. The form shows how many dates will be created (up to 104).
+
+Each date becomes its own event with its own registrations, capacity, and attendee list — consumers book a specific date. On the consumer side the series appears as **one listing** with a date picker, so it doesn't flood the events feed.
+
+### Advanced settings (per-date changes)
+
+Open **Advanced settings** under the weekly options to fine-tune individual dates before creating:
+
+- **Time** — a specific date can start/end at different times.
+- **Venue** — a specific date can happen at a different venue (e.g. Fridays at your other branch).
+- **Tickets** — a specific date can have its own ticket tiers and prices (e.g. a finale that costs more).
+- **Skip** — drop a generated date (e.g. a festival day). Skipped dates can be restored until you create the event.
+
+### Managing a series
+
+Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts) or cancelled on their own pages.
+
+Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery.
 
 ## Ticket tiers
 
@@ -68,9 +95,14 @@ Open an event to see its detail page. What you can do depends on its status:
 
 The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way.
 
-## Adding event images
+## Adding event photos
 
-On the event detail page, use the **images** section to upload photos for the event. These appear to consumers in the listing, so a strong lead image helps registrations.
+You can add photos in two places:
+
+- **On the create form** — pick up to 12 photos before clicking **Create event**; they upload automatically once the event exists.
+- **On the event detail page** — use the **Photos** section to add, reorder-by-re-upload, or delete photos at any time.
+
+JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear to consumers in the listing, so a strong lead image helps registrations. For recurring events the whole series shares one gallery.
 
 ## Managing registrations
 

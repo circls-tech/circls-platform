@@ -11,10 +11,12 @@ import {
   useMembershipPurchases,
   useMemberships,
   useUpdateMembership,
+  useUploadMembershipCover,
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
+import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
   MembershipTiersEditor,
   emptyMembershipTier,
@@ -43,6 +45,7 @@ export default function MembershipsPage() {
   const { data: memberships, isLoading } = useMemberships(tenantId);
   const { data: venues } = useVenues(tenantId);
   const createMembership = useCreateMembership(tenantId);
+  const uploadCover = useUploadMembershipCover(tenantId);
   const updateMembership = useUpdateMembership(tenantId);
   const activate = useActivateMembership(tenantId);
   const deactivate = useDeactivateMembership(tenantId);
@@ -54,6 +57,7 @@ export default function MembershipsPage() {
   const [terms, setTerms] = useState('');
   const [tiers, setTiers] = useState<MembershipTierDraft[]>([emptyMembershipTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [artwork, setArtwork] = useState<PendingPhoto[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -72,7 +76,7 @@ export default function MembershipsPage() {
     setErr(null);
     setCreated(false);
     try {
-      await createMembership.mutateAsync({
+      const plan = await createMembership.mutateAsync({
         name,
         ...(description ? { description } : {}),
         ...(venueId ? { venueId } : {}),
@@ -80,12 +84,23 @@ export default function MembershipsPage() {
         tiers: membershipTiersToPayload(tiers),
         qrTicketConfig: qrConfig,
       });
+      if (artwork[0]) {
+        try {
+          await uploadCover.mutateAsync({ membershipId: plan.id, file: artwork[0].file });
+        } catch (uploadErr) {
+          // The plan exists — surface the artwork failure without undoing it.
+          setErr(
+            `Plan created, but the artwork failed to upload (${(uploadErr as Error).message}) — add it from the Edit panel.`,
+          );
+        }
+      }
       setName('');
       setDescription('');
       setVenueId('');
       setTerms('');
       setTiers([emptyMembershipTier()]);
       setQrConfig(null);
+      setArtwork([]);
       setCreated(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -316,9 +331,13 @@ export default function MembershipsPage() {
               placeholder="Optional plan terms (refunds, validity, transferability…)."
             />
           </div>
-          <p className="text-xs text-slate-400">
-            You can upload plan artwork from the Edit panel once the plan is created.
-          </p>
+          <PendingPhotosPicker
+            photos={artwork}
+            onChange={setArtwork}
+            max={1}
+            title="Plan artwork"
+            hint="Optional cover image — JPEG, PNG or WebP, up to 10 MB. Uploaded when the plan is created."
+          />
           {created && (
             <p className="text-sm text-amber-700">
               Membership created. It’s now pending review by Circls before it goes live.
@@ -326,7 +345,11 @@ export default function MembershipsPage() {
           )}
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex justify-end">
-            <Button type="submit" loading={createMembership.isPending} disabled={!tenantId || !authed}>
+            <Button
+              type="submit"
+              loading={createMembership.isPending || uploadCover.isPending}
+              disabled={!tenantId || !authed}
+            >
               Add membership
             </Button>
           </div>

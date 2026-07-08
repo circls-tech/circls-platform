@@ -225,6 +225,13 @@
       "when": 1781600000000,
       "tag": "0032_qr_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781680000000,
+      "tag": "0033_event_series",
+      "breakpoints": true
     }
   ]
 }

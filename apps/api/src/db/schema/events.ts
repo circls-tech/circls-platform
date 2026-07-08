@@ -50,6 +50,12 @@ export const events = pgTable('events', {
   capacity: integer('capacity'),
   /** QR entry-ticket rules for this event (null = QR tickets disabled). */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
+  /**
+   * Groups the occurrences of a recurring event ("every Thu & Fri until …").
+   * Each occurrence is a full row (own window/scope/tiers/bookings/status);
+   * series_id only ties them together. Null = one-off event.
+   */
+  seriesId: uuid('series_id'),
   status: eventStatus('status').notNull().default('draft'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

@@ -3,8 +3,16 @@
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
-import { useCreateEvent } from '@/lib/api/events';
+import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
+import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
+import {
+  RecurrenceEditor,
+  emptyRecurrence,
+  occurrencePayloads,
+  type RecurrenceValue,
+} from '@/components/RecurrenceEditor';
 import { Button, Card, Input } from '@/lib/ui';
 
 /**
@@ -41,17 +49,26 @@ export default function NewEventPage() {
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const createEvent = useCreateEvent(venueId);
+  // For Advanced-settings venue overrides on recurring events (needs tenantId).
+  const { data: venues } = useVenues(tenantId);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [err, setErr] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
 
   // Best-effort tz; the venue row owns the source of truth but we keep this
   // page tz-pinned to IST for now (matches the rest of the app's IST UI).
   const tz = 'Asia/Kolkata';
+  const busy = createEvent.isPending || uploadProgress !== null;
+  const thisVenue = venues?.find((v) => v.id === venueId);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -64,14 +81,66 @@ export default function NewEventPage() {
       setErr('Give every ticket tier a name.');
       return;
     }
+
+    const isWeekly = recurrence.mode === 'weekly';
+    const occurrences = isWeekly
+      ? occurrencePayloads(
+          recurrence,
+          (ovId) => venues?.find((v) => v.id === ovId)?.tzName ?? tz,
+          localToVenueTzIso,
+        )
+      : undefined;
+    if (isWeekly) {
+      if (!recurrence.until) {
+        setErr('Pick the last date of the recurring event.');
+        return;
+      }
+      if ((occurrences?.length ?? 0) < 2) {
+        setErr(
+          'A recurring event needs at least 2 dates — adjust the days or last date, or switch to "One time".',
+        );
+        return;
+      }
+      if (occurrences!.some((o) => o.tiers?.some((t) => !t.name.trim()))) {
+        setErr('Give every custom ticket tier (Advanced settings) a name.');
+        return;
+      }
+    }
+
     try {
-      await createEvent.mutateAsync({
+      const result = await createEvent.mutateAsync({
         name,
         ...(description ? { description } : {}),
-        startsAt: localToVenueTzIso(startsAtLocal, tz),
-        endsAt: localToVenueTzIso(endsAtLocal, tz),
+        ...(occurrences
+          ? { occurrences }
+          : {
+              startsAt: localToVenueTzIso(startsAtLocal, tz),
+              endsAt: localToVenueTzIso(endsAtLocal, tz),
+            }),
         tiers: tiersToPayload(tiers),
       });
+      // For a series, photos land on the first date — the other dates (and the
+      // consumer pages) borrow that gallery.
+      const anchor = isSeriesResult(result) ? result.events[0]! : result;
+      if (photos.length > 0) {
+        setUploadProgress({ done: 0, total: photos.length });
+        try {
+          for (let i = 0; i < photos.length; i++) {
+            await uploadEventImageFile(anchor.id, photos[i]!.file);
+            setUploadProgress({ done: i + 1, total: photos.length });
+          }
+        } catch (uploadErr) {
+          setUploadProgress(null);
+          setErr(
+            `Your event was created, but a photo failed to upload (${(uploadErr as Error).message}) — you can add the rest from the event page.`,
+          );
+          router.push(
+            `/venues/${venueId}/events/${anchor.id}${tenantId ? `?tenantId=${tenantId}` : ''}`,
+          );
+          return;
+        }
+        setUploadProgress(null);
+      }
       router.push(`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -127,9 +196,26 @@ export default function NewEventPage() {
             />
           </div>
 
+          <RecurrenceEditor
+            value={recurrence}
+            onChange={setRecurrence}
+            baseStartLocal={startsAtLocal}
+            baseEndLocal={endsAtLocal}
+            venues={(venues ?? []).filter((v) => v.id !== venueId).map((v) => ({ id: v.id, name: v.name }))}
+            baseLocationLabel={`Same as event${thisVenue ? ` — ${thisVenue.name}` : ''}`}
+            baseTiers={tiers}
+          />
+
           <TiersEditor value={tiers} onChange={setTiers} />
 
+          <PendingPhotosPicker photos={photos} onChange={setPhotos} />
+
           {err && <p className="text-sm text-red-600">{err}</p>}
+          {uploadProgress && (
+            <p className="text-sm text-slate-600">
+              Uploading photos {uploadProgress.done}/{uploadProgress.total}…
+            </p>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Link
@@ -138,8 +224,8 @@ export default function NewEventPage() {
             >
               Cancel
             </Link>
-            <Button type="submit" loading={createEvent.isPending}>
-              Create event
+            <Button type="submit" loading={busy}>
+              {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
             </Button>
           </div>
         </form>
