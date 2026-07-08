@@ -6,12 +6,9 @@ import Link from 'next/link';
 import { useBookingDetail, useBookingPayments, useCancelBookingWithReason } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
 import type { CancelResult } from '@/lib/api/types';
+import { formatMoney, useCurrency } from '@/lib/currency';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
-
-function rupees(paise: number): string {
-  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-}
 
 /**
  * Pure preview of the refund the engine WILL grant. Mirrors the API-side
@@ -47,6 +44,8 @@ export default function CancelBookingPage() {
   const { data: booking, isLoading, isError, error } = useBookingDetail(id);
   const { data: paymentsRows } = useBookingPayments(id);
   const cancel = useCancelBookingWithReason();
+  const currency = useCurrency({ venueId: booking?.venueId });
+  const money = (paise: number) => formatMoney(paise, currency, { decimals: 2 });
 
   // Slot time display honors the portal-wide viewing tz (Auto = your local time).
   const { resolveTz } = useTimezone();
@@ -145,7 +144,7 @@ export default function CancelBookingPage() {
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total paid</p>
-                  <p className="mt-0.5 font-medium text-slate-800">{rupees(booking.totalPaise)}</p>
+                  <p className="mt-0.5 font-medium text-slate-800">{money(booking.totalPaise)}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-400">First slot</p>
@@ -171,7 +170,7 @@ export default function CancelBookingPage() {
                       {TIER_COPY[preview.tier]?.description}
                     </p>
                   </div>
-                  <p className="text-lg font-semibold text-slate-800">{rupees(preview.paise)}</p>
+                  <p className="text-lg font-semibold text-slate-800">{money(preview.paise)}</p>
                 </div>
                 <p className="text-xs text-slate-500">
                   Final refund amount is decided by the server at the moment of cancellation.
@@ -232,7 +231,7 @@ export default function CancelBookingPage() {
                       <p className="mt-0.5 font-mono text-xs text-slate-500">refund: {result.refundId}</p>
                     )}
                   </div>
-                  <p className="text-lg font-semibold text-emerald-800">{rupees(result.refundPaise)}</p>
+                  <p className="text-lg font-semibold text-emerald-800">{money(result.refundPaise)}</p>
                 </div>
                 <div className="flex justify-end">
                   <Button

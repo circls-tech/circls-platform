@@ -6,7 +6,7 @@ import { BackBar } from '@/components/BackBar';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { useMembership, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { formatPaise } from '@/lib/format';
+import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
@@ -46,6 +46,8 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   const orgQ = usePublicOrg(m?.brand?.slug ?? '');
 
   const scope = m ? membershipScope(m) : null;
+  // Prices are denominated by the plan's venue/tenant country.
+  const currency = currencyForCountry(m?.country);
 
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
   const tiers = m?.tiers ?? [];
@@ -63,6 +65,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
         kind: 'membership',
         membershipId: m.id,
         title: tier ? `${m.name} — ${tier.name}` : m.name,
+        currency,
         ...(tier ? { membershipTierId: tier.id } : {}),
       },
       prefill,
@@ -102,7 +105,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                 {m.description && <p className="mt-2 text-sm text-ink-soft">{m.description}</p>}
                 <div className="mt-4 font-display text-2xl font-extrabold">
                   {multiTier && <span className="font-sans text-xs font-medium text-ink-soft">from </span>}
-                  {formatPaise(m.pricePaise)}{' '}
+                  {formatPaise(m.pricePaise, currency)}{' '}
                   <span className="font-sans text-xs font-medium text-ink-soft">/ {m.durationDays} days</span>
                 </div>
               </div>
@@ -137,7 +140,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                           )}
                         </div>
                         <div className="shrink-0 text-right">
-                          <p className="font-display text-xl font-extrabold text-ink">{formatPaise(t.pricePaise)}</p>
+                          <p className="font-display text-xl font-extrabold text-ink">{formatPaise(t.pricePaise, currency)}</p>
                           <p className="text-xs text-ink-soft">/ {t.durationDays} days</p>
                           {soldOut ? (
                             <p className="mt-1 text-xs font-semibold text-petal-red">Sold out</p>

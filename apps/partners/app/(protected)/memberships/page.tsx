@@ -13,6 +13,7 @@ import {
   useUpdateMembership,
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
+import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import {
@@ -30,8 +31,8 @@ function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
 }
 
-function fmtPrice(pricePaise: number) {
-  return pricePaise === 0 ? 'Free' : `₹${(pricePaise / 100).toFixed(2)}`;
+function fmtPrice(pricePaise: number, currency: CurrencyCode) {
+  return pricePaise === 0 ? 'Free' : formatMoney(pricePaise, currency, { decimals: 2 });
 }
 
 export default function MembershipsPage() {
@@ -42,6 +43,9 @@ export default function MembershipsPage() {
 
   const { data: memberships, isLoading } = useMemberships(tenantId);
   const { data: venues } = useVenues(tenantId);
+  // Venue-scoped plans price in their venue's currency; org-wide plans in the
+  // tenant's currency.
+  const { currencyFor } = useVenueCurrencies();
   const createMembership = useCreateMembership(tenantId);
   const updateMembership = useUpdateMembership(tenantId);
   const activate = useActivateMembership(tenantId);
@@ -164,7 +168,7 @@ export default function MembershipsPage() {
                                 {t.pricePaise === 0 ? (
                                   <span className="text-emerald-600">Free</span>
                                 ) : (
-                                  fmtPrice(t.pricePaise)
+                                  fmtPrice(t.pricePaise, currencyFor(m.venueId))
                                 )}{' '}
                                 · {t.durationDays}d
                                 {t.capacity != null && (
@@ -234,6 +238,7 @@ export default function MembershipsPage() {
                             membership={m}
                             tenantId={tenantId}
                             venues={venues ?? []}
+                            currencyFor={currencyFor}
                             pending={updateMembership.isPending}
                             onCancel={() => setEditingId(null)}
                             onSave={async (input) => {
@@ -301,7 +306,7 @@ export default function MembershipsPage() {
               Org-wide plans apply across every venue; otherwise scope it to one venue.
             </p>
           </div>
-          <MembershipTiersEditor value={tiers} onChange={setTiers} />
+          <MembershipTiersEditor value={tiers} onChange={setTiers} currency={currencyFor(venueId || null)} />
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
@@ -340,6 +345,8 @@ interface EditMembershipFormProps {
   membership: Membership;
   tenantId: string;
   venues: { id: string; name: string }[];
+  /** Resolves a venue id (or null for org-wide) to its display currency. */
+  currencyFor: (venueId: string | null) => CurrencyCode;
   pending: boolean;
   onCancel: () => void;
   onSave: (input: {
@@ -356,6 +363,7 @@ function EditMembershipForm({
   membership,
   tenantId,
   venues,
+  currencyFor,
   pending,
   onCancel,
   onSave,
@@ -420,7 +428,7 @@ function EditMembershipForm({
           ))}
         </select>
       </div>
-      <MembershipTiersEditor value={tiers} onChange={setTiers} />
+      <MembershipTiersEditor value={tiers} onChange={setTiers} currency={currencyFor(venueId || null)} />
       <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">

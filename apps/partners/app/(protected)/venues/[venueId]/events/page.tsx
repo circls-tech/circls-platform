@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useVenueEvents, usePublishEvent } from '@/lib/api/events';
+import { formatMoney, useCurrency } from '@/lib/currency';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
@@ -24,6 +25,7 @@ export default function VenueEventsPage() {
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const { data: events, isLoading } = useVenueEvents(venueId);
   const publish = usePublishEvent(tenantId, venueId);
+  const currency = useCurrency({ venueId });
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -101,7 +103,7 @@ export default function VenueEventsPage() {
                       {ev.pricePaise === 0 ? (
                         <span className="text-emerald-600">Free</span>
                       ) : (
-                        `₹${(ev.pricePaise / 100).toFixed(2)}`
+                        formatMoney(ev.pricePaise, currency, { decimals: 2 })
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">

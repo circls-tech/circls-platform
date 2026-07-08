@@ -1,31 +1,58 @@
-const rupeeFmt = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  maximumFractionDigits: 0,
-});
+/**
+ * Prices are stored in minor units (paise for INR, cents for USD — the `*Paise`
+ * field names predate multi-currency) and are denominated by the venue's
+ * country, mirroring the API's gateway rule (apps/api/src/lib/gateway.ts):
+ * USA venues settle in USD, everything else in INR.
+ */
+export type CurrencyCode = 'INR' | 'USD';
 
-/** Format paise as Indian rupees, e.g. 250000 → "₹2,500". Free → "Free". */
-export function formatPaise(paise: number): string {
-  if (!paise) return 'Free';
-  return rupeeFmt.format(paise / 100);
+/** Currency for a venue/org country as it appears in address payloads
+ *  (canonically 'India' | 'USA'); null/unknown falls back to INR. */
+export function currencyForCountry(country: string | null | undefined): CurrencyCode {
+  const c = (country ?? '').trim().toLowerCase();
+  return c === 'usa' || c === 'us' || c === 'united states' ? 'USD' : 'INR';
 }
 
-const rupeeFmtExact = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+/** Pull the country out of a freeform addressJson blob (e.g. an event's
+ *  resolved location) for currencyForCountry. */
+export function countryOfAddress(address: Record<string, unknown> | null | undefined): string | null {
+  const c = address?.country;
+  return typeof c === 'string' ? c : null;
+}
+
+const moneyFmtCache = new Map<string, Intl.NumberFormat>();
+// `currency` is a plain string so server-provided codes (quote/booking
+// responses) plug in directly; unknown codes still render via Intl.
+function moneyFmt(currency: string, decimals: number): Intl.NumberFormat {
+  const key = `${currency}:${decimals}`;
+  let f = moneyFmtCache.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    moneyFmtCache.set(key, f);
+  }
+  return f;
+}
+
+/** Format minor units as whole currency, e.g. 250000 → "₹2,500" / "$2,500". Free → "Free". */
+export function formatPaise(paise: number, currency: string = 'INR'): string {
+  if (!paise) return 'Free';
+  return moneyFmt(currency, 0).format(paise / 100);
+}
 
 /**
- * Format paise as rupees showing exact paise (2 decimals), e.g. 35847 → "₹358.47".
- * Use where sub-rupee amounts occur (checkout breakdown), since the Razorpay
- * gross-up produces fractional-rupee totals that the integer `formatPaise` would
- * truncate misleadingly. Free → "Free".
+ * Format minor units showing exact sub-unit amounts (2 decimals), e.g.
+ * 35847 → "₹358.47". Use where fractional amounts occur (checkout breakdown),
+ * since the gateway gross-up produces fractional totals that the integer
+ * `formatPaise` would truncate misleadingly. Free → "Free".
  */
-export function formatPaiseExact(paise: number): string {
+export function formatPaiseExact(paise: number, currency: string = 'INR'): string {
   if (!paise) return 'Free';
-  return rupeeFmtExact.format(paise / 100);
+  return moneyFmt(currency, 2).format(paise / 100);
 }
 
 const timeFmt = new Intl.DateTimeFormat('en-IN', {

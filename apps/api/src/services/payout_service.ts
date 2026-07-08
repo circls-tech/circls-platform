@@ -78,12 +78,15 @@ export function priorWeek(now: Date): SettlementWeek {
 export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> {
   const { start, end } = priorWeek(now);
 
-  // Gross: captured charges released this week, grouped by tenant. A charge
-  // keeps counting toward gross even after a (partial) refund flips its status,
-  // so include refunded/partially_refunded too.
+  // Gross: captured charges released this week, grouped by tenant + currency
+  // (a tenant's venues share one country, so one currency — but never sum
+  // mixed minor units if data disagrees). A charge keeps counting toward gross
+  // even after a (partial) refund flips its status, so include
+  // refunded/partially_refunded too.
   const grossRows = await db
     .select({
       tenantId: payments.tenantId,
+      currency: payments.currency,
       gross: sql<number>`coalesce(sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
     })
     .from(payments)
@@ -95,12 +98,13 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         lt(payments.settlementReleasedAt, end),
       ),
     )
-    .groupBy(payments.tenantId);
+    .groupBy(payments.tenantId, payments.currency);
 
   // Refunds: refund rows created this week (amount is negative → negate).
   const refundRows = await db
     .select({
       tenantId: payments.tenantId,
+      currency: payments.currency,
       refunds: sql<number>`coalesce(-sum(${payments.amountPaise}), 0)::bigint`,
     })
     .from(payments)
@@ -112,9 +116,18 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         lt(payments.createdAt, end),
       ),
     )
-    .groupBy(payments.tenantId);
+    .groupBy(payments.tenantId, payments.currency);
 
-  const refundByTenant = new Map(refundRows.map((r) => [r.tenantId, Number(r.refunds)]));
+  const refundByTenantCurrency = new Map(
+    refundRows.map((r) => [`${r.tenantId}|${r.currency}`, Number(r.refunds)]),
+  );
+
+  // The payouts unique index is one row per (tenant, period) — a tenant with
+  // charges in TWO currencies in one week can't be reconciled automatically
+  // (onConflictDoNothing would silently drop the second currency's money).
+  // Skip such tenants with a loud log so ops reconciles by hand.
+  const currencyCount = new Map<string, number>();
+  for (const g of grossRows) currencyCount.set(g.tenantId, (currencyCount.get(g.tenantId) ?? 0) + 1);
 
   // Per-tenant commission rate.
   const tenantRows = await db
@@ -123,13 +136,21 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   const bpsByTenant = new Map(tenantRows.map((t) => [t.id, t.commissionBps]));
 
   const toInsert = grossRows
+    .filter((g) => {
+      if ((currencyCount.get(g.tenantId) ?? 0) <= 1) return true;
+      logger.error(
+        { tenantId: g.tenantId, start, end },
+        'weekly_payout_mixed_currency_tenant_skipped',
+      );
+      return false;
+    })
     .map((g) => {
       const gross = Number(g.gross);
-      const refunds = refundByTenant.get(g.tenantId) ?? 0;
+      const refunds = refundByTenantCurrency.get(`${g.tenantId}|${g.currency}`) ?? 0;
       const commissionBps = bpsByTenant.get(g.tenantId) ?? 0;
       const commission = computeCommissionPaise(gross, refunds, commissionBps);
       const net = gross - refunds - commission;
-      return { tenantId: g.tenantId, gross, refunds, commission, net };
+      return { tenantId: g.tenantId, currency: g.currency, gross, refunds, commission, net };
     })
     // Nothing owed (e.g. refunds ≥ gross) → no payout row this week.
     .filter((p) => p.net > 0);
@@ -151,6 +172,7 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         refundsPaise: p.refunds,
         commissionPaise: p.commission,
         amountPaise: p.net,
+        currency: p.currency,
         status: 'pending',
         reconciledAt: new Date(),
         metadata: {},

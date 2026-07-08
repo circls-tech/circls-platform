@@ -32,6 +32,7 @@ import { writeAudit } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
+import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { issueQrTicketsForUserMembership, qrTicketDataUrl } from './qr_ticket_service.js';
@@ -350,9 +351,14 @@ export interface PurchaseMembershipResult {
   userMembershipId: string;
   paymentId?: string;
   orderId?: string;
-  /** Razorpay publishable key + amount, so the client can open checkout. */
+  /** Which gateway the order was minted on (paid only). */
+  gateway?: PaymentProviderId;
+  /** The gateway's browser-safe key + amount, so the client can open checkout. */
   keyId?: string;
+  /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+  clientSecret?: string | undefined;
   amountPaise?: number;
+  currency?: string;
 }
 
 /**
@@ -425,6 +431,13 @@ export async function purchaseMembership(
     const now = new Date();
     const endsAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
+    // Gateway + currency follow the membership's venue country when venue-
+    // scoped, else the owning tenant's country.
+    const payCtx = await paymentsService.resolvePaymentContext(
+      { venueId: m.venueId, tenantId: m.tenantId },
+      tx,
+    );
+
     // Money model: discount + gross-up. A 100%/over-base coupon makes a paid
     // membership free; isFree derives from the grossed-up total, not the base.
     const basePaise = tier?.pricePaise ?? m.pricePaise;
@@ -437,6 +450,7 @@ export async function purchaseMembership(
             maxDiscountPaise: pricing.coupon.maxDiscountPaise,
           }
         : null,
+      payCtx.provider,
     );
     const isFree = breakdown.totalPaise === 0;
     const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
@@ -491,6 +505,7 @@ export async function purchaseMembership(
         discountPaise: breakdown.discountPaise,
         couponId: pricing?.coupon.id ?? null,
         totalPaise: breakdown.totalPaise,
+        currency: payCtx.currency,
         itemData: { membershipId: m.id },
       })
       .returning();
@@ -554,6 +569,7 @@ export async function purchaseMembership(
       totalPaise: breakdown.totalPaise,
       settleBasePaise,
       membershipId: m.id,
+      payCtx,
     };
   });
 
@@ -586,16 +602,20 @@ export async function purchaseMembership(
   // bookingId). Mirrors the bookEvent / prepareOnlineBookingWithPayment split.
   let orderId: string | undefined;
   let paymentId: string | undefined;
+  let clientSecret: string | undefined;
   try {
     const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.bookingId,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,
       settleBasePaise: reserved.settleBasePaise,
+      provider: reserved.payCtx.provider,
+      currency: reserved.payCtx.currency,
       actorUserId: input.userId,
     });
     orderId = result.providerOrderId;
     paymentId = result.paymentId;
+    clientSecret = result.clientSecret;
   } catch (err) {
     if (err instanceof Error && err.message.includes('not implemented')) {
       throw new Conflict('Payments not yet enabled', 'payment_not_available');
@@ -615,8 +635,11 @@ export async function purchaseMembership(
     userMembershipId: reserved.userMembershipId,
     paymentId,
     orderId,
-    keyId: env.RAZORPAY_KEY_ID ?? '',
+    gateway: reserved.payCtx.provider,
+    keyId: publicKeyIdFor(reserved.payCtx.provider),
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
+    currency: reserved.payCtx.currency,
   };
 }
 

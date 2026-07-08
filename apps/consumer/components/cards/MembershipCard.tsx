@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { formatPaise } from '@/lib/format';
+import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import type { PublicMembershipWithScope } from '@/lib/api/types';
 
@@ -68,7 +68,7 @@ export function MembershipCard({
           {(membership.tiers?.length ?? 0) > 1 && (
             <span className="font-sans text-xs font-medium text-ink-soft">from </span>
           )}
-          {formatPaise(membership.pricePaise)}{' '}
+          {formatPaise(membership.pricePaise, currencyForCountry(membership.country))}{' '}
           <span className="font-sans text-xs font-medium text-ink-soft">/ {membership.durationDays} days</span>
         </div>
         <span className="mt-3 inline-block rounded-lg border-[2px] border-ink bg-coral px-3.5 py-1.5 font-display text-xs font-bold text-ink shadow-offset-sm">

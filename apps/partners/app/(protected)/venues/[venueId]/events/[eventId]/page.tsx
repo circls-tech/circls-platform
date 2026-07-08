@@ -20,6 +20,7 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
@@ -98,6 +99,7 @@ export default function EventDetailPage() {
   // convention `tz`), overridden by the portal-wide viewing tz when set.
   const { resolveTz } = useTimezone();
   const displayTz = resolveTz(ev?.tzName ?? tz);
+  const currency = useCurrency({ venueId });
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -235,7 +237,7 @@ export default function EventDetailPage() {
                           {t.pricePaise === 0 ? (
                             <span className="text-emerald-600">Free</span>
                           ) : (
-                            `₹${(t.pricePaise / 100).toFixed(2)}`
+                            formatMoney(t.pricePaise, currency, { decimals: 2 })
                           )}
                         </span>
                       </div>
@@ -339,7 +341,7 @@ export default function EventDetailPage() {
                   />
                 </div>
 
-                <TiersEditor value={tiers} onChange={setTiers} />
+                <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
@@ -368,6 +370,7 @@ export default function EventDetailPage() {
             tiers={ev.tiers}
             eventName={ev.name}
             tz={displayTz}
+            currency={currency}
           />
         </>
       )}

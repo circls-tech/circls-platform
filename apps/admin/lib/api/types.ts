@@ -64,7 +64,7 @@ export interface AdminTenantDetail {
     bankIfsc: string | null;
     bankAccountHolderName: string | null;
     addressJson: Record<string, unknown> | null;
-    razorpayLinkedAccountId: string | null;
+    country: string | null;
     subscriptionStatus: string;
     status: AdminTenantListItem['status'];
     createdAt: string;

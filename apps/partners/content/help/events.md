@@ -26,7 +26,7 @@ On the event detail page (while the event is a **draft**), use the **Ticket tier
 | --- | --- | --- |
 | **Name** | Yes | Shown to consumers at checkout (e.g. "General Admission", "VIP"). |
 | **Description** | No | Optional detail shown alongside the tier name. |
-| **Price (₹)** | Yes | Enter `0` for a free tier. |
+| **Price** | Yes | Enter `0` for a free tier. The label shows the event's currency (₹ or $): venue events use the venue's currency; standalone events your organisation's — both follow the country on file. |
 | **Capacity** | No | Leave blank for unlimited. When set, the tier stops selling once that many tickets are sold. |
 
 You can add as many tiers as you need. At least one tier is required before you can submit the event for review.
@@ -76,7 +76,7 @@ On the event detail page, use the **images** section to upload photos for the ev
 
 The event detail page shows registrations in two separate tables:
 
-- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (₹) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.

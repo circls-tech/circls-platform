@@ -4,10 +4,12 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { Slot } from '@/lib/api/types';
 import { useBookSlots, useHoldSlots, useReleaseHoldSlots } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
+import { type CurrencyCode, formatMoney } from '@/lib/currency';
 import { Button, Input, Modal } from '@/lib/ui';
 
 export interface AddBookingModalProps {
   arenaId: string;
+  currency: CurrencyCode;
   open: boolean;
   slotIds: string[];
   slots: Slot[];
@@ -16,6 +18,7 @@ export interface AddBookingModalProps {
 
 export function AddBookingModal({
   arenaId,
+  currency,
   open,
   slotIds,
   slots,
@@ -61,7 +64,7 @@ export function AddBookingModal({
   // Compute total from the selected slots regardless of status.
   // We intentionally do NOT filter by status === 'open' because on open the
   // modal places a hold, which refetches slots as status:'held', collapsing the
-  // total to ₹0. Selection membership is the only predicate needed here.
+  // total to zero. Selection membership is the only predicate needed here.
   const totalPaise = slots
     .filter((s) => slotIds.includes(s.id))
     .reduce((sum, s) => sum + s.pricePaise, 0);
@@ -103,7 +106,7 @@ export function AddBookingModal({
         <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
           <span className="font-medium">Total: </span>
           <span className="text-base font-semibold text-slate-900">
-            ₹{(totalPaise / 100).toFixed(0)}
+            {formatMoney(totalPaise, currency)}
           </span>
           <span className="ml-2 text-xs text-slate-400">
             ({slotIds.length} slot{slotIds.length !== 1 ? 's' : ''})

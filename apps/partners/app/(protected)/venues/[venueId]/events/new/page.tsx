@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useCreateEvent } from '@/lib/api/events';
+import { useCurrency } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { Button, Card, Input } from '@/lib/ui';
 
@@ -41,6 +42,7 @@ export default function NewEventPage() {
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const createEvent = useCreateEvent(venueId);
+  const currency = useCurrency({ venueId });
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -127,7 +129,7 @@ export default function NewEventPage() {
             />
           </div>
 
-          <TiersEditor value={tiers} onChange={setTiers} />
+          <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 

@@ -397,6 +397,9 @@ export interface PublicMembershipWithScope extends Membership {
   venueId: string | null;
   /** Venue name for venue-scoped; tenant/brand name for tenant-wide. */
   scopeName: string;
+  /** Country the plan's prices are denominated in: the owning venue's country,
+   *  falling back to the tenant's (mirrors the gateway's settlement rule). */
+  country: string | null;
   /** Owning venue's tags; empty for tenant-wide (card falls back to motif). */
   venueTags: string[];
   /** Typed benefits (PR #110) — always coerced to { items: [...] } on read. */
@@ -451,7 +454,9 @@ interface MembershipJoinRow {
   m: Membership;
   venueName: string | null;
   venueTags: string[] | null;
+  venueCountry: string | null;
   tenantName: string;
+  tenantCountry: string | null;
   brand: { id: string; slug: string; name: string; logoStorageKey: string | null };
 }
 
@@ -460,7 +465,9 @@ const PUBLIC_MEMBERSHIP_COLUMNS = {
   m: memberships,
   venueName: venues.name,
   venueTags: venues.tags,
+  venueCountry: venues.country,
   tenantName: tenants.name,
+  tenantCountry: tenants.country,
   brand: BRAND_COLUMNS,
 } as const;
 
@@ -469,6 +476,7 @@ function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
     ...r.m,
     venueId: r.m.venueId,
     scopeName: r.venueName ?? r.tenantName,
+    country: r.venueCountry ?? r.tenantCountry,
     venueTags: r.venueTags ?? [],
     benefits: coerceBenefits(r.m.benefits),
     artworkUrl: r.m.coverStorageKey ? getStorage().publicUrl(r.m.coverStorageKey) : null,

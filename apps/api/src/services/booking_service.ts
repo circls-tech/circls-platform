@@ -6,7 +6,8 @@ import { payments } from '../db/schema/payments.js';
 import { env } from '../config/env.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
-import { createPaymentOrder } from './payments_service.js';
+import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
+import { createPaymentOrder, resolvePaymentContext } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
@@ -172,10 +173,15 @@ export interface PrepareOnlineBookingInput {
 export interface PrepareOnlineBookingResult {
   bookingId: string;
   payment: {
+    gateway: PaymentProviderId;
     orderId: string;
+    /** The gateway's browser-safe key: Razorpay key id / Stripe publishable key. */
     keyId: string;
+    /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+    clientSecret?: string | undefined;
+    /** Amount in the currency's minor unit (paise / cents). */
     amountPaise: number;
-    currency: 'INR';
+    currency: string;
   };
 }
 
@@ -186,6 +192,11 @@ export async function prepareOnlineBookingWithPayment(
   pricing?: CouponPricing | null,
 ): Promise<PrepareOnlineBookingResult> {
   if (input.slotIds.length === 0) throw new Conflict('No slots selected', 'no_slots');
+
+  // Gateway + currency follow the venue's country (Stripe/USD for US venues,
+  // Razorpay/INR otherwise) — resolved up front so the gross-up, the booking
+  // row, and the order all agree.
+  const payCtx = await resolvePaymentContext({ venueId, tenantId: ctx.tenantId });
 
   // Same claim flow as walk-in, but staged: bookings.status='pending', and we
   // capture the price total so the Razorpay order has the right paise amount.
@@ -225,6 +236,7 @@ export async function prepareOnlineBookingWithPayment(
             maxDiscountPaise: pricing.coupon.maxDiscountPaise,
           }
         : null,
+      payCtx.provider,
     );
     const free = breakdown.totalPaise === 0;
     const settleBase = pricing && pricing.funder === 'platform' ? total : breakdown.discountedBasePaise;
@@ -249,6 +261,7 @@ export async function prepareOnlineBookingWithPayment(
         discountPaise: breakdown.discountPaise,
         couponId: pricing?.coupon.id ?? null,
         totalPaise: breakdown.totalPaise,
+        currency: payCtx.currency,
         createdByUserId: ctx.actorUserId,
       })
       .returning();
@@ -336,7 +349,13 @@ export async function prepareOnlineBookingWithPayment(
     await onBookingConfirmed(bookingId);
     return {
       bookingId,
-      payment: { orderId: '', keyId: '', amountPaise: 0, currency: 'INR' },
+      payment: {
+        gateway: payCtx.provider,
+        orderId: '',
+        keyId: '',
+        amountPaise: 0,
+        currency: payCtx.currency,
+      },
     };
   }
 
@@ -344,23 +363,28 @@ export async function prepareOnlineBookingWithPayment(
   // to the gateway doesn't roll back the pending booking + slot claim. If
   // createPaymentOrder ultimately fails, the abandoned-cart sweep will clean the
   // pending booking after the grace window.
-  const { paymentId: _paymentId, providerOrderId } = await createPaymentOrder({
+  const { paymentId: _paymentId, providerOrderId, clientSecret } = await createPaymentOrder({
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
     settleBasePaise,
+    provider: payCtx.provider,
+    currency: payCtx.currency,
     actorUserId: ctx.actorUserId,
   });
 
   return {
     bookingId,
     payment: {
+      gateway: payCtx.provider,
       orderId: providerOrderId,
-      // Frontend uses this with Razorpay checkout JS. Stub mode has no key id;
-      // we surface an empty string so the response shape stays stable.
-      keyId: env.RAZORPAY_KEY_ID ?? '',
+      // Frontend uses this to open checkout (Razorpay JS / Stripe.js). Stub
+      // mode has no key; we surface an empty string so the response shape
+      // stays stable and the client shows "reserved".
+      keyId: publicKeyIdFor(payCtx.provider),
+      ...(clientSecret !== undefined ? { clientSecret } : {}),
       amountPaise: totalPaise,
-      currency: 'INR',
+      currency: payCtx.currency,
     },
   };
 }
@@ -408,9 +432,14 @@ export interface BookEventResult {
   booking: Booking;
   paymentId?: string;
   providerOrderId?: string;
-  /** Razorpay publishable key + amount, so the client can open checkout. */
+  /** Which gateway the order was minted on (paid only). */
+  gateway?: PaymentProviderId;
+  /** The gateway's browser-safe key + amount, so the client can open checkout. */
   keyId?: string;
+  /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+  clientSecret?: string | undefined;
   amountPaise?: number;
+  currency?: string;
 }
 
 /**
@@ -497,6 +526,12 @@ export async function bookEvent(
       lineValues.push({ tierId: tier.id, quantity: line.quantity, unitPricePaise: tier.pricePaise });
     }
 
+    // Gateway + currency follow the event's venue country (fallback: tenant).
+    const payCtx = await resolvePaymentContext(
+      { venueId: ev.venueId, tenantId: ev.tenantId },
+      tx,
+    );
+
     // Money model: discount + gross-up. A 100%/over-base coupon can make a paid
     // event free, so derive isFree from the grossed-up total, not the base.
     const breakdown = computeCheckout(
@@ -508,6 +543,7 @@ export async function bookEvent(
             maxDiscountPaise: pricing.coupon.maxDiscountPaise,
           }
         : null,
+      payCtx.provider,
     );
     const isFree = breakdown.totalPaise === 0;
     const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
@@ -531,6 +567,7 @@ export async function bookEvent(
         discountPaise: breakdown.discountPaise,
         couponId: pricing?.coupon.id ?? null,
         totalPaise: breakdown.totalPaise,
+        currency: payCtx.currency,
         itemData: { eventId: ev.id, eventName: ev.name },
         createdByUserId: ctx.actorUserId,
       })
@@ -572,6 +609,7 @@ export async function bookEvent(
       eventName: ev.name,
       totalPaise: breakdown.totalPaise,
       settleBasePaise,
+      payCtx,
     };
   });
 
@@ -588,16 +626,20 @@ export async function bookEvent(
   // grace window.
   let providerOrderId: string | undefined;
   let paymentId: string | undefined;
+  let clientSecret: string | undefined;
   try {
     const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.booking.id,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,
       settleBasePaise: reserved.settleBasePaise,
+      provider: reserved.payCtx.provider,
+      currency: reserved.payCtx.currency,
       actorUserId: customer.userId,
     });
     providerOrderId = result.providerOrderId;
     paymentId = result.paymentId;
+    clientSecret = result.clientSecret;
   } catch (err) {
     if (err instanceof Error && err.message.includes('not implemented')) {
       throw new Conflict('Payments not yet enabled', 'payment_not_available');
@@ -609,7 +651,10 @@ export async function bookEvent(
     booking: reserved.booking,
     paymentId,
     providerOrderId,
-    keyId: env.RAZORPAY_KEY_ID ?? '',
+    gateway: reserved.payCtx.provider,
+    keyId: publicKeyIdFor(reserved.payCtx.provider),
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
+    currency: reserved.payCtx.currency,
   };
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   RAZORPAY_FEE_RATE,
+  STRIPE_FEE_FIXED_MINOR,
+  STRIPE_FEE_RATE,
   computeCheckout,
   computeDiscountPaise,
   grossUp,
@@ -11,12 +13,25 @@ describe('grossUp', () => {
     // 50000 / (1 - 0.0236) = 51208.52… → ceil 51209
     expect(grossUp(50000)).toBe(51209);
   });
-  it('returns 0 for a zero or negative base', () => {
+  it('defaults to the razorpay fee model', () => {
+    expect(grossUp(50000)).toBe(grossUp(50000, 'razorpay'));
+  });
+  it('grosses up Stripe with the fixed 30¢ component included', () => {
+    // (50000 + 30) / (1 - 0.029) = 51524.20… → ceil 51525
+    expect(grossUp(50000, 'stripe')).toBe(51525);
+    // Net check: total − (rate·total + fixed) must cover the base.
+    const total = grossUp(1299, 'stripe');
+    expect(total - (STRIPE_FEE_RATE * total + STRIPE_FEE_FIXED_MINOR)).toBeGreaterThanOrEqual(1299);
+  });
+  it('returns 0 for a zero or negative base on either gateway', () => {
     expect(grossUp(0)).toBe(0);
     expect(grossUp(-10)).toBe(0);
+    expect(grossUp(0, 'stripe')).toBe(0);
   });
-  it('uses the 2.36% rate constant', () => {
+  it('uses the published rate constants', () => {
     expect(RAZORPAY_FEE_RATE).toBe(0.0236);
+    expect(STRIPE_FEE_RATE).toBe(0.029);
+    expect(STRIPE_FEE_FIXED_MINOR).toBe(30);
   });
 });
 
@@ -66,5 +81,17 @@ describe('computeCheckout', () => {
       otherChargesPaise: 0,
       totalPaise: 0,
     });
+  });
+  it('uses the Stripe fee model when quoted for a stripe gateway', () => {
+    expect(computeCheckout(50000, null, 'stripe')).toEqual({
+      basePaise: 50000,
+      discountPaise: 0,
+      discountedBasePaise: 50000,
+      otherChargesPaise: 1525,
+      totalPaise: 51525,
+    });
+  });
+  it('a fully-discounted Stripe checkout is free (no stranded fixed fee)', () => {
+    expect(computeCheckout(50000, { discountType: 'fixed', discountValue: 60000, maxDiscountPaise: null }, 'stripe').totalPaise).toBe(0);
   });
 });

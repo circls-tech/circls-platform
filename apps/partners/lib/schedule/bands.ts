@@ -27,7 +27,7 @@ export interface ReleaseCell {
   /** Minutes from the business day's local midnight; MAY exceed 1439 (overnight). */
   startTimeMin: number;
   durationMin: number;
-  /** Paise. */
+  /** Minor units (paise/cents) of the venue currency. */
   price?: number | null;
   blocked?: boolean;
 }
@@ -99,7 +99,7 @@ export function validateBands(bands: Band[], dayStartMin: number): BandValidatio
       return { ok: false, error: 'Band times must fall within a day.' };
     }
     if (!Number.isFinite(b.priceRupees) || b.priceRupees < 0) {
-      return { ok: false, error: 'Each band needs a valid non-negative price (₹).' };
+      return { ok: false, error: 'Each band needs a valid non-negative price.' };
     }
   }
 

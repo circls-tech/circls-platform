@@ -16,6 +16,7 @@ import {
   useVenues,
 } from '@/lib/api/queries';
 import type { QrTicketConfig } from '@/lib/api/types';
+import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card } from '@/lib/ui';
@@ -54,6 +55,7 @@ export default function ArenaReceptionPage() {
   const { data: arena } = useArena(arenaId);
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
+  const currency = useCurrency({ venueId: arena?.venueId });
 
   // The grid is *displayed* in the portal-wide viewing timezone (top-bar
   // selector). On "Auto" this falls back to the venue's own tz. Slot times,
@@ -224,6 +226,7 @@ export default function ArenaReceptionPage() {
           slots={slots}
           weekStart={weekStart}
           tz={displayTz}
+          currency={currency}
           dayStartMin={arena?.businessDayStartMin ?? 0}
           now={now}
           onBulk={handleBulk}
@@ -265,6 +268,7 @@ export default function ArenaReceptionPage() {
       {/* Add booking modal */}
       <AddBookingModal
         arenaId={arenaId}
+        currency={currency}
         open={bookingOpen}
         slotIds={bookingSlotIds}
         slots={slots}
@@ -290,7 +294,7 @@ export default function ArenaReceptionPage() {
         title="Apply price change?"
         message={
           pendingPricePatch?.patch.price !== undefined
-            ? `Set price to ₹${((pendingPricePatch.patch.price) / 100).toFixed(0)} for ${pendingPricePatch.slotIds.length} slot(s)?`
+            ? `Set price to ${formatMoney(pendingPricePatch.patch.price, currency)} for ${pendingPricePatch.slotIds.length} slot(s)?`
             : ''
         }
         confirmLabel="Apply"

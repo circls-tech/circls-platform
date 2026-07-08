@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { Button, Card, Input } from '@/lib/ui';
 import { useArena, useReleaseSlots, useVenues, type ReleaseCell } from '@/lib/api/queries';
+import { currencySymbol, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { fmtTzOffset } from '@/lib/time';
@@ -134,6 +135,7 @@ export default function ScheduleBuilderPage() {
   const { data: arena } = useArena(arenaId);
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
+  const currency = useCurrency({ venueId: arena?.venueId });
 
   // Viewing timezone comes from the portal-wide selector in the top bar. Display
   // only — slots are generated and released in the venue's tz.
@@ -235,7 +237,7 @@ export default function ScheduleBuilderPage() {
   // ── Matrix callbacks (edit local preview) ──
   const handleBulk = useCallback((slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
     if (patch.price !== undefined && (Number.isNaN(patch.price) || patch.price < 0)) {
-      setValidationError('Per-cell price must be a valid non-negative number (in paise).');
+      setValidationError('Per-cell price must be a valid non-negative number.');
       return;
     }
     setValidationError(null);
@@ -364,7 +366,7 @@ export default function ScheduleBuilderPage() {
                 <span className="pb-2 text-slate-400">→</span>
                 <Input label={i === 0 ? 'To' : undefined} type="time" value={b.endTime} onChange={(e) => updateBand(i, { endTime: e.target.value })} />
                 <Input
-                  label={i === 0 ? 'Price (₹)' : undefined}
+                  label={i === 0 ? `Price (${currencySymbol(currency)})` : undefined}
                   type="number"
                   min={0}
                   step={1}
@@ -414,6 +416,7 @@ export default function ScheduleBuilderPage() {
               slots={previewSlots}
               weekStart={weekStart}
               tz={effectiveTz}
+              currency={currency}
               dayStartMin={dayStartMin}
               onBulk={handleBulk}
               onBook={handleBook}

@@ -9,7 +9,7 @@ import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { useEvent, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { formatDateTime, formatPaiseExact } from '@/lib/format';
+import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
@@ -32,6 +32,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
   const [qty, setQty] = useState<Record<string, number>>({});
+  // Prices are denominated by the event's resolved location country.
+  const currency = currencyForCountry(countryOfAddress(ev?.locAddressJson));
 
   const tiers = ev?.tiers ?? [];
   const lines = tiers
@@ -55,7 +57,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     const prefill: { name?: string; contact?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines }, prefill);
+    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines, currency }, prefill);
   }
 
   const mapsHref =
@@ -130,7 +132,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                             <p className="mt-0.5 text-xs text-text-secondary">{t.description}</p>
                           )}
                           <p className="mt-0.5 text-sm text-ink">
-                            {t.pricePaise === 0 ? 'Free' : formatPaiseExact(t.pricePaise)}
+                            {t.pricePaise === 0 ? 'Free' : formatPaiseExact(t.pricePaise, currency)}
                           </p>
                         </div>
                         {soldOut ? (
@@ -164,7 +166,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
                   <div className="mt-1 flex items-center justify-between border-t-[1.5px] border-dashed border-ink/25 pt-3 text-sm">
                     <span className="font-medium text-ink">Subtotal</span>
-                    <span className="font-display font-extrabold text-ink">{formatPaiseExact(subtotalPaise)}</span>
+                    <span className="font-display font-extrabold text-ink">{formatPaiseExact(subtotalPaise, currency)}</span>
                   </div>
                   <p className="text-xs text-text-secondary">
                     {totalSelected === 0
@@ -194,12 +196,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               <span className="font-display font-extrabold text-ink">
                 {totalSelected} ticket{totalSelected > 1 ? 's' : ''}
               </span>
-              <span className="text-text-secondary"> · {formatPaiseExact(subtotalPaise)}</span>
+              <span className="text-text-secondary"> · {formatPaiseExact(subtotalPaise, currency)}</span>
             </>
           }
           action={
             <Button onClick={book}>
-              {subtotalPaise === 0 ? 'Register' : `Book · ${formatPaiseExact(subtotalPaise)}`}
+              {subtotalPaise === 0 ? 'Register' : `Book · ${formatPaiseExact(subtotalPaise, currency)}`}
             </Button>
           }
         />

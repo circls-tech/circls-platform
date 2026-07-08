@@ -187,11 +187,16 @@ export interface PublicMembership {
 export interface SlotBookingResult {
   bookingId: string;
   payment: {
+    /** Which gateway to open checkout on — Stripe for US venues. */
+    gateway: 'razorpay' | 'stripe';
     orderId: string;
-    /** Empty string in stub mode (no live Razorpay keys configured). */
+    /** The gateway's browser-safe key (Razorpay key id / Stripe publishable
+     *  key). Empty string in stub mode (no live keys configured). */
     keyId: string;
+    /** Stripe only: the PaymentIntent client secret. */
+    clientSecret?: string;
     amountPaise: number;
-    currency: 'INR';
+    currency: string;
   };
 }
 
@@ -206,9 +211,14 @@ export interface EventBookingResult {
   paymentId?: string;
   /** Present only for paid events; free events return a confirmed booking and no order. */
   providerOrderId?: string;
-  /** Razorpay publishable key + amount for opening checkout (paid only). */
+  /** Which gateway to open checkout on (paid only) — Stripe for US venues. */
+  gateway?: 'razorpay' | 'stripe';
+  /** The gateway's browser-safe key + amount for opening checkout (paid only). */
   keyId?: string;
+  /** Stripe only: the PaymentIntent client secret. */
+  clientSecret?: string;
   amountPaise?: number;
+  currency?: string;
 }
 
 export interface MembershipPurchaseResult {
@@ -216,9 +226,14 @@ export interface MembershipPurchaseResult {
   paymentId?: string;
   /** Present only for paid memberships; free ones activate immediately. */
   orderId?: string;
-  /** Razorpay publishable key + amount for opening checkout (paid only). */
+  /** Which gateway to open checkout on (paid only) — Stripe for US venues. */
+  gateway?: 'razorpay' | 'stripe';
+  /** The gateway's browser-safe key + amount for opening checkout (paid only). */
   keyId?: string;
+  /** Stripe only: the PaymentIntent client secret. */
+  clientSecret?: string;
   amountPaise?: number;
+  currency?: string;
 }
 
 // ── Booking / purchase inputs ─────────────────────────────────────────────────
@@ -333,6 +348,9 @@ export interface PublicEventWithVenue extends Omit<PublicEvent, 'venueId'> {
 export interface PublicMembershipWithScope extends PublicMembership {
   scopeName: string;
   venueTags: string[];
+  /** Country the plan's prices are denominated in (owning venue's country,
+   *  falling back to the tenant's) — drives the display currency. */
+  country: string | null;
 }
 
 // ── Help concerns (#115) ──────────────────────────────────────────────────────

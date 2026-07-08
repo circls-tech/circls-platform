@@ -3,12 +3,14 @@
 import { Button, Input } from '@/lib/ui';
 import type { EventTier } from '@/lib/api/types';
 import type { TierInput } from '@/lib/api/events';
+import { type CurrencyCode, currencySymbol } from '@/lib/currency';
 
-/** Form-draft shape: rupee input stays a string and converts to paise on submit. */
+/** Form-draft shape: the price input stays a string (major units — rupees or
+ *  dollars per the venue currency) and converts to minor units on submit. */
 export interface TierDraft {
   name: string;
   description?: string;
-  priceRupees: string; // form input; converted to paise on submit
+  priceRupees: string; // form input in major units; converted to minor units on submit
   capacity?: string; // blank = unlimited
 }
 
@@ -39,10 +41,12 @@ export function tierDraftFromApi(t: Pick<EventTier, 'name' | 'description' | 'pr
 export function TiersEditor({
   value,
   onChange,
+  currency,
   disabled,
 }: {
   value: TierDraft[];
   onChange: (next: TierDraft[]) => void;
+  currency: CurrencyCode;
   disabled?: boolean;
 }) {
   function update(i: number, patch: Partial<TierDraft>) {
@@ -70,7 +74,7 @@ export function TiersEditor({
           </div>
           <div className="sm:col-span-3">
             <Input
-              label="Price (₹)"
+              label={`Price (${currencySymbol(currency)})`}
               type="number"
               min={0}
               step="0.01"

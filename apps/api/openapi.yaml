@@ -39,6 +39,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/me/login:
+    post:
+      responses:
+        '200':
+          description: Default Response
   /v1/tenants:
     post:
       responses:
@@ -50,6 +55,59 @@ paths:
           description: Default Response
   /v1/me/tenants:
     get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{id}/logo/upload-presign:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{id}/logo:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
       responses:
         '200':
           description: Default Response
@@ -72,6 +130,11 @@ paths:
           in: path
           name: tenantId
           required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/geocode/search:
+    get:
       responses:
         '200':
           description: Default Response
@@ -187,6 +250,16 @@ paths:
         '200':
           description: Default Response
   /v1/arenas/{arenaId}:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
     get:
       parameters:
         - schema:
@@ -358,6 +431,11 @@ paths:
         '200':
           description: Default Response
   /webhooks/razorpay:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /webhooks/stripe:
     post:
       responses:
         '200':
@@ -569,6 +647,53 @@ paths:
         '200':
           description: Default Response
     patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{id}/cover/upload-presign:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{id}/cover:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
       parameters:
         - schema:
             type: string
@@ -945,6 +1070,22 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/listings/{type}/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: type
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/listings/{type}/{id}/approve:
     post:
       parameters:
@@ -1021,6 +1162,28 @@ paths:
           description: Default Response
   /v1/consumer/memberships:
     get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/memberships/{membershipId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: membershipId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/orgs/{slug}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: slug
+          required: true
       responses:
         '200':
           description: Default Response
@@ -1130,6 +1293,15 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/support/concerns:
+    post:
+      responses:
+        '200':
+          description: Default Response
+    get:
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/support-issues:
     get:
       responses:
@@ -1235,6 +1407,17 @@ paths:
           description: Default Response
   /v1/consumer/coupons:
     get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/qr-tickets/validate:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
       responses:
         '200':
           description: Default Response

@@ -1,6 +1,7 @@
 'use client';
 
 import type { EventBooking, EventTier } from '@/lib/api/types';
+import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
@@ -17,9 +18,9 @@ function fmt(iso: string, tz: string) {
   }).format(new Date(iso));
 }
 
-function bookingsToCsv(rows: EventBooking[], tz: string): string {
+function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode): string {
   return toCsv(
-    ['Booking ID', 'Name', 'Email', 'Phone', 'Status', 'Amount (₹)', 'Registered At'],
+    ['Booking ID', 'Name', 'Email', 'Phone', 'Status', `Amount (${currencySymbol(currency)})`, 'Registered At'],
     rows.map((b) => [
       b.id,
       b.customerName ?? '',
@@ -41,6 +42,7 @@ interface RegistrationsTableProps {
   emptyLabel: string;
   rows: EventBooking[];
   tz: string;
+  currency: CurrencyCode;
   /** Basename for the downloaded file, e.g. `summer-cup-registered`. */
   csvName: string;
   /** Status differs per row only in the registered table; hide it for cancelled. */
@@ -53,6 +55,7 @@ function RegistrationsTable({
   emptyLabel,
   rows,
   tz,
+  currency,
   csvName,
   showStatus,
   children,
@@ -70,7 +73,7 @@ function RegistrationsTable({
             size="sm"
             disabled={!hasRows}
             title={hasRows ? `Download ${title.toLowerCase()} as CSV` : 'Nothing to download'}
-            onClick={() => downloadCsv(bookingsToCsv(rows, tz), `${csvName}.csv`)}
+            onClick={() => downloadCsv(bookingsToCsv(rows, tz, currency), `${csvName}.csv`)}
           >
             Download CSV
           </Button>
@@ -113,7 +116,7 @@ function RegistrationsTable({
                     {b.totalPaise === 0 ? (
                       <span className="text-emerald-600">Free</span>
                     ) : (
-                      `₹${(b.totalPaise / 100).toFixed(2)}`
+                      formatMoney(b.totalPaise, currency, { decimals: 2 })
                     )}
                   </td>
                   <td className="py-2.5 text-slate-700">{fmt(b.createdAt, tz)}</td>
@@ -134,6 +137,8 @@ export interface EventRegistrationsProps {
   eventName: string;
   /** Zone registration timestamps are displayed in. */
   tz: string;
+  /** Display currency for amounts (see lib/currency). */
+  currency: CurrencyCode;
 }
 
 /**
@@ -146,6 +151,7 @@ export function EventRegistrations({
   tiers,
   eventName,
   tz,
+  currency,
 }: EventRegistrationsProps) {
   if (isLoading) {
     return (
@@ -167,6 +173,7 @@ export function EventRegistrations({
         emptyLabel="No registrations yet."
         rows={registered}
         tz={tz}
+        currency={currency}
         csvName={`${slug}-registered`}
         showStatus
       >
@@ -192,6 +199,7 @@ export function EventRegistrations({
         emptyLabel="No cancellations."
         rows={cancelled}
         tz={tz}
+        currency={currency}
         csvName={`${slug}-cancelled`}
         showStatus={false}
       />

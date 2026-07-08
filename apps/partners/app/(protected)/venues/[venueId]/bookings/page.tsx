@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useArenas, useBookingDetail, useBookingPayments, useVenueBookings, useVenues } from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
+import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
@@ -156,7 +157,7 @@ const STATUS_OPTIONS: { value: BookingStatus | ''; label: string }[] = [
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** Build a CSV string from the currently-displayed (filtered) booking rows. */
-function bookingsToCsv(rows: BookingListItem[], tz: string): string {
+function bookingsToCsv(rows: BookingListItem[], tz: string, currency: CurrencyCode): string {
   return toCsv(
     [
       'Booking ID',
@@ -166,7 +167,7 @@ function bookingsToCsv(rows: BookingListItem[], tz: string): string {
       'Start',
       'End',
       'Slots',
-      'Total (₹)',
+      `Total (${currencySymbol(currency)})`,
       'Status',
       'Channel',
       'Booked At',
@@ -195,6 +196,7 @@ interface BookingDetailModalProps {
   bookingId: string | null;
   venueId: string;
   tz: string;
+  currency: CurrencyCode;
   onClose: () => void;
 }
 
@@ -206,7 +208,7 @@ function paymentRowTone(p: Payment): BadgeTone {
   return 'open';
 }
 
-function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailModalProps) {
+function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: BookingDetailModalProps) {
   const router = useRouter();
   const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
   const { data: paymentRows } = useBookingPayments(bookingId);
@@ -259,7 +261,7 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total</p>
-                <p className="mt-0.5 font-medium text-slate-800">₹{(detail.totalPaise / 100).toFixed(0)}</p>
+                <p className="mt-0.5 font-medium text-slate-800">{formatMoney(detail.totalPaise, currency)}</p>
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Booked at</p>
@@ -294,7 +296,7 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
                         {multiCourt && <span className="font-medium text-slate-800">{slot.arenaName} · </span>}
                         {fmtInTz(slot.startAt, tz)} – {fmtTimeInTz(slot.endAt, tz)}
                       </span>
-                      <span className="font-medium text-slate-800">₹{(slot.pricePaise / 100).toFixed(0)}</span>
+                      <span className="font-medium text-slate-800">{formatMoney(slot.pricePaise, currency)}</span>
                     </div>
                   );
                 })}
@@ -326,7 +328,8 @@ function BookingDetailModal({ bookingId, venueId, tz, onClose }: BookingDetailMo
                         <div className="flex items-center gap-3">
                           <Badge tone={paymentRowTone(p)} label={p.status} />
                           <span className={`font-medium ${p.amountPaise < 0 ? 'text-amber-700' : 'text-slate-800'}`}>
-                            {sign}₹{(abs / 100).toFixed(0)}
+                            {/* Payment rows carry the currency the money actually moved in. */}
+                            {sign}{formatMoney(abs, asCurrencyCode(p.currency))}
                           </span>
                         </div>
                       </div>
@@ -385,6 +388,7 @@ export default function BookingsPage() {
   const tz = venues?.find((v) => v.id === venueId)?.tzName ?? FALLBACK_TZ;
   const { resolveTz } = useTimezone();
   const displayTz = resolveTz(tz);
+  const currency = useCurrency({ venueId });
 
   // ── Filters ──
   const [searchInput, setSearchInput] = useState('');
@@ -436,7 +440,7 @@ export default function BookingsPage() {
       month: '2-digit',
       day: '2-digit',
     }).format(new Date());
-    downloadCsv(bookingsToCsv(bookings, displayTz), `bookings-${stamp}.csv`);
+    downloadCsv(bookingsToCsv(bookings, displayTz, currency), `bookings-${stamp}.csv`);
   }
 
   return (
@@ -628,7 +632,7 @@ export default function BookingsPage() {
                   </td>
                   <td className="px-4 py-3 text-center text-slate-600">{b.slotCount}</td>
                   <td className="px-4 py-3 text-right font-medium text-slate-800">
-                    ₹{(b.totalPaise / 100).toFixed(0)}
+                    {formatMoney(b.totalPaise, currency)}
                   </td>
                   <td className="px-4 py-3">
                     <Badge tone={statusTone(b.status)} label={b.status} />
@@ -645,6 +649,7 @@ export default function BookingsPage() {
         bookingId={selectedBookingId}
         venueId={venueId}
         tz={displayTz}
+        currency={currency}
         onClose={() => setSelectedBookingId(null)}
       />
     </div>

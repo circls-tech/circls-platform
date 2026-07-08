@@ -6,6 +6,7 @@ import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues } from '@/lib/api/queries';
 import { useCreateTenantEvent, type CreateTenantEventInput } from '@/lib/api/events';
+import { useVenueCurrencies } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import type { QrTicketConfig } from '@/lib/api/types';
@@ -60,6 +61,10 @@ export default function NewTenantEventPage() {
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
   const effectiveTz = scope === 'venue' ? selectedVenue?.tzName ?? 'Asia/Kolkata' : tz;
+  // Ticket prices follow the selected venue's currency (tenant currency for
+  // standalone events, whose address form has no country field).
+  const { currencyFor } = useVenueCurrencies();
+  const currency = currencyFor(scope === 'venue' ? venueId || null : null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -197,7 +202,7 @@ export default function NewTenantEventPage() {
             <Input label={`Ends (${effectiveTz})`} type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} required />
           </div>
 
-          <TiersEditor value={tiers} onChange={setTiers} />
+          <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
