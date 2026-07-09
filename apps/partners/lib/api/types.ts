@@ -456,6 +456,9 @@ export interface MembershipTier {
   durationDays: number;
   benefits: MembershipBenefits;
   capacity: number | null;
+  /** Per-tier QR override: null = inherit the plan config; enabled:false = off
+   *  for this tier; enabled:true = custom rules. */
+  qrTicketConfig: QrTicketConfig | null;
   sold: number;
   remaining: number | null;
 }
@@ -616,3 +619,53 @@ export interface SupportIssue {
   updatedAt: string;
 }
 
+// ── Activity (partner Activity page) ─────────────────────────────────────────
+
+export type ActivityItemType = 'slot' | 'event' | 'membership';
+
+export interface ActivityItem {
+  id: string;
+  itemType: ActivityItemType;
+  status: string;
+  channel: string;
+  customerName: string | null;
+  customerContact: string | null;
+  totalPaise: number | null;
+  /** ISO-8601 — when the booking/purchase was made. */
+  createdAt: string;
+  venueId: string | null;
+  venueName: string | null;
+  /** Arena label (slot), event name, or membership plan name. */
+  itemName: string | null;
+  tierName: string | null;
+  /** Session start/end (slot/event) or membership validity window. */
+  startAt: string | null;
+  endAt: string | null;
+}
+
+export interface ActivityPage {
+  rows: ActivityItem[];
+  nextCursor: string | null;
+}
+
+export interface ActivityDailyCount {
+  /** 'YYYY-MM-DD' in the requested timezone. */
+  date: string;
+  bookings: number;
+}
+
+export interface MembershipWindowItem {
+  userMembershipId: string;
+  buyerName: string | null;
+  buyerContact: string | null;
+  membershipName: string;
+  tierName: string | null;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface MembershipWindows {
+  starting: MembershipWindowItem[];
+  ending: MembershipWindowItem[];
+}

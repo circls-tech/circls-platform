@@ -32,3 +32,25 @@ export function toQrTicketConfig(
     validUntilOffsetMin: value.validUntilOffsetMin,
   };
 }
+
+/**
+ * Membership-tier variant. At the tier level null means "inherit the plan's
+ * config", so — unlike toQrTicketConfig — a disabled payload is kept as an
+ * explicit `{ enabled: false }` marker (QR off for this tier even when the
+ * plan enables it) instead of collapsing to null.
+ */
+export function toTierQrTicketConfig(
+  value: z.infer<typeof qrTicketConfigSchema>,
+): QrTicketConfig | null {
+  if (!value) return null;
+  if (!value.enabled) {
+    return {
+      enabled: false,
+      multiUse: false,
+      maxScans: null,
+      validFromOffsetMin: null,
+      validUntilOffsetMin: null,
+    };
+  }
+  return toQrTicketConfig(value);
+}

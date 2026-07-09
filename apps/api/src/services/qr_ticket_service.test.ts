@@ -5,6 +5,7 @@ import {
   arenas,
   eventTicketTiers,
   events,
+  membershipTiers,
   memberships,
   qrTickets,
   slots,
@@ -333,6 +334,104 @@ describe.skipIf(!runIntegration)('qr_ticket_service', () => {
       const scan = await validateQrTicket(ctx, issued[0]!.code);
       expect(scan).toMatchObject({ outcome: 'valid', ticket: { scanCount: i, status: 'active' } });
     }
+  });
+
+  it('a tier QR override beats the plan config (custom / off / inherit)', async () => {
+    const [m] = await db
+      .insert(memberships)
+      .values({
+        tenantId,
+        name: 'Tiered Qr Club',
+        pricePaise: 0,
+        durationDays: 30,
+        status: 'active',
+        // Plan default: unlimited multi-use.
+        qrTicketConfig: { ...QR_ON, multiUse: true, maxScans: null } as never,
+      })
+      .returning();
+
+    const QR_OFF = { ...QR_ON, enabled: false };
+    const [gold] = await db
+      .insert(membershipTiers)
+      .values({
+        membershipId: m!.id,
+        tenantId,
+        name: 'Gold',
+        pricePaise: 0,
+        durationDays: 90,
+        sortOrder: 0,
+        // Custom override: capped at 2 scans.
+        qrTicketConfig: { ...QR_ON, multiUse: true, maxScans: 2 } as never,
+      })
+      .returning();
+    const [bronze] = await db
+      .insert(membershipTiers)
+      .values({
+        membershipId: m!.id,
+        tenantId,
+        name: 'Bronze',
+        pricePaise: 0,
+        durationDays: 30,
+        sortOrder: 1,
+        // Explicitly off for this tier, despite the plan enabling QR.
+        qrTicketConfig: QR_OFF as never,
+      })
+      .returning();
+    const [silver] = await db
+      .insert(membershipTiers)
+      .values({
+        membershipId: m!.id,
+        tenantId,
+        name: 'Silver',
+        pricePaise: 0,
+        durationDays: 60,
+        sortOrder: 2,
+        // No override → inherits the plan config.
+      })
+      .returning();
+
+    const ctx = { tenantId, actorUserId: userId };
+
+    // Gold: pass minted with the tier's own rules; third scan is refused.
+    const goldRes = await purchaseMembership({
+      membershipId: m!.id,
+      userId,
+      membershipTierId: gold!.id,
+    });
+    const [goldPass] = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`user_membership_id = ${goldRes.userMembershipId}`);
+    expect(goldPass).toMatchObject({ multiUse: true, maxScans: 2 });
+    expect(goldPass!.label).toBe('Tiered Qr Club — Gold');
+    expect((await validateQrTicket(ctx, goldPass!.code)).outcome).toBe('valid');
+    expect((await validateQrTicket(ctx, goldPass!.code)).outcome).toBe('valid');
+    expect((await validateQrTicket(ctx, goldPass!.code)).outcome).toBe('already_used');
+
+    // Bronze: no pass at all.
+    const bronzeRes = await purchaseMembership({
+      membershipId: m!.id,
+      userId,
+      membershipTierId: bronze!.id,
+    });
+    const bronzePasses = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`user_membership_id = ${bronzeRes.userMembershipId}`);
+    expect(bronzePasses).toHaveLength(0);
+
+    // Silver: inherits the plan's unlimited multi-use config.
+    const silverRes = await purchaseMembership({
+      membershipId: m!.id,
+      userId,
+      membershipTierId: silver!.id,
+    });
+    const [silverPass] = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`user_membership_id = ${silverRes.userMembershipId}`);
+    expect(silverPass).toMatchObject({ multiUse: true, maxScans: null });
+    expect(silverPass!.label).toBe('Tiered Qr Club — Silver');
   });
 
   it('cancelling a booking via cancelPaidBooking revokes its QR ticket (not just the direct revoke helper)', async () => {

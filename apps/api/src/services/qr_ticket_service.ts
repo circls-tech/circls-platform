@@ -10,7 +10,8 @@
  *   - slot bookings    → one ticket per arena in the booking, window from that
  *                        arena's booked-slot span
  *   - membership buys  → one ticket per user_membership, window from the
- *                        membership period
+ *                        membership period; rules come from the purchased
+ *                        tier's qr_ticket_config when set, else the plan's
  *
  * Callers: `onBookingConfirmed` (free/inline confirms), the payment-captured
  * webhook (paid confirms, inside its tx), and `purchaseMembership` (free path,
@@ -276,14 +277,21 @@ async function issueQrTicketsForUserMembershipLocked(
   if (existing.length > 0) return existing;
 
   const [row] = await dbx
-    .select({ um: userMemberships, m: memberships, tierName: membershipTiers.name })
+    .select({
+      um: userMemberships,
+      m: memberships,
+      tierName: membershipTiers.name,
+      tierCfg: membershipTiers.qrTicketConfig,
+    })
     .from(userMemberships)
     .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
     .leftJoin(membershipTiers, eq(membershipTiers.id, userMemberships.membershipTierId))
     .where(eq(userMemberships.id, userMembershipId))
     .limit(1);
   if (!row) return [];
-  const cfg = row.m.qrTicketConfig;
+  // The purchased tier's config wins over the plan's (null = inherit; a tier
+  // config with enabled:false turns QR off for that tier alone).
+  const cfg = row.tierCfg ?? row.m.qrTicketConfig;
   if (!cfg?.enabled || row.um.status !== 'active') return [];
 
   return dbx

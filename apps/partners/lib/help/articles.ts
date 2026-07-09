@@ -48,6 +48,15 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 3,
   },
   {
+    slug: 'activity',
+    title: 'The Activity page: your organisation’s live feed',
+    category: 'Bookings',
+    summary:
+      'See everything happening across your organisation — a feed of bookings, event registrations and membership purchases, a per-day bookings calendar, and memberships starting or ending soon.',
+    quickLink: true,
+    order: 12,
+  },
+  {
     slug: 'bookings',
     title: 'Understanding bookings and cancellations',
     category: 'Bookings',

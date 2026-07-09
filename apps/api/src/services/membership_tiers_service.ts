@@ -10,6 +10,7 @@ import { db } from '../db/client.js';
 import { membershipTiers, type MembershipTier } from '../db/schema/membership_tiers.js';
 import { memberships, userMemberships } from '../db/schema/memberships.js';
 import type { MembershipBenefits } from '../db/schema/memberships.js';
+import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { BadRequest } from '../lib/errors.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -22,6 +23,9 @@ export interface MembershipTierInput {
   durationDays: number;
   benefits?: MembershipBenefits | null;
   capacity?: number | null;
+  /** Per-tier QR override: null/omitted = inherit the plan's config;
+   *  `{ enabled: false }` = QR off for this tier; enabled = custom rules. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export interface MembershipTierWithRemaining extends MembershipTier {
@@ -151,6 +155,7 @@ export async function replaceTiers(
         durationDays: t.durationDays,
         benefits: t.benefits ?? { items: [] },
         capacity: t.capacity ?? null,
+        qrTicketConfig: t.qrTicketConfig ?? null,
         sortOrder: i,
       })),
     )
