@@ -18,9 +18,10 @@ Memberships are time-bound passes your customers can buy — a monthly unlimited
    - **Description** (optional) and **Benefits** — add structured perks with **Add benefit**: each row has a **label** (e.g. *Priority booking*) and an optional **detail** line. These render as a clean list on the consumer plan page when the tier is selected.
 
    Use **+ Add tier** for more tiers (up to 20) and **Remove tier** to drop one. A plan needs at least one tier.
-4. Click **Add membership**.
+4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the create form. It uploads automatically when the plan is created.
+5. Click **Add membership**.
 
-Artwork is added from the **Edit** panel once the plan exists (see below).
+Artwork can also be added or changed later from the **Edit** panel (see below).
 
 You'll see *"Membership created. It's now pending review by Circls before it goes live."* New plans start in **pending review**. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
 
@@ -39,7 +40,7 @@ Click **Edit** on a plan to change its name, description, venue scope, **terms**
 
 ### Artwork
 
-In the Edit panel, use **Upload** under **Artwork** to add a single cover image for the plan. Accepted formats are **JPEG, PNG and WebP**, up to **10 MB**. Use **Replace** to swap it or **Remove** to clear it. The artwork shows on the consumer plan page.
+Artwork is a single cover image shown on the consumer plan page. You can add it on the **create form** (it uploads when the plan is created) or later in the **Edit panel**, where **Upload** adds it, **Replace** swaps it and **Remove** clears it. Accepted formats are **JPEG, PNG and WebP**, up to **10 MB**.
 
 ## QR membership passes
 
@@ -50,6 +51,21 @@ checked at the door from the portal's **Check-in** page. Like other plan
 fields, the setting is editable while the plan is pending review or inactive,
 and changes only affect future purchases. See [QR tickets and door
 check-in](/help/qr-tickets).
+
+### Per-tier QR rules
+
+Because tiers can carry different benefits (more days, more visits), each tier
+has its own **QR passes for this tier** setting:
+
+- **Plan default** — the tier follows the plan-level QR settings (this is the
+  default for every tier).
+- **Custom** — the tier issues passes with its own rules — for example *Gold*
+  gets unlimited scans while *Bronze* is capped at 10 visits. Custom rules
+  replace the plan-level settings entirely for that tier.
+- **Off** — no QR passes for this tier, even when the plan enables them.
+
+A buyer's pass always uses the rules of the tier they bought, frozen at
+purchase time — later edits never change passes that are already issued.
 
 ## Activating and deactivating
 

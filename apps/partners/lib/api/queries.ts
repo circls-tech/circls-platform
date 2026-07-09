@@ -260,31 +260,38 @@ export function useEventImages(eventId: string) {
   });
 }
 
+/**
+ * Imperative event-image upload (same presign → PUT → finalize flow as the
+ * hook). Exists standalone so the create pages can upload photos picked before
+ * the event existed, right after creation returns its id.
+ */
+export async function uploadEventImageFile(eventId: string, file: File): Promise<EventImage> {
+  if (!VENUE_IMAGE_TYPES.includes(file.type)) {
+    throw new Error('Use a JPEG, PNG, or WebP image.');
+  }
+  if (file.size > VENUE_IMAGE_MAX_BYTES) {
+    throw new Error('Image is too large (max 10 MB).');
+  }
+  const presign = await apiFetch<PresignedUpload>(
+    `/v1/events/${eventId}/images/upload-presign`,
+    { method: 'POST', body: JSON.stringify({ contentType: file.type }) },
+  );
+  const put = await fetch(presign.uploadUrl, {
+    method: 'PUT',
+    headers: presign.headers,
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+  return apiFetch<EventImage>(`/v1/events/${eventId}/images`, {
+    method: 'POST',
+    body: JSON.stringify({ storageKey: presign.storageKey }),
+  });
+}
+
 export function useUploadEventImage(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (file: File): Promise<EventImage> => {
-      if (!VENUE_IMAGE_TYPES.includes(file.type)) {
-        throw new Error('Use a JPEG, PNG, or WebP image.');
-      }
-      if (file.size > VENUE_IMAGE_MAX_BYTES) {
-        throw new Error('Image is too large (max 10 MB).');
-      }
-      const presign = await apiFetch<PresignedUpload>(
-        `/v1/events/${eventId}/images/upload-presign`,
-        { method: 'POST', body: JSON.stringify({ contentType: file.type }) },
-      );
-      const put = await fetch(presign.uploadUrl, {
-        method: 'PUT',
-        headers: presign.headers,
-        body: file,
-      });
-      if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
-      return apiFetch<EventImage>(`/v1/events/${eventId}/images`, {
-        method: 'POST',
-        body: JSON.stringify({ storageKey: presign.storageKey }),
-      });
-    },
+    mutationFn: (file: File) => uploadEventImageFile(eventId, file),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
   });
 }

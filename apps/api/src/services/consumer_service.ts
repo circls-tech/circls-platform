@@ -34,7 +34,7 @@ import {
   tiersWithRemainingByMembership,
   type MembershipTierWithRemaining,
 } from './membership_tiers_service.js';
-import { imagesForEvents } from './event_image_service.js';
+import { imagesForEvents, imagesForSeries } from './event_image_service.js';
 import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
 import { coerceBenefits } from '../lib/membership_benefits.js';
@@ -216,10 +216,16 @@ export async function listPublicArenaSlots(
   return all.filter((s) => s.status === 'open');
 }
 
-/** Published, upcoming events for an approved + tenant-active venue, soonest first. */
-export async function listPublicEvents(venueId: string): Promise<Event[]> {
+/**
+ * Published, upcoming events for an approved + tenant-active venue, soonest
+ * first. Recurring series collapse to their next upcoming occurrence, with
+ * `seriesCount` = how many upcoming dates the venue has for that series.
+ */
+export async function listPublicEvents(
+  venueId: string,
+): Promise<Array<Event & { seriesCount: number }>> {
   await assertVenueVisible(venueId);
-  return db
+  const rows = await db
     .select()
     .from(events)
     .where(
@@ -231,6 +237,30 @@ export async function listPublicEvents(venueId: string): Promise<Event[]> {
       ),
     )
     .orderBy(sql`${events.startsAt} asc`);
+  return groupBySeries(rows, (e) => e);
+}
+
+/**
+ * Collapse soonest-first event rows to one representative per series (the next
+ * upcoming occurrence), attaching how many upcoming dates the series has.
+ * One-off events (null seriesId) pass through with seriesCount = 1.
+ */
+function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { seriesCount: number }> {
+  const reps: Array<T & { seriesCount: number }> = [];
+  const repByKey = new Map<string, T & { seriesCount: number }>();
+  for (const r of rows) {
+    const e = getEvent(r);
+    const key = e.seriesId ?? e.id;
+    const existing = repByKey.get(key);
+    if (existing) {
+      existing.seriesCount += 1;
+    } else {
+      const rep = { ...r, seriesCount: 1 };
+      repByKey.set(key, rep);
+      reps.push(rep);
+    }
+  }
+  return reps;
 }
 
 /**
@@ -253,6 +283,19 @@ export interface PublicEventWithVenue extends Event {
   images: PublicImageRef[];
   /** Purchasable ticket tiers (public projection); [] on list rows (single-event read only). */
   tiers: PublicTier[];
+  /** Upcoming published dates in this event's series (1 for one-off events). */
+  seriesCount?: number;
+  /** Every upcoming date of the series, soonest first (single-event read only). */
+  seriesOccurrences?: PublicSeriesOccurrence[];
+}
+
+/** One bookable date of a recurring event, for the consumer date picker. */
+export interface PublicSeriesOccurrence {
+  id: string;
+  startsAt: Date;
+  endsAt: Date;
+  /** Venue name, or the org name for standalone dates. */
+  locationName: string;
 }
 
 /**
@@ -329,6 +372,8 @@ const PUBLIC_EVENT_COLUMNS = {
  */
 export async function listPublicUpcomingEvents(opts: { limit?: number }): Promise<PublicEventWithVenue[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
+  // Overfetch: recurring series collapse to one card below, and a long series
+  // would otherwise eat the whole window before other events get a row.
   const rows = await db
     .select(PUBLIC_EVENT_COLUMNS)
     .from(events)
@@ -343,10 +388,27 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
       ),
     )
     .orderBy(sql`${events.startsAt} asc`)
-    .limit(limit);
+    .limit(Math.min(limit * 4, 400));
   const joinRows = rows as EventJoinRow[];
-  const imagesByEvent = await imagesForEvents(joinRows.map((r) => r.e.id));
-  return joinRows.map((r) => toPublicEvent(r, imagesByEvent.get(r.e.id) ?? []));
+  const reps = groupBySeries(joinRows, (r) => r.e).slice(0, limit);
+  const imagesByEvent = await imagesForEvents(reps.map((r) => r.e.id));
+  const fallbackSeriesIds = [
+    ...new Set(
+      reps
+        .filter((r) => r.e.seriesId && (imagesByEvent.get(r.e.id) ?? []).length === 0)
+        .map((r) => r.e.seriesId!),
+    ),
+  ];
+  const imagesBySeries = await imagesForSeries(fallbackSeriesIds);
+  return reps.map((r) => ({
+    ...toPublicEvent(
+      r,
+      imagesByEvent.get(r.e.id) ??
+        (r.e.seriesId ? imagesBySeries.get(r.e.seriesId) : undefined) ??
+        [],
+    ),
+    seriesCount: r.seriesCount,
+  }));
 }
 
 /** A single published, upcoming event (venue or standalone) by id, or null. */
@@ -369,8 +431,52 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   if (!row) return null;
   const joinRow = row as EventJoinRow;
   const imagesByEvent = await imagesForEvents([joinRow.e.id]);
+  let images = imagesByEvent.get(joinRow.e.id) ?? [];
   const tiers = (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier);
-  return { ...toPublicEvent(joinRow, imagesByEvent.get(joinRow.e.id) ?? []), tiers };
+
+  // Recurring event: expose every upcoming published date of the series for the
+  // date picker, and borrow the series gallery when this occurrence has none.
+  let seriesOccurrences: PublicSeriesOccurrence[] | undefined;
+  if (joinRow.e.seriesId) {
+    const occRows = await db
+      .select({
+        id: events.id,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        venueName: venues.name,
+        tenantName: tenants.name,
+      })
+      .from(events)
+      .leftJoin(venues, eq(venues.id, events.venueId))
+      .innerJoin(tenants, eq(tenants.id, events.tenantId))
+      .where(
+        and(
+          eq(events.seriesId, joinRow.e.seriesId),
+          eq(events.status, 'published'),
+          sql`(${events.venueId} is null or ${venues.status} = 'active')`,
+          sql`${events.endsAt} >= now()`,
+        ),
+      )
+      .orderBy(sql`${events.startsAt} asc`);
+    seriesOccurrences = occRows.map((o) => ({
+      id: o.id,
+      startsAt: o.startsAt,
+      endsAt: o.endsAt,
+      locationName: o.venueName ?? o.tenantName,
+    }));
+    if (images.length === 0) {
+      const imagesBySeries = await imagesForSeries([joinRow.e.seriesId]);
+      images = imagesBySeries.get(joinRow.e.seriesId) ?? [];
+    }
+  }
+
+  return {
+    ...toPublicEvent(joinRow, images),
+    tiers,
+    ...(seriesOccurrences
+      ? { seriesOccurrences, seriesCount: seriesOccurrences.length }
+      : { seriesCount: 1 }),
+  };
 }
 
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */

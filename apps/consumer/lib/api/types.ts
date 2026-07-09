@@ -135,6 +135,21 @@ export interface PublicEvent {
   brand: Brand;
   /** Ticket tiers; [] on list/upcoming responses, populated on the detail view. */
   tiers: PublicTier[];
+  /** Recurring events: groups the series' dates; null/absent for one-offs. */
+  seriesId?: string | null;
+  /** Upcoming dates in the series (list rows show the next one); 1 for one-offs. */
+  seriesCount?: number;
+}
+
+/** One bookable date of a recurring event, for the date picker. */
+export interface PublicSeriesOccurrence {
+  id: string;
+  /** ISO-8601 */
+  startsAt: string;
+  /** ISO-8601 */
+  endsAt: string;
+  /** Venue name, or the org name for standalone dates. */
+  locationName: string;
 }
 
 /** A single membership perk (PR #110). */
@@ -345,6 +360,8 @@ export interface PublicEventWithVenue extends Omit<PublicEvent, 'venueId'> {
   locAddressJson: Record<string, unknown> | null;
   /** Uploaded event photos, ordered by position; [] when none (card falls back). */
   images: ImageRef[];
+  /** Every upcoming date of a recurring event (detail view only), soonest first. */
+  seriesOccurrences?: PublicSeriesOccurrence[];
 }
 
 /** A membership plus the scope it applies to (venue name, or brand name for

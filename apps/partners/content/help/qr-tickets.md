@@ -17,7 +17,10 @@ You'll find an **Enable QR tickets** section on:
   is issued per booking on that arena, valid across the booked slots;
 - the **membership plan** form (editable while the plan is in review or
   inactive) — each buyer gets one membership pass valid for their whole
-  membership period.
+  membership period. The plan-level setting is the default for all tiers;
+  each tier can override it with its own rules (e.g. a different scan cap)
+  or turn passes off entirely — see [Memberships →
+  Per-tier QR rules](/help/memberships).
 
 For each of these you choose the rules:
 

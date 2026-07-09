@@ -1,10 +1,15 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { useTenantEvents, usePublishTenantEvent } from '@/lib/api/events';
+import {
+  useTenantEvents,
+  usePublishEventSeries,
+  usePublishTenantEvent,
+} from '@/lib/api/events';
+import type { VenueEventSummary } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 
 /** Format an event start in a given zone. Each event's natural zone is its own
@@ -17,16 +22,51 @@ function fmtEventTime(iso: string, tz: string): string {
   }).format(new Date(iso));
 }
 
+/** One list row: a one-off event, or a whole recurring series collapsed. */
+interface EventRow {
+  ev: VenueEventSummary;
+  /** 1 for one-offs; dates in the series otherwise (row shows the soonest). */
+  seriesSize: number;
+  /** Any date of the series still in draft (enables submit-all). */
+  seriesHasDraft: boolean;
+}
+
+/** Collapse series occurrences into one row keyed by the soonest date. */
+function groupRows(events: VenueEventSummary[]): EventRow[] {
+  const byKey = new Map<string, EventRow>();
+  const order: string[] = [];
+  for (const ev of events) {
+    const key = ev.seriesId ?? ev.id;
+    const row = byKey.get(key);
+    if (!row) {
+      byKey.set(key, { ev, seriesSize: 1, seriesHasDraft: ev.status === 'draft' });
+      order.push(key);
+    } else {
+      row.seriesSize += 1;
+      row.seriesHasDraft = row.seriesHasDraft || ev.status === 'draft';
+      if (new Date(ev.startsAt) < new Date(row.ev.startsAt)) row.ev = ev;
+    }
+  }
+  return order.map((k) => byKey.get(k)!);
+}
+
 function EventList({ tenantId }: { tenantId: string }) {
   const { data: events, isLoading } = useTenantEvents(tenantId);
   const publish = usePublishTenantEvent(tenantId);
+  const publishSeries = usePublishEventSeries(tenantId);
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  async function handlePublish(id: string) {
+  const rows = useMemo(() => groupRows(events ?? []), [events]);
+
+  async function handlePublish(row: EventRow) {
     setErrorMsg(null);
     try {
-      await publish.mutateAsync(id);
+      if (row.ev.seriesId) {
+        await publishSeries.mutateAsync(row.ev.seriesId);
+      } else {
+        await publish.mutateAsync(row.ev.id);
+      }
     } catch (e) {
       setErrorMsg((e as Error).message);
     }
@@ -44,9 +84,9 @@ function EventList({ tenantId }: { tenantId: string }) {
         </p>
       )}
       <ul className="flex flex-col gap-3">
-        {events.map((ev) => (
+        {rows.map(({ ev, seriesSize, seriesHasDraft }) => (
           <li
-            key={ev.id}
+            key={ev.seriesId ?? ev.id}
             className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-4 shadow-sm"
           >
             <div className="flex items-center justify-between gap-3">
@@ -59,19 +99,21 @@ function EventList({ tenantId }: { tenantId: string }) {
                 </Link>
                 <p className="mt-0.5 text-xs text-slate-400">
                   {fmtEventTime(ev.startsAt, resolveTz(ev.tzName))}
+                  {seriesSize > 1 && ` · first of ${seriesSize} dates`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {seriesSize > 1 && <Badge tone="neutral" label={`Recurring ×${seriesSize}`} />}
                 <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
                 <StatusPill status={ev.status} />
-                {ev.status === 'draft' && (
+                {(ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
                   <Button
                     variant="secondary"
                     size="sm"
-                    loading={publish.isPending}
-                    onClick={() => handlePublish(ev.id)}
+                    loading={publish.isPending || publishSeries.isPending}
+                    onClick={() => handlePublish({ ev, seriesSize, seriesHasDraft })}
                   >
-                    Submit for review
+                    {ev.seriesId ? 'Submit series for review' : 'Submit for review'}
                   </Button>
                 )}
                 {ev.status === 'pending_review' && (

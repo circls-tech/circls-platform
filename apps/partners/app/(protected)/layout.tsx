@@ -14,6 +14,7 @@ const ORG_SELECTED_KEY = 'circls.orgSelected';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/activity', label: 'Activity' },
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },

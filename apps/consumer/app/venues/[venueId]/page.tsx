@@ -478,7 +478,12 @@ function EventCard({ event, currency }: { event: PublicEvent; currency: Currency
   return (
     <Card className="flex h-full flex-col">
       <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
-      <p className="mt-0.5 text-sm text-text-secondary">{formatDateTime(event.startsAt)}</p>
+      <p className="mt-0.5 text-sm text-text-secondary">
+        {formatDateTime(event.startsAt)}
+        {(event.seriesCount ?? 1) > 1 && (
+          <span className="font-medium text-ink"> · {event.seriesCount} dates</span>
+        )}
+      </p>
       {event.description && (
         <p className="mt-2 text-sm text-text-secondary line-clamp-3">{event.description}</p>
       )}

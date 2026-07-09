@@ -4,10 +4,21 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
-import { useVenues } from '@/lib/api/queries';
-import { useCreateTenantEvent, type CreateTenantEventInput } from '@/lib/api/events';
+import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
+import {
+  isSeriesResult,
+  useCreateTenantEvent,
+  type CreateTenantEventInput,
+} from '@/lib/api/events';
 import { useVenueCurrencies } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
+import {
+  RecurrenceEditor,
+  emptyRecurrence,
+  occurrencePayloads,
+  type RecurrenceValue,
+} from '@/components/RecurrenceEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { Button, Card, Input } from '@/lib/ui';
@@ -49,6 +60,11 @@ export default function NewTenantEventPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
   const [city, setCity] = useState('');
@@ -65,6 +81,15 @@ export default function NewTenantEventPage() {
   // standalone events, whose address form has no country field).
   const { currencyFor } = useVenueCurrencies();
   const currency = currencyFor(scope === 'venue' ? venueId || null : null);
+  const busy = createEvent.isPending || uploadProgress !== null;
+
+  /** Timezone for one series date — its override venue's tz, else the event's. */
+  function tzForVenue(overrideVenueId: string | undefined): string {
+    if (overrideVenueId) {
+      return venues?.find((v) => v.id === overrideVenueId)?.tzName ?? effectiveTz;
+    }
+    return effectiveTz;
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -86,11 +111,36 @@ export default function NewTenantEventPage() {
       return;
     }
 
+    const isWeekly = recurrence.mode === 'weekly';
+    const occurrences = isWeekly
+      ? occurrencePayloads(recurrence, tzForVenue, localToTzIso)
+      : undefined;
+    if (isWeekly) {
+      if (!recurrence.until) {
+        setErr('Pick the last date of the recurring event.');
+        return;
+      }
+      if ((occurrences?.length ?? 0) < 2) {
+        setErr(
+          'A recurring event needs at least 2 dates — adjust the days or last date, or switch to "One time".',
+        );
+        return;
+      }
+      if (occurrences!.some((o) => o.tiers?.some((t) => !t.name.trim()))) {
+        setErr('Give every custom ticket tier (Advanced settings) a name.');
+        return;
+      }
+    }
+
     const base = {
       name,
       ...(description ? { description } : {}),
-      startsAt: localToTzIso(startsAtLocal, effectiveTz),
-      endsAt: localToTzIso(endsAtLocal, effectiveTz),
+      ...(occurrences
+        ? { occurrences }
+        : {
+            startsAt: localToTzIso(startsAtLocal, effectiveTz),
+            endsAt: localToTzIso(endsAtLocal, effectiveTz),
+          }),
       tiers: tiersToPayload(tiers),
       qrTicketConfig: qrConfig,
     };
@@ -115,7 +165,27 @@ export default function NewTenantEventPage() {
     }
 
     try {
-      await createEvent.mutateAsync(input);
+      const result = await createEvent.mutateAsync(input);
+      // For a series, photos land on the first date — the other dates (and the
+      // consumer pages) borrow that gallery.
+      const anchor = isSeriesResult(result) ? result.events[0]! : result;
+      if (photos.length > 0) {
+        setUploadProgress({ done: 0, total: photos.length });
+        try {
+          for (let i = 0; i < photos.length; i++) {
+            await uploadEventImageFile(anchor.id, photos[i]!.file);
+            setUploadProgress({ done: i + 1, total: photos.length });
+          }
+        } catch (uploadErr) {
+          setUploadProgress(null);
+          setErr(
+            `Your event was created, but a photo failed to upload (${(uploadErr as Error).message}) — you can add the rest from the event page.`,
+          );
+          router.push(`/events/${anchor.id}`);
+          return;
+        }
+        setUploadProgress(null);
+      }
       router.push('/events');
     } catch (e) {
       setErr((e as Error).message);
@@ -202,17 +272,41 @@ export default function NewTenantEventPage() {
             <Input label={`Ends (${effectiveTz})`} type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} required />
           </div>
 
+          <RecurrenceEditor
+            value={recurrence}
+            onChange={setRecurrence}
+            baseStartLocal={startsAtLocal}
+            baseEndLocal={endsAtLocal}
+            venues={(venues ?? []).map((v) => ({ id: v.id, name: v.name }))}
+            baseLocationLabel={
+              scope === 'venue'
+                ? `Same as event${selectedVenue ? ` — ${selectedVenue.name}` : ''}`
+                : 'Same as event — standalone address'
+            }
+            baseTiers={tiers}
+            currency={currency}
+          />
+
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
+          <PendingPhotosPicker photos={photos} onChange={setPhotos} />
+
           {err && <p className="text-sm text-red-600">{err}</p>}
+          {uploadProgress && (
+            <p className="text-sm text-slate-600">
+              Uploading photos {uploadProgress.done}/{uploadProgress.total}…
+            </p>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Link href="/events" className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
               Cancel
             </Link>
-            <Button type="submit" loading={createEvent.isPending}>Create event</Button>
+            <Button type="submit" loading={busy}>
+              {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
+            </Button>
           </div>
         </form>
       </Card>

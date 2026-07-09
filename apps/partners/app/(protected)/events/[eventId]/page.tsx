@@ -6,9 +6,12 @@ import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import {
+  useCancelEventSeries,
   useCancelTenantEvent,
   useEvent,
   useEventBookings,
+  useEventSeries,
+  usePublishEventSeries,
   usePublishTenantEvent,
   useUpdateTenantEvent,
 } from '@/lib/api/events';
@@ -97,6 +100,9 @@ export default function OrgEventDetailPage() {
   const publish = usePublishTenantEvent(tenantId);
   const cancel = useCancelTenantEvent(tenantId);
   const update = useUpdateTenantEvent(tenantId);
+  const { data: series } = useEventSeries(tenantId, ev?.seriesId ?? null);
+  const publishSeries = usePublishEventSeries(tenantId);
+  const cancelSeries = useCancelEventSeries(tenantId);
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -290,6 +296,9 @@ export default function OrgEventDetailPage() {
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-semibold text-[#0f172a]">{ev.name}</h1>
             <div className="flex items-center gap-2">
+              {ev.seriesId && (
+                <Badge tone="neutral" label={`Recurring · ${series?.events.length ?? '…'} dates`} />
+              )}
               <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
               <StatusPill status={ev.status} />
             </div>
@@ -548,7 +557,80 @@ export default function OrgEventDetailPage() {
             </Card>
           )}
 
-          <EventImages eventId={eventId} />
+          {ev.seriesId && series && (
+            <Card
+              title="Series dates"
+              subtitle="This is a recurring event. Each date has its own registrations and capacity; approval decisions and the actions below apply to the whole series."
+            >
+              <ul className="flex flex-col divide-y divide-[#f1f5f9]">
+                {series.events.map((occ) => (
+                  <li key={occ.id} className="flex items-center justify-between gap-3 py-2">
+                    {occ.id === eventId ? (
+                      <span className="text-sm font-medium text-slate-800">
+                        {fmt(occ.startsAt, effectiveTz)} → {fmt(occ.endsAt, effectiveTz)}
+                        <span className="ml-2 text-xs font-normal text-slate-400">(this page)</span>
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/events/${occ.id}`}
+                        className="text-sm font-medium text-slate-700 underline-offset-2 hover:underline"
+                      >
+                        {fmt(occ.startsAt, effectiveTz)} → {fmt(occ.endsAt, effectiveTz)}
+                      </Link>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {occ.venueId !== ev.venueId && (
+                        <span className="text-xs text-slate-400">
+                          {occ.venueId
+                            ? venues?.find((v) => v.id === occ.venueId)?.name ?? 'Other venue'
+                            : 'Standalone'}
+                        </span>
+                      )}
+                      <StatusPill status={occ.status} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
+                {series.events.some((o) => o.status === 'draft') && (
+                  <Button
+                    size="sm"
+                    loading={publishSeries.isPending}
+                    disabled={!authed}
+                    onClick={() => {
+                      setErrorMsg(null);
+                      publishSeries.mutate(ev.seriesId!, {
+                        onError: (e) => setErrorMsg((e as Error).message),
+                      });
+                    }}
+                  >
+                    Submit all dates for review
+                  </Button>
+                )}
+                {series.events.some(
+                  (o) => o.status !== 'cancelled' && o.status !== 'rejected',
+                ) && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    loading={cancelSeries.isPending}
+                    disabled={!authed}
+                    onClick={() => {
+                      setErrorMsg(null);
+                      cancelSeries.mutate(ev.seriesId!, {
+                        onError: (e) => setErrorMsg((e as Error).message),
+                      });
+                    }}
+                  >
+                    Cancel entire series
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* A series shares one gallery, stored on its first date. */}
+          <EventImages eventId={ev.seriesId && series ? series.events[0]!.id : eventId} />
 
           <EventRegistrations
             bookings={bookings?.rows}

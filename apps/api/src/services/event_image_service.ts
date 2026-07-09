@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { type EventImage, eventImages } from '../db/schema/index.js';
+import { type EventImage, eventImages, events } from '../db/schema/index.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage, type PresignedUpload } from '../lib/storage.js';
 import type { PublicImageRef } from './venue_image_service.js';
@@ -150,6 +150,41 @@ export async function imagesForEvents(eventIds: string[]): Promise<Map<string, P
     const list = out.get(r.eventId) ?? [];
     list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
     out.set(r.eventId, list);
+  }
+  return out;
+}
+
+/**
+ * Fallback gallery for recurring events: photos are uploaded once (to the first
+ * occurrence created), so occurrences without their own images borrow the
+ * gallery of the earliest-starting occurrence in their series that has one.
+ * Returns a Map keyed by seriesId; series with no images anywhere are absent.
+ */
+export async function imagesForSeries(
+  seriesIds: string[],
+): Promise<Map<string, PublicImageRef[]>> {
+  const out = new Map<string, PublicImageRef[]>();
+  if (seriesIds.length === 0) return out;
+  const rows = await db
+    .select({
+      seriesId: events.seriesId,
+      eventId: eventImages.eventId,
+      storageKey: eventImages.storageKey,
+      position: eventImages.position,
+    })
+    .from(eventImages)
+    .innerJoin(events, eq(events.id, eventImages.eventId))
+    .where(inArray(events.seriesId, seriesIds))
+    .orderBy(asc(events.startsAt), asc(eventImages.position), asc(eventImages.createdAt));
+  const storage = getStorage();
+  const chosenEvent = new Map<string, string>();
+  for (const r of rows) {
+    const sid = r.seriesId!;
+    if (!chosenEvent.has(sid)) chosenEvent.set(sid, r.eventId);
+    if (chosenEvent.get(sid) !== r.eventId) continue;
+    const list = out.get(sid) ?? [];
+    list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
+    out.set(sid, list);
   }
   return out;
 }
