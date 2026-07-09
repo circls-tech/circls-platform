@@ -95,6 +95,35 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   {ev.isStandalone && <Badge tone="neutral" label="Event" />}
                 </div>
                 <p className="mt-1 text-sm text-text-secondary">{formatDateTime(ev.startsAt)}</p>
+                {(ev.seriesOccurrences?.length ?? 0) > 1 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                      Pick a date · {ev.seriesOccurrences!.length} upcoming
+                    </p>
+                    <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
+                      {ev.seriesOccurrences!.map((occ) => (
+                        <Link
+                          key={occ.id}
+                          href={`/events/${occ.id}`}
+                          aria-current={occ.id === ev.id ? 'date' : undefined}
+                          className={[
+                            'shrink-0 rounded-[var(--radius)] border-[2px] border-ink px-3 py-1.5 text-xs font-semibold',
+                            occ.id === ev.id
+                              ? 'bg-ink text-white'
+                              : 'bg-white text-ink hover:bg-ink/5',
+                          ].join(' ')}
+                        >
+                          {formatDateTime(occ.startsAt)}
+                          {occ.locationName !== ev.locationName && (
+                            <span className="block text-[10px] font-normal opacity-75">
+                              {occ.locationName}
+                            </span>
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
                 <AddressLine addressJson={ev.locAddressJson} />
                 {mapsHref && (

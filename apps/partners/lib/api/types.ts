@@ -396,6 +396,8 @@ export interface VenueEvent {
   status: EventStatus;
   /** QR ticket rules for registrations; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
+  /** Groups the dates of a recurring event; null for one-off events. */
+  seriesId: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
 }

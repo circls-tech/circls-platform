@@ -232,6 +232,13 @@
       "when": 1781760000000,
       "tag": "0033_membership_tier_qr_config",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781840000000,
+      "tag": "0034_event_series",
+      "breakpoints": true
     }
   ]
 }

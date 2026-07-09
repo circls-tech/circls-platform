@@ -10,6 +10,7 @@
  * Authz: routes resolve and assert the actor's tenant membership before reaching
  * this layer.
  */
+import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
@@ -127,17 +128,11 @@ export interface CreateEventInput {
   qrTicketConfig?: QrTicketConfig | null | undefined;
 }
 
-/**
- * Create a draft Event. Venue-scoped when `venueId` is given (location read from
- * the venue); org-scoped when omitted, in which case `addressJson` + `tzName`
- * are required and stored on the event. Validates startsAt < endsAt.
- */
-export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
+function validateCreateEventInput(input: CreateEventInput): void {
   if (input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
   }
-  const isStandalone = !input.venueId;
-  if (isStandalone) {
+  if (!input.venueId) {
     if (!input.addressJson) {
       throw new BadRequest('Org-scoped events require an address', 'event_address_required');
     }
@@ -145,39 +140,183 @@ export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promi
       throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
     }
   }
+}
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function insertEventTx(
+  tx: Tx,
+  ctx: AuditCtx,
+  input: CreateEventInput,
+  seriesId: string | null,
+): Promise<Event> {
+  const isStandalone = !input.venueId;
+  const [row] = await tx
+    .insert(events)
+    .values({
+      tenantId: input.tenantId,
+      venueId: input.venueId ?? null,
+      addressJson: isStandalone ? (input.addressJson ?? null) : null,
+      lat: isStandalone ? (input.lat ?? null) : null,
+      lng: isStandalone ? (input.lng ?? null) : null,
+      tzName: isStandalone ? (input.tzName ?? null) : null,
+      name: input.name,
+      description: input.description ?? null,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      pricePaise: input.pricePaise ?? 0,
+      capacity: input.capacity ?? null,
+      qrTicketConfig: input.qrTicketConfig ?? null,
+      seriesId,
+      status: 'draft',
+    })
+    .returning();
+  if (!row) throw new Error('event insert returned no row');
+
+  await replaceTiers(tx, row.id, input.tenantId, input.tiers);
+
+  await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
+    venueId: row.venueId,
+    isStandalone,
+    name: row.name,
+    pricePaise: row.pricePaise,
+    ...(seriesId ? { seriesId } : {}),
+  });
+
+  return row;
+}
+
+/**
+ * Create a draft Event. Venue-scoped when `venueId` is given (location read from
+ * the venue); org-scoped when omitted, in which case `addressJson` + `tzName`
+ * are required and stored on the event. Validates startsAt < endsAt.
+ */
+export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
+  validateCreateEventInput(input);
+  return db.transaction(async (tx) => insertEventTx(tx, ctx, input, null));
+}
+
+/** Hard cap on occurrences created per series (a year of twice-weekly dates). */
+export const MAX_SERIES_OCCURRENCES = 104;
+
+/**
+ * Create a recurring event: one draft Event per occurrence, all sharing a fresh
+ * series_id, atomically. Each occurrence is a complete CreateEventInput (the
+ * route resolves base fields + per-date overrides), so dates may differ in
+ * venue/address, window, and tiers. Returns the created rows sorted by start.
+ */
+export async function createEventSeries(
+  ctx: AuditCtx,
+  occurrences: CreateEventInput[],
+): Promise<Event[]> {
+  if (occurrences.length < 2) {
+    throw new BadRequest('A series needs at least 2 occurrences', 'series_too_small');
+  }
+  if (occurrences.length > MAX_SERIES_OCCURRENCES) {
+    throw new BadRequest(
+      `A series can have at most ${MAX_SERIES_OCCURRENCES} occurrences`,
+      'series_too_large',
+    );
+  }
+  for (const occ of occurrences) validateCreateEventInput(occ);
+
+  const seriesId = randomUUID();
+  const sorted = [...occurrences].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(events)
-      .values({
-        tenantId: input.tenantId,
-        venueId: input.venueId ?? null,
-        addressJson: isStandalone ? (input.addressJson ?? null) : null,
-        lat: isStandalone ? (input.lat ?? null) : null,
-        lng: isStandalone ? (input.lng ?? null) : null,
-        tzName: isStandalone ? (input.tzName ?? null) : null,
-        name: input.name,
-        description: input.description ?? null,
-        startsAt: input.startsAt,
-        endsAt: input.endsAt,
-        pricePaise: input.pricePaise ?? 0,
-        capacity: input.capacity ?? null,
-        qrTicketConfig: input.qrTicketConfig ?? null,
-        status: 'draft',
-      })
-      .returning();
-    if (!row) throw new Error('event insert returned no row');
+    const rows: Event[] = [];
+    for (const occ of sorted) {
+      rows.push(await insertEventTx(tx, ctx, occ, seriesId));
+    }
+    return rows;
+  });
+}
 
-    await replaceTiers(tx, row.id, input.tenantId, input.tiers);
+/** All occurrences of a series owned by the tenant, soonest first. */
+export async function listSeriesEvents(tenantId: string, seriesId: string): Promise<Event[]> {
+  return db
+    .select()
+    .from(events)
+    .where(and(eq(events.tenantId, tenantId), eq(events.seriesId, seriesId)))
+    .orderBy(sql`${events.startsAt} asc`);
+}
 
-    await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
-      venueId: row.venueId,
-      isStandalone,
-      name: row.name,
-      pricePaise: row.pricePaise,
-    });
+/**
+ * Submit every draft occurrence of a series for review (draft → pending_review)
+ * in one transaction. 404 if the tenant owns no such series; 409 if none of its
+ * occurrences are still drafts.
+ */
+export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promise<Event[]> {
+  return db.transaction(async (tx) => {
+    const existing = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.tenantId, ctx.tenantId), eq(events.seriesId, seriesId)));
+    if (existing.length === 0) throw new NotFound('Series not found', 'series_not_found');
+    const drafts = existing.filter((e) => e.status === 'draft');
+    if (drafts.length === 0) {
+      throw new Conflict('No draft occurrences left to submit', 'event_not_draft');
+    }
 
-    return row;
+    const updated: Event[] = [];
+    for (const ev of drafts) {
+      const [row] = await tx
+        .update(events)
+        .set({ status: 'pending_review' })
+        .where(eq(events.id, ev.id))
+        .returning();
+      updated.push(row!);
+      await writeAudit(
+        tx,
+        ctx,
+        'event.submitted_for_review',
+        'event',
+        ev.id,
+        { status: 'draft' },
+        { status: 'pending_review', seriesId },
+      );
+    }
+    return updated;
+  });
+}
+
+/**
+ * Cancel every non-terminal occurrence of a series (draft/pending_review/
+ * published → cancelled) in one transaction, revoking QR tickets per event.
+ */
+export async function cancelEventSeries(ctx: AuditCtx, seriesId: string): Promise<Event[]> {
+  return db.transaction(async (tx) => {
+    const existing = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.tenantId, ctx.tenantId), eq(events.seriesId, seriesId)));
+    if (existing.length === 0) throw new NotFound('Series not found', 'series_not_found');
+    const cancellable = existing.filter(
+      (e) => e.status !== 'cancelled' && e.status !== 'rejected',
+    );
+    if (cancellable.length === 0) {
+      throw new Conflict('No occurrences left to cancel', 'event_not_cancellable');
+    }
+
+    const updated: Event[] = [];
+    for (const ev of cancellable) {
+      const [row] = await tx
+        .update(events)
+        .set({ status: 'cancelled' })
+        .where(eq(events.id, ev.id))
+        .returning();
+      updated.push(row!);
+      await revokeQrTicketsForEvent(ev.id, tx);
+      await writeAudit(
+        tx,
+        ctx,
+        'event.cancelled',
+        'event',
+        ev.id,
+        { status: ev.status },
+        { status: 'cancelled', seriesId },
+      );
+    }
+    return updated;
   });
 }
 

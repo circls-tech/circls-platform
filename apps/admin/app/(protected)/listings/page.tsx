@@ -118,6 +118,12 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
     return (
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {commonFields}
+        {(detail.seriesCount ?? 1) > 1 && (
+          <Field
+            label="Recurring"
+            value={`${detail.seriesCount} dates — approving or rejecting applies to the whole series`}
+          />
+        )}
         {detail.venueId && <Field label="Venue" value={detail.venueName} />}
         <Field label="Starts" value={fmtDatetime(detail.startsAt)} />
         <Field label="Ends" value={fmtDatetime(detail.endsAt)} />
@@ -389,7 +395,14 @@ export default function ListingsPage() {
             {rows.map((r) => (
               <tr key={`${r.type}:${r.id}`} className="transition-colors hover:bg-slate-50">
                 <td className="px-4 py-2.5 text-slate-700">{r.tenantName}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-900">{r.name}</td>
+                <td className="px-4 py-2.5 font-medium text-slate-900">
+                  {r.name}
+                  {(r.seriesCount ?? 1) > 1 && (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      recurring · {r.seriesCount} dates
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">{fmtDate(r.createdAt)}</td>
                 <td className="px-4 py-2.5 text-right">
                   <div className="inline-flex gap-2">
