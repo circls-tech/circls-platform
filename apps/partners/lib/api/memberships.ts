@@ -40,6 +40,9 @@ export interface MembershipTierInput {
   durationDays: number;
   benefits?: MembershipBenefits;
   capacity: number | null;
+  /** Per-tier QR override: null = inherit the plan-level config;
+   *  `{ enabled: false }` = QR passes off for this tier; enabled = custom rules. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export interface CreateMembershipInput {

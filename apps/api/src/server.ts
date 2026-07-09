@@ -53,6 +53,7 @@ import { couponRoutes } from './routes/coupons.js';
 import { checkoutRoutes } from './routes/checkout.js';
 // QR ticket door check-in (validate/consume scanned codes).
 import { qrTicketRoutes } from './routes/qr_tickets.js';
+import { activityRoutes } from './routes/activity.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -295,6 +296,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(checkoutRoutes);
   // QR ticket door check-in (validate/consume scanned codes).
   await app.register(qrTicketRoutes);
+  // Partner portal Activity page: unified tenant activity feed + calendar counts.
+  await app.register(activityRoutes);
 
   return app;
 }

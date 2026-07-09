@@ -6,7 +6,11 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { benefitsSchema, coerceBenefits } from '../lib/membership_benefits.js';
-import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
+import {
+  qrTicketConfigSchema,
+  toQrTicketConfig,
+  toTierQrTicketConfig,
+} from '../lib/qr_ticket_config_schema.js';
 import {
   createMembership,
   finalizeMembershipCover,
@@ -46,6 +50,9 @@ const tierSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  // Per-tier QR override: omitted/null = inherit the plan's config;
+  // enabled:false = explicitly off for this tier; enabled:true = custom rules.
+  qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
 
@@ -58,6 +65,7 @@ function tierToInput(t: z.infer<typeof tierSchema>) {
     durationDays: t.durationDays,
     benefits: t.benefits !== undefined ? coerceBenefits(t.benefits) : { items: [] },
     capacity: t.capacity,
+    qrTicketConfig: t.qrTicketConfig !== undefined ? toTierQrTicketConfig(t.qrTicketConfig) : null,
   };
 }
 

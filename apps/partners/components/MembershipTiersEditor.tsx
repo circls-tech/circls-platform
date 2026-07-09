@@ -1,10 +1,14 @@
 'use client';
 
 import { Button, Input } from '@/lib/ui';
-import type { MembershipBenefitItem, MembershipTier } from '@/lib/api/types';
+import type { MembershipBenefitItem, MembershipTier, QrTicketConfig } from '@/lib/api/types';
 import type { MembershipTierInput } from '@/lib/api/memberships';
 import { type CurrencyCode, currencySymbol } from '@/lib/currency';
 import { BenefitsEditor, cleanBenefits } from './BenefitsEditor';
+import { DEFAULT_QR_CONFIG, QrTicketRulesFields } from './QrTicketConfigEditor';
+
+/** Per-tier QR pass setting: follow the plan default, custom rules, or off. */
+export type TierQrMode = 'inherit' | 'custom' | 'off';
 
 /** Form-draft shape: price/number inputs stay strings and convert on submit. */
 export interface MembershipTierDraft {
@@ -14,10 +18,29 @@ export interface MembershipTierDraft {
   durationDays: string;
   capacity?: string; // blank = unlimited
   benefits: MembershipBenefitItem[];
+  qrMode: TierQrMode;
+  /** Custom rules; only sent when qrMode === 'custom'. */
+  qrConfig: QrTicketConfig;
 }
 
 export function emptyMembershipTier(): MembershipTierDraft {
-  return { name: '', description: '', priceRupees: '0', durationDays: '30', capacity: '', benefits: [] };
+  return {
+    name: '',
+    description: '',
+    priceRupees: '0',
+    durationDays: '30',
+    capacity: '',
+    benefits: [],
+    qrMode: 'inherit',
+    qrConfig: DEFAULT_QR_CONFIG,
+  };
+}
+
+/** Convert a draft's QR mode + rules to the API's tier `qrTicketConfig` field. */
+function tierQrToPayload(t: MembershipTierDraft): QrTicketConfig | null {
+  if (t.qrMode === 'inherit') return null;
+  if (t.qrMode === 'off') return { ...DEFAULT_QR_CONFIG, enabled: false };
+  return { ...t.qrConfig, enabled: true };
 }
 
 /** Convert drafts to the API payload shape. */
@@ -29,12 +52,16 @@ export function membershipTiersToPayload(tiers: MembershipTierDraft[]): Membersh
     durationDays: parseInt(t.durationDays || '30', 10),
     benefits: { items: cleanBenefits(t.benefits) },
     capacity: t.capacity?.trim() ? parseInt(t.capacity, 10) : null,
+    qrTicketConfig: tierQrToPayload(t),
   }));
 }
 
 /** Hydrate a draft from a membership tier (as returned by the API). */
 export function membershipTierDraftFromApi(
-  t: Pick<MembershipTier, 'name' | 'description' | 'pricePaise' | 'durationDays' | 'capacity' | 'benefits'>,
+  t: Pick<
+    MembershipTier,
+    'name' | 'description' | 'pricePaise' | 'durationDays' | 'capacity' | 'benefits' | 'qrTicketConfig'
+  >,
 ): MembershipTierDraft {
   return {
     name: t.name,
@@ -43,8 +70,22 @@ export function membershipTierDraftFromApi(
     durationDays: String(t.durationDays),
     capacity: t.capacity == null ? '' : String(t.capacity),
     benefits: t.benefits?.items ?? [],
+    qrMode: t.qrTicketConfig == null ? 'inherit' : t.qrTicketConfig.enabled ? 'custom' : 'off',
+    qrConfig: t.qrTicketConfig?.enabled ? t.qrTicketConfig : DEFAULT_QR_CONFIG,
   };
 }
+
+const QR_MODES: { mode: TierQrMode; label: string }[] = [
+  { mode: 'inherit', label: 'Plan default' },
+  { mode: 'custom', label: 'Custom' },
+  { mode: 'off', label: 'Off' },
+];
+
+const QR_MODE_HINTS: Record<TierQrMode, string> = {
+  inherit: 'Passes for this tier follow the plan-level QR settings below.',
+  custom: 'This tier issues passes with its own rules, ignoring the plan-level settings.',
+  off: 'No QR passes for this tier, even when the plan enables them.',
+};
 
 export function MembershipTiersEditor({
   value,
@@ -128,6 +169,37 @@ export function MembershipTiersEditor({
           </div>
           {!disabled && (
             <BenefitsEditor items={t.benefits} onChange={(items) => update(i, { benefits: items })} />
+          )}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+              QR passes for this tier
+            </label>
+            <div className="inline-flex w-fit rounded-md border border-slate-200 bg-white p-0.5">
+              {QR_MODES.map(({ mode, label }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => update(i, { qrMode: mode })}
+                  className={[
+                    'rounded px-3 py-1.5 text-sm font-medium transition-colors',
+                    t.qrMode === mode
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:text-slate-900',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[#94a3b8]">{QR_MODE_HINTS[t.qrMode]}</p>
+          </div>
+          {t.qrMode === 'custom' && (
+            <QrTicketRulesFields
+              cfg={t.qrConfig}
+              onPatch={(p) => update(i, { qrConfig: { ...t.qrConfig, enabled: true, ...p } })}
+              itemNoun="membership"
+            />
           )}
           {!disabled && (
             <div className="flex justify-end">
