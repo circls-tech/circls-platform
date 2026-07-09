@@ -28,6 +28,31 @@ export interface TierInput {
   capacity: number | null;
 }
 
+/**
+ * One date of a recurring event. Omitted fields inherit the base payload;
+ * `venueId` moves that date to another venue.
+ */
+export interface OccurrenceInput {
+  /** ISO-8601, with tz. */
+  startsAt: string;
+  endsAt: string;
+  venueId?: string;
+  tiers?: TierInput[];
+}
+
+/** Create response for a recurring event: one draft per date, one series. */
+export interface EventSeriesResult {
+  seriesId: string;
+  count: number;
+  events: VenueEventSummary[];
+}
+
+export type CreateEventResult = VenueEventSummary | EventSeriesResult;
+
+export function isSeriesResult(r: CreateEventResult): r is EventSeriesResult {
+  return 'events' in r;
+}
+
 export interface CreateTenantEventInput {
   /** Provide exactly one scope: a venueId OR a standalone address. */
   venueId?: string;
@@ -37,24 +62,76 @@ export interface CreateTenantEventInput {
   tzName?: string;
   name: string;
   description?: string;
-  /** ISO-8601, with tz. */
-  startsAt: string;
-  endsAt: string;
+  /** ISO-8601, with tz. Required unless `occurrences` is set. */
+  startsAt?: string;
+  endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** 2+ dates makes this a recurring series (one draft event per date). */
+  occurrences?: OccurrenceInput[];
 }
 
 export function useCreateTenantEvent(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTenantEventInput) =>
-      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events`, {
+      apiFetch<CreateEventResult>(`/v1/tenants/${tenantId}/events`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] }),
+  });
+}
+
+/** All occurrences of a recurring event owned by the tenant, soonest first. */
+export function useEventSeries(tenantId: string, seriesId: string | null) {
+  return useQuery({
+    queryKey: ['event-series', tenantId, seriesId],
+    queryFn: () =>
+      apiFetch<{ seriesId: string; events: VenueEventSummary[] }>(
+        `/v1/tenants/${tenantId}/event-series/${seriesId}`,
+      ),
+    enabled: Boolean(tenantId && seriesId),
+  });
+}
+
+/** Submit every draft date of a series for review at once. */
+export function usePublishEventSeries(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (seriesId: string) =>
+      apiFetch<EventSeriesResult>(`/v1/tenants/${tenantId}/event-series/${seriesId}/publish`, {
+        method: 'POST',
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['event-series', tenantId, r.seriesId] });
+      for (const ev of r.events) {
+        void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+        if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      }
+    },
+  });
+}
+
+/** Cancel every remaining (non-terminal) date of a series at once. */
+export function useCancelEventSeries(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (seriesId: string) =>
+      apiFetch<EventSeriesResult>(`/v1/tenants/${tenantId}/event-series/${seriesId}/cancel`, {
+        method: 'POST',
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['event-series', tenantId, r.seriesId] });
+      for (const ev of r.events) {
+        void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+        if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      }
+    },
   });
 }
 
@@ -80,20 +157,22 @@ export function useEventBookings(tenantId: string, eventId: string) {
 export interface CreateEventInput {
   name: string;
   description?: string;
-  /** ISO-8601, with tz. */
-  startsAt: string;
-  endsAt: string;
+  /** ISO-8601, with tz. Required unless `occurrences` is set. */
+  startsAt?: string;
+  endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** 2+ dates makes this a recurring series (one draft event per date). */
+  occurrences?: OccurrenceInput[];
 }
 
 export function useCreateEvent(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateEventInput) =>
-      apiFetch<VenueEventSummary>(`/v1/venues/${venueId}/events`, {
+      apiFetch<CreateEventResult>(`/v1/venues/${venueId}/events`, {
         method: 'POST',
         body: JSON.stringify(input),
       }),

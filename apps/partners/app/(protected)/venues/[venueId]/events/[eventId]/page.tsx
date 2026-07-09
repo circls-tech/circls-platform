@@ -8,6 +8,7 @@ import {
   useCancelEvent,
   useEvent,
   useEventBookings,
+  useEventSeries,
   usePublishEvent,
   useUpdateEvent,
 } from '@/lib/api/events';
@@ -89,6 +90,8 @@ export default function EventDetailPage() {
   const authed = Boolean(user);
 
   const { data: ev, isLoading } = useEvent(tenantId, eventId);
+  // Recurring events share one gallery, stored on the series' first date.
+  const { data: series } = useEventSeries(tenantId, ev?.seriesId ?? null);
   const { data: bookings, isLoading: bookingsLoading } = useEventBookings(tenantId, eventId);
   const publish = usePublishEvent(tenantId, venueId);
   const cancel = useCancelEvent(tenantId, venueId);
@@ -360,7 +363,7 @@ export default function EventDetailPage() {
             </Card>
           )}
 
-          <EventImages eventId={eventId} />
+          <EventImages eventId={ev?.seriesId && series ? series.events[0]!.id : eventId} />
 
           <EventRegistrations
             bookings={bookings?.rows}

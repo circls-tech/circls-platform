@@ -6,13 +6,19 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   cancelEvent,
+  cancelEventSeries,
   createEvent,
+  createEventSeries,
   getEvent,
   listEventBookings,
   listEventsForTenant,
   listEventsForVenue,
+  listSeriesEvents,
+  MAX_SERIES_OCCURRENCES,
   publishEvent,
+  publishEventSeries,
   updateEvent,
+  type CreateEventInput,
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
@@ -35,14 +41,37 @@ const tierSchema = z.object({
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
 
-const createEventSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
+/**
+ * One date of a recurring event. Omitted fields inherit the base payload;
+ * `venueId: <uuid>` moves that date to another venue, `venueId: null` makes it
+ * standalone at `addressJson`/`tzName` (falling back to the base address).
+ */
+const occurrenceSchema = z.object({
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime(),
-  tiers: tiersField,
-  qrTicketConfig: qrTicketConfigSchema.optional(),
+  venueId: z.string().uuid().nullable().optional(),
+  addressJson: z.record(z.unknown()).optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  tzName: z.string().min(1).optional(),
+  tiers: tiersField.optional(),
 });
+const occurrencesField = z.array(occurrenceSchema).min(2).max(MAX_SERIES_OCCURRENCES);
+
+const createEventSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    tiers: tiersField,
+    qrTicketConfig: qrTicketConfigSchema.optional(),
+    /** ≥2 dates makes this a recurring series; omit for a one-off event. */
+    occurrences: occurrencesField.optional(),
+  })
+  .refine((d) => d.occurrences !== undefined || (d.startsAt && d.endsAt), {
+    message: 'Provide startsAt/endsAt, or occurrences for a recurring event',
+  });
 
 const createTenantEventSchema = z
   .object({
@@ -53,10 +82,15 @@ const createTenantEventSchema = z
     tzName: z.string().min(1).optional(),
     name: z.string().min(1).max(200),
     description: z.string().optional(),
-    startsAt: z.string().datetime(),
-    endsAt: z.string().datetime(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
     tiers: tiersField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
+    /** ≥2 dates makes this a recurring series; omit for a one-off event. */
+    occurrences: occurrencesField.optional(),
+  })
+  .refine((d) => d.occurrences !== undefined || (d.startsAt && d.endsAt), {
+    message: 'Provide startsAt/endsAt, or occurrences for a recurring event',
   })
   // Exactly one scope: a venue OR a standalone address (never both, never neither).
   .refine((d) => Boolean(d.venueId) !== Boolean(d.addressJson), {
@@ -88,6 +122,42 @@ const updateEventSchema = z.object({
   qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 
+type OccurrenceInput = z.infer<typeof occurrenceSchema>;
+
+/**
+ * Resolve base payload + per-date overrides into one CreateEventInput per date.
+ * Any override venue must belong to the tenant (checked once per distinct id).
+ */
+async function resolveOccurrences(
+  tenantId: string,
+  base: Omit<CreateEventInput, 'startsAt' | 'endsAt'>,
+  occurrences: OccurrenceInput[],
+): Promise<CreateEventInput[]> {
+  const overrideVenueIds = new Set<string>();
+  for (const occ of occurrences) if (occ.venueId) overrideVenueIds.add(occ.venueId);
+  for (const vid of overrideVenueIds) {
+    const venue = await getVenueById(vid);
+    if (!venue || venue.tenantId !== tenantId)
+      throw new NotFound('Venue not found', 'venue_not_found');
+  }
+  return occurrences.map((occ) => {
+    // undefined = inherit the base scope; uuid = that venue; null = standalone.
+    const venueId = occ.venueId === undefined ? base.venueId : (occ.venueId ?? undefined);
+    const standalone = !venueId;
+    return {
+      ...base,
+      venueId,
+      addressJson: standalone ? (occ.addressJson ?? base.addressJson) : undefined,
+      lat: standalone ? (occ.lat ?? base.lat) : undefined,
+      lng: standalone ? (occ.lng ?? base.lng) : undefined,
+      tzName: standalone ? (occ.tzName ?? base.tzName) : undefined,
+      startsAt: new Date(occ.startsAt),
+      endsAt: new Date(occ.endsAt),
+      tiers: occ.tiers ?? base.tiers,
+    };
+  });
+}
+
 export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/venues/:venueId/events', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };
@@ -109,21 +179,27 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid event payload', 'bad_request', {
         issues: parsed.error.issues,
       });
-    return createEvent(
-      { tenantId: venue.tenantId, actorUserId: user.id },
-      {
-        tenantId: venue.tenantId,
-        venueId,
-        name: parsed.data.name,
-        description: parsed.data.description,
-        startsAt: new Date(parsed.data.startsAt),
-        endsAt: new Date(parsed.data.endsAt),
-        tiers: parsed.data.tiers,
-        ...(parsed.data.qrTicketConfig !== undefined
-          ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
-          : {}),
-      },
-    );
+    const ctx = { tenantId: venue.tenantId, actorUserId: user.id };
+    const base = {
+      tenantId: venue.tenantId,
+      venueId,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      tiers: parsed.data.tiers,
+      ...(parsed.data.qrTicketConfig !== undefined
+        ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
+        : {}),
+    };
+    if (parsed.data.occurrences) {
+      const occs = await resolveOccurrences(venue.tenantId, base, parsed.data.occurrences);
+      const rows = await createEventSeries(ctx, occs);
+      return { seriesId: rows[0]!.seriesId, count: rows.length, events: rows };
+    }
+    return createEvent(ctx, {
+      ...base,
+      startsAt: new Date(parsed.data.startsAt!),
+      endsAt: new Date(parsed.data.endsAt!),
+    });
   });
 
   app.get('/v1/tenants/:tenantId/events/:id', { preHandler: requireAuth }, async (req) => {
@@ -159,25 +235,31 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         throw new NotFound('Venue not found', 'venue_not_found');
     }
 
-    return createEvent(
-      { tenantId, actorUserId: user.id },
-      {
-        tenantId,
-        venueId: parsed.data.venueId,
-        addressJson: parsed.data.addressJson,
-        lat: parsed.data.lat,
-        lng: parsed.data.lng,
-        tzName: parsed.data.tzName,
-        name: parsed.data.name,
-        description: parsed.data.description,
-        startsAt: new Date(parsed.data.startsAt),
-        endsAt: new Date(parsed.data.endsAt),
-        tiers: parsed.data.tiers,
-        ...(parsed.data.qrTicketConfig !== undefined
-          ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
-          : {}),
-      },
-    );
+    const ctx = { tenantId, actorUserId: user.id };
+    const base = {
+      tenantId,
+      venueId: parsed.data.venueId,
+      addressJson: parsed.data.addressJson,
+      lat: parsed.data.lat,
+      lng: parsed.data.lng,
+      tzName: parsed.data.tzName,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      tiers: parsed.data.tiers,
+      ...(parsed.data.qrTicketConfig !== undefined
+        ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
+        : {}),
+    };
+    if (parsed.data.occurrences) {
+      const occs = await resolveOccurrences(tenantId, base, parsed.data.occurrences);
+      const rows = await createEventSeries(ctx, occs);
+      return { seriesId: rows[0]!.seriesId, count: rows.length, events: rows };
+    }
+    return createEvent(ctx, {
+      ...base,
+      startsAt: new Date(parsed.data.startsAt!),
+      endsAt: new Date(parsed.data.endsAt!),
+    });
   });
 
   app.patch('/v1/tenants/:tenantId/events/:id', { preHandler: requireAuth }, async (req) => {
@@ -233,6 +315,44 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return cancelEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  // Series (recurring event) reads + bulk lifecycle actions.
+  app.get(
+    '/v1/tenants/:tenantId/event-series/:seriesId',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, seriesId } = req.params as { tenantId: string; seriesId: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      const rows = await listSeriesEvents(tenantId, seriesId);
+      if (rows.length === 0) throw new NotFound('Series not found', 'series_not_found');
+      return { seriesId, events: rows };
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/event-series/:seriesId/publish',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, seriesId } = req.params as { tenantId: string; seriesId: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      const rows = await publishEventSeries({ tenantId, actorUserId: user.id }, seriesId);
+      return { seriesId, count: rows.length, events: rows };
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/event-series/:seriesId/cancel',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, seriesId } = req.params as { tenantId: string; seriesId: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      const rows = await cancelEventSeries({ tenantId, actorUserId: user.id }, seriesId);
+      return { seriesId, count: rows.length, events: rows };
     },
   );
 

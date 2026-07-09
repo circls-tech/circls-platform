@@ -28,11 +28,17 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
           <div className="font-display text-lg font-extrabold text-ink">{day}</div>
           <div className="text-[9px] font-bold uppercase tracking-widest text-coral-deep">{month}</div>
         </div>
+        {(event.seriesCount ?? 1) > 1 && (
+          <div className="absolute right-2.5 top-2.5 z-10 rounded-lg border-[2px] border-ink bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink shadow-offset-sm">
+            {event.seriesCount} dates
+          </div>
+        )}
       </div>
       <div className="p-4">
         <h3 className="font-display text-[18px] font-extrabold text-ink">{event.name}</h3>
         <p className="mt-0.5 text-sm text-text-secondary">
           {event.locationName} · {formatTime(event.startsAt)}
+          {(event.seriesCount ?? 1) > 1 && ' · repeats'}
         </p>
         <p className="mt-2 text-sm font-semibold text-ink">{formatPaise(event.pricePaise)}</p>
       </div>

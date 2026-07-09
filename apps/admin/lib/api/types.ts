@@ -142,6 +142,8 @@ export interface AdminListingRow {
   name: string;
   status: string;
   createdAt: string;
+  /** Recurring events queue as one row; this is the series' date count. */
+  seriesCount?: number;
 }
 
 export interface AdminListingListResponse {
@@ -171,6 +173,9 @@ export interface AdminListingDetail {
   startsAt?: string | null;
   endsAt?: string | null;
   pricePaise?: number | null;
+  /** Recurring events: series grouping + total dates in the series. */
+  seriesId?: string | null;
+  seriesCount?: number;
   // Membership
   durationDays?: number | null;
   benefits?: Record<string, unknown>;
