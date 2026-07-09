@@ -302,7 +302,12 @@ export default function MembershipsPage() {
             </p>
           </div>
           <MembershipTiersEditor value={tiers} onChange={setTiers} />
-          <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
+          <QrTicketConfigEditor
+            value={qrConfig}
+            onChange={setQrConfig}
+            itemNoun="membership"
+            enabledHint="Default for every tier — buyers get a scannable QR pass your staff validate on the Check-in page. Each tier above can override these rules or turn passes off."
+          />
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
               Terms &amp; conditions
@@ -421,7 +426,12 @@ function EditMembershipForm({
         </select>
       </div>
       <MembershipTiersEditor value={tiers} onChange={setTiers} />
-      <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="membership" />
+      <QrTicketConfigEditor
+        value={qrConfig}
+        onChange={setQrConfig}
+        itemNoun="membership"
+        enabledHint="Default for every tier — buyers get a scannable QR pass your staff validate on the Check-in page. Each tier above can override these rules or turn passes off."
+      />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
           Terms &amp; conditions

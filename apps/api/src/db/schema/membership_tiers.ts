@@ -1,6 +1,7 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { memberships, type MembershipBenefits } from './memberships.js';
+import type { QrTicketConfig } from './qr_ticket_config.js';
 import { tenants } from './tenants.js';
 
 /**
@@ -29,6 +30,10 @@ export const membershipTiers = pgTable('membership_tiers', {
   benefits: jsonb('benefits').$type<MembershipBenefits>().notNull().default({ items: [] }),
   /** null = unlimited capacity for this tier. */
   capacity: integer('capacity'),
+  /** Per-tier QR entry-ticket override. null = inherit the membership's
+   *  config; `{ enabled: false }` = QR off for this tier even when the plan
+   *  enables it; an enabled config replaces the plan's rules wholesale. */
+  qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

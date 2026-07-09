@@ -225,6 +225,13 @@
       "when": 1781600000000,
       "tag": "0032_qr_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781760000000,
+      "tag": "0033_membership_tier_qr_config",
+      "breakpoints": true
     }
   ]
 }

@@ -454,6 +454,9 @@ export interface MembershipTier {
   durationDays: number;
   benefits: MembershipBenefits;
   capacity: number | null;
+  /** Per-tier QR override: null = inherit the plan config; enabled:false = off
+   *  for this tier; enabled:true = custom rules. */
+  qrTicketConfig: QrTicketConfig | null;
   sold: number;
   remaining: number | null;
 }
