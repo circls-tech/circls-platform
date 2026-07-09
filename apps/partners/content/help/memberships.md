@@ -51,6 +51,21 @@ fields, the setting is editable while the plan is pending review or inactive,
 and changes only affect future purchases. See [QR tickets and door
 check-in](/help/qr-tickets).
 
+### Per-tier QR rules
+
+Because tiers can carry different benefits (more days, more visits), each tier
+has its own **QR passes for this tier** setting:
+
+- **Plan default** — the tier follows the plan-level QR settings (this is the
+  default for every tier).
+- **Custom** — the tier issues passes with its own rules — for example *Gold*
+  gets unlimited scans while *Bronze* is capped at 10 visits. Custom rules
+  replace the plan-level settings entirely for that tier.
+- **Off** — no QR passes for this tier, even when the plan enables them.
+
+A buyer's pass always uses the rules of the tier they bought, frozen at
+purchase time — later edits never change passes that are already issued.
+
 ## Activating and deactivating
 
 - **Deactivate** an active plan to stop new purchases. Customers who already hold the membership keep it until it expires.
