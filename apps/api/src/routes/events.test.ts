@@ -69,6 +69,50 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(ev.tzName).toBe('Asia/Kolkata');
   });
 
+  it('accepts and round-trips per-tier QR config on the tier payload', async () => {
+    const create = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: { line1: '5 MG Rd', city: 'Pune' },
+        tzName: 'Asia/Kolkata',
+        name: 'Tiered QR Meetup',
+        startsAt: '2030-06-01T10:00:00.000Z',
+        endsAt: '2030-06-03T22:00:00.000Z',
+        tiers: [
+          {
+            name: 'VIP',
+            pricePaise: 5000,
+            qrTicketConfig: { enabled: true, multiUse: true, maxScans: 2 },
+          },
+          { name: 'General', pricePaise: 0 },
+          { name: 'Crew', pricePaise: 0, qrTicketConfig: { enabled: false } },
+        ],
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    const eventId = (create.json() as { id: string }).id;
+
+    const read = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/events/${eventId}`,
+      headers: bearer('owner'),
+    });
+    expect(read.statusCode).toBe(200);
+    const tiers = (
+      read.json() as {
+        tiers: { name: string; qrTicketConfig: Record<string, unknown> | null }[];
+      }
+    ).tiers;
+    expect(tiers.map((t) => t.name)).toEqual(['VIP', 'General', 'Crew']);
+    // Custom rules are normalised and stored; omitted = null (inherit); a
+    // disabled payload is kept as an explicit enabled:false marker.
+    expect(tiers[0]!.qrTicketConfig).toMatchObject({ enabled: true, multiUse: true, maxScans: 2 });
+    expect(tiers[1]!.qrTicketConfig).toBeNull();
+    expect(tiers[2]!.qrTicketConfig).toMatchObject({ enabled: false });
+  });
+
   it('rejects a payload with both venueId and addressJson', async () => {
     const res = await app.inject({
       method: 'POST',

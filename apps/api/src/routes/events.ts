@@ -21,7 +21,12 @@ import {
   type CreateEventInput,
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
-import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
+import type { TierInput } from '../services/event_tiers_service.js';
+import {
+  qrTicketConfigSchema,
+  toQrTicketConfig,
+  toTierQrTicketConfig,
+} from '../lib/qr_ticket_config_schema.js';
 
 const tierSchema = z.object({
   name: z.string().min(1).max(120),
@@ -38,8 +43,22 @@ const tierSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  // Per-tier QR override: omitted/null = inherit the event's config;
+  // enabled:false = explicitly off for this tier; enabled:true = custom rules.
+  qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
+
+/** Map a parsed tier payload to the service input, normalising its QR override. */
+function tierToInput(t: z.infer<typeof tierSchema>): TierInput {
+  return {
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    capacity: t.capacity,
+    qrTicketConfig: t.qrTicketConfig !== undefined ? toTierQrTicketConfig(t.qrTicketConfig) : null,
+  };
+}
 
 /**
  * One date of a recurring event. Omitted fields inherit the base payload;
@@ -153,7 +172,7 @@ async function resolveOccurrences(
       tzName: standalone ? (occ.tzName ?? base.tzName) : undefined,
       startsAt: new Date(occ.startsAt),
       endsAt: new Date(occ.endsAt),
-      tiers: occ.tiers ?? base.tiers,
+      tiers: occ.tiers ? occ.tiers.map(tierToInput) : base.tiers,
     };
   });
 }
@@ -185,7 +204,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       venueId,
       name: parsed.data.name,
       description: parsed.data.description,
-      tiers: parsed.data.tiers,
+      tiers: parsed.data.tiers.map(tierToInput),
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -245,7 +264,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       tzName: parsed.data.tzName,
       name: parsed.data.name,
       description: parsed.data.description,
-      tiers: parsed.data.tiers,
+      tiers: parsed.data.tiers.map(tierToInput),
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -276,7 +295,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
     if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
-    if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers;
+    if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
     if (parsed.data.qrTicketConfig !== undefined)
       patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
     if (parsed.data.venueId !== undefined) {

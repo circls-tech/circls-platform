@@ -1,6 +1,7 @@
-import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
 import { events } from './events.js';
+import type { QrTicketConfig } from './qr_ticket_config.js';
 import { tenants } from './tenants.js';
 
 /**
@@ -24,6 +25,10 @@ export const eventTicketTiers = pgTable('event_ticket_tiers', {
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   /** null = unlimited capacity for this tier. */
   capacity: integer('capacity'),
+  /** Per-tier QR entry-ticket override. null = inherit the event's config;
+   *  `{ enabled: false }` = QR off for this tier even when the event enables
+   *  it; an enabled config replaces the event's rules wholesale. */
+  qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

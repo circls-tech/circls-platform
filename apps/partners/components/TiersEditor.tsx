@@ -1,8 +1,14 @@
 'use client';
 
 import { Button, Input } from '@/lib/ui';
-import type { EventTier } from '@/lib/api/types';
+import type { EventTier, QrTicketConfig } from '@/lib/api/types';
 import type { TierInput } from '@/lib/api/events';
+import {
+  DEFAULT_QR_CONFIG,
+  QrTicketRulesFields,
+  TierQrModeControl,
+  type TierQrMode,
+} from './QrTicketConfigEditor';
 
 /** Form-draft shape: rupee input stays a string and converts to paise on submit. */
 export interface TierDraft {
@@ -10,10 +16,27 @@ export interface TierDraft {
   description?: string;
   priceRupees: string; // form input; converted to paise on submit
   capacity?: string; // blank = unlimited
+  qrMode: TierQrMode;
+  /** Custom rules; only sent when qrMode === 'custom'. */
+  qrConfig: QrTicketConfig;
 }
 
 export function emptyTier(): TierDraft {
-  return { name: '', description: '', priceRupees: '0', capacity: '' };
+  return {
+    name: '',
+    description: '',
+    priceRupees: '0',
+    capacity: '',
+    qrMode: 'inherit',
+    qrConfig: DEFAULT_QR_CONFIG,
+  };
+}
+
+/** Convert a draft's QR mode + rules to the API's tier `qrTicketConfig` field. */
+function tierQrToPayload(t: TierDraft): QrTicketConfig | null {
+  if (t.qrMode === 'inherit') return null;
+  if (t.qrMode === 'off') return { ...DEFAULT_QR_CONFIG, enabled: false };
+  return { ...t.qrConfig, enabled: true };
 }
 
 /** Convert drafts to the API payload shape. */
@@ -23,16 +46,21 @@ export function tiersToPayload(tiers: TierDraft[]): TierInput[] {
     description: t.description?.trim() ? t.description.trim() : undefined,
     pricePaise: Math.round(parseFloat(t.priceRupees || '0') * 100),
     capacity: t.capacity?.trim() ? parseInt(t.capacity, 10) : null,
+    qrTicketConfig: tierQrToPayload(t),
   }));
 }
 
 /** Hydrate a draft from an event's tier (as returned by GET event). */
-export function tierDraftFromApi(t: Pick<EventTier, 'name' | 'description' | 'pricePaise' | 'capacity'>): TierDraft {
+export function tierDraftFromApi(
+  t: Pick<EventTier, 'name' | 'description' | 'pricePaise' | 'capacity' | 'qrTicketConfig'>,
+): TierDraft {
   return {
     name: t.name,
     description: t.description ?? '',
     priceRupees: String(t.pricePaise / 100),
     capacity: t.capacity == null ? '' : String(t.capacity),
+    qrMode: t.qrTicketConfig == null ? 'inherit' : t.qrTicketConfig.enabled ? 'custom' : 'off',
+    qrConfig: t.qrTicketConfig?.enabled ? t.qrTicketConfig : DEFAULT_QR_CONFIG,
   };
 }
 
@@ -101,6 +129,23 @@ export function TiersEditor({
               onChange={(e) => update(i, { description: e.target.value })}
             />
           </div>
+          <div className="sm:col-span-12">
+            <TierQrModeControl
+              mode={t.qrMode}
+              onChange={(mode) => update(i, { qrMode: mode })}
+              disabled={disabled}
+              parentNoun="event"
+            />
+          </div>
+          {t.qrMode === 'custom' && (
+            <div className="sm:col-span-12">
+              <QrTicketRulesFields
+                cfg={t.qrConfig}
+                onPatch={(p) => update(i, { qrConfig: { ...t.qrConfig, enabled: true, ...p } })}
+                itemNoun="event"
+              />
+            </div>
+          )}
           {!disabled && (
             <div className="flex justify-end sm:col-span-12">
               <Button

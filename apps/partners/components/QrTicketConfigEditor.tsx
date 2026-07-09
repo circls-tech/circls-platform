@@ -19,6 +19,63 @@ function parseIntOrNull(raw: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+/** Per-tier QR pass setting: follow the parent's default, custom rules, or off. */
+export type TierQrMode = 'inherit' | 'custom' | 'off';
+
+const TIER_QR_MODES: TierQrMode[] = ['inherit', 'custom', 'off'];
+
+/**
+ * The "Plan default / Custom / Off" toggle for a tier's QR override. Shared
+ * between the membership and event tier editors; `parentNoun` names the parent
+ * listing in the labels and hints ("plan" or "event").
+ */
+export function TierQrModeControl({
+  mode,
+  onChange,
+  disabled,
+  parentNoun,
+}: {
+  mode: TierQrMode;
+  onChange: (mode: TierQrMode) => void;
+  disabled?: boolean;
+  parentNoun: string;
+}) {
+  const labels: Record<TierQrMode, string> = {
+    inherit: `${parentNoun.charAt(0).toUpperCase()}${parentNoun.slice(1)} default`,
+    custom: 'Custom',
+    off: 'Off',
+  };
+  const hints: Record<TierQrMode, string> = {
+    inherit: `Passes for this tier follow the ${parentNoun}-level QR settings.`,
+    custom: `This tier issues passes with its own rules, ignoring the ${parentNoun}-level settings.`,
+    off: `No QR passes for this tier, even when the ${parentNoun} enables them.`,
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+        QR passes for this tier
+      </label>
+      <div className="inline-flex w-fit rounded-md border border-slate-200 bg-white p-0.5">
+        {TIER_QR_MODES.map((m) => (
+          <button
+            key={m}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(m)}
+            className={[
+              'rounded px-3 py-1.5 text-sm font-medium transition-colors',
+              mode === m ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+            ].join(' ')}
+          >
+            {labels[m]}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-[#94a3b8]">{hints[mode]}</p>
+    </div>
+  );
+}
+
 /**
  * The rule fields of an enabled QR config (usage, scan cap, validity offsets).
  * Shared between the listing-level editor below and the per-tier override in

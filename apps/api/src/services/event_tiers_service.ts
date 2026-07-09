@@ -10,6 +10,7 @@ import { eventBookingTickets } from '../db/schema/event_booking_tickets.js';
 import { eventTicketTiers, type EventTicketTier } from '../db/schema/event_ticket_tiers.js';
 import { events } from '../db/schema/events.js';
 import { bookings } from '../db/schema/bookings.js';
+import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { BadRequest } from '../lib/errors.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -20,6 +21,9 @@ export interface TierInput {
   description?: string | null;
   pricePaise: number;
   capacity?: number | null;
+  /** Per-tier QR override: null/omitted = inherit the event's config;
+   *  `{ enabled: false }` = off for this tier; enabled = custom rules. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 export interface TierWithRemaining extends EventTicketTier {
@@ -88,6 +92,7 @@ export async function replaceTiers(tx: Tx, eventId: string, tenantId: string, ti
         description: t.description ?? null,
         pricePaise: t.pricePaise,
         capacity: t.capacity ?? null,
+        qrTicketConfig: t.qrTicketConfig ?? null,
         sortOrder: i,
       })),
     )

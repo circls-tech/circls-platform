@@ -12,7 +12,10 @@ You'll find an **Enable QR tickets** section on:
 
 - the **event** create/edit form (draft events only, like other event fields) —
   one QR is issued per seat, so a booking for 3 tickets gets 3 individual passes,
-  each labelled with its tier (e.g. "VIP · 2 of 3");
+  each labelled with its tier (e.g. "VIP · 2 of 3"). The event-level setting is
+  the default for all ticket tiers; each tier can override it with its own rules
+  (e.g. a multi-use pass for a multi-day VIP tier) or turn passes off entirely —
+  see [Events → Per-tier QR rules](/help/events);
 - the **arena** create form, and later under the arena's reception page — one QR
   is issued per booking on that arena, valid across the booked slots;
 - the **membership plan** form (editable while the plan is in review or
