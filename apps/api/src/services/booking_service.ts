@@ -3,7 +3,6 @@ import { db } from '../db/client.js';
 import { type Booking, bookings, slots, tenants } from '../db/schema/index.js';
 import { events } from '../db/schema/events.js';
 import { payments } from '../db/schema/payments.js';
-import { env } from '../config/env.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -43,6 +42,10 @@ export async function bookSlots(
 ): Promise<Booking> {
   if (input.slotIds.length === 0) throw new Conflict('No slots selected', 'no_slots');
 
+  // Walk-ins are paid at the counter (no gateway), but the row still records
+  // the venue's currency so reporting/exports label the amount correctly.
+  const payCtx = await resolvePaymentContext({ venueId, tenantId: ctx.tenantId });
+
   return db.transaction(async (tx) => {
     const sel = await tx
       .select({
@@ -78,6 +81,7 @@ export async function bookSlots(
         customerContact: input.customerContact,
         note: input.note ?? null,
         totalPaise: total,
+        currency: payCtx.currency,
         createdByUserId: ctx.actorUserId,
       })
       .returning();

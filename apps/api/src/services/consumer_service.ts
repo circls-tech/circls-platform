@@ -690,6 +690,8 @@ export interface MyBookingItem {
   itemType: string;
   status: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise is in this currency's minor units. */
+  currency: string;
   createdAt: string;
 }
 
@@ -707,6 +709,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
       b.item_type,
       b.status,
       b.total_paise,
+      b.currency,
       b.created_at
     from bookings b
     left join venues v on v.id = b.venue_id
@@ -723,6 +726,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     itemType: r['item_type'] as string,
     status: r['status'] as string,
     totalPaise: Number(r['total_paise']),
+    currency: r['currency'] as string,
     createdAt: new Date(r['created_at'] as string).toISOString(),
   }));
 }
@@ -752,6 +756,8 @@ export interface MyBookingDetail {
   channel: string;
   paymentMethod: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise/slot prices are in this currency's minor units. */
+  currency: string;
   note: string | null;
   customerName: string | null;
   customerContact: string | null;
@@ -815,6 +821,7 @@ export async function getMyBookingDetail(
       b.channel                  as channel,
       b.payment_method           as payment_method,
       b.total_paise              as total_paise,
+      b.currency                 as currency,
       b.note                     as note,
       b.customer_name            as customer_name,
       b.customer_contact         as customer_contact,
@@ -921,6 +928,7 @@ export async function getMyBookingDetail(
     channel: r['channel'] as string,
     paymentMethod: r['payment_method'] as string,
     totalPaise: Number(r['total_paise']),
+    currency: r['currency'] as string,
     note: (r['note'] as string | null) ?? null,
     customerName: (r['customer_name'] as string | null) ?? null,
     customerContact: (r['customer_contact'] as string | null) ?? null,

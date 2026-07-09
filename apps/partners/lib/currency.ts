@@ -34,6 +34,9 @@ export function asCurrencyCode(currency: string | null | undefined): CurrencyCod
   return currency?.toUpperCase() === 'USD' ? 'USD' : 'INR';
 }
 
+// NOTE: the `/100` minor-unit conversion below assumes 2-decimal currencies,
+// which holds for the whole CurrencyCode union (INR, USD). Adding a
+// zero-decimal currency (JPY, KRW) requires a per-currency divisor first.
 const LOCALE_FOR: Record<CurrencyCode, string> = { INR: 'en-IN', USD: 'en-US' };
 
 const formatterCache = new Map<string, Intl.NumberFormat>();

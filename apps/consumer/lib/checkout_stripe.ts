@@ -145,6 +145,10 @@ export async function openStripeCheckout(input: OpenStripeCheckoutInput): Promis
 
   return new Promise<CheckoutResult>((resolve) => {
     let settled = false;
+    // While confirmPayment is in flight, dismissal is disabled: resolving
+    // 'dismissed' mid-confirm would tell the user "cancelled" while the
+    // PaymentIntent can still succeed (charged + booked but told otherwise).
+    let paying = false;
     const finish = (r: CheckoutResult) => {
       if (settled) return;
       settled = true;
@@ -152,15 +156,24 @@ export async function openStripeCheckout(input: OpenStripeCheckoutInput): Promis
       backdrop.remove();
       resolve(r);
     };
+    const setPaying = (v: boolean) => {
+      paying = v;
+      payBtn.disabled = v;
+      payBtn.style.opacity = v ? '0.6' : '1';
+      closeBtn.disabled = v;
+      closeBtn.style.opacity = v ? '0.35' : '1';
+      closeBtn.style.cursor = v ? 'default' : 'pointer';
+    };
 
-    closeBtn.onclick = () => finish({ kind: 'dismissed' });
+    closeBtn.onclick = () => {
+      if (!paying) finish({ kind: 'dismissed' });
+    };
     backdrop.onclick = (e) => {
-      if (e.target === backdrop) finish({ kind: 'dismissed' });
+      if (!paying && e.target === backdrop) finish({ kind: 'dismissed' });
     };
 
     payBtn.onclick = async () => {
-      payBtn.disabled = true;
-      payBtn.style.opacity = '0.6';
+      setPaying(true);
       errorLine.textContent = '';
       try {
         const { error, paymentIntent } = await stripe.confirmPayment({
@@ -169,8 +182,7 @@ export async function openStripeCheckout(input: OpenStripeCheckoutInput): Promis
         });
         if (error) {
           errorLine.textContent = error.message ?? 'Payment failed. Try again.';
-          payBtn.disabled = false;
-          payBtn.style.opacity = '1';
+          setPaying(false);
           return;
         }
         // 'processing' also counts: the webhook confirms the booking either
@@ -183,12 +195,10 @@ export async function openStripeCheckout(input: OpenStripeCheckoutInput): Promis
           return;
         }
         errorLine.textContent = 'Payment not completed. Try again.';
-        payBtn.disabled = false;
-        payBtn.style.opacity = '1';
+        setPaying(false);
       } catch {
         errorLine.textContent = 'Something went wrong. Try again.';
-        payBtn.disabled = false;
-        payBtn.style.opacity = '1';
+        setPaying(false);
       }
     };
   });

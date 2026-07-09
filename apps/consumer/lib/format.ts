@@ -23,6 +23,9 @@ export function countryOfAddress(address: Record<string, unknown> | null | undef
 const moneyFmtCache = new Map<string, Intl.NumberFormat>();
 // `currency` is a plain string so server-provided codes (quote/booking
 // responses) plug in directly; unknown codes still render via Intl.
+// NOTE: the `/100` minor-unit conversion assumes 2-decimal currencies (true
+// for INR and USD — everything the platform charges in). Adding a zero-decimal
+// currency (JPY, KRW) requires a per-currency divisor first.
 function moneyFmt(currency: string, decimals: number): Intl.NumberFormat {
   const key = `${currency}:${decimals}`;
   let f = moneyFmtCache.get(key);

@@ -252,6 +252,8 @@ export interface MyBooking {
   itemType: string;
   status: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise is in this currency's minor units. */
+  currency: string;
   /** ISO-8601 */
   createdAt: string;
 }
@@ -300,6 +302,8 @@ export interface MyBookingDetail {
   channel: string;
   paymentMethod: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise/slot prices are in this currency's minor units. */
+  currency: string;
   note: string | null;
   customerName: string | null;
   customerContact: string | null;

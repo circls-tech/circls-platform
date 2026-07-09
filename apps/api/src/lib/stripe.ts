@@ -102,7 +102,11 @@ class LiveStripe implements PaymentGateway {
       amount: String(input.amountMinor),
       currency: input.currency.toLowerCase(),
       'metadata[reference]': input.reference,
-      'automatic_payment_methods[enabled]': 'true',
+      // Card only, deliberately: the consumer overlay confirms with
+      // `redirect: 'if_required'` and no return_url, which Stripe rejects for
+      // redirect-based methods (wallets, bank redirects). Enabling those needs
+      // a return_url + a checkout return page first.
+      'payment_method_types[0]': 'card',
       ...(input.notes
         ? Object.fromEntries(
             Object.entries(input.notes).map(([k, v]) => [`metadata[${k}]`, v]),

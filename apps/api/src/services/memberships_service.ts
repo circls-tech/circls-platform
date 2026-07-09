@@ -16,7 +16,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { env } from '../config/env.js';
 import {
   memberships,
   type Membership,

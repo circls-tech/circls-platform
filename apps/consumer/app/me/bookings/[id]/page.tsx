@@ -76,7 +76,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <StatusPill status={b.status} />
-                  <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise)}</span>
+                  <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise, b.currency)}</span>
                 </div>
               </div>
             </Card>
@@ -93,7 +93,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                           {formatDate(s.startAt)} · {formatTime(s.startAt)} – {formatTime(s.endAt)}
                         </p>
                       </div>
-                      <span className="text-sm font-medium text-ink">{formatPaise(s.pricePaise)}</span>
+                      <span className="text-sm font-medium text-ink">{formatPaise(s.pricePaise, b.currency)}</span>
                     </div>
                   ))}
                 </div>

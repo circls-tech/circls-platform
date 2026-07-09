@@ -4,9 +4,9 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
-import { type CurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
+import { type CurrencyCode, asCurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
 import { Card, StatusPill } from '@/lib/ui';
-import type { AnalyticsTrendDay } from '@/lib/api/types';
+import type { AnalyticsTrendDay, MoneyByCurrency } from '@/lib/api/types';
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -162,10 +162,9 @@ export default function DashboardPage() {
   // NOTE: org-wide analytics (bookingsToday, revenue, occupancy) are computed
   // in IST (Asia/Kolkata) on the backend. Multi-venue timezone support for the
   // dashboard is a known deferred limitation — the backend would need to accept
-  // a tz parameter and perform per-venue aggregation to fix this. Revenue is
-  // likewise summed across venues and labelled with the tenant's currency —
-  // a tenant with venues in more than one country would need per-currency
-  // aggregation on the backend.
+  // a tz parameter and perform per-venue aggregation to fix this. Revenue IS
+  // aggregated per currency on the backend: a tenant with both US and India
+  // venues gets one bucket/trend series per currency.
   const { data: analytics, isLoading: analyticsLoading } = useAnalytics(
     activeTenantId ?? '',
   );
@@ -181,10 +180,15 @@ export default function DashboardPage() {
   const activeTenant = orgTenants.find((t) => t.id === activeTenantId) ?? null;
   const identity = me?.displayName ?? me?.phoneE164 ?? me?.email ?? null;
 
-  // Derived stat values (safe for zero state)
+  // Derived stat values (safe for zero state). Revenue buckets are per
+  // currency — usually one; a mixed-currency org shows "₹1,200 · $50".
+  const fmtBuckets = (buckets: MoneyByCurrency[] | undefined): string =>
+    !buckets || buckets.length === 0
+      ? formatMoney(0, currency)
+      : buckets.map((b) => formatMoney(b.amountMinor, asCurrencyCode(b.currency))).join(' · ');
   const bookingsToday = analytics?.bookingsToday ?? 0;
-  const revenueToday = formatMoney(analytics?.revenueTodayPaise ?? 0, currency);
-  const revenue7d = formatMoney(analytics?.revenue7dPaise ?? 0, currency);
+  const revenueToday = fmtBuckets(analytics?.revenueToday);
+  const revenue7d = fmtBuckets(analytics?.revenue7d);
   const occupancy7dPct = analytics?.occupancy7dPct ?? 0;
 
   return (
@@ -254,8 +258,22 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : analytics?.trend7d ? (
-              <TrendChart trend={analytics.trend7d} currency={currency} />
+            ) : analytics && analytics.trend7d.length === 0 ? (
+              <p className="text-sm text-slate-400 py-2">No bookings in the last 7 days yet.</p>
+            ) : analytics ? (
+              // One chart per currency with revenue — usually exactly one.
+              <div className="flex flex-col gap-4">
+                {analytics.trend7d.map((series) => (
+                  <div key={series.currency}>
+                    {analytics.trend7d.length > 1 && (
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {series.currency}
+                      </p>
+                    )}
+                    <TrendChart trend={series.days} currency={asCurrencyCode(series.currency)} />
+                  </div>
+                ))}
+              </div>
             ) : null}
           </Card>
         </section>
