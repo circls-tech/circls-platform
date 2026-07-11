@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { useUpdateVenue } from '@/lib/api/queries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import type { OpeningHours, Venue } from '@/lib/api/types';
+import { SERVED_COUNTRIES } from '@/lib/countries';
 import { Button, Input, TagsInput } from '@/lib/ui';
 import { AddressAutocomplete } from './AddressAutocomplete';
 
@@ -30,12 +31,6 @@ const AMENITIES: { value: string; label: string }[] = [
   { value: 'coaching', label: 'Coaching' },
 ];
 
-/**
- * Countries the product serves. Must stay in sync with the API geocoder's
- * recognised countries (apps/api/src/lib/geocoding/gazetteer.ts) — an unlisted
- * country won't resolve to a map location.
- */
-const COUNTRIES = ['India', 'USA'] as const;
 
 const WEEKDAYS = [
   { key: '1', label: 'Monday' },
@@ -293,7 +288,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
             className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
           >
             <option value="">Select country…</option>
-            {COUNTRIES.map((c) => (
+            {SERVED_COUNTRIES.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>

@@ -78,6 +78,70 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
     expect((ev.addressJson as Record<string, unknown>).city).toBe('Pune');
   });
 
+  it('derives coordinates from a standalone address when the caller omits lat/lng', async () => {
+    // Stub geocoder (GEOCODER_PROVIDER default): Pune, India resolves from the
+    // built-in gazetteer — no network. Mirrors the venue address flow.
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { line1: '2 Derive Rd', city: 'Pune', country: 'India' },
+      tzName: 'Asia/Kolkata',
+      name: 'Geocoded Event',
+      startsAt: new Date('2030-02-02T10:00:00Z'),
+      endsAt: new Date('2030-02-02T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    expect(ev.lat).toBeCloseTo(18.5204, 3);
+    expect(ev.lng).toBeCloseTo(73.8567, 3);
+  });
+
+  it('keeps caller-provided coordinates instead of geocoding', async () => {
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { city: 'Pune', country: 'India' },
+      lat: 1.23,
+      lng: 4.56,
+      tzName: 'Asia/Kolkata',
+      name: 'Hand-set Coords Event',
+      startsAt: new Date('2030-02-03T10:00:00Z'),
+      endsAt: new Date('2030-02-03T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    expect(ev.lat).toBeCloseTo(1.23, 5);
+    expect(ev.lng).toBeCloseTo(4.56, 5);
+  });
+
+  it('leaves coordinates null when the address cannot be geocoded', async () => {
+    // No city/country → nothing to resolve; the save still succeeds.
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { line1: '99 Unknown Alley' },
+      tzName: 'Asia/Kolkata',
+      name: 'Ungeodable Event',
+      startsAt: new Date('2030-02-04T10:00:00Z'),
+      endsAt: new Date('2030-02-04T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    expect(ev.lat).toBeNull();
+    expect(ev.lng).toBeNull();
+  });
+
+  it('re-derives coordinates when an update changes the address without lat/lng', async () => {
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { city: 'Pune', country: 'India' },
+      tzName: 'Asia/Kolkata',
+      name: 'Regeocode Event',
+      startsAt: new Date('2030-02-05T10:00:00Z'),
+      endsAt: new Date('2030-02-05T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    const moved = await updateEvent(ctx(), ev.id, {
+      addressJson: { city: 'Mumbai', country: 'India' },
+    });
+    expect(moved.lat).toBeCloseTo(19.076, 3);
+    expect(moved.lng).toBeCloseTo(72.8777, 3);
+  });
+
   it('rejects a standalone event missing an address', async () => {
     await expect(
       createEvent(ctx(), {

@@ -8,6 +8,7 @@ import {
   haversineKm,
   inArea,
   inCountry,
+  matchesCountry,
   nearestCity,
   sameCountry,
   venueToLocatable,
@@ -144,6 +145,22 @@ describe('inCountry', () => {
   it('shows places with no country everywhere (lenient)', () => {
     expect(inCountry({ city: 'Nowhere' }, 'USA')).toBe(true);
     expect(inCountry(null, 'India')).toBe(true);
+  });
+});
+
+describe('matchesCountry', () => {
+  it('matches everything when no country is selected', () => {
+    expect(matchesCountry('India', null)).toBe(true);
+    expect(matchesCountry(null, null)).toBe(true);
+  });
+  it('keeps only same-country values once a country is selected', () => {
+    // The membership case: an India plan must not show for a USA selection.
+    expect(matchesCountry('India', 'USA')).toBe(false);
+    expect(matchesCountry('USA', 'USA')).toBe(true);
+    expect(matchesCountry(' usa ', 'USA')).toBe(true);
+  });
+  it('shows untagged values everywhere (lenient)', () => {
+    expect(matchesCountry(null, 'USA')).toBe(true);
   });
 });
 

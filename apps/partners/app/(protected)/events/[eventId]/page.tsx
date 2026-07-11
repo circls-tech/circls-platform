@@ -16,7 +16,10 @@ import {
   useUpdateTenantEvent,
 } from '@/lib/api/events';
 import { useVenues } from '@/lib/api/queries';
-import { formatMoney, useCurrency, useVenueCurrencies } from '@/lib/currency';
+import { formatMoney, useCurrency } from '@/lib/currency';
+import { SERVED_COUNTRIES } from '@/lib/countries';
+import type { AddressSuggestion } from '@/lib/api/geocode';
+import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { EventImages } from '@/components/EventImages';
 import { EventRegistrations } from '@/components/EventRegistrations';
 import {
@@ -113,7 +116,6 @@ export default function OrgEventDetailPage() {
     venueId: ev?.venueId,
     country: ev && !ev.venueId ? ((ev.addressJson?.country as string | undefined) ?? null) : null,
   });
-  const { currencyFor } = useVenueCurrencies();
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -130,9 +132,20 @@ export default function OrgEventDetailPage() {
   const [city, setCity] = useState('');
   const [stateRegion, setStateRegion] = useState('');
   const [pincode, setPincode] = useState('');
-  const [latRaw, setLatRaw] = useState('');
-  const [lngRaw, setLngRaw] = useState('');
+  const [countryForm, setCountryForm] = useState('');
+  // Coordinates are held here (never shown) — set from an autocomplete pick or
+  // the event's existing value, and cleared on any manual address edit so the
+  // server re-geocodes from the typed address on save.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [tzForm, setTzForm] = useState('Asia/Kolkata');
+
+  // While editing, tier prices follow the LIVE form scope — the picked venue's
+  // currency, or the standalone address country as it's typed (falling back to
+  // the tenant's) — so the labels update before the event is saved.
+  const editCurrency = useCurrency({
+    venueId: venueChoice || null,
+    country: venueChoice ? null : countryForm || null,
+  });
 
   const { resolveTz } = useTimezone();
   const currentVenue = ev?.venueId ? venues?.find((v) => v.id === ev.venueId) : undefined;
@@ -169,11 +182,21 @@ export default function OrgEventDetailPage() {
     setCity(str('city'));
     setStateRegion(str('state'));
     setPincode(str('pincode'));
-    setLatRaw(ev.lat != null ? String(ev.lat) : '');
-    setLngRaw(ev.lng != null ? String(ev.lng) : '');
+    setCountryForm(str('country'));
+    setCoords(ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : null);
     setTzForm(ev.tzName ?? 'Asia/Kolkata');
     setErrorMsg(null);
     setEditing(true);
+  }
+
+  /** Fill the address fields + coordinates from a chosen autocomplete result. */
+  function applySuggestion(s: AddressSuggestion) {
+    if (s.line1) setLine1(s.line1);
+    setCity(s.city ?? '');
+    setStateRegion(s.state ?? '');
+    if (s.postalCode) setPincode(s.postalCode);
+    if (s.country) setCountryForm(s.country);
+    setCoords({ lat: s.lat, lng: s.lng });
   }
 
   async function handlePublish() {
@@ -201,6 +224,7 @@ export default function OrgEventDetailPage() {
     if (city.trim()) a.city = city.trim();
     if (stateRegion.trim()) a.state = stateRegion.trim();
     if (pincode.trim()) a.pincode = pincode.trim();
+    if (countryForm.trim()) a.country = countryForm.trim();
     return a;
   }
 
@@ -238,11 +262,13 @@ export default function OrgEventDetailPage() {
         setErrorMsg('Enter a timezone for a standalone event.');
         return;
       }
+      // Coordinates come from an autocomplete pick (or the event's saved value)
+      // when known; otherwise they're omitted and the API re-derives them from
+      // the address (its geocoder). Organisers never enter lat/lng by hand.
       scopePatch = {
         addressJson,
         tzName: tzForm.trim(),
-        lat: latRaw ? parseFloat(latRaw) : null,
-        lng: lngRaw ? parseFloat(lngRaw) : null,
+        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
         ...(scopeChanged ? { venueId: null } : {}),
       };
     } else if (scopeChanged) {
@@ -466,10 +492,14 @@ export default function OrgEventDetailPage() {
 
                 {venueChoice === '' && (
                   <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3">
+                    <AddressAutocomplete country={countryForm || null} onSelect={applySuggestion} />
                     <Input
                       label="Address line 1"
                       value={line1}
-                      onChange={(e) => setLine1(e.target.value)}
+                      onChange={(e) => {
+                        setLine1(e.target.value);
+                        setCoords(null);
+                      }}
                       placeholder="Street / building"
                     />
                     <Input
@@ -479,30 +509,55 @@ export default function OrgEventDetailPage() {
                       placeholder="Optional"
                     />
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
+                      <Input
+                        label="City"
+                        value={city}
+                        onChange={(e) => {
+                          setCity(e.target.value);
+                          setCoords(null);
+                        }}
+                      />
                       <Input
                         label="State"
                         value={stateRegion}
-                        onChange={(e) => setStateRegion(e.target.value)}
+                        onChange={(e) => {
+                          setStateRegion(e.target.value);
+                          setCoords(null);
+                        }}
                       />
-                      <Input label="PIN" value={pincode} onChange={(e) => setPincode(e.target.value)} />
+                      <Input
+                        label="PIN"
+                        value={pincode}
+                        onChange={(e) => {
+                          setPincode(e.target.value);
+                          setCoords(null);
+                        }}
+                      />
                     </div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <Input
-                        label="Latitude"
-                        type="number"
-                        step="0.000001"
-                        value={latRaw}
-                        onChange={(e) => setLatRaw(e.target.value)}
-                        hint="Optional — for the map pin."
-                      />
-                      <Input
-                        label="Longitude"
-                        type="number"
-                        step="0.000001"
-                        value={lngRaw}
-                        onChange={(e) => setLngRaw(e.target.value)}
-                      />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                          Country
+                        </label>
+                        <select
+                          value={countryForm}
+                          onChange={(e) => {
+                            setCountryForm(e.target.value);
+                            setCoords(null);
+                          }}
+                          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+                        >
+                          <option value="">Select country…</option>
+                          {SERVED_COUNTRIES.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-xs text-slate-400">
+                          Sets the map pin automatically and the currency tickets sell in.
+                        </span>
+                      </div>
                       <Input
                         label="Timezone"
                         value={tzForm}
@@ -533,7 +588,7 @@ export default function OrgEventDetailPage() {
                 <TiersEditor
                   value={tiers}
                   onChange={setTiers}
-                  currency={venueChoice ? currencyFor(venueChoice) : currency}
+                  currency={editCurrency}
                 />
 
                 <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
