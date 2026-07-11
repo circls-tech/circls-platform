@@ -23,6 +23,8 @@ A customer can book slots across several of your courts in one go (a single book
 | **no_show** | The customer did not turn up. |
 | **cancelled** | Cancelled by the customer or by you. |
 
+A booking paid online stays **pending** while the customer completes payment — a failed card attempt doesn't cancel it, since the customer can retry right away. If payment isn't completed within about 15 minutes, the booking is cancelled automatically and its slots are released. In the rare case a payment completes after the booking was already cancelled, the customer is refunded in full automatically.
+
 ## The booking detail
 
 The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Cancel booking** action.

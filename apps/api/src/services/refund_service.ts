@@ -13,7 +13,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { payments } from '../db/schema/payments.js';
 import { Conflict, NotFound } from '../lib/errors.js';
-import { writeAudit } from '../lib/audit.js';
+import { writeSystemAudit } from '../lib/audit.js';
 import { getGateway } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
 
@@ -28,7 +28,8 @@ export interface IssueRefundInput {
   /** Refund amount in paise; positive. */
   amountPaise: number;
   reason: string;
-  actorUserId: string;
+  /** Null for system-issued refunds (e.g. auto-refund of an orphaned capture). */
+  actorUserId: string | null;
 }
 
 export interface IssueRefundResult {
@@ -185,7 +186,8 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
   await tx.update(payments).set({ status: newChargeStatus }).where(eq(payments.id, charge.id));
 
   // 7. Audit row. tenantId is the charge's tenant — matches the booking's.
-  await writeAudit(
+  //    System audit: actorUserId may be null for automated refunds.
+  await writeSystemAudit(
     tx,
     { tenantId: charge.tenantId, actorUserId: input.actorUserId },
     'payment.refunded',

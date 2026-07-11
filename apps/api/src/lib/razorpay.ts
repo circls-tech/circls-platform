@@ -26,6 +26,7 @@ import type {
 // ── Stub adapter ────────────────────────────────────────────────────────────
 let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
+let stubCancelledOrders: string[] = [];
 
 class StubRazorpay implements PaymentGateway {
   readonly provider = 'razorpay' as const;
@@ -33,6 +34,10 @@ class StubRazorpay implements PaymentGateway {
 
   async createOrder(input: CreateOrderInput): Promise<GatewayOrder> {
     return { id: nextStubId('order'), status: 'created', amountMinor: input.amountMinor };
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    stubCancelledOrders.push(orderId);
   }
 
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
@@ -99,6 +104,14 @@ class LiveRazorpay implements PaymentGateway {
     return { id: order.id, status, amountMinor: Number(order.amount) };
   }
 
+  // Razorpay's Orders API has no cancel endpoint — an order stays payable
+  // until it expires on Razorpay's side. Documented no-op: for Razorpay the
+  // only protection against a capture landing after we cancelled the booking
+  // is the capture-after-cancel auto-refund safety net in payments_service.
+  async cancelOrder(orderId: string): Promise<void> {
+    logger.info({ orderId }, 'razorpay_cancel_order_noop');
+  }
+
   // https://razorpay.com/docs/api/refunds/create-normal/
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
     const refund = await this.call<{ id: string; status: string; amount: number }>(
@@ -151,4 +164,10 @@ export function getRazorpay(): PaymentGateway {
 export function __resetRazorpayForTesting(): void {
   cached = undefined;
   stubCounter = 0;
+  stubCancelledOrders = [];
+}
+
+/** Test-only: order ids the stub adapter was asked to cancel. */
+export function __getStubRazorpayCancelledOrders(): readonly string[] {
+  return stubCancelledOrders;
 }

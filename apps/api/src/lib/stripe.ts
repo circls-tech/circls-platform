@@ -29,6 +29,7 @@ import type {
 // ── Stub adapter ────────────────────────────────────────────────────────────
 let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
+let stubCancelledOrders: string[] = [];
 
 class StubStripe implements PaymentGateway {
   readonly provider = 'stripe' as const;
@@ -42,6 +43,10 @@ class StubStripe implements PaymentGateway {
       amountMinor: input.amountMinor,
       clientSecret: `${id}_secret`,
     };
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    stubCancelledOrders.push(orderId);
   }
 
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
@@ -121,6 +126,17 @@ class LiveStripe implements PaymentGateway {
       amountMinor: Number(pi.amount),
       clientSecret: pi.client_secret,
     };
+  }
+
+  // https://docs.stripe.com/api/payment_intents/cancel
+  // Only PaymentIntents in a pre-capture state can be cancelled; Stripe
+  // returns 400 once the intent has succeeded (i.e. we lost the race against
+  // a retry-capture). We throw in that case — callers treat cancelOrder as
+  // best-effort and the capture webhook's auto-refund safety net settles it.
+  async cancelOrder(orderId: string): Promise<void> {
+    await this.call(`/payment_intents/${encodeURIComponent(orderId)}/cancel`, {
+      cancellation_reason: 'abandoned',
+    });
   }
 
   // https://docs.stripe.com/api/refunds/create
@@ -208,4 +224,10 @@ export function getStripe(): PaymentGateway {
 export function __resetStripeForTesting(): void {
   cached = undefined;
   stubCounter = 0;
+  stubCancelledOrders = [];
+}
+
+/** Test-only: order ids the stub adapter was asked to cancel. */
+export function __getStubStripeCancelledOrders(): readonly string[] {
+  return stubCancelledOrders;
 }

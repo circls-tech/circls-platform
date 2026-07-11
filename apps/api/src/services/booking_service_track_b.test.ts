@@ -5,11 +5,16 @@ import {
   arenas,
   auditLog,
   bookings,
+  payments,
   slots,
   tenants,
   users,
   venues,
 } from '../db/schema/index.js';
+import {
+  __getStubStripeCancelledOrders,
+  __resetStripeForTesting,
+} from '../lib/stripe.js';
 import { sweepAbandonedCarts } from './booking_service_track_b.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -22,6 +27,7 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
 
   beforeAll(async () => {
     await pingDb();
+    __resetStripeForTesting();
     const [u] = await db
       .insert(users)
       .values({ firebaseUid: `bt-fb-${Date.now()}`, email: `bt-${Date.now()}@test.x` })
@@ -46,6 +52,7 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`update slots set booking_id = null where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
@@ -151,6 +158,64 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
 
     const [book] = await db.select().from(bookings).where(sql`id = ${bookingRow!.id}`);
     expect(book?.status).toBe('pending');
+  });
+
+  it('fails the pending charge and cancels the gateway order for swept bookings', async () => {
+    const { bookingId } = await seedOldPending('2032-04-05T05:00:00.000Z');
+    // A live-gateway charge row awaiting capture. In tests getStripe() is the
+    // stub adapter, which records cancelOrder calls for assertion.
+    const [payRow] = await db
+      .insert(payments)
+      .values({
+        bookingId,
+        tenantId,
+        provider: 'stripe',
+        providerOrderId: 'pi_sweep_test_1',
+        amountPaise: 50000,
+        currency: 'USD',
+        status: 'pending',
+        kind: 'charge',
+        metadata: {},
+      })
+      .returning();
+
+    await sweepAbandonedCarts();
+
+    // Charge is terminally failed so a late retry-capture routes to the
+    // auto-refund safety net instead of confirming a cancelled booking.
+    const [pay] = await db.select().from(payments).where(sql`id = ${payRow!.id}`);
+    expect(pay?.status).toBe('failed');
+
+    // And the gateway order was voided so the still-open card form can no
+    // longer complete the payment at all.
+    expect(__getStubStripeCancelledOrders()).toContain('pi_sweep_test_1');
+  });
+
+  it('leaves captured charges alone when sweeping', async () => {
+    const { bookingId } = await seedOldPending('2032-05-05T05:00:00.000Z');
+    // Simulate a capture that confirmed a *different* state path: the charge
+    // is captured but the booking (artificially) still pending — the sweep
+    // cancels the booking but must not clobber the captured ledger row.
+    const [payRow] = await db
+      .insert(payments)
+      .values({
+        bookingId,
+        tenantId,
+        provider: 'stripe',
+        providerOrderId: 'pi_sweep_test_2',
+        amountPaise: 50000,
+        currency: 'USD',
+        status: 'captured',
+        kind: 'charge',
+        metadata: {},
+      })
+      .returning();
+
+    await sweepAbandonedCarts();
+
+    const [pay] = await db.select().from(payments).where(sql`id = ${payRow!.id}`);
+    expect(pay?.status).toBe('captured');
+    expect(__getStubStripeCancelledOrders()).not.toContain('pi_sweep_test_2');
   });
 
   it('does not touch external (walk-in) pending bookings even if old', async () => {
