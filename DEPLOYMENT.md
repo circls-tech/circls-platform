@@ -55,6 +55,12 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `R2_SECRET_ACCESS_KEY` | for media | — | R2 API token S3 secret. |
 | `R2_BUCKET` | for media | — | `circls-media` (public venue-media bucket). |
 | `R2_PUBLIC_BASE_URL` | for media | — | bucket public URL, e.g. `https://pub-….r2.dev`. Venue-image URLs are built from this. |
+| `RAZORPAY_KEY_ID` | **prod: yes** | — | Razorpay dashboard → Settings → API Keys. Boot fails in production without all three Razorpay vars; unset in dev ⇒ payment stub mode. |
+| `RAZORPAY_KEY_SECRET` | **prod: yes** | — | Shown once when the key is generated. |
+| `RAZORPAY_WEBHOOK_SECRET` | **prod: yes** | — | Set when creating the webhook (Settings → Webhooks → `https://api.circls.app/webhooks/razorpay`). |
+| `STRIPE_SECRET_KEY` | for US venues | — | Stripe dashboard → Developers → API keys (`sk_live_…`). The three Stripe vars are **all-or-nothing**: unless ALL are set, Stripe runs in stub mode (US-venue bookings are reserved, never charged) and a partial config logs `stripe_partially_configured_using_stub`. |
+| `STRIPE_PUBLISHABLE_KEY` | for US venues | — | Same page (`pk_live_…`) — returned to the browser to open the payment form. |
+| `STRIPE_WEBHOOK_SECRET` | for US venues | — | Developers → Webhooks → Add endpoint `https://api.circls.app/webhooks/stripe` with events `payment_intent.succeeded`, `payment_intent.payment_failed`, `refund.updated`, `refund.failed`; copy the endpoint's signing secret (`whsec_…`). |
 | `GEOCODER_PROVIDER` | no | `stub` | `stub` resolves + searches venue addresses against a built-in India/USA city gazetteer (no external calls). Set `photon` in prod to geocode arbitrary addresses **and power the address autocomplete** via OpenStreetMap Photon (free/keyless; ODbL permits storing results; built for type-ahead). |
 | `GEOCODER_BASE_URL` | no | `https://photon.komoot.io` | Photon endpoint. Point at a self-hosted instance if you outgrow the public one's fair-use limits. |
 | `GEOCODER_USER_AGENT` | with photon | `circls-platform/1.0 (+https://circls.app)` | Identifies the app per OSM policy — app name + a contact URL. |

@@ -8,8 +8,10 @@ vi.mock('../config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
     LOG_LEVEL: 'silent', // stripe.ts pulls in lib/logger.js, which reads this
+    // All three must be set — a partial config falls back to the stub.
     STRIPE_SECRET_KEY: 'sk_test_x',
     STRIPE_WEBHOOK_SECRET: 'whsec_test_secret',
+    STRIPE_PUBLISHABLE_KEY: 'pk_test_x',
   },
 }));
 

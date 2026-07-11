@@ -178,12 +178,28 @@ let cached: PaymentGateway | undefined;
 
 export function getStripe(): PaymentGateway {
   if (cached) return cached;
-  if (env.STRIPE_SECRET_KEY) {
-    cached = new LiveStripe(env.STRIPE_SECRET_KEY, env.STRIPE_WEBHOOK_SECRET);
+  const haveSecretKey = Boolean(env.STRIPE_SECRET_KEY);
+  const haveWebhookSecret = Boolean(env.STRIPE_WEBHOOK_SECRET);
+  const havePublishableKey = Boolean(env.STRIPE_PUBLISHABLE_KEY);
+
+  if (haveSecretKey && haveWebhookSecret && havePublishableKey) {
+    cached = new LiveStripe(env.STRIPE_SECRET_KEY!, env.STRIPE_WEBHOOK_SECRET);
     logger.info('stripe_mode_live');
   } else {
+    // All-or-nothing: a PARTIAL config must not go live. With the secret key
+    // but no webhook secret, customers could pay real money for bookings
+    // whose captures we can never verify (charged, never confirmed, later
+    // auto-cancelled). Stub mode keeps US bookings on the safe "reserved"
+    // path — created pending, never charged — until config is complete.
+    if (haveSecretKey || haveWebhookSecret || havePublishableKey) {
+      logger.error(
+        { haveSecretKey, haveWebhookSecret, havePublishableKey },
+        'stripe_partially_configured_using_stub',
+      );
+    } else {
+      logger.info('stripe_mode_stub');
+    }
     cached = new StubStripe();
-    logger.info('stripe_mode_stub');
   }
   return cached;
 }
