@@ -12,11 +12,14 @@ import {
   venues,
 } from '../db/schema/index.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
+import { __resetStripeForTesting } from '../lib/stripe.js';
 import { createPricingRule } from './pricing_service.js';
 import {
   createPaymentOrder,
   handleRazorpayWebhook,
+  handleStripeWebhook,
   listForBooking,
+  resolvePaymentContext,
 } from './payments_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -38,6 +41,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   beforeAll(async () => {
     await pingDb();
     __resetRazorpayForTesting();
+    __resetStripeForTesting();
 
     const [u] = await db
       .insert(users)
@@ -83,7 +87,10 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   });
 
   /** Create a fresh pending booking + payment row scoped to a far-future slot. */
-  async function seedPendingBookingWithOrder(dateIso: string): Promise<{
+  async function seedPendingBookingWithOrder(
+    dateIso: string,
+    opts?: { provider?: 'razorpay' | 'stripe'; currency?: string },
+  ): Promise<{
     bookingId: string;
     orderId: string;
     paymentId: string;
@@ -129,6 +136,8 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       bookingId: booking!.id,
       tenantId,
       amountPaise: 50000,
+      ...(opts?.provider ? { provider: opts.provider } : {}),
+      ...(opts?.currency ? { currency: opts.currency } : {}),
       actorUserId: userId,
     });
 
@@ -447,6 +456,166 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
           payload: { refund: { entity: { id: 'rfnd_does_not_exist', status: 'processed' } } },
         }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleStripeWebhook', () => {
+    it('payment_intent.succeeded captures the payment and confirms the booking', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-05T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+      expect(orderId).toMatch(/^stub_pi_/);
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_capture_1',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_stub_1',
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      expect(pay?.providerPaymentId).toBe('ch_stub_1');
+      expect(pay?.currency).toBe('USD');
+      expect(pay?.settlementHoldUntil).not.toBeNull();
+
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+
+    it('rejects a capture whose amount disagrees with the order (M1)', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-12T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_mismatch',
+        object: { id: orderId, amount_received: 49999, currency: 'usd', latest_charge: 'ch_bad' },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending');
+    });
+
+    it('rejects a capture whose currency disagrees with the order (M1)', async () => {
+      const { orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-19T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_cur_mismatch',
+        object: { id: orderId, amount_received: 50000, currency: 'inr', latest_charge: 'ch_cur' },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+    });
+
+    it('payment_intent.payment_failed cancels the pending booking', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-26T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.payment_failed',
+        eventId: 'evt_stripe_fail_1',
+        object: { id: orderId },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('failed');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('cancelled');
+    });
+
+    it('refund.updated succeeded flips a pending refund row to captured; pending is ignored', async () => {
+      const { bookingId } = await seedPendingBookingWithOrder('2032-02-02T05:00:00.000Z', {
+        provider: 'stripe',
+        currency: 'USD',
+      });
+      const [r] = await db
+        .insert(payments)
+        .values({
+          bookingId,
+          tenantId,
+          provider: 'stripe',
+          providerPaymentId: 're_stub_1',
+          amountPaise: -50000,
+          currency: 'USD',
+          status: 'pending',
+          kind: 'refund',
+          metadata: {},
+        })
+        .returning();
+
+      // Non-terminal update: no state change.
+      await handleStripeWebhook({
+        type: 'refund.updated',
+        eventId: 'evt_stripe_refund_pending',
+        object: { id: 're_stub_1', status: 'pending' },
+      });
+      let [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('pending');
+
+      await handleStripeWebhook({
+        type: 'refund.updated',
+        eventId: 'evt_stripe_refund_done',
+        object: { id: 're_stub_1', status: 'succeeded' },
+      });
+      [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('captured');
+    });
+
+    it('acks unknown event types without error', async () => {
+      await expect(
+        handleStripeWebhook({
+          type: 'customer.created',
+          eventId: 'evt_stripe_unknown',
+          object: { id: 'cus_1' },
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('resolvePaymentContext', () => {
+    it('US venue → stripe/USD; Indian venue → razorpay/INR; no country → razorpay/INR', async () => {
+      const [usVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'US V', tzName: 'America/New_York', country: 'USA' })
+        .returning();
+      const [inVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'IN V', tzName: 'Asia/Kolkata', country: 'India' })
+        .returning();
+
+      expect(await resolvePaymentContext({ venueId: usVenue!.id, tenantId })).toEqual({
+        provider: 'stripe',
+        currency: 'USD',
+      });
+      expect(await resolvePaymentContext({ venueId: inVenue!.id, tenantId })).toEqual({
+        provider: 'razorpay',
+        currency: 'INR',
+      });
+      // No venue + tenant without a country → the pre-multi-gateway default.
+      expect(await resolvePaymentContext({ tenantId })).toEqual({
+        provider: 'razorpay',
+        currency: 'INR',
+      });
+
+      await db.execute(sql`delete from venues where id in (${usVenue!.id}, ${inVenue!.id})`);
     });
   });
 

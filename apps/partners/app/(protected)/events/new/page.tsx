@@ -10,6 +10,7 @@ import {
   useCreateTenantEvent,
   type CreateTenantEventInput,
 } from '@/lib/api/events';
+import { useVenueCurrencies } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -76,6 +77,10 @@ export default function NewTenantEventPage() {
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
   const effectiveTz = scope === 'venue' ? selectedVenue?.tzName ?? 'Asia/Kolkata' : tz;
+  // Ticket prices follow the selected venue's currency (tenant currency for
+  // standalone events, whose address form has no country field).
+  const { currencyFor } = useVenueCurrencies();
+  const currency = currencyFor(scope === 'venue' ? venueId || null : null);
   const busy = createEvent.isPending || uploadProgress !== null;
 
   /** Timezone for one series date — its override venue's tz, else the event's. */
@@ -279,9 +284,10 @@ export default function NewTenantEventPage() {
                 : 'Same as event — standalone address'
             }
             baseTiers={tiers}
+            currency={currency}
           />
 
-          <TiersEditor value={tiers} onChange={setTiers} />
+          <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 

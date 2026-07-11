@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
 import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
+import { useCurrency } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -49,6 +50,7 @@ export default function NewEventPage() {
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const createEvent = useCreateEvent(venueId);
+  const currency = useCurrency({ venueId });
   // For Advanced-settings venue overrides on recurring events (needs tenantId).
   const { data: venues } = useVenues(tenantId);
 
@@ -204,9 +206,10 @@ export default function NewEventPage() {
             venues={(venues ?? []).filter((v) => v.id !== venueId).map((v) => ({ id: v.id, name: v.name }))}
             baseLocationLabel={`Same as event${thisVenue ? ` — ${thisVenue.name}` : ''}`}
             baseTiers={tiers}
+            currency={currency}
           />
 
-          <TiersEditor value={tiers} onChange={setTiers} />
+          <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <PendingPhotosPicker photos={photos} onChange={setPhotos} />
 

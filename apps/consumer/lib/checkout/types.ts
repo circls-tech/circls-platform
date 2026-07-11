@@ -1,9 +1,19 @@
+import type { CurrencyCode } from '@/lib/format';
+
 export type CheckoutLine = { tierId: string; tierName: string; quantity: number; unitPricePaise: number };
 
+/** Fields shared by every checkout item. `currency` only affects how the
+ *  price breakdown is DISPLAYED (defaults to INR); the payment order itself
+ *  comes from the API. */
+interface CheckoutItemBase {
+  title: string;
+  currency?: CurrencyCode;
+}
+
 export type CheckoutItem =
-  | { kind: 'slot'; slotIds: string[]; title: string }
-  | { kind: 'event'; eventId: string; title: string; lines: CheckoutLine[] }
-  | { kind: 'membership'; membershipId: string; title: string; membershipTierId?: string };
+  | (CheckoutItemBase & { kind: 'slot'; slotIds: string[] })
+  | (CheckoutItemBase & { kind: 'event'; eventId: string; lines: CheckoutLine[] })
+  | (CheckoutItemBase & { kind: 'membership'; membershipId: string; membershipTierId?: string });
 
 export interface CheckoutPrefill {
   name?: string;

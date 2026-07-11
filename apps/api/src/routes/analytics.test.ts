@@ -27,12 +27,16 @@ interface TrendPoint {
   bookings: number;
   revenuePaise: number;
 }
+interface MoneyByCurrency {
+  currency: string;
+  amountMinor: number;
+}
 interface AnalyticsResponse {
   bookingsToday: number;
-  revenueTodayPaise: number;
-  revenue7dPaise: number;
+  revenueToday: MoneyByCurrency[];
+  revenue7d: MoneyByCurrency[];
   occupancy7dPct: number;
-  trend7d: TrendPoint[];
+  trend7d: { currency: string; days: TrendPoint[] }[];
 }
 
 /**
@@ -197,17 +201,15 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     expect(typeof a.bookingsToday).toBe('number');
   });
 
-  it('revenueTodayPaise sums booked price for today only', async () => {
+  it('revenueToday sums booked price for today only, bucketed by currency (INR default)', async () => {
     const a = await fetchAnalytics();
-    expect(a.revenueTodayPaise).toBe(27000); // 10000 + 12000 + 5000
-    expect(typeof a.revenueTodayPaise).toBe('number');
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 27000 }]); // 10000 + 12000 + 5000
   });
 
-  it('revenue7dPaise includes older booked slots within the window, excludes the out-of-window one', async () => {
+  it('revenue7d includes older booked slots within the window, excludes the out-of-window one', async () => {
     const a = await fetchAnalytics();
     // today 27000 + today-2 30000 + today-5 7000 + today-6 1000 = 65000 (today-9 excluded)
-    expect(a.revenue7dPaise).toBe(65000);
-    expect(typeof a.revenue7dPaise).toBe('number');
+    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 65000 }]);
   });
 
   it('occupancy7dPct = booked / (open+held+booked) over the window, blocked excluded, rounded to 1dp', async () => {
@@ -219,17 +221,19 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     expect(a.occupancy7dPct).toBe(60);
   });
 
-  it('trend7d has exactly 7 entries oldest→newest with the right IST dates', async () => {
+  it('trend7d is one INR series with exactly 7 entries oldest→newest and the right IST dates', async () => {
     const a = await fetchAnalytics();
-    expect(a.trend7d).toHaveLength(7);
-    expect(a.trend7d.map((p) => p.date)).toEqual(windowDates);
+    expect(a.trend7d).toHaveLength(1);
+    expect(a.trend7d[0]!.currency).toBe('INR');
+    expect(a.trend7d[0]!.days).toHaveLength(7);
+    expect(a.trend7d[0]!.days.map((p) => p.date)).toEqual(windowDates);
     // last entry is today (IST)
-    expect(a.trend7d[6]!.date).toBe(windowDates[6]);
+    expect(a.trend7d[0]!.days[6]!.date).toBe(windowDates[6]);
   });
 
   it('trend7d carries the right per-day bookings/revenue and zeros on empty days', async () => {
     const a = await fetchAnalytics();
-    const byDate = new Map(a.trend7d.map((p) => [p.date, p]));
+    const byDate = new Map(a.trend7d[0]!.days.map((p) => [p.date, p]));
 
     // today-6
     expect(byDate.get(windowDates[0]!)).toMatchObject({ bookings: 1, revenuePaise: 1000 });
@@ -247,7 +251,7 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     expect(byDate.get(windowDates[6]!)).toMatchObject({ bookings: 2, revenuePaise: 27000 });
 
     // every entry's counts are plain numbers
-    for (const p of a.trend7d) {
+    for (const p of a.trend7d[0]!.days) {
       expect(typeof p.bookings).toBe('number');
       expect(typeof p.revenuePaise).toBe('number');
     }
@@ -326,10 +330,10 @@ describe.skipIf(!runIntegration)('tenant analytics isolation', () => {
     expect(res.statusCode).toBe(200);
     const a = res.json() as AnalyticsResponse;
     expect(a.bookingsToday).toBe(1);
-    expect(a.revenueTodayPaise).toBe(5000);
-    expect(a.revenue7dPaise).toBe(5000); // only A's today slot
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 5000 }]);
+    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 5000 }]); // only A's today slot
     expect(a.occupancy7dPct).toBe(100); // 1 booked / 1 bookable
-    expect(a.trend7d[6]!.revenuePaise).toBe(5000);
+    expect(a.trend7d[0]!.days[6]!.revenuePaise).toBe(5000);
   });
 });
 
@@ -349,10 +353,10 @@ describe.skipIf(!runIntegration)('tenant analytics zero-state', () => {
 
   afterAll(async () => {
     await app.close();
-    await closeDb();
+    // closeDb deferred to the final suite below.
   });
 
-  it('all zeros, occupancy 0 (divide-by-zero guarded), trend7d of 7 zero entries', async () => {
+  it('all zeros, occupancy 0 (divide-by-zero guarded), empty revenue/trend buckets', async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/v1/tenants/${tenantId}/analytics`,
@@ -361,16 +365,82 @@ describe.skipIf(!runIntegration)('tenant analytics zero-state', () => {
     expect(res.statusCode).toBe(200);
     const a = res.json() as AnalyticsResponse;
     expect(a.bookingsToday).toBe(0);
-    expect(a.revenueTodayPaise).toBe(0);
-    expect(a.revenue7dPaise).toBe(0);
+    // No booked slots → no currency has revenue → empty buckets/series.
+    expect(a.revenueToday).toEqual([]);
+    expect(a.revenue7d).toEqual([]);
     expect(a.occupancy7dPct).toBe(0);
-    expect(a.trend7d).toHaveLength(7);
-    for (const p of a.trend7d) {
-      expect(p.bookings).toBe(0);
-      expect(p.revenuePaise).toBe(0);
-      expect(typeof p.date).toBe('string');
-      // date is a valid YYYY-MM-DD
-      expect(p.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(a.trend7d).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mixed currencies: a tenant with an India venue and a USA venue gets separate
+// INR and USD buckets — never a paise+cents sum.
+// ---------------------------------------------------------------------------
+describe.skipIf(!runIntegration)('tenant analytics mixed currencies', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+    const s = await setup(app, 'owner', `anmix-${Date.now()}`); // venue w/o country → INR
+    tenantId = s.tenantId;
+
+    // Second venue in the USA → its slots bucket as USD.
+    const [usVenue] = await db
+      .insert(venues)
+      .values({ tenantId, name: 'US Venue', country: 'USA' })
+      .returning();
+    const [usArena] = await db
+      .insert(arenas)
+      .values({ venueId: usVenue!.id, name: 'US Arena' })
+      .returning();
+
+    await insertSlot(tenantId, s.arenaId, {
+      offsetDays: 0,
+      hour: 6,
+      status: 'booked',
+      pricePaise: 5000, // ₹50.00
+      bookingId: await createBooking(tenantId),
+    });
+    await insertSlot(tenantId, usArena!.id, {
+      offsetDays: 0,
+      hour: 6,
+      status: 'booked',
+      pricePaise: 2599, // $25.99
+      bookingId: await createBooking(tenantId),
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await closeDb();
+  });
+
+  it('buckets revenue and trend per currency', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/analytics`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    const a = res.json() as AnalyticsResponse;
+
+    expect(a.bookingsToday).toBe(2);
+    expect(a.revenueToday).toEqual([
+      { currency: 'INR', amountMinor: 5000 },
+      { currency: 'USD', amountMinor: 2599 },
+    ]);
+    expect(a.revenue7d).toEqual([
+      { currency: 'INR', amountMinor: 5000 },
+      { currency: 'USD', amountMinor: 2599 },
+    ]);
+
+    expect(a.trend7d.map((s) => s.currency).sort()).toEqual(['INR', 'USD']);
+    for (const series of a.trend7d) {
+      expect(series.days).toHaveLength(7);
+      expect(series.days[6]!.revenuePaise).toBe(series.currency === 'USD' ? 2599 : 5000);
     }
   });
 });

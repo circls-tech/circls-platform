@@ -8,6 +8,7 @@ import { useCreateCoupon, type CreateCouponInput, type CouponScopeType } from '@
 import { useVenues, useArenas } from '@/lib/api/queries';
 import { useTenantEvents } from '@/lib/api/events';
 import { useMemberships } from '@/lib/api/memberships';
+import { currencySymbol, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, Input } from '@/lib/ui';
 
 const selectCls =
@@ -40,6 +41,20 @@ export default function NewCouponPage() {
   const { data: memberships } = useMemberships(tenantId);
   // useArenas has enabled: Boolean(venueId) — safe to call with '' when no venue selected
   const { data: arenas } = useArenas(scopeType === 'arena' ? venueId : '');
+
+  // Currency follows the venue the coupon is scoped to (venue/arena scopes pick
+  // a venue directly; event/membership scopes resolve via the target's venue),
+  // falling back to the tenant's currency for org-wide coupons.
+  const { currencyFor } = useVenueCurrencies();
+  const scopeVenueId =
+    scopeType === 'venue' || scopeType === 'arena'
+      ? venueId || null
+      : scopeType === 'event'
+        ? (events?.find((ev) => ev.id === scopeRefId)?.venueId ?? null)
+        : scopeType === 'membership'
+          ? (memberships?.find((m) => m.id === scopeRefId)?.venueId ?? null)
+          : null;
+  const sym = currencySymbol(currencyFor(scopeVenueId));
 
   function resolveScopeId(): string | undefined {
     switch (scopeType) {
@@ -141,16 +156,16 @@ export default function NewCouponPage() {
             {(['percent', 'fixed'] as const).map((t) => (
               <button key={t} type="button" onClick={() => setDiscountType(t)}
                 className={['rounded px-3 py-1.5 text-sm font-medium', discountType === t ? 'bg-slate-900 text-white' : 'text-slate-600'].join(' ')}>
-                {t === 'percent' ? 'Percentage' : 'Fixed (₹)'}
+                {t === 'percent' ? 'Percentage' : `Fixed (${sym})`}
               </button>
             ))}
           </div>
-          <Input label={discountType === 'percent' ? 'Discount (%)' : 'Discount (₹)'} type="number" min={0}
+          <Input label={discountType === 'percent' ? 'Discount (%)' : `Discount (${sym})`} type="number" min={0}
             step={discountType === 'percent' ? 0.1 : 1} value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} required />
           {discountType === 'percent' && (
-            <Input label="Max discount (₹, optional)" type="number" min={0} step={1} value={maxDiscountRupees} onChange={(e) => setMaxDiscountRupees(e.target.value)} hint="Cap on a percentage discount." />
+            <Input label={`Max discount (${sym}, optional)`} type="number" min={0} step={1} value={maxDiscountRupees} onChange={(e) => setMaxDiscountRupees(e.target.value)} hint="Cap on a percentage discount." />
           )}
-          <Input label="Minimum order (₹, optional)" type="number" min={0} step={1} value={minOrderRupees} onChange={(e) => setMinOrderRupees(e.target.value)} />
+          <Input label={`Minimum order (${sym}, optional)`} type="number" min={0} step={1} value={minOrderRupees} onChange={(e) => setMinOrderRupees(e.target.value)} />
 
           <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Visibility</label>
           <select className={selectCls} value={visibility} onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}>

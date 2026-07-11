@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { OccurrenceInput } from '@/lib/api/events';
 import { TiersEditor, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { type CurrencyCode } from '@/lib/currency';
 import { Button, Input } from '@/lib/ui';
 
 /** Server cap on dates per series (see MAX_SERIES_OCCURRENCES in the API). */
@@ -128,6 +129,7 @@ export function RecurrenceEditor({
   venues,
   baseLocationLabel,
   baseTiers,
+  currency,
 }: {
   value: RecurrenceValue;
   onChange: (v: RecurrenceValue) => void;
@@ -140,6 +142,8 @@ export function RecurrenceEditor({
   baseLocationLabel: string;
   /** The event's tiers — seeds a date's custom tickets when first enabled. */
   baseTiers: TierDraft[];
+  /** Currency for per-date ticket prices — follows the event's venue currency. */
+  currency: CurrencyCode;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tiersOpenFor, setTiersOpenFor] = useState<string | null>(null);
@@ -344,6 +348,7 @@ export function RecurrenceEditor({
                               <TiersEditor
                                 value={d.tiers}
                                 onChange={(tiers) => patchDraft(d.date, { tiers })}
+                                currency={currency}
                               />
                               <button
                                 type="button"

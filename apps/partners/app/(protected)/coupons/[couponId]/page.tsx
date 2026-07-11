@@ -6,12 +6,13 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { useTenantCoupons, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
+import { type CurrencyCode, currencySymbol, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
 const selectCls = 'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a]';
 
-function discountLabel(c: Coupon) {
-  return c.discountType === 'percent' ? `${c.discountValue / 100}%` : `₹${(c.discountValue / 100).toFixed(2)}`;
+function discountLabel(c: Coupon, currency: CurrencyCode) {
+  return c.discountType === 'percent' ? `${c.discountValue / 100}%` : formatMoney(c.discountValue, currency, { decimals: 2 });
 }
 
 export default function CouponDetailPage() {
@@ -23,6 +24,12 @@ export default function CouponDetailPage() {
   const coupon = coupons?.find((c) => c.id === couponId);
   const update = useUpdateCoupon(tenantId);
   const del = useDeleteCoupon(tenantId);
+
+  // Venue-scoped coupons display in that venue's currency; every other scope
+  // (org/arena/event/membership) falls back to the tenant's currency.
+  const { currencyFor } = useVenueCurrencies();
+  const currency = currencyFor(coupon?.scopeType === 'venue' ? coupon.scopeId : null);
+  const sym = currencySymbol(currency);
 
   // Coupon validity dates have no venue anchor, so they display in the
   // portal-wide viewing timezone (top-bar selector); "Auto" = browser-local.
@@ -107,9 +114,9 @@ export default function CouponDetailPage() {
             <Card title="Details">
               <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-2">
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Scope</dt><dd className="mt-1 text-sm text-slate-700">{coupon.scopeType === 'org' ? 'Org-wide' : `${coupon.scopeType} (${coupon.scopeId})`}</dd></div>
-                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Discount</dt><dd className="mt-1 text-sm text-slate-700">{discountLabel(coupon)}{coupon.maxDiscountPaise != null ? ` (max ₹${(coupon.maxDiscountPaise / 100).toFixed(2)})` : ''}</dd></div>
+                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Discount</dt><dd className="mt-1 text-sm text-slate-700">{discountLabel(coupon, currency)}{coupon.maxDiscountPaise != null ? ` (max ${formatMoney(coupon.maxDiscountPaise, currency, { decimals: 2 })})` : ''}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Visibility</dt><dd className="mt-1 text-sm capitalize text-slate-700">{coupon.visibility}</dd></div>
-                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Min order</dt><dd className="mt-1 text-sm text-slate-700">{coupon.minOrderPaise != null ? `₹${(coupon.minOrderPaise / 100).toFixed(2)}` : '—'}</dd></div>
+                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Min order</dt><dd className="mt-1 text-sm text-slate-700">{coupon.minOrderPaise != null ? formatMoney(coupon.minOrderPaise, currency, { decimals: 2 }) : '—'}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Redeemed</dt><dd className="mt-1 text-sm text-slate-700">{coupon.maxRedemptions ? `${coupon.redeemedCount}/${coupon.maxRedemptions}` : `${coupon.redeemedCount}/∞`}{coupon.perUserLimit ? ` · ${coupon.perUserLimit}/user` : ''}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Valid</dt><dd className="mt-1 text-sm text-slate-700">{coupon.validFrom ? dateFmt.format(new Date(coupon.validFrom)) : 'Always'} → {coupon.validUntil ? dateFmt.format(new Date(coupon.validUntil)) : 'No expiry'}</dd></div>
                 {coupon.description && <div className="sm:col-span-2"><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</dt><dd className="mt-1 text-sm text-slate-700">{coupon.description}</dd></div>}
@@ -133,8 +140,8 @@ export default function CouponDetailPage() {
                   <option value="private">Private</option>
                   <option value="public">Public</option>
                 </select>
-                {coupon.discountType === 'percent' && <Input label="Max discount (₹)" type="number" min={0} value={maxDiscountRupees} onChange={(e) => setMaxDiscountRupees(e.target.value)} />}
-                <Input label="Minimum order (₹)" type="number" min={0} value={minOrderRupees} onChange={(e) => setMinOrderRupees(e.target.value)} />
+                {coupon.discountType === 'percent' && <Input label={`Max discount (${sym})`} type="number" min={0} value={maxDiscountRupees} onChange={(e) => setMaxDiscountRupees(e.target.value)} />}
+                <Input label={`Minimum order (${sym})`} type="number" min={0} value={minOrderRupees} onChange={(e) => setMinOrderRupees(e.target.value)} />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Input label="Valid from" type="datetime-local" value={validFromLocal} onChange={(e) => setValidFromLocal(e.target.value)} />
                   <Input label="Valid until" type="datetime-local" value={validUntilLocal} onChange={(e) => setValidUntilLocal(e.target.value)} />

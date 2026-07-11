@@ -40,6 +40,13 @@ export const envSchema = z
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+
+  // Stripe (US venues). Optional even in production — until US launch a prod
+  // deploy has no Stripe keys, and US-venue bookings fall back to stub mode
+  // (reserved, not charged). Razorpay stays required in prod (India is live).
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   // Settlement-hold buffer after a slot's end (minutes). Default = 60.
   SETTLEMENT_HOLD_BUFFER_MIN: z.coerce.number().int().min(0).default(60),
   // pending → cancelled grace period for unpaid carts (minutes).

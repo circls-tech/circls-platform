@@ -16,6 +16,7 @@ import {
   useUpdateTenantEvent,
 } from '@/lib/api/events';
 import { useVenues } from '@/lib/api/queries';
+import { formatMoney, useCurrency, useVenueCurrencies } from '@/lib/currency';
 import { EventImages } from '@/components/EventImages';
 import { EventRegistrations } from '@/components/EventRegistrations';
 import {
@@ -105,6 +106,14 @@ export default function OrgEventDetailPage() {
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Venue events price in their venue's currency; standalone events follow
+  // their own address country (when present), else the tenant's currency.
+  const currency = useCurrency({
+    venueId: ev?.venueId,
+    country: ev && !ev.venueId ? ((ev.addressJson?.country as string | undefined) ?? null) : null,
+  });
+  const { currencyFor } = useVenueCurrencies();
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -352,7 +361,7 @@ export default function OrgEventDetailPage() {
                           {t.pricePaise === 0 ? (
                             <span className="text-emerald-600">Free</span>
                           ) : (
-                            `₹${(t.pricePaise / 100).toFixed(2)}`
+                            formatMoney(t.pricePaise, currency, { decimals: 2 })
                           )}
                         </span>
                       </div>
@@ -521,7 +530,11 @@ export default function OrgEventDetailPage() {
                   />
                 </div>
 
-                <TiersEditor value={tiers} onChange={setTiers} />
+                <TiersEditor
+                  value={tiers}
+                  onChange={setTiers}
+                  currency={venueChoice ? currencyFor(venueChoice) : currency}
+                />
 
                 <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
@@ -625,6 +638,7 @@ export default function OrgEventDetailPage() {
             tiers={ev.tiers}
             eventName={ev.name}
             tz={effectiveTz}
+            currency={currency}
           />
         </>
       )}

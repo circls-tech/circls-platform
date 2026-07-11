@@ -164,7 +164,7 @@ function OverviewTab({ data }: { data: AdminTenantDetail }) {
         <Field label="PAN" value={t.panNumber} mono />
         <Field label="Subscription" value={t.subscriptionStatus} />
         <Field label="Created" value={fmtIST(t.createdAt)} />
-        <Field label="Razorpay Linked Account" value={t.razorpayLinkedAccountId} mono />
+        <Field label="Payment gateway" value={gatewayLabel(t.country)} />
       </Card>
 
       <Card title="Owner contact">
@@ -283,6 +283,20 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     </section>
   );
 }
+
+/**
+ * Which gateway settles this org's money, from its country — mirrors the API's
+ * selection (apps/api/src/lib/gateway.ts). Venue country can override per
+ * venue; this is the org-level default. Circls is the merchant on both rails,
+ * so there is no per-tenant gateway account to show.
+ */
+function gatewayLabel(country: string | null): string {
+  const c = (country ?? '').trim().toUpperCase();
+  const isUs =
+    c === 'US' || c === 'USA' || c === 'UNITED STATES' || c === 'UNITED STATES OF AMERICA';
+  return isUs ? 'Stripe (USD)' : 'Razorpay (INR)';
+}
+
 function Field({
   label,
   value,

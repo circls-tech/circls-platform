@@ -5,6 +5,7 @@ import { useActivityDaily, useActivityFeed, useMembershipWindows } from '@/lib/a
 import { useVenues } from '@/lib/api/queries';
 import type { ActivityItem, ActivityItemType, MembershipWindowItem } from '@/lib/api/types';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Badge, BadgeTone, Button, Card, Input } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
@@ -241,6 +242,9 @@ export default function ActivityPage() {
   const { resolveTz } = useTimezone();
   const tz = resolveTz();
   const today = todayInTz(tz);
+  // Per-row display currency: rows span venues, which may settle in different
+  // currencies (venue country → currency; tenant country for org-wide rows).
+  const { currencyFor } = useVenueCurrencies();
 
   // Calendar state
   const [month, setMonth] = useState(() => todayInTz(resolveTz()).slice(0, 7));
@@ -285,7 +289,9 @@ export default function ActivityPage() {
   }
 
   function exportCsv() {
-    const headers = ['When', 'Customer', 'Contact', 'Type', 'Item', 'Tier', 'Venue', 'Starts', 'Ends', 'Status', 'Channel', 'Total (₹)'];
+    // The feed spans venues, so amounts carry an explicit per-row currency
+    // column instead of a single-symbol header (a US + India org is mixed).
+    const headers = ['When', 'Customer', 'Contact', 'Type', 'Item', 'Tier', 'Venue', 'Starts', 'Ends', 'Status', 'Channel', 'Total', 'Currency'];
     const data = rows.map((r) => [
       fmtInTz(r.createdAt, tz),
       r.customerName ?? '',
@@ -299,6 +305,7 @@ export default function ActivityPage() {
       r.status,
       r.channel,
       r.totalPaise == null ? '' : (r.totalPaise / 100).toFixed(2),
+      r.totalPaise == null ? '' : currencyFor(r.venueId),
     ]);
     downloadCsv(toCsv(headers, data), `activity-${today}.csv`);
   }
@@ -521,7 +528,7 @@ export default function ActivityPage() {
                       {r.totalPaise == null ? (
                         <span className="text-slate-400">—</span>
                       ) : (
-                        <>₹{(r.totalPaise / 100).toFixed(0)}</>
+                        formatMoney(r.totalPaise, currencyFor(r.venueId))
                       )}
                     </td>
                   </tr>

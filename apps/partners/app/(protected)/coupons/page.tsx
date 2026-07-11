@@ -4,10 +4,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTenantCoupons, type Coupon } from '@/lib/api/coupons';
+import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
-function discountLabel(c: Coupon): string {
-  return c.discountType === 'percent' ? `${c.discountValue / 100}%` : `₹${(c.discountValue / 100).toFixed(2)}`;
+function discountLabel(c: Coupon, currency: CurrencyCode): string {
+  return c.discountType === 'percent' ? `${c.discountValue / 100}%` : formatMoney(c.discountValue, currency, { decimals: 2 });
+}
+
+/** For venue-scoped coupons the scopeId is the venue id; other scopes
+ *  (org/arena/event/membership) display in the tenant's currency. */
+function couponVenueId(c: Coupon): string | null {
+  return c.scopeType === 'venue' ? c.scopeId : null;
 }
 function scopeLabel(c: Coupon): string {
   return c.scopeType === 'org' ? 'Org-wide' : c.scopeType;
@@ -18,6 +25,7 @@ export default function CouponsPage() {
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId);
   const { data: coupons, isLoading } = useTenantCoupons(activeTenantId ?? '');
+  const { currencyFor } = useVenueCurrencies();
 
   if (!activeTenantId) {
     return (
@@ -64,7 +72,7 @@ export default function CouponsPage() {
                     <Link href={`/coupons/${c.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">{c.code}</Link>
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">{scopeLabel(c)}</td>
-                  <td className="py-2.5 pr-4 text-slate-700">{discountLabel(c)}</td>
+                  <td className="py-2.5 pr-4 text-slate-700">{discountLabel(c, currencyFor(couponVenueId(c)))}</td>
                   <td className="py-2.5 pr-4 capitalize text-slate-700">{c.visibility}</td>
                   <td className="py-2.5 pr-4 text-slate-700">
                     {c.maxRedemptions ? `${c.redeemedCount}/${c.maxRedemptions}` : `${c.redeemedCount}/∞`}

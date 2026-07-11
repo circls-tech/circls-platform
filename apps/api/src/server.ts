@@ -24,6 +24,7 @@ import { venueImageRoutes } from './routes/venue_images.js';
 // Track B (Phases 11–17).
 import { paymentRoutes } from './routes/payments.js';
 import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
+import { stripeWebhookRoutes } from './routes/webhooks_stripe.js';
 import { eventRoutes } from './routes/events.js';
 import { eventImageRoutes } from './routes/event_images.js';
 import { membershipRoutes } from './routes/memberships.js';
@@ -265,6 +266,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // OpenAPI / route-existence probes pass.
   await app.register(paymentRoutes);
   await app.register(razorpayWebhookRoutes);
+  await app.register(stripeWebhookRoutes);
   await app.register(eventRoutes);
   await app.register(eventImageRoutes);
   await app.register(membershipRoutes);

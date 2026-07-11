@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
+import { openStripeCheckout } from '@/lib/checkout_stripe';
 import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -90,7 +91,8 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     if (!breakdown) return;
     setPhase({ kind: 'paying' });
     try {
-      let order = { orderId: '', keyId: '', amountPaise: breakdown.totalPaise, currency: 'INR' as const };
+      let order: { gateway: 'razorpay' | 'stripe'; orderId: string; keyId: string; clientSecret: string; amountPaise: number; currency: string } =
+        { gateway: 'razorpay', orderId: '', keyId: '', clientSecret: '', amountPaise: breakdown.totalPaise, currency: breakdown.currency ?? 'INR' };
       if (item.kind === 'slot') {
         const r = await bookSlots.mutateAsync({
           slotIds: item.slotIds,
@@ -98,7 +100,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           customerContact: prefill.contact ?? user?.phoneNumber ?? profile.data?.email ?? user?.email ?? '',
           ...(appliedCode ? { couponCode: appliedCode } : {}),
         });
-        order = { ...r.payment };
+        order = { ...r.payment, clientSecret: r.payment.clientSecret ?? '' };
       } else if (item.kind === 'event') {
         const name = prefill.name ?? profile.data?.displayName;
         const contact = prefill.contact ?? user?.phoneNumber ?? profile.data?.email;
@@ -109,20 +111,29 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
         });
-        order = { orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', amountPaise: r.amountPaise ?? 0, currency: 'INR' };
+        order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
         const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}), ...(appliedCode ? { couponCode: appliedCode } : {}) });
-        order = { orderId: r.orderId ?? '', keyId: r.keyId ?? '', amountPaise: r.amountPaise ?? 0, currency: 'INR' };
+        order = { gateway: r.gateway ?? 'razorpay', orderId: r.orderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       }
 
       if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.' }); return; }
-      if (!order.orderId || !order.keyId) { setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' }); return; }
+      // Stripe opens from the client secret; Razorpay from the order id. Either
+      // way an empty browser key means stub mode → the booking is reserved.
+      const canOpen = order.keyId && (order.gateway === 'stripe' ? order.clientSecret : order.orderId);
+      if (!canOpen) { setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' }); return; }
 
-      const result = await openRazorpayCheckout({
-        keyId: order.keyId, orderId: order.orderId, amountPaise: order.amountPaise, currency: order.currency,
-        description: item.title,
-        prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
-      });
+      const result = order.gateway === 'stripe'
+        ? await openStripeCheckout({
+            publishableKey: order.keyId, clientSecret: order.clientSecret,
+            payLabel: `Pay ${formatPaiseExact(order.amountPaise, order.currency)}`,
+            description: item.title,
+          })
+        : await openRazorpayCheckout({
+            keyId: order.keyId, orderId: order.orderId, amountPaise: order.amountPaise, currency: order.currency,
+            description: item.title,
+            prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
+          });
       if (result.kind === 'paid') setPhase({ kind: 'success', message: 'Payment received! See it in My Bookings.' });
       else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
       else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
@@ -137,6 +148,10 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
   const busy = phase.kind === 'quoting' || phase.kind === 'paying';
   const done = phase.kind === 'success' || phase.kind === 'reserved' || phase.kind === 'error';
+  // Display currency: the caller seeds it from the item's venue/location
+  // country (instant), then the server quote confirms it (authoritative).
+  // The payment order's own currency always comes from the API.
+  const cur = breakdown?.currency ?? item.currency ?? 'INR';
 
   // First booking only: the profile has just a phone number, so collect name +
   // email before showing the pay button. Once saved (the mutation writes the
@@ -167,15 +182,15 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       ) : (
         <div className="flex flex-col gap-3">
           {item.kind === 'event' && item.lines.map((l) => (
-            <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity)} muted />
+            <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity, cur)} muted />
           ))}
-          <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise) : '—'} />
+          <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise, cur) : '—'} />
           {breakdown && breakdown.discountPaise > 0 && (
-            <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise)}`} accent />
+            <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise, cur)}`} accent />
           )}
-          {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise)} muted />}
+          {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise, cur)} muted />}
           <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
-          <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise) : '—'} bold />
+          <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : '—'} bold />
 
           {!appliedCode ? (
             <div className="mt-2 flex flex-col gap-2">
@@ -190,7 +205,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
                   <option value="">Select an offer…</option>
                   {offers.data?.rows.map((o) => (
                     <option key={o.code} value={o.code}>
-                      {o.code} — {o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaiseExact(o.discountValue)} off`}
+                      {o.code} — {o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaiseExact(o.discountValue, cur)} off`}
                     </option>
                   ))}
                 </select>
@@ -208,7 +223,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           {/* profile.isLoading keeps a first-time booker from paying before the
               contact-details gate has had a chance to engage. */}
           <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy || profile.isLoading}>
-            {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise) : ''}`}
+            {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : ''}`}
           </Button>
         </div>
       )}

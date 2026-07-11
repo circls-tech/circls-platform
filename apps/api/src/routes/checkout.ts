@@ -4,6 +4,7 @@ import { BadRequest } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { computeCheckout } from '../services/checkout_pricing.js';
+import { resolvePaymentContext } from '../services/payments_service.js';
 import {
   listPublicCouponsForItem,
   priceItem,
@@ -33,9 +34,16 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
     const now = new Date();
     const priced = await priceItem(parsed.data);
 
+    // The gross-up ("other charges") is gateway-specific; quote with the same
+    // gateway the booking will charge through so the two can never diverge.
+    const payCtx = await resolvePaymentContext({
+      venueId: priced.item.venueId,
+      tenantId: priced.tenantId,
+    });
+
     if (!parsed.data.couponCode) {
-      const b = computeCheckout(priced.basePaise, null);
-      return { ...b, coupon: null };
+      const b = computeCheckout(priced.basePaise, null, payCtx.provider);
+      return { ...b, currency: payCtx.currency, coupon: null };
     }
     const resolved = await resolveCouponForCheckout({
       code: parsed.data.couponCode,
@@ -46,16 +54,21 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       item: priced.item,
     });
     if (!resolved.ok) {
-      const b = computeCheckout(priced.basePaise, null);
-      return { ...b, coupon: null, error: resolved.code };
+      const b = computeCheckout(priced.basePaise, null, payCtx.provider);
+      return { ...b, currency: payCtx.currency, coupon: null, error: resolved.code };
     }
-    const b = computeCheckout(priced.basePaise, {
-      discountType: resolved.coupon.discountType,
-      discountValue: resolved.coupon.discountValue,
-      maxDiscountPaise: resolved.coupon.maxDiscountPaise,
-    });
+    const b = computeCheckout(
+      priced.basePaise,
+      {
+        discountType: resolved.coupon.discountType,
+        discountValue: resolved.coupon.discountValue,
+        maxDiscountPaise: resolved.coupon.maxDiscountPaise,
+      },
+      payCtx.provider,
+    );
     return {
       ...b,
+      currency: payCtx.currency,
       coupon: { id: resolved.coupon.id, code: resolved.coupon.code, description: resolved.coupon.description },
     };
   });

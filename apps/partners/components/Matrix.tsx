@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Slot } from '@/lib/api/types';
+import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useBookingDetail } from '@/lib/api/queries';
 import { gridDayIndex, sortTimeKeys } from '@/lib/schedule/grid';
@@ -15,6 +16,7 @@ interface MatrixProps {
   slots: Slot[];
   weekStart: Date;           // Sunday of the visible week
   tz: string;                // venue IANA tz, e.g. 'Asia/Kolkata'
+  currency: CurrencyCode;    // venue display currency (see lib/currency)
   mode: 'builder' | 'reception';
   now?: Date;                // ticking current time; reception-mode only
   dayStartMin?: number;      // business-day boundary (min-of-day); 0 = calendar day
@@ -127,13 +129,14 @@ function computeNowRowOffset(
 
 interface CellProps {
   slot: Slot;
+  currency: CurrencyCode;
   isSelected: boolean;
   locked: boolean;
   onPointerDown: () => void;
   onPointerEnter: () => void;
 }
 
-function SlotCell({ slot, isSelected, locked, onPointerDown, onPointerEnter }: CellProps) {
+function SlotCell({ slot, currency, isSelected, locked, onPointerDown, onPointerEnter }: CellProps) {
   const toneMap: Record<Slot['status'], 'open' | 'booked' | 'blocked' | 'held'> = {
     open: 'open',
     booked: 'booked',
@@ -141,7 +144,7 @@ function SlotCell({ slot, isSelected, locked, onPointerDown, onPointerEnter }: C
     held: 'held',
   };
   const priceDisplay =
-    slot.status === 'open' ? `₹${(slot.pricePaise / 100).toFixed(0)}` : '';
+    slot.status === 'open' ? formatMoney(slot.pricePaise, currency) : '';
 
   if (locked) {
     // Dimmed, non-interactive locked cell.
@@ -187,13 +190,14 @@ function SlotCell({ slot, isSelected, locked, onPointerDown, onPointerEnter }: C
 interface InspectorProps {
   selected: Set<string>;
   slots: Slot[];
+  currency: CurrencyCode;
   mode: 'builder' | 'reception';
   onBulk: MatrixProps['onBulk'];
   onBook: MatrixProps['onBook'];
   onCancel?: MatrixProps['onCancel'];
 }
 
-function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: InspectorProps) {
+function Inspector({ selected, slots, currency, mode, onBulk, onBook, onCancel }: InspectorProps) {
   const [priceInput, setPriceInput] = useState('');
 
   const selectedSlots = slots.filter((s) => selected.has(s.id));
@@ -219,7 +223,7 @@ function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: Inspecto
     prices.length === 0
       ? '—'
       : prices.length === 1
-        ? `₹${(prices[0]! / 100).toFixed(0)}`
+        ? formatMoney(prices[0]!, currency)
         : 'Mixed';
 
   const allBlocked = selectedSlots.length > 0 && selectedSlots.every((s) => s.status === 'blocked');
@@ -249,7 +253,7 @@ function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: Inspecto
         {/* Price control */}
         <div className="flex flex-col gap-2">
           <Input
-            label="Price (₹)"
+            label={`Price (${currencySymbol(currency)})`}
             type="number"
             min={0}
             step={1}
@@ -308,7 +312,7 @@ function Inspector({ selected, slots, mode, onBulk, onBook, onCancel }: Inspecto
               <p className="italic text-blue-600">{bookingDetail.note}</p>
             )}
             <p className="text-blue-700">
-              Total: ₹{(bookingDetail.totalPaise / 100).toFixed(0)}
+              Total: {formatMoney(bookingDetail.totalPaise, currency)}
             </p>
           </div>
         )}
@@ -340,6 +344,7 @@ export function Matrix({
   slots,
   weekStart,
   tz,
+  currency,
   mode,
   now,
   dayStartMin = 0,
@@ -575,6 +580,7 @@ export function Matrix({
                     >
                       <SlotCell
                         slot={slot}
+                        currency={currency}
                         isSelected={selected.has(slot.id)}
                         locked={locked}
                         onPointerDown={() =>
@@ -601,6 +607,7 @@ export function Matrix({
         <Inspector
           selected={selected}
           slots={slots}
+          currency={currency}
           mode={mode}
           onBulk={onBulk}
           onBook={onBook}

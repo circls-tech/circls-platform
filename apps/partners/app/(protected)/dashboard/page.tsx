@@ -4,8 +4,9 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
+import { type CurrencyCode, asCurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
 import { Card, StatusPill } from '@/lib/ui';
-import type { AnalyticsTrendDay } from '@/lib/api/types';
+import type { AnalyticsTrendDay, MoneyByCurrency } from '@/lib/api/types';
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ function StatCard({ label, value, sublabel, loading }: StatCardProps) {
 
 // ── 7-day Trend Chart ─────────────────────────────────────────────────────────
 
-function TrendChart({ trend }: { trend: AnalyticsTrendDay[] }) {
+function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency: CurrencyCode }) {
   const maxRevenue = Math.max(...trend.map((d) => d.revenuePaise), 0);
   const allZero = maxRevenue === 0;
 
@@ -41,11 +42,6 @@ function TrendChart({ trend }: { trend: AnalyticsTrendDay[] }) {
     const d = new Date(`${date}T00:00:00`);
     // Use abbreviated weekday so bars are clearly labelled
     return d.toLocaleDateString('en-IN', { weekday: 'short' });
-  }
-
-  /** Format paise as ₹N (no decimals) */
-  function fmtRupees(paise: number): string {
-    return `₹${Math.round(paise / 100)}`;
   }
 
   const MAX_BAR_HEIGHT_PX = 96; // h-24
@@ -68,7 +64,7 @@ function TrendChart({ trend }: { trend: AnalyticsTrendDay[] }) {
                 Math.round((day.revenuePaise / maxRevenue) * MAX_BAR_HEIGHT_PX),
               );
 
-        const tooltipText = `${dayLabel(day.date)}: ${fmtRupees(day.revenuePaise)} · ${day.bookings} booking${day.bookings === 1 ? '' : 's'}`;
+        const tooltipText = `${dayLabel(day.date)}: ${formatMoney(day.revenuePaise, currency)} · ${day.bookings} booking${day.bookings === 1 ? '' : 's'}`;
 
         return (
           <div
@@ -166,10 +162,13 @@ export default function DashboardPage() {
   // NOTE: org-wide analytics (bookingsToday, revenue, occupancy) are computed
   // in IST (Asia/Kolkata) on the backend. Multi-venue timezone support for the
   // dashboard is a known deferred limitation — the backend would need to accept
-  // a tz parameter and perform per-venue aggregation to fix this.
+  // a tz parameter and perform per-venue aggregation to fix this. Revenue IS
+  // aggregated per currency on the backend: a tenant with both US and India
+  // venues gets one bucket/trend series per currency.
   const { data: analytics, isLoading: analyticsLoading } = useAnalytics(
     activeTenantId ?? '',
   );
+  const currency = useCurrency();
 
   // Redirect new users who have no org yet to the onboarding wizard.
   useEffect(() => {
@@ -181,10 +180,15 @@ export default function DashboardPage() {
   const activeTenant = orgTenants.find((t) => t.id === activeTenantId) ?? null;
   const identity = me?.displayName ?? me?.phoneE164 ?? me?.email ?? null;
 
-  // Derived stat values (safe for zero state)
+  // Derived stat values (safe for zero state). Revenue buckets are per
+  // currency — usually one; a mixed-currency org shows "₹1,200 · $50".
+  const fmtBuckets = (buckets: MoneyByCurrency[] | undefined): string =>
+    !buckets || buckets.length === 0
+      ? formatMoney(0, currency)
+      : buckets.map((b) => formatMoney(b.amountMinor, asCurrencyCode(b.currency))).join(' · ');
   const bookingsToday = analytics?.bookingsToday ?? 0;
-  const revenueTodayRupees = analytics ? Math.round(analytics.revenueTodayPaise / 100) : 0;
-  const revenue7dRupees = analytics ? Math.round(analytics.revenue7dPaise / 100) : 0;
+  const revenueToday = fmtBuckets(analytics?.revenueToday);
+  const revenue7d = fmtBuckets(analytics?.revenue7d);
   const occupancy7dPct = analytics?.occupancy7dPct ?? 0;
 
   return (
@@ -213,13 +217,13 @@ export default function DashboardPage() {
           />
           <StatCard
             label="Revenue today"
-            value={`₹${revenueTodayRupees}`}
+            value={revenueToday}
             sublabel="Revenue collected today"
             loading={analyticsLoading && Boolean(activeTenantId)}
           />
           <StatCard
             label="Revenue · 7d"
-            value={`₹${revenue7dRupees}`}
+            value={revenue7d}
             sublabel="Total revenue last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
           />
@@ -254,8 +258,22 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : analytics?.trend7d ? (
-              <TrendChart trend={analytics.trend7d} />
+            ) : analytics && analytics.trend7d.length === 0 ? (
+              <p className="text-sm text-slate-400 py-2">No bookings in the last 7 days yet.</p>
+            ) : analytics ? (
+              // One chart per currency with revenue — usually exactly one.
+              <div className="flex flex-col gap-4">
+                {analytics.trend7d.map((series) => (
+                  <div key={series.currency}>
+                    {analytics.trend7d.length > 1 && (
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {series.currency}
+                      </p>
+                    )}
+                    <TrendChart trend={series.days} currency={asCurrencyCode(series.currency)} />
+                  </div>
+                ))}
+              </div>
             ) : null}
           </Card>
         </section>

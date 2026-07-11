@@ -20,6 +20,9 @@ export const bookingChannel = pgEnum('booking_channel', [
   'venue_site',
   'walkin',
 ]);
+// 'razorpay_route' predates multi-gateway support and means "paid online via
+// the venue's gateway" (Razorpay or Stripe — see payments.provider for which).
+// Renaming it would break the public booking API contract, so it stays.
 export const bookingPaymentMethod = pgEnum('booking_payment_method', [
   'razorpay_route',
   'external',
