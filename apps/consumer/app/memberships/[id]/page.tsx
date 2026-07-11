@@ -3,6 +3,7 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
+import { StickyActionBar } from '@/components/StickyActionBar';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { useMembership, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -49,11 +50,14 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   // Prices are denominated by the plan's venue/tenant country.
   const currency = currencyForCountry(m?.country);
 
+  // Explicit selection only — the sticky Buy bar appears once a tier is tapped,
+  // matching the event (tickets) and venue (slot cart) flows.
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
   const tiers = m?.tiers ?? [];
   const multiTier = tiers.length > 1;
-  const selectedTier: PublicMembershipTier | undefined =
-    tiers.find((t) => t.id === selectedTierId) ?? tiers[0];
+  const selectedTier: PublicMembershipTier | undefined = tiers.find(
+    (t) => t.id === selectedTierId,
+  );
 
   function buy(tier: PublicMembershipTier | undefined) {
     if (!m) return;
@@ -75,7 +79,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 pt-8 pb-8">
+      <main className={`mx-auto max-w-3xl px-4 pt-8${selectedTier ? ' pb-28' : ' pb-8'}`}>
         <BackBar />
         {membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
@@ -112,9 +116,15 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
             </div>
 
             <Card className="flex flex-col gap-5">
-              {multiTier && (
+              {tiers.length === 0 ? (
+                <p className="text-sm text-text-secondary">
+                  This membership isn&apos;t available right now.
+                </p>
+              ) : (
                 <div className="flex flex-col gap-3">
-                  <h2 className="font-display text-lg font-extrabold text-ink">Choose a tier</h2>
+                  {multiTier && (
+                    <h2 className="font-display text-lg font-extrabold text-ink">Choose a tier</h2>
+                  )}
                   {tiers.map((t) => {
                     const selected = selectedTier?.id === t.id;
                     const soldOut = t.remaining === 0;
@@ -122,7 +132,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                       <button
                         key={t.id}
                         type="button"
-                        onClick={() => setSelectedTierId(t.id)}
+                        onClick={() => setSelectedTierId((prev) => (prev === t.id ? null : t.id))}
                         disabled={soldOut}
                         aria-pressed={selected}
                         className={[
@@ -153,6 +163,13 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                       </button>
                     );
                   })}
+                  <p className="text-xs text-text-secondary">
+                    {selectedTier
+                      ? 'Review and confirm in the bar below.'
+                      : multiTier
+                        ? 'Pick a tier to continue.'
+                        : 'Tap the plan to continue.'}
+                  </p>
                 </div>
               )}
 
@@ -170,16 +187,6 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                   More at {m.scopeName}
                 </Link>
               )}
-
-              <div className="pt-1">
-                <Button
-                  disabled={!selectedTier || selectedTier.remaining === 0}
-                  onClick={() => buy(selectedTier)}
-                >
-                  {selectedTier && selectedTier.pricePaise === 0 ? 'Get membership' : 'Buy'}
-                  {multiTier && selectedTier ? ` — ${selectedTier.name}` : ''}
-                </Button>
-              </div>
             </Card>
 
             {m.brand && (
@@ -190,6 +197,27 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
           </>
         )}
       </main>
+
+      {selectedTier && (
+        <StickyActionBar
+          maxWidthClass="max-w-3xl"
+          summary={
+            <>
+              <span className="font-display font-extrabold text-ink">{selectedTier.name}</span>
+              <span className="text-text-secondary">
+                {' '}· {formatPaise(selectedTier.pricePaise, currency)} / {selectedTier.durationDays} days
+              </span>
+            </>
+          }
+          action={
+            <Button onClick={() => buy(selectedTier)}>
+              {selectedTier.pricePaise === 0
+                ? 'Get membership'
+                : `Buy · ${formatPaise(selectedTier.pricePaise, currency)}`}
+            </Button>
+          }
+        />
+      )}
     </div>
   );
 }
