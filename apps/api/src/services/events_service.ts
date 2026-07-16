@@ -18,6 +18,12 @@ import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import {
+  getGeocoder,
+  hasGeocodableAddress,
+  type GeocodeQuery,
+  type GeoPoint,
+} from '../lib/geocoding/index.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
 
 export interface EventBookingRow {
@@ -128,6 +134,53 @@ export interface CreateEventInput {
   qrTicketConfig?: QrTicketConfig | null | undefined;
 }
 
+/**
+ * Map an event's freeform address_json to a geocode query. Events store the
+ * postal code under `pincode` (the form's label), not `postalCode`.
+ */
+function toGeocodeQuery(addressJson: Record<string, unknown>): GeocodeQuery {
+  const str = (k: string) =>
+    typeof addressJson[k] === 'string' ? (addressJson[k] as string) : null;
+  return {
+    line1: str('line1'),
+    city: str('city'),
+    state: str('state'),
+    postalCode: str('pincode'),
+    country: str('country'),
+  };
+}
+
+/**
+ * Derive lat/lng for standalone inputs whose caller left coordinates unset —
+ * the events counterpart of the venue flow's applyAddressDerivation (organisers
+ * never hand-enter coordinates). Best-effort: a failed geocode leaves the
+ * coordinates unset and never fails the create. `cache` dedupes identical
+ * addresses so a recurring series geocodes each distinct address once, not once
+ * per occurrence. Mutates the inputs in place; call before opening a
+ * transaction (this may go to the network).
+ */
+async function deriveStandaloneCoords(
+  inputs: CreateEventInput[],
+  cache = new Map<string, GeoPoint | null>(),
+): Promise<void> {
+  for (const input of inputs) {
+    if (input.venueId || input.lat !== undefined || input.lng !== undefined) continue;
+    if (!input.addressJson) continue;
+    const query = toGeocodeQuery(input.addressJson);
+    if (!hasGeocodableAddress(query)) continue;
+    const key = JSON.stringify(query);
+    let point = cache.get(key);
+    if (point === undefined) {
+      point = await getGeocoder().geocode(query);
+      cache.set(key, point);
+    }
+    if (point) {
+      input.lat = point.lat;
+      input.lng = point.lng;
+    }
+  }
+}
+
 function validateCreateEventInput(input: CreateEventInput): void {
   if (input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
@@ -193,6 +246,7 @@ async function insertEventTx(
  */
 export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
   validateCreateEventInput(input);
+  await deriveStandaloneCoords([input]);
   return db.transaction(async (tx) => insertEventTx(tx, ctx, input, null));
 }
 
@@ -219,6 +273,7 @@ export async function createEventSeries(
     );
   }
   for (const occ of occurrences) validateCreateEventInput(occ);
+  await deriveStandaloneCoords(occurrences);
 
   const seriesId = randomUUID();
   const sorted = [...occurrences].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
@@ -356,6 +411,16 @@ export async function updateEvent(
   eventId: string,
   patch: UpdateEventPatch,
 ): Promise<Event> {
+  // A new address without hand-set coordinates re-derives the map pin from the
+  // address (before the transaction — geocoding may go to the network). A null
+  // geocode leaves lat/lng out of the patch so existing coordinates survive.
+  if (patch.addressJson !== undefined && patch.lat === undefined && patch.lng === undefined) {
+    const query = toGeocodeQuery(patch.addressJson);
+    if (hasGeocodableAddress(query)) {
+      const point = await getGeocoder().geocode(query);
+      if (point) patch = { ...patch, lat: point.lat, lng: point.lng };
+    }
+  }
   return db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
