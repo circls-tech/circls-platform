@@ -60,6 +60,17 @@ export interface PaymentGateway {
   readonly provider: PaymentProviderId;
   readonly mode: GatewayMode;
   createOrder(input: CreateOrderInput): Promise<GatewayOrder>;
+  /**
+   * Cancel an unpaid order so the customer can no longer complete payment
+   * against it (a Stripe PaymentIntent stays confirmable — and a Razorpay
+   * order payable — after failed attempts). Called when we cancel a booking
+   * whose charge was never captured. Best-effort: adapters throw on API
+   * errors and callers log-and-continue; a cancel that loses the race against
+   * a capture is absorbed by the capture-after-cancel auto-refund safety net
+   * in payments_service. Razorpay has no order-cancel API — its adapter is a
+   * documented no-op.
+   */
+  cancelOrder(orderId: string): Promise<void>;
   refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult>;
   /** HMAC verify of a gateway webhook over the exact raw body bytes. */
   verifyWebhookSignature(rawBody: string, signature: string): boolean;

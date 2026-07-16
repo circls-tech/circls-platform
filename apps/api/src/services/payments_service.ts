@@ -16,9 +16,20 @@
  *
  * Webhook idempotency strategy: we look up the payments row by
  * `provider_order_id` and short-circuit if it's already in the destination
- * state (status='captured' for a capture, status='failed' for a failure).
- * That makes at-least-once retries safe without a separate processed-events
- * table.
+ * state (status='captured' for a capture; the last-seen failure eventId in
+ * metadata for a failure, which no longer transitions status — see
+ * applyPaymentFailed). That makes at-least-once retries safe without a
+ * separate processed-events table.
+ *
+ * Retryable-order model: a gateway "payment failed" event is one failed
+ * ATTEMPT, not a dead order — Stripe PaymentIntents and Razorpay orders stay
+ * payable and the customer can retry in the still-open card form. So failures
+ * never cancel the booking here; the abandoned-cart sweep
+ * (ABANDONED_CART_GRACE_MIN) is the sole canceller of unpaid pending
+ * bookings, and it terminally fails the charge + cancels the gateway order.
+ * If a capture still lands after cancellation (Razorpay orders can't be
+ * cancelled; Stripe cancel can lose the race), applyPaymentCaptured records
+ * the capture and auto-refunds it in full.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -33,6 +44,7 @@ import {
 } from '../lib/gateway.js';
 import { notifyBookingConfirmed } from './notification_service.js';
 import { issueQrTicketsForBooking } from './qr_ticket_service.js';
+import { issueRefund } from './refund_service.js';
 import { holdForBooking } from './settlement_hold_service.js';
 
 export interface PaymentContext {
@@ -405,17 +417,21 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
       return;
     }
 
-    // M4: status-guarded flip to captured. Only the writer that observes the row
-    // still `pending` proceeds; a concurrent duplicate delivery loses the race
-    // (no row returned) and is a safe no-op. Flip first so holdForBooking()
-    // (which filters on status='captured') can find it inside the same tx.
+    // M4: status-guarded flip to captured. 'pending' is the normal path;
+    // 'failed' is a capture landing after the sweep (or a manual cancel)
+    // terminally failed the charge — gateways allow retries against the same
+    // order, so real money can arrive for a row we gave up on, and it MUST be
+    // recorded in the ledger (then auto-refunded below when the booking is
+    // gone). Concurrent duplicate deliveries lose the guard and no-op. Flip
+    // first so holdForBooking() (which filters on status='captured') can find
+    // it inside the same tx.
     const [won] = await tx
       .update(payments)
       .set({
         status: 'captured',
         providerPaymentId: providerPaymentId ?? pay.providerPaymentId,
       })
-      .where(and(eq(payments.id, pay.id), eq(payments.status, 'pending')))
+      .where(and(eq(payments.id, pay.id), sql`${payments.status} in ('pending', 'failed')`))
       .returning({ id: payments.id });
 
     if (!won) {
@@ -423,37 +439,83 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
       return;
     }
 
-    // Compute settlement_hold_until from the booking's slot end.
-    await holdForBooking(pay.bookingId, tx);
-
-    // Confirm the booking now that funds are captured.
+    // Confirm the booking — status-guarded so a capture can never resurrect a
+    // cancelled booking (its slots were freed and may be rebooked).
     const [booking] = await tx
       .update(bookings)
       .set({ status: 'confirmed' })
-      .where(eq(bookings.id, pay.bookingId))
+      .where(and(eq(bookings.id, pay.bookingId), eq(bookings.status, 'pending')))
       .returning();
 
-    // System-driven audit row: webhook handler has no human actor. Raw insert
-    // since writeAudit() requires an actorUserId we don't have.
-    await tx.execute(sql`
-      insert into audit_log (tenant_id, action, entity_type, entity_id, before, after)
-      values (
-        ${pay.tenantId}::uuid,
-        'payment.captured',
-        'payment',
-        ${pay.id}::uuid,
-        ${JSON.stringify({ status: pay.status })}::jsonb,
-        ${JSON.stringify({ status: 'captured', eventId, providerPaymentId: providerPaymentId ?? null })}::jsonb
-      )
-    `);
+    const auditCapture = async (extra: Record<string, unknown> = {}): Promise<void> => {
+      // System-driven audit row: webhook handler has no human actor. Raw insert
+      // since writeAudit() requires an actorUserId we don't have.
+      await tx.execute(sql`
+        insert into audit_log (tenant_id, action, entity_type, entity_id, before, after)
+        values (
+          ${pay.tenantId}::uuid,
+          'payment.captured',
+          'payment',
+          ${pay.id}::uuid,
+          ${JSON.stringify({ status: pay.status })}::jsonb,
+          ${JSON.stringify({ status: 'captured', eventId, providerPaymentId: providerPaymentId ?? null, ...extra })}::jsonb
+        )
+      `);
+    };
 
     if (booking) {
+      // Normal path: funds captured for a live pending booking.
+      // Compute settlement_hold_until from the booking's slot end.
+      await holdForBooking(pay.bookingId, tx);
+      await auditCapture();
       // Mint QR tickets inside this tx (atomic with the confirm; a plain `db`
       // call would not see the uncommitted status flip). Idempotent on replay.
       await issueQrTicketsForBooking(booking.id, tx);
       // Phase 13 wires the actual SMS/email; today this is a no-op stub.
       await notifyBookingConfirmed(booking.id);
+      return;
     }
+
+    const [bk] = await tx
+      .select({ status: bookings.status })
+      .from(bookings)
+      .where(eq(bookings.id, pay.bookingId))
+      .limit(1);
+
+    if (bk?.status === 'cancelled') {
+      // Safety net: the customer's retry succeeded after we cancelled the
+      // booking (abandoned-cart sweep, manual cancel). The money is real and
+      // the slot is gone — record the capture, then refund it in full,
+      // atomically with this tx. If the gateway refund call throws, the whole
+      // tx rolls back and the gateway redelivers the capture event, so we
+      // retry the refund rather than losing it.
+      logger.error(
+        {
+          paymentId: pay.id,
+          bookingId: pay.bookingId,
+          amountPaise: Number(pay.amountPaise),
+          eventId,
+          provider,
+        },
+        'payment_captured_after_cancellation_auto_refunding',
+      );
+      await auditCapture({ bookingStatus: 'cancelled', autoRefund: true });
+      await issueRefund(
+        {
+          bookingId: pay.bookingId,
+          amountPaise: Number(pay.amountPaise),
+          reason: 'auto-refund: payment captured after booking cancellation',
+          actorUserId: null,
+        },
+        tx,
+      );
+      return;
+    }
+
+    // Booking already confirmed/completed — capture recorded; hold the funds
+    // for settlement as usual.
+    await holdForBooking(pay.bookingId, tx);
+    await auditCapture({ bookingStatus: bk?.status ?? null });
   });
 }
 
@@ -463,6 +525,20 @@ interface FailureArgs {
   eventId: string;
 }
 
+/**
+ * A failed payment attempt is NOT terminal: Stripe PaymentIntents and Razorpay
+ * orders stay payable after a failure (typo'd card, abandoned 3DS), and the
+ * still-open payment form lets the customer retry against the same order. So
+ * we deliberately do NOT fail the charge row or cancel the booking here —
+ * doing so used to lose the retry-success capture (the status-guarded capture
+ * UPDATE found the row already 'failed' and no-oped: customer charged, no
+ * booking). The abandoned-cart sweep is the sole canceller of unpaid pending
+ * bookings; it terminally fails the charge and cancels the gateway order.
+ *
+ * We still record each attempt: an audit row per distinct event plus attempt
+ * metadata on the charge row. Idempotency is the last-seen eventId in
+ * metadata (there is no status transition to guard on).
+ */
 async function applyPaymentFailed(args: FailureArgs): Promise<void> {
   const { provider, orderId, eventId } = args;
 
@@ -478,18 +554,32 @@ async function applyPaymentFailed(args: FailureArgs): Promise<void> {
       return;
     }
 
-    // Idempotency: already-failed rows are a no-op replay.
-    if (pay.status === 'failed') {
+    // Only a still-pending charge accumulates failure attempts. A capture
+    // that already won (or a sweep that already failed the row) makes this a
+    // stale delivery.
+    if (pay.status !== 'pending') {
+      logger.info(
+        { paymentId: pay.id, status: pay.status, eventId, provider },
+        'payment_failed_stale_ignored',
+      );
+      return;
+    }
+
+    // Idempotency: a redelivery of the same event is a no-op.
+    if (pay.metadata['lastFailedEventId'] === eventId) {
       logger.info({ paymentId: pay.id, eventId, provider }, 'payment_failed_replay_ignored');
       return;
     }
 
-    // M4: status-guarded flip. Only fail a still-`pending` charge; concurrent
-    // duplicate deliveries (or a fail racing a capture) lose the guard and
-    // no-op rather than clobbering a captured row.
+    const failedAttempts = Number(pay.metadata['failedAttempts'] ?? 0) + 1;
+
+    // Status-guarded so a concurrent capture flipping the row to 'captured'
+    // wins and this metadata stamp no-ops rather than resurrecting staleness.
     const [won] = await tx
       .update(payments)
-      .set({ status: 'failed' })
+      .set({
+        metadata: { ...pay.metadata, lastFailedEventId: eventId, failedAttempts },
+      })
       .where(and(eq(payments.id, pay.id), eq(payments.status, 'pending')))
       .returning({ id: payments.id });
 
@@ -498,32 +588,22 @@ async function applyPaymentFailed(args: FailureArgs): Promise<void> {
       return;
     }
 
-    // Cancel the (still pending) booking so the slot frees up.
-    const [booking] = await tx
-      .update(bookings)
-      .set({ status: 'cancelled' })
-      .where(and(eq(bookings.id, pay.bookingId), eq(bookings.status, 'pending')))
-      .returning();
-
-    if (booking) {
-      // Mirror cancelBooking()'s slot release.
-      await tx.execute(sql`
-        update slots set status = 'open', booking_id = null, hold_expires_at = null, held_by_user_id = null
-        where booking_id = ${booking.id} and deleted_at is null
-      `);
-    }
-
     await tx.execute(sql`
       insert into audit_log (tenant_id, action, entity_type, entity_id, before, after)
       values (
         ${pay.tenantId}::uuid,
-        'payment.failed',
+        'payment.attempt_failed',
         'payment',
         ${pay.id}::uuid,
         ${JSON.stringify({ status: pay.status })}::jsonb,
-        ${JSON.stringify({ status: 'failed', eventId })}::jsonb
+        ${JSON.stringify({ status: 'pending', eventId, failedAttempts })}::jsonb
       )
     `);
+
+    logger.info(
+      { paymentId: pay.id, bookingId: pay.bookingId, failedAttempts, eventId, provider },
+      'payment_attempt_failed_recorded',
+    );
   });
 }
 
