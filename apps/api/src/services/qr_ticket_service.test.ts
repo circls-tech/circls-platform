@@ -163,6 +163,117 @@ describe.skipIf(!runIntegration)('qr_ticket_service', () => {
     expect(issued).toHaveLength(0);
   });
 
+  it('an event-tier QR override beats the event config (custom / off / inherit)', async () => {
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId,
+        name: 'Tiered Qr Fest',
+        startsAt: new Date('2032-07-01T10:00:00Z'),
+        endsAt: new Date('2032-07-03T22:00:00Z'),
+        status: 'published',
+        // Event default: single-use.
+        qrTicketConfig: QR_ON as never,
+      })
+      .returning();
+    const [vip] = await db
+      .insert(eventTicketTiers)
+      .values({
+        eventId: ev!.id,
+        tenantId,
+        name: 'VIP',
+        pricePaise: 0,
+        sortOrder: 0,
+        // Custom override: multi-day pass, capped at 2 scans.
+        qrTicketConfig: { ...QR_ON, multiUse: true, maxScans: 2 } as never,
+      })
+      .returning();
+    const [general] = await db
+      .insert(eventTicketTiers)
+      .values({
+        eventId: ev!.id,
+        tenantId,
+        name: 'General',
+        pricePaise: 0,
+        sortOrder: 1,
+        // No override → inherits the event config.
+      })
+      .returning();
+    const [crew] = await db
+      .insert(eventTicketTiers)
+      .values({
+        eventId: ev!.id,
+        tenantId,
+        name: 'Crew',
+        pricePaise: 0,
+        sortOrder: 2,
+        // Explicitly off for this tier, despite the event enabling QR.
+        qrTicketConfig: { ...QR_ON, enabled: false } as never,
+      })
+      .returning();
+
+    const res = await bookEvent(ev!.id, { userId, name: 'Mixed Buyer' }, null, [
+      { tierId: vip!.id, quantity: 2 },
+      { tierId: general!.id, quantity: 1 },
+      { tierId: crew!.id, quantity: 1 },
+    ]);
+    expect(res.booking.status).toBe('confirmed');
+
+    const issued = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`booking_id = ${res.booking.id}`)
+      .orderBy(qrTickets.label);
+    // Crew mints nothing; VIP mints per-seat passes with its own rules;
+    // General inherits the event's single-use config.
+    expect(issued.map((t) => t.label)).toEqual(['General', 'VIP · 1 of 2', 'VIP · 2 of 2']);
+    expect(issued[0]).toMatchObject({ multiUse: false, maxScans: null });
+    expect(issued[1]).toMatchObject({ multiUse: true, maxScans: 2 });
+    expect(issued[2]).toMatchObject({ multiUse: true, maxScans: 2 });
+  });
+
+  it('a tier with custom rules mints passes even when event-level QR is off', async () => {
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId,
+        name: 'Qr Off Event',
+        startsAt: new Date('2032-08-01T10:00:00Z'),
+        endsAt: new Date('2032-08-01T14:00:00Z'),
+        status: 'published',
+        qrTicketConfig: null,
+      })
+      .returning();
+    const [vip] = await db
+      .insert(eventTicketTiers)
+      .values({
+        eventId: ev!.id,
+        tenantId,
+        name: 'VIP',
+        pricePaise: 0,
+        sortOrder: 0,
+        qrTicketConfig: QR_ON as never,
+      })
+      .returning();
+    const [general] = await db
+      .insert(eventTicketTiers)
+      .values({ eventId: ev!.id, tenantId, name: 'General', pricePaise: 0, sortOrder: 1 })
+      .returning();
+
+    const res = await bookEvent(ev!.id, { userId }, null, [
+      { tierId: vip!.id, quantity: 1 },
+      { tierId: general!.id, quantity: 1 },
+    ]);
+    const issued = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`booking_id = ${res.booking.id}`);
+    expect(issued).toHaveLength(1);
+    expect(issued[0]!.label).toBe('VIP');
+  });
+
   it('a not-yet-open window scans as not_yet_valid; expired windows as expired', async () => {
     // Far-future event: window opens 60min before start.
     const future = await makeEvent({ ...QR_ON, validFromOffsetMin: 60 });

@@ -431,6 +431,8 @@ export interface EventTier {
   description: string | null;
   pricePaise: number;
   capacity: number | null;
+  /** Per-tier QR override; null = inherit the event's `qrTicketConfig`. */
+  qrTicketConfig: QrTicketConfig | null;
   sold: number;
   remaining: number | null;
 }

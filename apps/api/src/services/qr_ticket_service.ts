@@ -6,7 +6,9 @@
  * cap) and the concrete validity window are frozen onto each row at issuance —
  * later config edits never mutate already-sold tickets.
  *
- *   - event bookings   → one ticket per seat, window from the event's start/end
+ *   - event bookings   → one ticket per seat, window from the event's
+ *                        start/end; rules come from the purchased tier's
+ *                        qr_ticket_config when set, else the event's
  *   - slot bookings    → one ticket per arena in the booking, window from that
  *                        arena's booked-slot span
  *   - membership buys  → one ticket per user_membership, window from the
@@ -179,16 +181,22 @@ async function issueForSlotBooking(booking: Booking, dbx: Database): Promise<QrT
   return dbx.insert(qrTickets).values(values).returning();
 }
 
-/** One ticket per seat: a line of quantity 3 mints 3 individually-scannable QRs. */
+/**
+ * One ticket per seat: a line of quantity 3 mints 3 individually-scannable QRs.
+ * Each line resolves its rules from the purchased tier's qr_ticket_config when
+ * set, else the event's (null = inherit; a tier config with enabled:false
+ * turns QR off for that tier alone, and a tier can enable QR even when the
+ * event-level config is off).
+ */
 async function issueForEventBooking(booking: Booking, dbx: Database): Promise<QrTicket[]> {
   const eventId = (booking.itemData?.['eventId'] as string | undefined) ?? null;
   if (!eventId) return [];
   const [ev] = await dbx.select().from(events).where(eq(events.id, eventId)).limit(1);
-  const cfg = ev?.qrTicketConfig;
-  if (!ev || !cfg?.enabled) return [];
+  if (!ev) return [];
+  const eventCfg = ev.qrTicketConfig;
 
   const raw = await dbx.execute<Record<string, unknown>>(sql`
-    select ebt.quantity as quantity, t.name as tier_name
+    select ebt.quantity as quantity, t.name as tier_name, t.qr_ticket_config as tier_cfg
     from event_booking_tickets ebt
     join event_ticket_tiers t on t.id = ebt.tier_id
     where ebt.booking_id = ${booking.id}
@@ -198,6 +206,8 @@ async function issueForEventBooking(booking: Booking, dbx: Database): Promise<Qr
 
   const values: NewQrTicket[] = [];
   for (const line of lines) {
+    const cfg = (line['tier_cfg'] as QrTicketConfig | null) ?? eventCfg;
+    if (!cfg?.enabled) continue;
     const quantity = Number(line['quantity']);
     const tierName = line['tier_name'] as string;
     for (let i = 1; i <= quantity; i++) {

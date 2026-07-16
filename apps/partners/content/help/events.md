@@ -55,6 +55,7 @@ On the event detail page (while the event is a **draft**), use the **Ticket tier
 | **Description** | No | Optional detail shown alongside the tier name. |
 | **Price** | Yes | Enter `0` for a free tier. The label shows the event's currency (₹ or $): venue events use the venue's currency; standalone events follow the country in their address (or your organisation's country until one is set). |
 | **Capacity** | No | Leave blank for unlimited. When set, the tier stops selling once that many tickets are sold. |
+| **QR passes for this tier** | No | **Event default** follows the event-level QR ticket settings; **Custom** gives this tier its own pass rules; **Off** issues no passes for this tier. See **Per-tier QR rules** below. |
 
 You can add as many tiers as you need. At least one tier is required before you can submit the event for review.
 
@@ -74,6 +75,22 @@ labelled with its tier. You choose single- or multi-use, an optional scan cap,
 and how long before the start / after the end the passes work. Staff validate
 them on the portal's **Check-in** page. See [QR tickets and door
 check-in](/help/qr-tickets) for the full guide.
+
+### Per-tier QR rules
+
+The event-level QR setting is the default for all ticket tiers, and each tier
+can override it with its own **QR passes for this tier** control:
+
+- **Event default** — passes for this tier follow the event-level settings.
+- **Custom** — this tier issues passes with its own rules, ignoring the
+  event-level settings. Useful when tiers grant different access — e.g. a VIP
+  multi-day tier can issue a multi-use pass with a scan cap while General
+  Admission stays single-entry. A tier with custom rules issues passes even
+  when event-level QR tickets are off.
+- **Off** — no passes for this tier, even when the event enables them.
+
+Like the event-level rules, tier overrides only apply to future registrations —
+passes customers already hold are never changed.
 
 ## Event statuses
 

@@ -5,10 +5,14 @@ import type { MembershipBenefitItem, MembershipTier, QrTicketConfig } from '@/li
 import type { MembershipTierInput } from '@/lib/api/memberships';
 import { type CurrencyCode, currencySymbol } from '@/lib/currency';
 import { BenefitsEditor, cleanBenefits } from './BenefitsEditor';
-import { DEFAULT_QR_CONFIG, QrTicketRulesFields } from './QrTicketConfigEditor';
+import {
+  DEFAULT_QR_CONFIG,
+  QrTicketRulesFields,
+  TierQrModeControl,
+  type TierQrMode,
+} from './QrTicketConfigEditor';
 
-/** Per-tier QR pass setting: follow the plan default, custom rules, or off. */
-export type TierQrMode = 'inherit' | 'custom' | 'off';
+export type { TierQrMode } from './QrTicketConfigEditor';
 
 /** Form-draft shape: price/number inputs stay strings and convert on submit. */
 export interface MembershipTierDraft {
@@ -74,18 +78,6 @@ export function membershipTierDraftFromApi(
     qrConfig: t.qrTicketConfig?.enabled ? t.qrTicketConfig : DEFAULT_QR_CONFIG,
   };
 }
-
-const QR_MODES: { mode: TierQrMode; label: string }[] = [
-  { mode: 'inherit', label: 'Plan default' },
-  { mode: 'custom', label: 'Custom' },
-  { mode: 'off', label: 'Off' },
-];
-
-const QR_MODE_HINTS: Record<TierQrMode, string> = {
-  inherit: 'Passes for this tier follow the plan-level QR settings below.',
-  custom: 'This tier issues passes with its own rules, ignoring the plan-level settings.',
-  off: 'No QR passes for this tier, even when the plan enables them.',
-};
 
 export function MembershipTiersEditor({
   value,
@@ -170,30 +162,12 @@ export function MembershipTiersEditor({
           {!disabled && (
             <BenefitsEditor items={t.benefits} onChange={(items) => update(i, { benefits: items })} />
           )}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-              QR passes for this tier
-            </label>
-            <div className="inline-flex w-fit rounded-md border border-slate-200 bg-white p-0.5">
-              {QR_MODES.map(({ mode, label }) => (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => update(i, { qrMode: mode })}
-                  className={[
-                    'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-                    t.qrMode === mode
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:text-slate-900',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-[#94a3b8]">{QR_MODE_HINTS[t.qrMode]}</p>
-          </div>
+          <TierQrModeControl
+            mode={t.qrMode}
+            onChange={(mode) => update(i, { qrMode: mode })}
+            disabled={disabled}
+            parentNoun="plan"
+          />
           {t.qrMode === 'custom' && (
             <QrTicketRulesFields
               cfg={t.qrConfig}

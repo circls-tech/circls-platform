@@ -26,6 +26,9 @@ export interface TierInput {
   description?: string;
   pricePaise: number;
   capacity: number | null;
+  /** Per-tier QR override: null = inherit the event's config;
+   *  `enabled: false` = off for this tier; enabled = custom rules. */
+  qrTicketConfig?: QrTicketConfig | null;
 }
 
 /**
