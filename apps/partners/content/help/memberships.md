@@ -12,7 +12,7 @@ Memberships are time-bound passes your customers can buy — a monthly unlimited
    - **Terms & conditions** (optional) — plan terms such as refund/validity/transferability rules.
 3. Add at least one **tier** under **Plan tiers**. For each tier set:
    - **Tier name** (required) — e.g. *Gold*.
-   - **Price (₹)** — enter `0` for a free tier.
+   - **Price** — enter `0` for a free tier. The field's label shows the plan's currency (₹ or $): a venue-scoped plan uses that venue's currency, an org-wide plan your organisation's — both follow the country on file. US customers pay in dollars via Stripe.
    - **Days** (required) — how long this tier lasts once bought, e.g. `30`.
    - **Capacity** (optional) — leave blank for unlimited, or cap how many can be sold.
    - **Description** (optional) and **Benefits** — add structured perks with **Add benefit**: each row has a **label** (e.g. *Priority booking*) and an optional **detail** line. These render as a clean list on the consumer plan page when the tier is selected.
@@ -23,7 +23,7 @@ Memberships are time-bound passes your customers can buy — a monthly unlimited
 
 Artwork can also be added or changed later from the **Edit** panel (see below).
 
-You'll see *"Membership created. It's now pending review by Circls before it goes live."* New plans start in **pending review**. The price shown in lists is the cheapest tier (e.g. *from ₹499*).
+You'll see *"Membership created. It's now pending review by Circls before it goes live."* New plans start in **pending review**. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
 
 ## Membership statuses
 

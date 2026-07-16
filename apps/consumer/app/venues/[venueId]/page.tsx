@@ -17,7 +17,14 @@ import {
 } from '@/lib/api/consumer';
 import type { PublicArena, PublicEvent, PublicVenue } from '@/lib/api/types';
 import { formatAddress, formatOpeningHours } from '@/lib/trust';
-import { formatDateTime, formatDayMonth, formatPaise, formatSlotRange } from '@/lib/format';
+import {
+  type CurrencyCode,
+  currencyForCountry,
+  formatDateTime,
+  formatDayMonth,
+  formatPaise,
+  formatSlotRange,
+} from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
@@ -43,6 +50,8 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   // endpoint takes the combined slotIds and books them as one multi-arena
   // booking with a single payment.
   const [cart, setCart] = useState<Map<string, CartSlot>>(new Map());
+  // Prices at this venue are denominated by the venue's country.
+  const currency = currencyForCountry(venueQ.data?.venue.address.country);
 
   function toggleCartSlot(slot: CartSlot) {
     setCart((prev) => {
@@ -125,6 +134,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     <ArenaCard
                       key={arena.id}
                       arena={arena}
+                      currency={currency}
                       cart={cart}
                       onToggleSlot={toggleCartSlot}
                     />
@@ -143,7 +153,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {eventsQ.data.map((ev) => (
-                    <EventCard key={ev.id} event={ev} />
+                    <EventCard key={ev.id} event={ev} currency={currency} />
                   ))}
                 </div>
               )}
@@ -169,6 +179,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
               <CartBar
                 cart={cart}
                 venueName={venueQ.data.venue.name}
+                currency={currency}
                 onRemove={removeFromCart}
                 onClear={clearCart}
               />
@@ -276,10 +287,12 @@ function dayBounds(date: string): { from: string; to: string } {
 
 function ArenaCard({
   arena,
+  currency,
   cart,
   onToggleSlot,
 }: {
   arena: PublicArena;
+  currency: CurrencyCode;
   cart: Map<string, CartSlot>;
   onToggleSlot: (slot: CartSlot) => void;
 }) {
@@ -349,7 +362,7 @@ function ArenaCard({
                     ].join(' ')}
                   >
                     <span className="text-xs font-medium leading-tight tabular-nums text-ink sm:text-sm">{slotLabel}</span>
-                    <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise)}</span>
+                    <span className="text-xs text-text-secondary">{formatPaise(slot.pricePaise, currency)}</span>
                   </button>
                 );
               })}
@@ -370,11 +383,13 @@ function ArenaCard({
 function CartBar({
   cart,
   venueName,
+  currency,
   onRemove,
   onClear,
 }: {
   cart: Map<string, CartSlot>;
   venueName: string;
+  currency: CurrencyCode;
   onRemove: (id: string) => void;
   onClear: () => void;
 }) {
@@ -395,6 +410,7 @@ function CartBar({
         kind: 'slot',
         slotIds: items.map((i) => i.id),
         title: `${venueName} · ${n} slot${n > 1 ? 's' : ''}${courts > 1 ? ` · ${courts} courts` : ''}`,
+        currency,
       },
       {},
       { onSuccess: onClear },
@@ -422,7 +438,7 @@ function CartBar({
                       <span className="text-text-secondary"> · {day} {month} · {formatSlotRange(i.startAt, i.endAt)}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
-                      <span className="tabular-nums text-text-secondary">{formatPaise(i.pricePaise)}</span>
+                      <span className="tabular-nums text-text-secondary">{formatPaise(i.pricePaise, currency)}</span>
                       <button
                         type="button"
                         onClick={() => onRemove(i.id)}
@@ -446,7 +462,7 @@ function CartBar({
             aria-expanded={expanded}
           >
             <span className="font-display text-sm font-extrabold text-ink">
-              {n} slot{n > 1 ? 's' : ''} · {courts} court{courts > 1 ? 's' : ''} · {formatPaise(total)}
+              {n} slot{n > 1 ? 's' : ''} · {courts} court{courts > 1 ? 's' : ''} · {formatPaise(total, currency)}
             </span>
             <span className="text-xs text-text-secondary underline">{expanded ? 'Hide cart' : 'View cart'}</span>
           </button>
@@ -457,7 +473,7 @@ function CartBar({
   );
 }
 
-function EventCard({ event }: { event: PublicEvent }) {
+function EventCard({ event, currency }: { event: PublicEvent; currency: CurrencyCode }) {
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
@@ -472,7 +488,7 @@ function EventCard({ event }: { event: PublicEvent }) {
         <p className="mt-2 text-sm text-text-secondary line-clamp-3">{event.description}</p>
       )}
       <div className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
-        <span className="font-medium text-ink">{formatPaise(event.pricePaise)}</span>
+        <span className="font-medium text-ink">{formatPaise(event.pricePaise, currency)}</span>
         {event.capacity != null && <span>· {event.capacity} seats</span>}
       </div>
       <div className="mt-auto pt-4">

@@ -129,17 +129,21 @@ export interface AreaSelection {
 }
 
 /**
- * Whether a place with this address falls in the selected country. A null
+ * Whether a place with this country falls in the selected country. A null
  * selection matches everything; a place with no country is shown everywhere
  * (lenient — we never hide untagged data).
  */
+export function matchesCountry(country: string | null, selected: string | null): boolean {
+  if (!selected) return true;
+  return country == null || sameCountry(country, selected);
+}
+
+/** `matchesCountry` for a place whose country lives in freeform address JSON. */
 export function inCountry(
   addressJson: Record<string, unknown> | null,
   country: string | null,
 ): boolean {
-  if (!country) return true;
-  const c = countryOf(addressJson);
-  return c == null || sameCountry(c, country);
+  return matchesCountry(countryOf(addressJson), country);
 }
 
 /** Whether a venue's address falls in the selected area (country, then city). */

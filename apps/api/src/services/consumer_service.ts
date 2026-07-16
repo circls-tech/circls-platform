@@ -503,6 +503,9 @@ export interface PublicMembershipWithScope extends Membership {
   venueId: string | null;
   /** Venue name for venue-scoped; tenant/brand name for tenant-wide. */
   scopeName: string;
+  /** Country the plan's prices are denominated in: the owning venue's country,
+   *  falling back to the tenant's (mirrors the gateway's settlement rule). */
+  country: string | null;
   /** Owning venue's tags; empty for tenant-wide (card falls back to motif). */
   venueTags: string[];
   /** Typed benefits (PR #110) — always coerced to { items: [...] } on read. */
@@ -557,7 +560,9 @@ interface MembershipJoinRow {
   m: Membership;
   venueName: string | null;
   venueTags: string[] | null;
+  venueCountry: string | null;
   tenantName: string;
+  tenantCountry: string | null;
   brand: { id: string; slug: string; name: string; logoStorageKey: string | null };
 }
 
@@ -566,7 +571,9 @@ const PUBLIC_MEMBERSHIP_COLUMNS = {
   m: memberships,
   venueName: venues.name,
   venueTags: venues.tags,
+  venueCountry: venues.country,
   tenantName: tenants.name,
+  tenantCountry: tenants.country,
   brand: BRAND_COLUMNS,
 } as const;
 
@@ -575,6 +582,7 @@ function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
     ...r.m,
     venueId: r.m.venueId,
     scopeName: r.venueName ?? r.tenantName,
+    country: r.venueCountry ?? r.tenantCountry,
     venueTags: r.venueTags ?? [],
     benefits: coerceBenefits(r.m.benefits),
     artworkUrl: r.m.coverStorageKey ? getStorage().publicUrl(r.m.coverStorageKey) : null,
@@ -788,6 +796,8 @@ export interface MyBookingItem {
   itemType: string;
   status: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise is in this currency's minor units. */
+  currency: string;
   createdAt: string;
 }
 
@@ -805,6 +815,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
       b.item_type,
       b.status,
       b.total_paise,
+      b.currency,
       b.created_at
     from bookings b
     left join venues v on v.id = b.venue_id
@@ -821,6 +832,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     itemType: r['item_type'] as string,
     status: r['status'] as string,
     totalPaise: Number(r['total_paise']),
+    currency: r['currency'] as string,
     createdAt: new Date(r['created_at'] as string).toISOString(),
   }));
 }
@@ -850,6 +862,8 @@ export interface MyBookingDetail {
   channel: string;
   paymentMethod: string;
   totalPaise: number;
+  /** ISO 4217 — totalPaise/slot prices are in this currency's minor units. */
+  currency: string;
   note: string | null;
   customerName: string | null;
   customerContact: string | null;
@@ -913,6 +927,7 @@ export async function getMyBookingDetail(
       b.channel                  as channel,
       b.payment_method           as payment_method,
       b.total_paise              as total_paise,
+      b.currency                 as currency,
       b.note                     as note,
       b.customer_name            as customer_name,
       b.customer_contact         as customer_contact,
@@ -1019,6 +1034,7 @@ export async function getMyBookingDetail(
     channel: r['channel'] as string,
     paymentMethod: r['payment_method'] as string,
     totalPaise: Number(r['total_paise']),
+    currency: r['currency'] as string,
     note: (r['note'] as string | null) ?? null,
     customerName: (r['customer_name'] as string | null) ?? null,
     customerContact: (r['customer_contact'] as string | null) ?? null,

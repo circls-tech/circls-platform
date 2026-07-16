@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
-import { formatDayMonth, formatTime, formatPaise } from '@/lib/format';
+import { countryOfAddress, currencyForCountry, formatDayMonth, formatTime, formatPaise } from '@/lib/format';
 import type { PublicEventWithVenue } from '@/lib/api/types';
 
 export function EventCard({ event, className = '' }: { event: PublicEventWithVenue; className?: string }) {
   const { day, month } = formatDayMonth(event.startsAt);
+  const currency = currencyForCountry(countryOfAddress(event.locAddressJson));
   return (
     <Link
       href={`/events/${event.id}`}
@@ -40,7 +41,7 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
           {event.locationName} · {formatTime(event.startsAt)}
           {(event.seriesCount ?? 1) > 1 && ' · repeats'}
         </p>
-        <p className="mt-2 text-sm font-semibold text-ink">{formatPaise(event.pricePaise)}</p>
+        <p className="mt-2 text-sm font-semibold text-ink">{formatPaise(event.pricePaise, currency)}</p>
       </div>
     </Link>
   );

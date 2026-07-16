@@ -12,11 +12,15 @@ import {
   venues,
 } from '../db/schema/index.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
+import { __resetStripeForTesting } from '../lib/stripe.js';
+import { cancelPaidBooking } from './cancellation_service.js';
 import { createPricingRule } from './pricing_service.js';
 import {
   createPaymentOrder,
   handleRazorpayWebhook,
+  handleStripeWebhook,
   listForBooking,
+  resolvePaymentContext,
 } from './payments_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -38,6 +42,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   beforeAll(async () => {
     await pingDb();
     __resetRazorpayForTesting();
+    __resetStripeForTesting();
 
     const [u] = await db
       .insert(users)
@@ -83,7 +88,10 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   });
 
   /** Create a fresh pending booking + payment row scoped to a far-future slot. */
-  async function seedPendingBookingWithOrder(dateIso: string): Promise<{
+  async function seedPendingBookingWithOrder(
+    dateIso: string,
+    opts?: { provider?: 'razorpay' | 'stripe'; currency?: string },
+  ): Promise<{
     bookingId: string;
     orderId: string;
     paymentId: string;
@@ -129,6 +137,8 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       bookingId: booking!.id,
       tenantId,
       amountPaise: 50000,
+      ...(opts?.provider ? { provider: opts.provider } : {}),
+      ...(opts?.currency ? { currency: opts.currency } : {}),
       actorUserId: userId,
     });
 
@@ -334,7 +344,10 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   });
 
   describe('handleRazorpayWebhook — payment.failed', () => {
-    it('flips payment to failed and cancels the pending booking', async () => {
+    // A failed attempt is retryable (the customer's card form stays open), so
+    // it must NOT fail the charge or cancel the booking — only the
+    // abandoned-cart sweep cancels unpaid pending bookings.
+    it('records the attempt but keeps the payment and booking pending', async () => {
       const dateIso = '2031-10-04T05:00:00.000Z';
       const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(dateIso);
 
@@ -345,10 +358,71 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       });
 
       const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
-      expect(pay?.status).toBe('failed');
+      expect(pay?.status).toBe('pending');
+      expect(pay?.metadata['failedAttempts']).toBe(1);
+      expect(pay?.metadata['lastFailedEventId']).toBe('evt_fail_1');
 
       const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
-      expect(book?.status).toBe('cancelled');
+      expect(book?.status).toBe('pending');
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${paymentId} and action = 'payment.attempt_failed'`);
+      expect(auditRows.length).toBe(1);
+    });
+
+    it('replays are deduped by eventId; distinct attempts accumulate', async () => {
+      const dateIso = '2031-10-11T05:00:00.000Z';
+      const { orderId, paymentId } = await seedPendingBookingWithOrder(dateIso);
+
+      const mk = (eventId: string) => ({
+        event: 'payment.failed',
+        eventId,
+        payload: { payment: { entity: { order_id: orderId, id: 'pay_stub_y' } } },
+      });
+      await handleRazorpayWebhook(mk('evt_fail_r1'));
+      await handleRazorpayWebhook(mk('evt_fail_r1')); // replay — no-op
+      await handleRazorpayWebhook(mk('evt_fail_r2')); // a second real attempt
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.metadata['failedAttempts']).toBe(2);
+
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${paymentId} and action = 'payment.attempt_failed'`);
+      expect(auditRows.length).toBe(2);
+    });
+
+    // THE money-losing race this change exists for: a failed 3DS attempt
+    // followed by a successful retry against the same order must end
+    // captured + confirmed, not 'payment_capture_race_lost'.
+    it('fail → retry-success ends with the payment captured and booking confirmed', async () => {
+      const dateIso = '2031-10-18T05:00:00.000Z';
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(dateIso);
+
+      await handleRazorpayWebhook({
+        event: 'payment.failed',
+        eventId: 'evt_fail_then_ok_1',
+        payload: { payment: { entity: { order_id: orderId, id: 'pay_stub_f1' } } },
+      });
+      await handleRazorpayWebhook({
+        event: 'payment.captured',
+        eventId: 'evt_fail_then_ok_2',
+        payload: {
+          payment: {
+            entity: { order_id: orderId, id: 'pay_stub_retry', status: 'captured', amount: 50000, currency: 'INR' },
+          },
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      expect(pay?.providerPaymentId).toBe('pay_stub_retry');
+
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
     });
   });
 
@@ -447,6 +521,363 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
           payload: { refund: { entity: { id: 'rfnd_does_not_exist', status: 'processed' } } },
         }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleStripeWebhook', () => {
+    it('payment_intent.succeeded captures the payment and confirms the booking', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-05T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+      expect(orderId).toMatch(/^stub_pi_/);
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_capture_1',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_stub_1',
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      expect(pay?.providerPaymentId).toBe('ch_stub_1');
+      expect(pay?.currency).toBe('USD');
+      expect(pay?.settlementHoldUntil).not.toBeNull();
+
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+
+    it('rejects a capture whose amount disagrees with the order (M1)', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-12T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_mismatch',
+        object: { id: orderId, amount_received: 49999, currency: 'usd', latest_charge: 'ch_bad' },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending');
+    });
+
+    it('rejects a capture whose currency disagrees with the order (M1)', async () => {
+      const { orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-19T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_cur_mismatch',
+        object: { id: orderId, amount_received: 50000, currency: 'inr', latest_charge: 'ch_cur' },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+    });
+
+    // A PaymentIntent is retryable after a failed attempt (e.g. abandoned
+    // 3DS) — the failure must not fail the charge or cancel the booking.
+    it('payment_intent.payment_failed keeps the payment and booking pending', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-01-26T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.payment_failed',
+        eventId: 'evt_stripe_fail_1',
+        object: { id: orderId },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+      expect(pay?.metadata['failedAttempts']).toBe(1);
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending');
+    });
+
+    // Reproduces the live Stripe test-mode incident: failed 3DS attempt, the
+    // customer retries in the still-open Payment Element, the same intent
+    // succeeds. Must end captured + confirmed.
+    it('payment_failed → payment_intent.succeeded retry confirms the booking', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-02-09T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+
+      await handleStripeWebhook({
+        type: 'payment_intent.payment_failed',
+        eventId: 'evt_stripe_retry_fail',
+        object: { id: orderId },
+      });
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_retry_ok',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_stub_retry',
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      expect(pay?.providerPaymentId).toBe('ch_stub_retry');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+
+    it('refund.updated succeeded flips a pending refund row to captured; pending is ignored', async () => {
+      const { bookingId } = await seedPendingBookingWithOrder('2032-02-02T05:00:00.000Z', {
+        provider: 'stripe',
+        currency: 'USD',
+      });
+      const [r] = await db
+        .insert(payments)
+        .values({
+          bookingId,
+          tenantId,
+          provider: 'stripe',
+          providerPaymentId: 're_stub_1',
+          amountPaise: -50000,
+          currency: 'USD',
+          status: 'pending',
+          kind: 'refund',
+          metadata: {},
+        })
+        .returning();
+
+      // Non-terminal update: no state change.
+      await handleStripeWebhook({
+        type: 'refund.updated',
+        eventId: 'evt_stripe_refund_pending',
+        object: { id: 're_stub_1', status: 'pending' },
+      });
+      let [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('pending');
+
+      await handleStripeWebhook({
+        type: 'refund.updated',
+        eventId: 'evt_stripe_refund_done',
+        object: { id: 're_stub_1', status: 'succeeded' },
+      });
+      [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('captured');
+    });
+
+    it('acks unknown event types without error', async () => {
+      await expect(
+        handleStripeWebhook({
+          type: 'customer.created',
+          eventId: 'evt_stripe_unknown',
+          object: { id: 'cus_1' },
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('capture after cancellation — auto-refund safety net', () => {
+    /** Simulate the abandoned-cart sweep on a seeded pending booking. */
+    async function sweepLike(bookingId: string, paymentId: string): Promise<void> {
+      await db.execute(
+        sql`update slots set status = 'open', booking_id = null where booking_id = ${bookingId}`,
+      );
+      await db.update(bookings).set({ status: 'cancelled' }).where(sql`id = ${bookingId}`);
+      await db.update(payments).set({ status: 'failed' }).where(sql`id = ${paymentId}`);
+    }
+
+    // The full incident flow: sweep cancelled the booking and failed the
+    // charge, then the customer's retry captured the money anyway (Stripe
+    // cancel lost the race / Razorpay order can't be cancelled). The capture
+    // must be recorded in the ledger and refunded in full — never dropped as
+    // 'payment_capture_race_lost', and never resurrecting the booking.
+    it('records a late capture on a failed charge and auto-refunds it in full', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-02T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+      await sweepLike(bookingId, paymentId);
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_late_capture',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_late_1',
+        },
+      });
+
+      // Charge: captured, then flipped to 'refunded' by the auto-refund.
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('refunded');
+      expect(pay?.providerPaymentId).toBe('ch_late_1');
+
+      // Booking stays cancelled — a late capture must not resurrect it.
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('cancelled');
+
+      // Full-amount refund ledger row (stub provider resolves instantly).
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(1);
+      expect(Number(refunds[0]?.amountPaise)).toBe(-50000);
+      expect(refunds[0]?.status).toBe('captured');
+
+      const captureAudit = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${paymentId} and action = 'payment.captured'`);
+      expect(captureAudit.length).toBe(1);
+      const refundAudit = await db
+        .select()
+        .from(auditLog)
+        .where(sql`entity_id = ${refunds[0]!.id} and action = 'payment.refunded'`);
+      expect(refundAudit.length).toBe(1);
+    });
+
+    // Same net, different entry: the booking was cancelled but the charge row
+    // is still 'pending' (e.g. a cancel path that predates the charge flip).
+    it('auto-refunds a capture for a cancelled booking whose charge is still pending', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-09T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+      await db.execute(
+        sql`update slots set status = 'open', booking_id = null where booking_id = ${bookingId}`,
+      );
+      await db.update(bookings).set({ status: 'cancelled' }).where(sql`id = ${bookingId}`);
+
+      await handleStripeWebhook({
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_late_capture_2',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_late_2',
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('refunded');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('cancelled');
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(1);
+    });
+
+    // A replay of the capture after the auto-refund must not double-refund:
+    // the charge is 'refunded', which the capture guard does not match.
+    it('is idempotent — replaying the late capture does not refund twice', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-16T05:00:00.000Z',
+        { provider: 'stripe', currency: 'USD' },
+      );
+      await sweepLike(bookingId, paymentId);
+
+      const event = {
+        type: 'payment_intent.succeeded',
+        eventId: 'evt_stripe_late_replay',
+        object: {
+          id: orderId,
+          amount: 50000,
+          amount_received: 50000,
+          currency: 'usd',
+          latest_charge: 'ch_late_3',
+        },
+      };
+      await handleStripeWebhook(event);
+      await handleStripeWebhook({ ...event, eventId: 'evt_stripe_late_replay_2' });
+
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(1);
+    });
+  });
+
+  describe('cancelPaidBooking on an unpaid pending booking', () => {
+    it('fails the charge, refunds nothing, and reports refundPaise 0', async () => {
+      const { bookingId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-04-06T05:00:00.000Z',
+      );
+
+      const res = await cancelPaidBooking({
+        bookingId,
+        actorUserId: userId,
+        reason: 'customer walked away from checkout',
+        bySelf: false,
+      });
+
+      // Nothing was captured, so nothing can be refunded — whatever the
+      // cancellation policy tier would have paid out.
+      expect(res.refundPaise).toBe(0);
+      expect(res.refundId).toBeUndefined();
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('failed');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('cancelled');
+
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(0);
+    });
+  });
+
+  describe('resolvePaymentContext', () => {
+    it('US venue → stripe/USD; Indian venue → razorpay/INR; no country → razorpay/INR', async () => {
+      const [usVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'US V', tzName: 'America/New_York', country: 'USA' })
+        .returning();
+      const [inVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'IN V', tzName: 'Asia/Kolkata', country: 'India' })
+        .returning();
+
+      expect(await resolvePaymentContext({ venueId: usVenue!.id, tenantId })).toEqual({
+        provider: 'stripe',
+        currency: 'USD',
+      });
+      expect(await resolvePaymentContext({ venueId: inVenue!.id, tenantId })).toEqual({
+        provider: 'razorpay',
+        currency: 'INR',
+      });
+      // No venue + tenant without a country → the pre-multi-gateway default.
+      expect(await resolvePaymentContext({ tenantId })).toEqual({
+        provider: 'razorpay',
+        currency: 'INR',
+      });
+
+      await db.execute(sql`delete from venues where id in (${usVenue!.id}, ${inVenue!.id})`);
     });
   });
 

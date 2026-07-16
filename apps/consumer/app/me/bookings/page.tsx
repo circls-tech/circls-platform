@@ -68,7 +68,7 @@ export default function MyBookingsPage() {
                     <div className="flex flex-col items-end gap-2">
                       <StatusPill status={b.status} />
                       <span className="text-sm font-medium text-ink">
-                        {formatPaise(b.totalPaise)}
+                        {formatPaise(b.totalPaise, b.currency)}
                       </span>
                     </div>
                   </div>

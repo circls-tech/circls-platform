@@ -14,11 +14,11 @@ Fill in the configuration card:
 
 A **band** is a stretch of the day at a single price. Add as many as you need to describe your pricing — for example:
 
-- `06:00 → 10:00` at ₹400
-- `10:00 → 16:00` at ₹600
-- `16:00 → 02:00` at ₹800
+- `06:00 → 10:00` at 400
+- `10:00 → 16:00` at 600
+- `16:00 → 02:00` at 800
 
-Each band has a **From** time, a **To** time and a **price (₹)**. Bands apply to **every day** in your date range; you can adjust individual days afterwards on the grid.
+Each band has a **From** time, a **To** time and a **price**. Prices are in your **venue's currency** — the Price field's label shows the symbol (₹ for venues in India, $ for venues in the USA, driven by the venue's **Country**). Bands apply to **every day** in your date range; you can adjust individual days afterwards on the grid.
 
 - **Overnight bands are fine.** If the **To** time is earlier than (or equal to) the **From** time, the band simply crosses midnight — `16:00 → 02:00` means 4pm through to 2am the next morning.
 - **Open 24 hours?** Add a single band whose **To** time equals its **From** time (for example `03:00 → 03:00`). That covers the whole business day.

@@ -10,6 +10,10 @@ import {
   useCreateTenantEvent,
   type CreateTenantEventInput,
 } from '@/lib/api/events';
+import { useCurrency } from '@/lib/currency';
+import { SERVED_COUNTRIES } from '@/lib/countries';
+import type { AddressSuggestion } from '@/lib/api/geocode';
+import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -69,14 +73,33 @@ export default function NewTenantEventPage() {
   const [city, setCity] = useState('');
   const [stateRegion, setStateRegion] = useState('');
   const [pincode, setPincode] = useState('');
-  const [latRaw, setLatRaw] = useState('');
-  const [lngRaw, setLngRaw] = useState('');
+  const [country, setCountry] = useState('');
   const [tz, setTz] = useState('Asia/Kolkata');
+  // Coordinates are held here (never shown) — set from an autocomplete pick and
+  // cleared on any manual address edit so the server geocodes from the typed
+  // address on create. Organisers never enter lat/lng by hand.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
   const effectiveTz = scope === 'venue' ? selectedVenue?.tzName ?? 'Asia/Kolkata' : tz;
+  // Ticket prices follow the venue's currency, or the standalone address's
+  // country (tenant currency until one is picked).
+  const currency = useCurrency({
+    venueId: scope === 'venue' ? venueId || null : null,
+    country: scope === 'standalone' ? country || null : null,
+  });
   const busy = createEvent.isPending || uploadProgress !== null;
+
+  /** Fill the address fields + coordinates from a chosen autocomplete result. */
+  function applySuggestion(s: AddressSuggestion) {
+    if (s.line1) setLine1(s.line1);
+    setCity(s.city ?? '');
+    setStateRegion(s.state ?? '');
+    if (s.postalCode) setPincode(s.postalCode);
+    if (s.country) setCountry(s.country);
+    setCoords({ lat: s.lat, lng: s.lng });
+  }
 
   /** Timezone for one series date — its override venue's tz, else the event's. */
   function tzForVenue(overrideVenueId: string | undefined): string {
@@ -150,12 +173,14 @@ export default function NewTenantEventPage() {
       if (city.trim()) addressJson.city = city.trim();
       if (stateRegion.trim()) addressJson.state = stateRegion.trim();
       if (pincode.trim()) addressJson.pincode = pincode.trim();
+      if (country.trim()) addressJson.country = country.trim();
+      // Coordinates come from an autocomplete pick when available; otherwise
+      // they're omitted and the API derives them from the address (its geocoder).
       input = {
         ...base,
         addressJson,
         tzName: tz,
-        ...(latRaw ? { lat: parseFloat(latRaw) } : {}),
-        ...(lngRaw ? { lng: parseFloat(lngRaw) } : {}),
+        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
       };
     }
 
@@ -235,16 +260,31 @@ export default function NewTenantEventPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3">
-              <Input label="Address line 1" value={line1} onChange={(e) => setLine1(e.target.value)} placeholder="Street / building" />
+              <AddressAutocomplete country={country || null} onSelect={applySuggestion} />
+              <Input label="Address line 1" value={line1} onChange={(e) => { setLine1(e.target.value); setCoords(null); }} placeholder="Street / building" />
               <Input label="Address line 2" value={line2} onChange={(e) => setLine2(e.target.value)} placeholder="Optional" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
-                <Input label="State" value={stateRegion} onChange={(e) => setStateRegion(e.target.value)} />
-                <Input label="PIN" value={pincode} onChange={(e) => setPincode(e.target.value)} />
+                <Input label="City" value={city} onChange={(e) => { setCity(e.target.value); setCoords(null); }} />
+                <Input label="State" value={stateRegion} onChange={(e) => { setStateRegion(e.target.value); setCoords(null); }} />
+                <Input label="PIN" value={pincode} onChange={(e) => { setPincode(e.target.value); setCoords(null); }} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Input label="Latitude" type="number" step="0.000001" value={latRaw} onChange={(e) => setLatRaw(e.target.value)} hint="Optional — for the map pin." />
-                <Input label="Longitude" type="number" step="0.000001" value={lngRaw} onChange={(e) => setLngRaw(e.target.value)} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Country</label>
+                  <select
+                    value={country}
+                    onChange={(e) => { setCountry(e.target.value); setCoords(null); }}
+                    className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+                  >
+                    <option value="">Select country…</option>
+                    {SERVED_COUNTRIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-slate-400">
+                    Sets the map pin automatically and the currency tickets sell in.
+                  </span>
+                </div>
                 <Input label="Timezone" value={tz} onChange={(e) => setTz(e.target.value)} hint="IANA tz, e.g. Asia/Kolkata" />
               </div>
             </div>
@@ -279,9 +319,10 @@ export default function NewTenantEventPage() {
                 : 'Same as event — standalone address'
             }
             baseTiers={tiers}
+            currency={currency}
           />
 
-          <TiersEditor value={tiers} onChange={setTiers} />
+          <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 

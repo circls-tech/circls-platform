@@ -7,7 +7,7 @@ import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { inCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
+import { inCountry, matchesCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
@@ -20,7 +20,7 @@ export default function LandingPage() {
   // Fetch a wider set so location filtering still has cards to show, then cap to 10.
   const venues = useVenues('', 100);
   const events = useUpcomingEvents(100);
-  const memberships = useAllMemberships(10);
+  const memberships = useAllMemberships(100);
 
   // Venues and events both scope to the COUNTRY (one "market" — discovery never
   // crosses borders). The user's city is only a soft signal for venues: same-city
@@ -36,6 +36,11 @@ export default function LandingPage() {
       : 'Venues near you';
   const nearbyEvents = (events.data ?? [])
     .filter((e) => inCountry(e.locAddressJson, country))
+    .slice(0, 10);
+  // Memberships scope to the country too — a plan is priced and honoured in its
+  // venue's (or tenant's) country, so it's never useful across the border.
+  const nearbyMemberships = (memberships.data ?? [])
+    .filter((m) => matchesCountry(m.country, country))
     .slice(0, 10);
 
   return (
@@ -73,9 +78,9 @@ export default function LandingPage() {
           </HScroll>
         )}
 
-        {(memberships.data?.length ?? 0) > 0 && (
-          <HScroll title="Memberships" viewAllHref="/memberships">
-            {memberships.data!.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
+        {nearbyMemberships.length > 0 && (
+          <HScroll title={country ? `Memberships in ${country}` : 'Memberships'} viewAllHref="/memberships">
+            {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
       </main>

@@ -9,7 +9,7 @@ This guide covers viewing bookings, exporting them, and handling cancellations, 
    - **Status** — All, Pending, Confirmed, Cancelled, Completed or No show.
    - **Search** — by customer name or contact.
 
-The table shows the customer, contact, arena, date/time, number of slots, total (₹) and status. Click any row to open the **booking detail**.
+The table shows the customer, contact, arena, date/time, number of slots, total and status. Totals are in the **venue's currency** (₹ for venues in India, $ for venues in the USA — set by the venue's Country). Click any row to open the **booking detail**.
 
 A customer can book slots across several of your courts in one go (a single booking that spans multiple courts). These appear with **Multiple courts** in the arena column, count toward each court when you filter by **Arena**, and list every slot's court in the booking detail.
 
@@ -23,6 +23,8 @@ A customer can book slots across several of your courts in one go (a single book
 | **no_show** | The customer did not turn up. |
 | **cancelled** | Cancelled by the customer or by you. |
 
+A booking paid online stays **pending** while the customer completes payment — a failed card attempt doesn't cancel it, since the customer can retry right away. If payment isn't completed within about 15 minutes, the booking is cancelled automatically and its slots are released. In the rare case a payment completes after the booking was already cancelled, the customer is refunded in full automatically.
+
 ## The booking detail
 
 The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Cancel booking** action.
@@ -30,7 +32,7 @@ The detail view shows the customer's information, the arena (or **Multiple court
 ### Payment methods
 
 - **external** — paid offline at the venue (cash/card on site). No online refund is processed.
-- **razorpay_route** — paid online. Refunds are processed back to the customer.
+- **razorpay_route** — paid online through the venue's payment gateway: **Razorpay** for venues in India (₹), **Stripe** for venues in the USA ($). The gateway follows the venue's country, set on the venue's address. Refunds are processed back to the customer through the same gateway.
 - **free** — a free booking; nothing to refund.
 
 ## QR entry passes for arena bookings

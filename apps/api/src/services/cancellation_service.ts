@@ -8,6 +8,9 @@
  *   - Sets booking.status='cancelled' and frees the slots.
  *   - If a refund is due, delegates to refund_service.issueRefund() inside the
  *     same transaction so a failure rolls the cancel back atomically.
+ *   - If the charge was never captured (unpaid pending booking), fails the
+ *     charge row instead and voids the gateway order after commit so the
+ *     customer's still-open card form can't complete the payment late.
  *   - Writes a 'booking.cancelled' audit row with the refund detail.
  */
 import { and, eq, sql } from 'drizzle-orm';
@@ -15,6 +18,8 @@ import { db } from '../db/client.js';
 import { bookings, payments, slots } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
+import { getGateway } from '../lib/gateway.js';
+import { logger } from '../lib/logger.js';
 import {
   type BookingPaymentMethod,
   type RefundPolicy,
@@ -49,7 +54,11 @@ function parseTstzRangeStart(range: string): Date | null {
 }
 
 export async function cancelPaidBooking(input: CancelInput): Promise<CancelResult> {
-  return db.transaction(async (tx) => {
+  // The gateway order to void after commit, when the cancelled booking's
+  // charge was never captured (see below).
+  let orderToCancel: { provider: 'razorpay' | 'stripe'; orderId: string } | undefined;
+
+  const result = await db.transaction(async (tx) => {
     const [booking] = await tx
       .select()
       .from(bookings)
@@ -62,13 +71,16 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
     }
 
     // Most-recent charge payment row, if any. Phase 12 inserts one per booking;
-    // legacy walk-ins have none.
+    // legacy walk-ins have none. FOR UPDATE so the charge's status is
+    // authoritative for the whole tx — a concurrent webhook capture blocks
+    // behind this lock instead of flipping the row under our feet.
     const [charge] = await tx
       .select()
       .from(payments)
       .where(and(eq(payments.bookingId, input.bookingId), eq(payments.kind, 'charge')))
       .orderBy(sql`${payments.createdAt} desc`)
-      .limit(1);
+      .limit(1)
+      .for('update');
 
     // Slot start instant. Prefer the booking's persisted `time_range` (Track A
     // fixed cancelled-booking visibility by stamping arena + span on the row);
@@ -118,10 +130,30 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
 
     await revokeQrTicketsForBooking(input.bookingId, tx);
 
+    // 2b. A never-captured charge (customer never completed payment — the
+    //     card form may still be open with a retryable gateway order behind
+    //     it): terminally fail the row and queue the gateway order for
+    //     cancellation after commit, so a late retry can't charge the
+    //     customer for a booking that no longer exists. Nothing was captured,
+    //     so there is nothing to refund.
+    const chargeNeverCaptured = charge?.status === 'pending';
+    if (charge && chargeNeverCaptured) {
+      await tx
+        .update(payments)
+        .set({ status: 'failed' })
+        .where(and(eq(payments.id, charge.id), eq(payments.status, 'pending')));
+      if (
+        (charge.provider === 'razorpay' || charge.provider === 'stripe') &&
+        charge.providerOrderId
+      ) {
+        orderToCancel = { provider: charge.provider, orderId: charge.providerOrderId };
+      }
+    }
+
     // 3. Refund, if any. issueRefund() runs in its own logical block but we
     //    pass the same `tx` so a refund failure rolls the whole cancel back.
     let refundId: string | undefined;
-    if (policy.refundPaise > 0 && charge) {
+    if (policy.refundPaise > 0 && charge && !chargeNeverCaptured) {
       const refund = await issueRefund(
         {
           bookingId: input.bookingId,
@@ -134,23 +166,45 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
       refundId = refund.paymentId;
     }
 
+    // Nothing captured → nothing refunded, whatever the policy tier says.
+    const refundPaise = chargeNeverCaptured ? 0 : policy.refundPaise;
+
     const ctx: AuditCtx = { tenantId: booking.tenantId, actorUserId: input.actorUserId };
     await writeAudit(tx, ctx, 'booking.cancelled', 'booking', input.bookingId, null, {
       reason: input.reason,
       bySelf: input.bySelf,
-      refundPaise: policy.refundPaise,
+      refundPaise,
       policyTier: policy.tier,
       refundId: refundId ?? null,
       amountPaise,
       paymentMethod,
+      chargeNeverCaptured,
     });
 
     return {
       bookingId: input.bookingId,
-      status: 'cancelled',
-      refundPaise: policy.refundPaise,
+      status: 'cancelled' as const,
+      refundPaise,
       ...(refundId !== undefined ? { refundId } : {}),
       policy: policy.tier,
     };
   });
+
+  // Void the gateway order AFTER commit — a network call doesn't belong in
+  // the row-locked tx, and a gateway error must not roll back the
+  // cancellation. Best-effort: if the cancel loses to a retry-capture, the
+  // capture webhook's auto-refund safety net settles it. (Razorpay's adapter
+  // is a documented no-op — no order-cancel API.)
+  if (orderToCancel) {
+    try {
+      await getGateway(orderToCancel.provider).cancelOrder(orderToCancel.orderId);
+    } catch (err) {
+      logger.error(
+        { err, bookingId: input.bookingId, ...orderToCancel },
+        'cancel_booking_gateway_cancel_failed',
+      );
+    }
+  }
+
+  return result;
 }

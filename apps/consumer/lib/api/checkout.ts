@@ -14,6 +14,8 @@ export interface QuoteResponse {
   discountedBasePaise: number;
   otherChargesPaise: number;
   totalPaise: number;
+  /** ISO 4217 — 'INR', or 'USD' for US venues. Amounts are its minor units. */
+  currency: string;
   coupon: { id: string; code: string; description: string | null } | null;
   error?: string;
 }
