@@ -30,8 +30,13 @@ case "$norm" in
     block "bulk pushes (--all/--mirror) are not allowed (they can touch main/release)." ;;
   *"git push"*"--force"*|*"git push"*"-f "*|*"git push --force-with-lease"*)
     block "force-pushing is not allowed." ;;
-  *"git merge "*"main"*|*"git merge "*"release"*|*"git rebase "*"main"*|*"git rebase "*"release"*)
-    block "merging/rebasing onto main/release is not allowed." ;;
+  *"git merge "*|*"git rebase "*)
+    cur="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    case "$cur" in
+      main|release)
+        block "merging/rebasing while on $cur is not allowed." ;;
+    esac
+    ;;
   *"gh pr merge"*|*"git push"*"--delete"*|*"git push"*" :main"*|*"git push"*" :release"*)
     block "merging PRs / deleting protected branches is not allowed." ;;
 esac
