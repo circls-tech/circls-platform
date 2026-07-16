@@ -5,6 +5,7 @@ import {
   countryForCity,
   countryOf,
   derivePlaces,
+  eventInRange,
   haversineKm,
   inArea,
   inCountry,
@@ -202,6 +203,51 @@ describe('nearestCity', () => {
   it('returns null when no city has coordinates', () => {
     const noGeo = derivePlaces([place({ city: 'NoGeo', country: 'India' })]);
     expect(nearestCity({ lat: 0, lng: 0 }, noGeo)).toBeNull();
+  });
+});
+
+describe('eventInRange', () => {
+  // MG Road, Bengaluru — the "user".
+  const me = { lat: 12.975, lng: 77.606 };
+  const ev = (over: Partial<{ locLat: number | null; locLng: number | null; locAddressJson: Record<string, unknown> | null }>) => ({
+    locLat: null,
+    locLng: null,
+    locAddressJson: null,
+    ...over,
+  });
+
+  it('keeps events within 50 km of the shared location', () => {
+    // Whitefield is ~15 km from MG Road.
+    expect(eventInRange(ev({ locLat: 12.97, locLng: 77.75 }), { city: 'Bengaluru', country: 'India', coords: me })).toBe(true);
+  });
+
+  it('drops geolocated events beyond the radius, even in the same country', () => {
+    // Mysuru is ~140 km away — same country, outside the radius.
+    expect(eventInRange(ev({ locLat: 12.3, locLng: 76.64, locAddressJson: { city: 'Mysuru', country: 'India' } }), { city: 'Bengaluru', country: 'India', coords: me })).toBe(false);
+  });
+
+  it('keeps a cross-border event that is physically near the user', () => {
+    // Distance is the boundary when coords are shared — country is irrelevant.
+    expect(eventInRange(ev({ locLat: 12.98, locLng: 77.61, locAddressJson: { country: 'Elsewhere' } }), { city: null, country: 'India', coords: me })).toBe(true);
+  });
+
+  it('falls back to the country check for events without coordinates (lenient)', () => {
+    expect(eventInRange(ev({ locAddressJson: { city: 'Pune', country: 'India' } }), { city: null, country: 'India', coords: me })).toBe(true);
+    expect(eventInRange(ev({ locAddressJson: { country: 'USA' } }), { city: null, country: 'India', coords: me })).toBe(false);
+    expect(eventInRange(ev({}), { city: null, country: 'India', coords: me })).toBe(true);
+  });
+
+  it('is the plain country check when no coords are set (manual city pick)', () => {
+    // Mysuru event, Bengaluru picked manually: whole-country view keeps it.
+    expect(eventInRange(ev({ locLat: 12.3, locLng: 76.64, locAddressJson: { country: 'India' } }), { city: 'Bengaluru', country: 'India', coords: null })).toBe(true);
+    expect(eventInRange(ev({ locAddressJson: { country: 'USA' } }), { city: 'Bengaluru', country: 'India' })).toBe(false);
+  });
+
+  it('respects a custom radius', () => {
+    // ~15 km away: inside 50 km, outside 5 km.
+    const whitefield = ev({ locLat: 12.97, locLng: 77.75 });
+    expect(eventInRange(whitefield, { city: null, country: null, coords: me }, 5)).toBe(false);
+    expect(eventInRange(whitefield, { city: null, country: null, coords: me }, 50)).toBe(true);
   });
 });
 

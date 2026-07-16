@@ -5,7 +5,7 @@ import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useUpcomingEvents } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { inCountry } from '@/lib/location/geo';
+import { eventInRange } from '@/lib/location/geo';
 import { formatDayLabel } from '@/lib/format';
 import type { PublicEventWithVenue } from '@/lib/api/types';
 
@@ -22,14 +22,15 @@ function groupByDay(rows: PublicEventWithVenue[]): { label: string; events: Publ
 }
 
 export default function EventsPage() {
-  const { country, openPicker } = useLocation();
+  const { city, country, coords, openPicker } = useLocation();
   const events = useUpcomingEvents(100);
   const now = Date.now();
   const upcoming = (events.data ?? [])
     // Defensive guard: never show a past event even if the API regresses.
     .filter((e) => new Date(e.endsAt).getTime() >= now)
-    // Events belong to one country; show only the user's (unknown-country shown).
-    .filter((e) => inCountry(e.locAddressJson, country));
+    // Shared location → within EVENT_RADIUS_KM of the user; manual city pick or
+    // no selection → country-wide (unknown-location events stay visible).
+    .filter((e) => eventInRange(e, { city, country, coords }));
   const groups = groupByDay(upcoming);
 
   return (
@@ -38,9 +39,18 @@ export default function EventsPage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">What&apos;s on</h1>
         <p className="mb-8 text-sm text-text-secondary">
-          {country ? (
+          {coords ? (
             <>
-              Upcoming events in <span className="font-semibold text-ink">{country}</span>.{' '}
+              Upcoming events near{' '}
+              <span className="font-semibold text-ink">{city ?? 'you'}</span>.{' '}
+              <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
+                Change
+              </button>
+            </>
+          ) : city || country ? (
+            <>
+              {/* Prefer the city (a manual pick always has one); country covers legacy country-only selections. */}
+              Upcoming events in <span className="font-semibold text-ink">{city ?? country}</span>.{' '}
               <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                 Change
               </button>
@@ -59,7 +69,14 @@ export default function EventsPage() {
             {events.error instanceof Error ? events.error.message : 'Failed to load events'}
           </p>
         ) : upcoming.length === 0 ? (
-          <EmptyState title="Nothing on right now" body="There are no upcoming events yet. Check back soon — new ones drop all the time." />
+          coords || country ? (
+            <EmptyState
+              title="No events here yet"
+              body="Check back soon — new ones drop all the time."
+            />
+          ) : (
+            <EmptyState title="Nothing on right now" body="There are no upcoming events yet. Check back soon — new ones drop all the time." />
+          )
         ) : (
           <div className="space-y-8">
             {groups.map((g) => (

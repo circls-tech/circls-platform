@@ -17,12 +17,17 @@ import {
   derivePlaces,
   eventToLocatable,
   nearestCity,
+  sameCountry,
   venueToLocatable,
   type AreaSelection,
   type CityOption,
+  type Coords,
 } from './geo';
 
-const STORAGE_KEY = 'circls:loc:v2';
+// v3 adds `coords` (the user's shared position, for radius-based event
+// filtering). The key bump abandons v2 entries, so previously-located users go
+// through the auto-locate flow once more and pick up coords.
+const STORAGE_KEY = 'circls:loc:v3';
 /**
  * Within this distance the user is treated as "in" the nearest city, so we adopt
  * its name (and filter venues by it). Farther away we still adopt the country —
@@ -36,6 +41,12 @@ interface LocationContextValue {
   city: string | null;
   /** The active country. Events are filtered by this; venues too (then by city). */
   country: string | null;
+  /**
+   * The user's shared device position, or null when the area was picked
+   * manually (or nothing is set). When present, events are restricted to
+   * EVENT_RADIUS_KM around it.
+   */
+  coords: Coords | null;
   /** Cities derived from existing venues + events, for the manual picker. */
   cities: CityOption[];
   /** Set (or clear, with null) the active city. */
@@ -69,7 +80,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     [venues.data, events.data],
   );
 
-  const [sel, setSel] = useState<AreaSelection>({ city: null, country: null });
+  const [sel, setSel] = useState<AreaSelection>({ city: null, country: null, coords: null });
   const [hydrated, setHydrated] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -81,7 +92,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<AreaSelection>;
-        setSel({ city: parsed.city ?? null, country: parsed.country ?? null });
+        const coords =
+          typeof parsed.coords?.lat === 'number' && typeof parsed.coords?.lng === 'number'
+            ? { lat: parsed.coords.lat, lng: parsed.coords.lng }
+            : null;
+        setSel({ city: parsed.city ?? null, country: parsed.country ?? null, coords });
       }
     } catch {
       /* localStorage unavailable or malformed — fall through to the auto-ask flow */
@@ -92,18 +107,24 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const persist = useCallback((next: AreaSelection) => {
     setSel(next);
     try {
-      if (next.city || next.country) localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      else localStorage.removeItem(STORAGE_KEY);
+      if (next.city || next.country || next.coords) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } else localStorage.removeItem(STORAGE_KEY);
     } catch {
       /* ignore persistence failures */
     }
   }, []);
 
   // Picking a city in the manual list implies its country; null clears both
-  // (browse everywhere).
+  // (browse everywhere). A manual pick always drops coords: the user asked for
+  // that city's events, not "within 50 km of me".
   const setCity = useCallback(
     (next: string | null) => {
-      persist(next ? { city: next, country: countryForCity(cities, next) } : { city: null, country: null });
+      persist(
+        next
+          ? { city: next, country: countryForCity(cities, next), coords: null }
+          : { city: null, country: null, coords: null },
+      );
       setPickerOpen(false);
     },
     [persist, cities],
@@ -124,17 +145,20 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
-        const near = nearestCity(
-          { lat: pos.coords.latitude, lng: pos.coords.longitude },
-          cities,
-        );
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const near = nearestCity(coords, cities);
         if (!near) {
+          // No geolocated city to name the area after, but the position itself
+          // still drives the events radius — keep it and let the user pick a
+          // city label manually.
+          persist({ city: null, country: null, coords });
           setPickerOpen(true);
           return;
         }
         persist({
           city: near.distanceKm <= NEAR_CITY_KM ? near.city.city : null,
           country: near.city.country,
+          coords,
         });
         setPickerOpen(false);
       },
@@ -150,14 +174,22 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   // list is ready. Triggers the native geolocation permission prompt.
   useEffect(() => {
     if (!hydrated || autoAsked.current) return;
-    if (sel.city || sel.country) return; // user already has a saved choice
+    if (sel.city || sel.country || sel.coords) return; // user already has a saved choice
     if (cities.length === 0) return; // wait for venues/events to load
     autoAsked.current = true;
     locate();
   }, [hydrated, sel, cities, locate]);
 
   const value = useMemo(
-    () => ({ city: sel.city, country: sel.country, cities, setCity, openPicker, locating }),
+    () => ({
+      city: sel.city,
+      country: sel.country,
+      coords: sel.coords ?? null,
+      cities,
+      setCity,
+      openPicker,
+      locating,
+    }),
     [sel, cities, setCity, openPicker, locating],
   );
 
@@ -197,11 +229,18 @@ function LocationPickerModal({
   onPick: (city: string | null) => void;
   onClose: () => void;
 }) {
+  // Users browse one market at a time: with an active country, the picker only
+  // offers that country's cities (untagged cities stay visible — we can't prove
+  // they're foreign). "Show everything, everywhere" clears the country, and the
+  // full cross-country list comes back.
+  const visibleCities = currentCountry
+    ? cities.filter((c) => !c.country || sameCountry(c.country, currentCountry))
+    : cities;
   return (
     <Modal open={open} onClose={onClose} title="Choose your city">
       <p className="-mt-2 mb-4 text-sm text-text-secondary">
-        We&apos;ll show venues in your city and events in your country. Use your
-        current location, or pick a city.
+        Use your current location to see events near you, or pick a city to see
+        everything happening there.
       </p>
       <Button
         variant="secondary"
@@ -214,11 +253,11 @@ function LocationPickerModal({
 
       <div className="my-4 h-px bg-ink/10" />
 
-      {cities.length === 0 ? (
+      {visibleCities.length === 0 ? (
         <p className="text-sm text-text-secondary">No cities available yet.</p>
       ) : (
         <ul className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto">
-          {cities.map((c) => (
+          {visibleCities.map((c) => (
             <li key={c.city}>
               <button
                 onClick={() => onPick(c.city)}

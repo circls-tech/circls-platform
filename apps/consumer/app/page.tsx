@@ -7,7 +7,7 @@ import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { inCountry, matchesCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
+import { eventInRange, matchesCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
@@ -16,7 +16,7 @@ const MOTIF: React.CSSProperties = {
 };
 
 export default function LandingPage() {
-  const { city, country } = useLocation();
+  const { city, country, coords } = useLocation();
   // Fetch a wider set so location filtering still has cards to show, then cap to 10.
   const venues = useVenues('', 100);
   const events = useUpcomingEvents(100);
@@ -34,8 +34,10 @@ export default function LandingPage() {
     : country
       ? `Venues in ${country}`
       : 'Venues near you';
+  // Shared location → only events within EVENT_RADIUS_KM; manual city pick or
+  // no selection → country-wide, as before.
   const nearbyEvents = (events.data ?? [])
-    .filter((e) => inCountry(e.locAddressJson, country))
+    .filter((e) => eventInRange(e, { city, country, coords }))
     .slice(0, 10);
   // Memberships scope to the country too — a plan is priced and honoured in its
   // venue's (or tenant's) country, so it's never useful across the border.
@@ -73,7 +75,10 @@ export default function LandingPage() {
         )}
 
         {nearbyEvents.length > 0 && (
-          <HScroll title={country ? `What's on in ${country}` : 'Upcoming events'} viewAllHref="/events">
+          <HScroll
+            title={coords ? "What's on near you" : country ? `What's on in ${country}` : 'Upcoming events'}
+            viewAllHref="/events"
+          >
             {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
