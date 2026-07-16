@@ -193,6 +193,12 @@ export interface UpdateEventInput {
   tiers?: TierInput[];
   /** Re-scope the event: a venue id → venue-scoped; null → standalone. */
   venueId?: string | null;
+  /** Standalone address — applied when the event is (or becomes) standalone.
+   * Omit lat/lng to have the API derive them from the address (its geocoder). */
+  addressJson?: Record<string, unknown>;
+  tzName?: string;
+  lat?: number | null;
+  lng?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
 }

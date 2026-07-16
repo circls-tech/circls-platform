@@ -5,7 +5,7 @@ Events are one-off or recurring happenings — tournaments, classes, socials, sc
 1. Go to **Events** in the sidebar and click **Create event**.
 2. Choose **where** the event happens:
    - **At a venue** — pick one of your venues. The event uses that venue's timezone.
-   - **No venue — enter address** — supply the address fields (line 1 and 2, city, state, PIN), latitude/longitude and timezone manually.
+   - **No venue — enter address** — start typing in **Search address** and pick a suggestion to fill the street, city, state, PIN and country automatically (results are limited to the regions circls serves), or fill the fields by hand. **Country** is chosen from a dropdown (currently India or the USA) and also sets the currency tickets sell in. The **map location is set automatically** — either from the address you pick or derived from the address when the event is created — so there's no need to enter latitude/longitude. Enter the **timezone** (IANA name, e.g. `Asia/Kolkata`) yourself.
 3. Fill in the details:
    - **Name** (required).
    - **Description** (optional).
@@ -53,7 +53,7 @@ On the event detail page (while the event is a **draft**), use the **Ticket tier
 | --- | --- | --- |
 | **Name** | Yes | Shown to consumers at checkout (e.g. "General Admission", "VIP"). |
 | **Description** | No | Optional detail shown alongside the tier name. |
-| **Price (₹)** | Yes | Enter `0` for a free tier. |
+| **Price** | Yes | Enter `0` for a free tier. The label shows the event's currency (₹ or $): venue events use the venue's currency; standalone events follow the country in their address (or your organisation's country until one is set). |
 | **Capacity** | No | Leave blank for unlimited. When set, the tier stops selling once that many tickets are sold. |
 | **QR passes for this tier** | No | **Event default** follows the event-level QR ticket settings; **Custom** gives this tier its own pass rules; **Off** issues no passes for this tier. See **Per-tier QR rules** below. |
 
@@ -125,7 +125,7 @@ JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear
 
 The event detail page shows registrations in two separate tables:
 
-- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (₹) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.

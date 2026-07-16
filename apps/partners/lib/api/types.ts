@@ -277,13 +277,28 @@ export interface AnalyticsTrendDay {
   revenuePaise: number;
 }
 
+/** A revenue bucket: amount in the currency's minor units (paise/cents). */
+export interface MoneyByCurrency {
+  currency: string;
+  amountMinor: number;
+}
+
+/** A full 7-day trend for one currency (tenants usually have exactly one). */
+export interface AnalyticsTrendSeries {
+  currency: string;
+  /** 7 entries, oldest → newest (inclusive of today) */
+  days: AnalyticsTrendDay[];
+}
+
 export interface Analytics {
   bookingsToday: number;
-  revenueTodayPaise: number;
-  revenue7dPaise: number;
+  /** One entry per currency with revenue today; [] when none. */
+  revenueToday: MoneyByCurrency[];
+  /** One entry per currency with revenue in the window; [] when none. */
+  revenue7d: MoneyByCurrency[];
   occupancy7dPct: number;
-  /** 7 entries, oldest → newest (inclusive of today) */
-  trend7d: AnalyticsTrendDay[];
+  /** One series per currency with revenue in the window; [] when none. */
+  trend7d: AnalyticsTrendSeries[];
 }
 
 export interface AuditLogItem {

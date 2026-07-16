@@ -3,6 +3,7 @@
 import { Button, Input } from '@/lib/ui';
 import type { MembershipBenefitItem, MembershipTier, QrTicketConfig } from '@/lib/api/types';
 import type { MembershipTierInput } from '@/lib/api/memberships';
+import { type CurrencyCode, currencySymbol } from '@/lib/currency';
 import { BenefitsEditor, cleanBenefits } from './BenefitsEditor';
 import {
   DEFAULT_QR_CONFIG,
@@ -13,11 +14,11 @@ import {
 
 export type { TierQrMode } from './QrTicketConfigEditor';
 
-/** Form-draft shape: rupee/number inputs stay strings and convert on submit. */
+/** Form-draft shape: price/number inputs stay strings and convert on submit. */
 export interface MembershipTierDraft {
   name: string;
   description?: string;
-  priceRupees: string; // converted to paise on submit
+  priceRupees: string; // form input in major units; converted to minor units on submit
   durationDays: string;
   capacity?: string; // blank = unlimited
   benefits: MembershipBenefitItem[];
@@ -81,10 +82,12 @@ export function membershipTierDraftFromApi(
 export function MembershipTiersEditor({
   value,
   onChange,
+  currency,
   disabled,
 }: {
   value: MembershipTierDraft[];
   onChange: (next: MembershipTierDraft[]) => void;
+  currency: CurrencyCode;
   disabled?: boolean;
 }) {
   function update(i: number, patch: Partial<MembershipTierDraft>) {
@@ -113,7 +116,7 @@ export function MembershipTiersEditor({
             </div>
             <div className="sm:col-span-3">
               <Input
-                label="Price (₹)"
+                label={`Price (${currencySymbol(currency)})`}
                 type="number"
                 min={0}
                 step="0.01"
