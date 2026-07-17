@@ -22,14 +22,20 @@ function fmt(iso: string, tz: string) {
   }).format(new Date(iso));
 }
 
+/** "General ×2, VIP ×1" — one entry per ticket line of the booking. */
+function ticketsLabel(b: EventBooking, separator = ', '): string {
+  return b.tickets.map((t) => `${t.tierName} ×${t.quantity}`).join(separator);
+}
+
 function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode): string {
   return toCsv(
-    ['Booking ID', 'Name', 'Email', 'Phone', 'Status', `Amount (${currencySymbol(currency)})`, 'Registered At'],
+    ['Booking ID', 'Name', 'Email', 'Phone', 'Tickets', 'Status', `Amount (${currencySymbol(currency)})`, 'Registered At'],
     rows.map((b) => [
       b.id,
       b.customerName ?? '',
       b.customerEmail ?? '',
       b.customerPhone ?? '',
+      ticketsLabel(b, '; '),
       b.status,
       (b.totalPaise / 100).toFixed(2),
       fmt(b.createdAt, tz),
@@ -100,6 +106,7 @@ function RegistrationsTable({
                 <th className="pb-2 pr-4 font-medium text-slate-500">Name</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Email</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Phone</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Tickets</th>
                 {showStatus && <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>}
                 <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
                 <th className="pb-2 font-medium text-slate-500">Registered</th>
@@ -117,6 +124,19 @@ function RegistrationsTable({
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">
                     {b.customerPhone ?? <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="py-2.5 pr-4 text-slate-700">
+                    {b.tickets.length > 0 ? (
+                      <span className="flex flex-col gap-0.5">
+                        {b.tickets.map((t) => (
+                          <span key={t.tierName} className="whitespace-nowrap">
+                            {t.tierName} ×{t.quantity}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   {showStatus && (
                     <td className="py-2.5 pr-4">

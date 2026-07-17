@@ -306,6 +306,21 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     const byTier = new Map(rows.map((r) => [r.tier_id, Number(r.quantity)]));
     expect(byTier.get(generalTierId)).toBe(2);
     expect(byTier.get(vipTierId)).toBe(1);
+
+    // The partner registrations list surfaces those tier lines per row.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/events/${eventId}/bookings`,
+      headers: bearer('owner'),
+    });
+    expect(list.statusCode).toBe(200);
+    const listRows = (list.json() as {
+      rows: Array<{ id: string; tickets: Array<{ tierName: string; quantity: number }> }>;
+    }).rows;
+    expect(listRows.find((x) => x.id === bookingId)?.tickets).toEqual([
+      { tierName: 'General', quantity: 2 },
+      { tierName: 'VIP', quantity: 1 },
+    ]);
   });
 
   it('rejects buying beyond a capped tier with 409 tier_sold_out', async () => {
