@@ -408,6 +408,8 @@ export interface VenueEvent {
   endsAt: string;
   pricePaise: number;
   capacity: number | null;
+  /** Per-customer ticket cap for the whole event (all tiers); null = no limit. */
+  maxPerUser: number | null;
   status: EventStatus;
   /** QR ticket rules for registrations; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;

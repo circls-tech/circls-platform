@@ -59,13 +59,17 @@ On the event detail page (while the event is a **draft**), use the **Ticket tier
 
 You can add as many tiers as you need. At least one tier is required before you can submit the event for review.
 
+### Limiting tickets per customer
+
+Tick **Limit tickets per customer** on the event form (while the event is a draft) and set **Max tickets per customer** to cap how many tickets one person can hold for the event **in total, across all tiers** — and across all their bookings, not just one checkout. Set it to `1` on a free multi-slot event (where each tier is a time slot) so one person can claim a single seat, not a seat in every slot. Leave it off for no limit.
+
 ### Tiers are frozen once submitted
 
 Ticket tiers can only be added or edited while the event is a **draft**. Once you submit the event for review, tiers are locked alongside the rest of the event details.
 
 ### What consumers see
 
-Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout.
+Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout. When the event limits tickets per customer, the page says so ("Limited to N tickets per person for this event") and the quantity selectors stop at the limit across all tiers combined; if a customer already holds tickets from an earlier booking, a new booking that would push them over the cap is rejected at checkout.
 
 ## QR entry tickets
 
@@ -131,6 +135,17 @@ The event detail page shows registrations in two separate tables:
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
 
 Use these tables to check turnout and reconcile payments.
+
+### Cancelling a registration
+
+Every row in the **Registered** table has a **Cancel** button. Cancelling on behalf of an attendee:
+
+- refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log);
+- revokes the attendee's QR entry passes so they can no longer check in;
+- frees the seats — tier sold counts and any per-person ticket limits no longer count the cancelled registration;
+- moves the row to the **Cancelled** table.
+
+Free registrations and payments that were never completed are simply cancelled — there is nothing to refund. Cancellation can't be undone; the attendee has to register again if plans change.
 
 ## Where to find your events
 

@@ -220,6 +220,10 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
   let eventId: string;
   let generalTierId: string;
   let vipTierId: string;
+  let limitedEventId: string;
+  let slotATierId: string;
+  let slotBTierId: string;
+  let limitedBookingId: string;
   const SUFFIX = Date.now();
 
   beforeAll(async () => {
@@ -262,16 +266,46 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     generalTierId = tierRows.find((x) => x.name === 'General')!.id;
     vipTierId = tierRows.find((x) => x.name === 'VIP')!.id;
 
-    await db.execute(sql`update events set status='published' where id = ${eventId}`);
+    // Second event: free multi-slot RSVP capped at 2 tickets per customer
+    // ACROSS both tiers (the per-user-limit tests). Free keeps bookings
+    // auto-confirmed, no payment leg.
+    const limEv = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        addressJson: { line1: '1 Test St', city: 'Mumbai' },
+        tzName: 'Asia/Kolkata',
+        name: 'Limited Test Event',
+        startsAt: '2030-09-02T10:00:00.000Z',
+        endsAt: '2030-09-02T12:00:00.000Z',
+        maxPerUser: 2,
+        tiers: [
+          { name: 'Slot A', pricePaise: 0 },
+          { name: 'Slot B', pricePaise: 0 },
+        ],
+      },
+    });
+    expect(limEv.statusCode).toBe(200);
+    limitedEventId = (limEv.json() as { id: string }).id;
+    const limTierRows = (await db.execute(sql`
+      select id, name from event_ticket_tiers where event_id = ${limitedEventId} and deleted_at is null
+    `)) as unknown as Array<{ id: string; name: string }>;
+    slotATierId = limTierRows.find((x) => x.name === 'Slot A')!.id;
+    slotBTierId = limTierRows.find((x) => x.name === 'Slot B')!.id;
+
+    await db.execute(sql`update events set status='published' where tenant_id = ${tenantId}`);
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from event_booking_tickets where tier_id in (${generalTierId}, ${vipTierId})`);
+    await db.execute(sql`delete from event_booking_tickets where booking_id in (select id from bookings where tenant_id = ${tenantId})`);
     await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from event_ticket_tiers where event_id = ${eventId}`);
+    await db.execute(sql`delete from event_ticket_tiers where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    // Confirmed (free) bookings fire notifications that reference the tenant.
+    await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await app.close();
@@ -315,5 +349,93 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('tier_sold_out');
+  });
+
+  it('exposes maxPerUser on the consumer event detail', async () => {
+    const limited = await app.inject({ method: 'GET', url: `/v1/consumer/events/${limitedEventId}` });
+    expect(limited.statusCode).toBe(200);
+    expect((limited.json() as { maxPerUser: number | null }).maxPerUser).toBe(2);
+
+    const uncapped = await app.inject({ method: 'GET', url: `/v1/consumer/events/${eventId}` });
+    expect(uncapped.statusCode).toBe(200);
+    expect((uncapped.json() as { maxPerUser: number | null }).maxPerUser).toBeNull();
+  });
+
+  it('rejects a single checkout above the per-user limit, summed across tiers', async () => {
+    // 1 + 2 across two tiers = 3 > the event's cap of 2.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${limitedEventId}/book`,
+      headers: bearer('other'),
+      payload: {
+        lines: [
+          { tierId: slotATierId, quantity: 1 },
+          { tierId: slotBTierId, quantity: 2 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('event_user_limit');
+  });
+
+  it('enforces the limit across separate bookings by the same user', async () => {
+    // One ticket in each slot = exactly the cap of 2.
+    const first = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${limitedEventId}/book`,
+      headers: bearer('other'),
+      payload: {
+        lines: [
+          { tierId: slotATierId, quantity: 1 },
+          { tierId: slotBTierId, quantity: 1 },
+        ],
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    limitedBookingId = (first.json() as { booking: { id: string } }).booking.id;
+
+    // Any further ticket — in either slot — is over the event cap.
+    const second = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${limitedEventId}/book`,
+      headers: bearer('other'),
+      payload: { lines: [{ tierId: slotATierId, quantity: 1 }] },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.code).toBe('event_user_limit');
+  });
+
+  it('does not count one user\'s tickets against another', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${limitedEventId}/book`,
+      headers: bearer('owner'),
+      payload: { lines: [{ tierId: slotATierId, quantity: 2 }] },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('lets tenant staff cancel an event booking, freeing the per-user cap', async () => {
+    // Event bookings have no slots/time_range — the cancellation engine must
+    // fall back to the event's starts_at instead of failing no_slot_start.
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/v1/bookings/${limitedBookingId}/cancel`,
+      headers: bearer('owner'),
+      payload: { reason: 'Cancelled by venue' },
+    });
+    expect(cancel.statusCode).toBe(200);
+    const body = cancel.json() as { status: string; refundPaise: number };
+    expect(body.status).toBe('cancelled');
+    expect(body.refundPaise).toBe(0); // free tiers — nothing to refund
+
+    // 'other' was at the 2-per-event cap; the cancelled booking no longer counts.
+    const rebook = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${limitedEventId}/book`,
+      headers: bearer('other'),
+      payload: { lines: [{ tierId: slotBTierId, quantity: 2 }] },
+    });
+    expect(rebook.statusCode).toBe(200);
   });
 });

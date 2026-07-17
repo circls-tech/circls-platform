@@ -47,8 +47,18 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const subtotalPaise = lines.reduce((sum, l) => sum + l.unitPricePaise * l.quantity, 0);
   const totalSelected = lines.reduce((sum, l) => sum + l.quantity, 0);
 
+  // The event's per-person cap (null = no limit) applies to the TOTAL across
+  // all tiers; the server enforces the same cap across past bookings too.
+  const maxPerUser = ev?.maxPerUser ?? null;
+  const atEventMax = maxPerUser != null && totalSelected >= maxPerUser;
+
   function setTierQty(tierId: string, next: number, remaining: number | null) {
-    const capped = remaining == null ? Math.max(0, next) : Math.min(Math.max(0, next), remaining);
+    let capped = remaining == null ? Math.max(0, next) : Math.min(Math.max(0, next), remaining);
+    if (maxPerUser != null) {
+      // Room left under the event cap, counting what's picked in OTHER tiers.
+      const others = totalSelected - (qty[tierId] ?? 0);
+      capped = Math.min(capped, Math.max(0, maxPerUser - others));
+    }
     setQty((q) => ({ ...q, [tierId]: capped }));
   }
 
@@ -146,10 +156,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>
               ) : (
                 <div className="flex flex-col gap-2">
+                  {maxPerUser != null && (
+                    <p className="text-xs font-medium text-text-secondary">
+                      Limited to {maxPerUser} ticket{maxPerUser > 1 ? 's' : ''} per person for this event.
+                    </p>
+                  )}
                   {tiers.map((t) => {
                     const soldOut = t.remaining != null && t.remaining <= 0;
                     const current = qty[t.id] ?? 0;
-                    const atMax = t.remaining != null && current >= t.remaining;
+                    const atMax = (t.remaining != null && current >= t.remaining) || atEventMax;
                     return (
                       <div
                         key={t.id}

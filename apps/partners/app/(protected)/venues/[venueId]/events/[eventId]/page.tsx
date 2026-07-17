@@ -21,6 +21,11 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import {
+  MaxPerUserField,
+  maxPerUserFromApi,
+  maxPerUserToPayload,
+} from '@/components/MaxPerUserField';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -113,6 +118,8 @@ export default function EventDetailPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  // null = no per-customer ticket limit; else the count input's string value.
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
 
   function startEdit() {
     if (!ev) return;
@@ -121,6 +128,7 @@ export default function EventDetailPage() {
     setStartsAtLocal(isoToVenueTzLocal(ev.startsAt, tz));
     setEndsAtLocal(isoToVenueTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
+    setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setErrorMsg(null);
     setEditing(true);
   }
@@ -163,6 +171,7 @@ export default function EventDetailPage() {
           startsAt: localToVenueTzIso(startsAtLocal, tz),
           endsAt: localToVenueTzIso(endsAtLocal, tz),
           tiers: tiersToPayload(tiers),
+          maxPerUser: maxPerUserToPayload(maxPerUser),
         },
       });
       setEditing(false);
@@ -345,6 +354,8 @@ export default function EventDetailPage() {
                 </div>
 
                 <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+                <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button

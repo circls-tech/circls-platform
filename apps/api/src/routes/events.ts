@@ -77,6 +77,9 @@ const occurrenceSchema = z.object({
 });
 const occurrencesField = z.array(occurrenceSchema).min(2).max(MAX_SERIES_OCCURRENCES);
 
+// Per-customer ticket cap for the whole event (all tiers); null = no limit.
+const maxPerUserField = z.number().int().min(1).nullable().optional();
+
 const createEventSchema = z
   .object({
     name: z.string().min(1).max(200),
@@ -84,6 +87,7 @@ const createEventSchema = z
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     tiers: tiersField,
+    maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
@@ -104,6 +108,7 @@ const createTenantEventSchema = z
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     tiers: tiersField,
+    maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
@@ -138,6 +143,7 @@ const updateEventSchema = z.object({
   lng: z.number().nullable().optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
+  maxPerUser: maxPerUserField,
   qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 
@@ -205,6 +211,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       name: parsed.data.name,
       description: parsed.data.description,
       tiers: parsed.data.tiers.map(tierToInput),
+      maxPerUser: parsed.data.maxPerUser ?? null,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -265,6 +272,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       name: parsed.data.name,
       description: parsed.data.description,
       tiers: parsed.data.tiers.map(tierToInput),
+      maxPerUser: parsed.data.maxPerUser ?? null,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -296,6 +304,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
+    if (parsed.data.maxPerUser !== undefined) patch.maxPerUser = parsed.data.maxPerUser;
     if (parsed.data.qrTicketConfig !== undefined)
       patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
     if (parsed.data.venueId !== undefined) {

@@ -70,6 +70,8 @@ export interface CreateTenantEventInput {
   endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
+  maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
@@ -165,6 +167,8 @@ export interface CreateEventInput {
   endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
+  maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
@@ -199,6 +203,8 @@ export interface UpdateEventInput {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** Per-customer ticket cap; null clears, omit to leave unchanged. */
+  maxPerUser?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
 }

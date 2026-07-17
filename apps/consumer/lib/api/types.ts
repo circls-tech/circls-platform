@@ -130,6 +130,8 @@ export interface PublicEvent {
   endsAt: string;
   pricePaise: number;
   capacity: number | null;
+  /** Per-customer ticket cap for the whole event (all tiers); null = no limit. */
+  maxPerUser: number | null;
   status: 'published';
   /** Owning-org summary (PR #108). */
   brand: Brand;

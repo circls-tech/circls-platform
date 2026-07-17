@@ -129,6 +129,8 @@ export interface CreateEventInput {
   /** Legacy: set by replaceTiers to the minimum tier price. Default 0. */
   pricePaise?: number | undefined;
   capacity?: number | undefined;
+  /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
+  maxPerUser?: number | null | undefined;
   tiers: TierInput[];
   /** QR entry-ticket rules (null/omitted = disabled). */
   qrTicketConfig?: QrTicketConfig | null | undefined;
@@ -219,6 +221,7 @@ async function insertEventTx(
       endsAt: input.endsAt,
       pricePaise: input.pricePaise ?? 0,
       capacity: input.capacity ?? null,
+      maxPerUser: input.maxPerUser ?? null,
       qrTicketConfig: input.qrTicketConfig ?? null,
       seriesId,
       status: 'draft',
@@ -398,6 +401,8 @@ export interface UpdateEventPatch {
   lng?: number | null;
   /** null clears (QR tickets off); omitted = unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Per-customer ticket cap for the whole event; null clears, omitted = unchanged. */
+  maxPerUser?: number | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
 }
@@ -445,6 +450,7 @@ export async function updateEvent(
     if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
     if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
     if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+    if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
 
     // Resolve the post-update scope: a venue id in the patch wins, otherwise the
     // event keeps whatever scope it already has.

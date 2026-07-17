@@ -15,6 +15,7 @@ import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
   RecurrenceEditor,
@@ -63,6 +64,8 @@ export default function NewTenantEventPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  // null = no per-customer ticket limit; else the count input's string value.
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
@@ -160,6 +163,7 @@ export default function NewTenantEventPage() {
             endsAt: localToTzIso(endsAtLocal, effectiveTz),
           }),
       tiers: tiersToPayload(tiers),
+      maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
     };
 
@@ -323,6 +327,8 @@ export default function NewTenantEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 
