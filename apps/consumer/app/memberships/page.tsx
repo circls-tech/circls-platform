@@ -5,17 +5,17 @@ import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { matchesCountry } from '@/lib/location/geo';
+import { membershipInArea } from '@/lib/location/geo';
 
 export default function MembershipsPage() {
   const { city, country, openPicker } = useLocation();
   const memberships = useAllMemberships(100);
-  // A membership is priced and honoured in its venue's (or tenant's) country,
-  // so show only the user's (unknown-country plans shown everywhere). The label
-  // prefers the CITY (matching the events page); country covers legacy
-  // country-only selections.
+  // Country is the market boundary; a selected city HARD-filters venue-scoped
+  // plans by their venue's city. Tenant-wide plans (city: null) stay visible
+  // across the country — a brand pass isn't city-bound. The label prefers the
+  // CITY (matching the events page); country covers legacy selections.
   const areaLabel = city ?? country;
-  const rows = (memberships.data ?? []).filter((m) => matchesCountry(m.country, country));
+  const rows = (memberships.data ?? []).filter((m) => membershipInArea(m, { city, country }));
 
   return (
     <div className="min-h-screen">

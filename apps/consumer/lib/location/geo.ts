@@ -172,24 +172,47 @@ export function venueInCity(
 }
 
 /**
- * In-country venues for the selected area, with the user's city used as a SOFT
- * signal — same-city venues are sorted first (a "near you" hint), but no venue
- * is dropped for being in another city of the same country. This keeps a country
- * with venues from ever rendering an empty list just because the user's exact
- * city has none. Country is still a hard boundary (USA users never see India
- * venues); untagged venues stay visible (lenient, per `inCountry`). The input
- * array is not mutated. Pass the already-search-filtered rows from the API.
+ * A venue's city: the structured address column (what the partner form writes),
+ * falling back to freeform address_json for older venues.
+ */
+export function venueCity(v: PublicVenue): string | null {
+  return v.address.city ?? cityOf(v.addressJson);
+}
+
+/** A venue's country, structured column first (same fallback as `venueCity`). */
+export function venueCountry(v: PublicVenue): string | null {
+  return v.address.country ?? countryOf(v.addressJson);
+}
+
+/**
+ * Venues for the selected area — country boundary first, then a HARD city
+ * filter: with a city selected, only that city's venues are returned, and an
+ * empty result means the caller should show its empty state rather than fall
+ * back to the whole country. Venues without a city on file are hidden while a
+ * city is selected (they can't prove they're local) but stay visible for
+ * country-only selections (lenient, per `inCountry`). The input array is not
+ * mutated. Pass the already-search-filtered rows from the API.
  */
 export function venuesForArea(venues: PublicVenue[], sel: AreaSelection): PublicVenue[] {
-  const inSel = venues.filter((v) => inCountry(v.addressJson, sel.country));
+  const inSel = venues.filter((v) => matchesCountry(venueCountry(v), sel.country));
   if (!sel.city) return inSel;
-  // Stable partition: same-city venues first, everything else after, each in
-  // its original (API) order. Array.prototype.sort is stable in modern engines.
-  return [...inSel].sort(
-    (a, b) =>
-      Number(venueInCity(b.addressJson, sel.city)) -
-      Number(venueInCity(a.addressJson, sel.city)),
-  );
+  return inSel.filter((v) => sameCity(venueCity(v), sel.city));
+}
+
+/**
+ * Whether a membership is visible for the selected area. Country is the market
+ * boundary (a plan is priced and honoured in one country). A venue-scoped plan
+ * carries its venue's city and is HARD-filtered by it; tenant-wide plans (and
+ * venue plans with no city on file) have `city: null` and stay visible across
+ * the country — a brand pass isn't city-bound.
+ */
+export function membershipInArea(
+  m: { city: string | null; country: string | null },
+  sel: AreaSelection,
+): boolean {
+  if (!matchesCountry(m.country, sel.country)) return false;
+  if (sel.city && m.city != null && !sameCity(m.city, sel.city)) return false;
+  return true;
 }
 
 /** Events are visible within this distance of the user's shared location. */

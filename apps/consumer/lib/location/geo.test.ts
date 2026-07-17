@@ -10,9 +10,11 @@ import {
   inArea,
   inCountry,
   matchesCountry,
+  membershipInArea,
   nearestCity,
   sameCountry,
   venueToLocatable,
+  venuesForArea,
   type Locatable,
 } from './geo';
 
@@ -203,6 +205,63 @@ describe('nearestCity', () => {
   it('returns null when no city has coordinates', () => {
     const noGeo = derivePlaces([place({ city: 'NoGeo', country: 'India' })]);
     expect(nearestCity({ lat: 0, lng: 0 }, noGeo)).toBeNull();
+  });
+});
+
+describe('venuesForArea (hard city filter)', () => {
+  const nagpur = venue({ address: { city: 'Nagpur', country: 'India' } });
+  const mumbai = venue({ addressJson: { city: 'Mumbai', country: 'India' } });
+  const noCity = venue({ addressJson: { country: 'India' } });
+  const boston = venue({ address: { city: 'Boston', country: 'USA' } });
+  const all = [nagpur, mumbai, noCity, boston];
+
+  it('keeps only the selected city (structured or freeform address, case-insensitive)', () => {
+    expect(venuesForArea(all, { city: 'nagpur', country: 'India' })).toEqual([nagpur]);
+    expect(venuesForArea(all, { city: 'Mumbai', country: 'India' })).toEqual([mumbai]);
+  });
+
+  it('returns empty (not the whole country) when the city has no venues', () => {
+    expect(venuesForArea(all, { city: 'Pune', country: 'India' })).toEqual([]);
+  });
+
+  it('hides venues without a city while a city is selected', () => {
+    expect(venuesForArea([noCity], { city: 'Nagpur', country: 'India' })).toEqual([]);
+  });
+
+  it('is country-wide (untagged included) when only a country is selected', () => {
+    expect(venuesForArea(all, { city: null, country: 'India' })).toEqual([nagpur, mumbai, noCity]);
+  });
+
+  it('matches everything with an empty selection', () => {
+    expect(venuesForArea(all, { city: null, country: null })).toEqual(all);
+  });
+});
+
+describe('membershipInArea', () => {
+  const scoped = { city: 'Nagpur', country: 'India' };
+  const otherCity = { city: 'Mumbai', country: 'India' };
+  const brandWide = { city: null, country: 'India' };
+  const usPlan = { city: 'Boston', country: 'USA' };
+
+  it('hard-filters venue-scoped plans by city', () => {
+    expect(membershipInArea(scoped, { city: 'Nagpur', country: 'India' })).toBe(true);
+    expect(membershipInArea(scoped, { city: 'nagpur ', country: 'India' })).toBe(true);
+    expect(membershipInArea(otherCity, { city: 'Nagpur', country: 'India' })).toBe(false);
+  });
+
+  it('keeps tenant-wide plans (no city) visible across the country', () => {
+    expect(membershipInArea(brandWide, { city: 'Nagpur', country: 'India' })).toBe(true);
+    expect(membershipInArea(brandWide, { city: null, country: 'India' })).toBe(true);
+  });
+
+  it('never crosses the country boundary', () => {
+    expect(membershipInArea(usPlan, { city: 'Nagpur', country: 'India' })).toBe(false);
+    expect(membershipInArea(brandWide, { city: 'Boston', country: 'USA' })).toBe(false);
+  });
+
+  it('matches everything with an empty selection', () => {
+    expect(membershipInArea(usPlan, { city: null, country: null })).toBe(true);
+    expect(membershipInArea(brandWide, { city: null, country: null })).toBe(true);
   });
 });
 
