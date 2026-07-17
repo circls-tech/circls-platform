@@ -20,6 +20,7 @@ import { formatMoney, useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
+import { MapPinPicker } from '@/components/MapPinPicker';
 import { EventImages } from '@/components/EventImages';
 import { EventRegistrations } from '@/components/EventRegistrations';
 import {
@@ -565,6 +566,7 @@ export default function OrgEventDetailPage() {
                         hint="IANA tz, e.g. Asia/Kolkata"
                       />
                     </div>
+                    <MapPinPicker coords={coords} onChange={setCoords} city={city} country={countryForm} />
                   </div>
                 )}
 

@@ -14,6 +14,7 @@ import { useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
+import { MapPinPicker } from '@/components/MapPinPicker';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -287,6 +288,7 @@ export default function NewTenantEventPage() {
                 </div>
                 <Input label="Timezone" value={tz} onChange={(e) => setTz(e.target.value)} hint="IANA tz, e.g. Asia/Kolkata" />
               </div>
+              <MapPinPicker coords={coords} onChange={setCoords} city={city} country={country} />
             </div>
           )}
 

@@ -7,6 +7,7 @@ import type { OpeningHours, Venue } from '@/lib/api/types';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { Button, Input, TagsInput } from '@/lib/ui';
 import { AddressAutocomplete } from './AddressAutocomplete';
+import { MapPinPicker } from './MapPinPicker';
 
 /**
  * Canonical amenity vocabulary — must mirror VENUE_AMENITIES in
@@ -299,6 +300,8 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
           </span>
         </div>
       </div>
+
+      <MapPinPicker coords={coords} onChange={setCoords} city={city} country={country} />
 
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Tags</label>
