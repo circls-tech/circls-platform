@@ -125,12 +125,23 @@ JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear
 
 The event detail page shows registrations in two separate tables:
 
-- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, the tickets they hold (tier and quantity, e.g. "General ×2, VIP ×1"), status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
 
 Use these tables to check turnout and reconcile payments.
+
+### Cancelling a registration
+
+Every row in the **Registered** table has a **Cancel** button. Cancelling on behalf of an attendee:
+
+- refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log);
+- revokes the attendee's QR entry passes so they can no longer check in;
+- frees the seats — tier sold counts no longer include the cancelled registration;
+- moves the row to the **Cancelled** table.
+
+Free registrations and payments that were never completed are simply cancelled — there is nothing to refund. Cancellation can't be undone; the attendee has to register again if plans change.
 
 ## Where to find your events
 

@@ -278,6 +278,8 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     await closeDb();
   });
 
+  let eventBookingId: string;
+
   it('books two tier lines and writes one ticket row per line', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -293,6 +295,7 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json() as { booking: { id: string } };
     const bookingId = body.booking.id;
+    eventBookingId = bookingId;
 
     const rows = (await db.execute(sql`
       select tier_id, quantity from event_booking_tickets
@@ -303,6 +306,21 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     const byTier = new Map(rows.map((r) => [r.tier_id, Number(r.quantity)]));
     expect(byTier.get(generalTierId)).toBe(2);
     expect(byTier.get(vipTierId)).toBe(1);
+
+    // The partner registrations list surfaces those tier lines per row.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/events/${eventId}/bookings`,
+      headers: bearer('owner'),
+    });
+    expect(list.statusCode).toBe(200);
+    const listRows = (list.json() as {
+      rows: Array<{ id: string; tickets: Array<{ tierName: string; quantity: number }> }>;
+    }).rows;
+    expect(listRows.find((x) => x.id === bookingId)?.tickets).toEqual([
+      { tierName: 'General', quantity: 2 },
+      { tierName: 'VIP', quantity: 1 },
+    ]);
   });
 
   it('rejects buying beyond a capped tier with 409 tier_sold_out', async () => {
@@ -315,5 +333,31 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('tier_sold_out');
+  });
+
+  it('lets tenant staff cancel an event booking, freeing tier capacity', async () => {
+    // Event bookings have no slots/time_range — the cancellation engine must
+    // fall back to the event's starts_at instead of failing no_slot_start.
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/v1/bookings/${eventBookingId}/cancel`,
+      headers: bearer('owner'),
+      payload: { reason: 'Cancelled by venue' },
+    });
+    expect(cancel.statusCode).toBe(200);
+    const body = cancel.json() as { status: string; refundPaise: number };
+    expect(body.status).toBe('cancelled');
+    // The charge was never captured (payment form never completed), so the
+    // cancel fails the charge instead of refunding.
+    expect(body.refundPaise).toBe(0);
+
+    // VIP (capacity 1) was sold out by that booking; the seat is free again.
+    const rebook = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${eventId}/book`,
+      headers: bearer('other'),
+      payload: { lines: [{ tierId: vipTierId, quantity: 1 }] },
+    });
+    expect(rebook.statusCode).toBe(200);
   });
 });

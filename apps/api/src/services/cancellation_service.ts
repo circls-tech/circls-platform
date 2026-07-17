@@ -15,7 +15,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { bookings, payments, slots } from '../db/schema/index.js';
+import { bookings, events, payments, slots } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGateway } from '../lib/gateway.js';
@@ -97,6 +97,19 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
         .orderBy(sql`lower(${slots.timeRange}) asc`)
         .limit(1);
       slotStart = s?.startsAt ? new Date(s.startsAt) : null;
+    }
+    // Event bookings carry no time_range and no slots — the event's start
+    // instant plays the slot-start role for the refund-policy tiers.
+    if (!slotStart && booking.itemType === 'event') {
+      const eventId = (booking.itemData as { eventId?: string } | null)?.eventId;
+      if (eventId) {
+        const [ev] = await tx
+          .select({ startsAt: events.startsAt })
+          .from(events)
+          .where(eq(events.id, eventId))
+          .limit(1);
+        slotStart = ev?.startsAt ?? null;
+      }
     }
     // Fail-closed: cancelling without knowing the slot start would silently
     // hand a full refund. Reject loudly instead.

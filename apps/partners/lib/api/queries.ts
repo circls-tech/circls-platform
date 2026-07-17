@@ -484,6 +484,8 @@ export function useCancelBookingWithReason() {
       void qc.invalidateQueries({ queryKey: ['venue-bookings'] });
       void qc.invalidateQueries({ queryKey: ['booking-detail'] });
       void qc.invalidateQueries({ queryKey: ['booking-payments'] });
+      void qc.invalidateQueries({ queryKey: ['event-bookings'] });
+      void qc.invalidateQueries({ queryKey: ['event'] });
     },
   });
 }
