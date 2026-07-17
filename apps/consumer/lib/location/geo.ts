@@ -126,6 +126,12 @@ export function countryForCity(cities: CityOption[], city: string | null): strin
 export interface AreaSelection {
   city: string | null;
   country: string | null;
+  /**
+   * The user's device position, present only when the selection came from
+   * geolocation ("Use my current location"). Manual city picks clear it —
+   * picking a city means "show me that whole city", not "near me".
+   */
+  coords?: Coords | null;
 }
 
 /**
@@ -184,6 +190,30 @@ export function venuesForArea(venues: PublicVenue[], sel: AreaSelection): Public
       Number(venueInCity(b.addressJson, sel.city)) -
       Number(venueInCity(a.addressJson, sel.city)),
   );
+}
+
+/** Events are visible within this distance of the user's shared location. */
+export const EVENT_RADIUS_KM = 50;
+
+/**
+ * Whether an event is visible for the given selection. When the user shared
+ * their device location (`sel.coords`), a geolocated event must lie within
+ * `radiusKm` of them — country is irrelevant, distance is the boundary. Events
+ * without coordinates can't be distance-checked and fall back to the lenient
+ * country match (we never hide untagged data). Without coords — a manual city
+ * pick, or no selection at all — this is the existing country check, so picking
+ * a city still shows that whole market's events.
+ */
+export function eventInRange(
+  e: { locLat: number | null; locLng: number | null; locAddressJson: Record<string, unknown> | null },
+  sel: AreaSelection,
+  radiusKm: number = EVENT_RADIUS_KM,
+): boolean {
+  const coords = sel.coords ?? null;
+  if (coords && typeof e.locLat === 'number' && typeof e.locLng === 'number') {
+    return haversineKm(coords, { lat: e.locLat, lng: e.locLng }) <= radiusKm;
+  }
+  return inCountry(e.locAddressJson, sel.country);
 }
 
 const EARTH_RADIUS_KM = 6371;
