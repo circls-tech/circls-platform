@@ -84,7 +84,7 @@ export default function LandingPage() {
         )}
 
         {nearbyMemberships.length > 0 && (
-          <HScroll title={country ? `Memberships in ${country}` : 'Memberships'} viewAllHref="/memberships">
+          <HScroll title={(city ?? country) ? `Memberships in ${city ?? country}` : 'Memberships'} viewAllHref="/memberships">
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}

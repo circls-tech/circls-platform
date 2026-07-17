@@ -8,10 +8,13 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { matchesCountry } from '@/lib/location/geo';
 
 export default function MembershipsPage() {
-  const { country, openPicker } = useLocation();
+  const { city, country, openPicker } = useLocation();
   const memberships = useAllMemberships(100);
   // A membership is priced and honoured in its venue's (or tenant's) country,
-  // so show only the user's (unknown-country plans shown everywhere).
+  // so show only the user's (unknown-country plans shown everywhere). The label
+  // prefers the CITY (matching the events page); country covers legacy
+  // country-only selections.
+  const areaLabel = city ?? country;
   const rows = (memberships.data ?? []).filter((m) => matchesCountry(m.country, country));
 
   return (
@@ -20,9 +23,9 @@ export default function MembershipsPage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">Memberships</h1>
         <p className="mb-8 text-sm text-text-secondary">
-          {country ? (
+          {areaLabel ? (
             <>
-              Plans and passes in <span className="font-semibold text-ink">{country}</span>.{' '}
+              Plans and passes in <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
               <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                 Change
               </button>

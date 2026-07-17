@@ -16,7 +16,9 @@ export default function VenuesPage() {
   // soft signal — same-city venues are sorted first and flagged "Near you" — so a
   // country with venues never shows an empty list just because the exact city has
   // none. The empty state is reserved for a country that genuinely has no venues.
-  const areaLabel = country ?? city;
+  // The label prefers the CITY (matching the events page); country covers legacy
+  // country-only selections.
+  const areaLabel = city ?? country;
   const venues = useVenues(search);
   const filtered = venuesForArea(venues.data ?? [], { city, country });
 
@@ -41,7 +43,7 @@ export default function VenuesPage() {
             {areaLabel ? (
               <>
                 Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>
-                {city ? <> — closest to <span className="font-semibold text-ink">{city}</span> first</> : null}.{' '}
+                {city ? <> — closest first</> : null}.{' '}
                 <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                   Change
                 </button>
