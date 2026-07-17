@@ -5,7 +5,7 @@ Events are one-off or recurring happenings — tournaments, classes, socials, sc
 1. Go to **Events** in the sidebar and click **Create event**.
 2. Choose **where** the event happens:
    - **At a venue** — pick one of your venues. The event uses that venue's timezone.
-   - **No venue — enter address** — start typing in **Search address** and pick a suggestion to fill the street, city, state, PIN and country automatically (results are limited to the regions circls serves), or fill the fields by hand. **Country** is chosen from a dropdown (currently India or the USA) and also sets the currency tickets sell in. The **map location is set automatically** — either from the address you pick or derived from the address when the event is created — so there's no need to enter latitude/longitude. Enter the **timezone** (IANA name, e.g. `Asia/Kolkata`) yourself.
+   - **No venue — enter address** — start typing in **Search address** and pick a suggestion to fill the street, city, state, PIN and country automatically (results are limited to the regions circls serves), or fill the fields by hand. **Country** is chosen from a dropdown (currently India or the USA) and also sets the currency tickets sell in. Below the address fields, a **map** shows where the event will appear to customers: it centres on the city you've typed, and you can **click the map (or drag the pin) to mark the exact spot** — recommended, since customers browsing nearby events see exactly this point. If you don't place a pin, the map location is derived from the typed address when the event is created. There's never a need to enter latitude/longitude by hand. Enter the **timezone** (IANA name, e.g. `Asia/Kolkata`) yourself.
 3. Fill in the details:
    - **Name** (required).
    - **Description** (optional).
@@ -141,7 +141,7 @@ JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear
 
 The event detail page shows registrations in two separate tables:
 
-- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, the tickets they hold (tier and quantity, e.g. "General ×2, VIP ×1"), status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.

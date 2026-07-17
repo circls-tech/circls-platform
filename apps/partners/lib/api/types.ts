@@ -440,6 +440,11 @@ export interface EventTier {
 }
 
 /** A consumer registration for an event (partner-facing). */
+export interface EventBookingTicketLine {
+  tierName: string;
+  quantity: number;
+}
+
 export interface EventBooking {
   id: string;
   customerName: string | null;
@@ -452,6 +457,8 @@ export interface EventBooking {
   totalPaise: number;
   /** ISO-8601 */
   createdAt: string;
+  /** Ticket lines (tier name + quantity), in tier sort order. */
+  tickets: EventBookingTicketLine[];
 }
 
 // ── Memberships (Phase 15) ───────────────────────────────────────────────────

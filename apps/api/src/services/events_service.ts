@@ -27,6 +27,11 @@ import {
 } from '../lib/geocoding/index.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
 
+export interface EventBookingTicketLine {
+  tierName: string;
+  quantity: number;
+}
+
 export interface EventBookingRow {
   id: string;
   customerName: string | null;
@@ -36,6 +41,8 @@ export interface EventBookingRow {
   status: string;
   totalPaise: number;
   createdAt: string;
+  /** Ticket lines (tier name + quantity), in tier sort order. */
+  tickets: EventBookingTicketLine[];
 }
 
 /**
@@ -54,9 +61,18 @@ export async function listEventBookings(
 ): Promise<EventBookingRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
     select b.id, b.customer_name, b.customer_contact, b.status, b.total_paise, b.created_at,
-           u.display_name as user_display_name, u.email as user_email, u.phone_e164 as user_phone
+           u.display_name as user_display_name, u.email as user_email, u.phone_e164 as user_phone,
+           coalesce(t.tickets, '[]'::json)::text as tickets
     from bookings b
     left join users u on u.id = b.customer_user_id
+    left join (
+      select ebt.booking_id,
+             json_agg(json_build_object('tierName', tt.name, 'quantity', ebt.quantity)
+                      order by tt.sort_order, tt.name) as tickets
+      from event_booking_tickets ebt
+      join event_ticket_tiers tt on tt.id = ebt.tier_id
+      group by ebt.booking_id
+    ) t on t.booking_id = b.id
     where b.tenant_id = ${tenantId}
       and b.item_type = 'event'
       and b.item_data->>'eventId' = ${eventId}
@@ -77,6 +93,7 @@ export async function listEventBookings(
       status: r['status'] as string,
       totalPaise: Number(r['total_paise']),
       createdAt: new Date(r['created_at'] as string).toISOString(),
+      tickets: JSON.parse(r['tickets'] as string) as EventBookingTicketLine[],
     };
   });
 }
