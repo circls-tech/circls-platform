@@ -11,9 +11,10 @@
  * this layer.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
+import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
@@ -405,11 +406,94 @@ export interface UpdateEventPatch {
   maxPerUser?: number | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
+  /**
+   * Published-only: raise individual tiers' capacity by id. A capped tier can
+   * go higher or become unlimited (null); never lower, and an unlimited tier
+   * can't become capped — so tickets already sold are never invalidated.
+   * Draft events edit capacity through `tiers` instead.
+   */
+  tierCapacities?: { tierId: string; capacity: number | null }[];
+}
+
+/** The only patch fields a PUBLISHED event may change; everything else is frozen. */
+const LIVE_EDITABLE_KEYS = new Set(['maxPerUser', 'tierCapacities']);
+
+/**
+ * Constrained update for a published event: the per-customer ticket cap (any
+ * change — it only gates future purchases, never existing tickets) and
+ * increase-only tier capacity. Any other field is rejected so the content the
+ * circls team approved stays immutable.
+ */
+async function applyLiveSettings(
+  tx: Tx,
+  ctx: AuditCtx,
+  existing: Event,
+  patch: UpdateEventPatch,
+): Promise<Event> {
+  const disallowed = Object.entries(patch)
+    .filter(([k, v]) => v !== undefined && !LIVE_EDITABLE_KEYS.has(k))
+    .map(([k]) => k);
+  if (disallowed.length > 0) {
+    throw new Conflict(
+      `Only the per-customer ticket limit and tier capacity increases can be changed on a live event (got: ${disallowed.join(', ')})`,
+      'event_not_draft',
+      { fields: disallowed },
+    );
+  }
+
+  const capacityBefore: Record<string, number | null> = {};
+  if (patch.tierCapacities !== undefined) {
+    const tiers = await tx
+      .select()
+      .from(eventTicketTiers)
+      .where(and(eq(eventTicketTiers.eventId, existing.id), isNull(eventTicketTiers.deletedAt)));
+    const byId = new Map(tiers.map((t) => [t.id, t]));
+    for (const { tierId, capacity } of patch.tierCapacities) {
+      const tier = byId.get(tierId);
+      if (!tier) throw new BadRequest('Unknown ticket tier for this event', 'bad_request');
+      // Increase-only (equal = idempotent no-op): unlimited can't shrink to a
+      // cap, and a cap can only rise or lift to unlimited.
+      const decreases = capacity !== null && (tier.capacity === null || capacity < tier.capacity);
+      if (decreases) {
+        throw new BadRequest(
+          'Capacity can only be increased on a live event',
+          'event_capacity_decrease',
+          { tierId, current: tier.capacity, requested: capacity },
+        );
+      }
+      if (capacity !== tier.capacity) {
+        capacityBefore[tierId] = tier.capacity;
+        await tx.update(eventTicketTiers).set({ capacity }).where(eq(eventTicketTiers.id, tierId));
+      }
+    }
+  }
+
+  if (patch.maxPerUser !== undefined) {
+    await tx.update(events).set({ maxPerUser: patch.maxPerUser }).where(eq(events.id, existing.id));
+  }
+
+  const [updated] = await tx.select().from(events).where(eq(events.id, existing.id)).limit(1);
+
+  await writeAudit(
+    tx,
+    ctx,
+    'event.live_settings_updated',
+    'event',
+    existing.id,
+    { maxPerUser: existing.maxPerUser, capacities: capacityBefore },
+    {
+      ...(patch.maxPerUser !== undefined ? { maxPerUser: patch.maxPerUser } : {}),
+      ...(patch.tierCapacities !== undefined ? { tierCapacities: patch.tierCapacities } : {}),
+    },
+  );
+
+  return updated!;
 }
 
 /**
- * Update a draft Event. Only allowed when status='draft' — once submitted for
- * review or published the event is immutable from this surface.
+ * Update an Event. Drafts are fully editable. Published events accept ONLY the
+ * live settings (per-customer ticket limit, increase-only tier capacity) via
+ * {@link applyLiveSettings}; pending_review/cancelled/rejected stay immutable.
  */
 export async function updateEvent(
   ctx: AuditCtx,
@@ -434,8 +518,15 @@ export async function updateEvent(
       .limit(1);
 
     if (!existing) throw new NotFound('Event not found', 'event_not_found');
+    if (existing.status === 'published') {
+      return applyLiveSettings(tx, ctx, existing, patch);
+    }
     if (existing.status !== 'draft') {
       throw new Conflict('Only draft events can be edited', 'event_not_draft');
+    }
+    if (patch.tierCapacities !== undefined) {
+      // Draft tiers are replace-all via `tiers`; the by-id path is live-only.
+      throw new BadRequest('Edit a draft event’s tiers via `tiers`', 'bad_request');
     }
 
     const startsAt = patch.startsAt ?? existing.startsAt;

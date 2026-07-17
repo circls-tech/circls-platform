@@ -174,4 +174,110 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(Array.isArray(rows)).toBe(true);
     expect(rows.some((r: { venueId: string | null }) => r.venueId === null)).toBe(true);
   });
+
+  describe('live settings on a published event', () => {
+    let eventId: string;
+    let cappedTierId: string;
+    let uncappedTierId: string;
+
+    beforeAll(async () => {
+      const create = await app.inject({
+        method: 'POST',
+        url: `/v1/tenants/${tenantId}/events`,
+        headers: bearer('owner'),
+        payload: {
+          addressJson: { line1: '5 MG Rd', city: 'Pune' },
+          tzName: 'Asia/Kolkata',
+          name: 'Live Settings Event',
+          startsAt: '2030-07-01T10:00:00.000Z',
+          endsAt: '2030-07-01T12:00:00.000Z',
+          maxPerUser: 4,
+          tiers: [
+            { name: 'Capped', pricePaise: 0, capacity: 10 },
+            { name: 'Uncapped', pricePaise: 0 },
+          ],
+        },
+      });
+      expect(create.statusCode).toBe(200);
+      eventId = (create.json() as { id: string }).id;
+      const tierRows = (await db.execute(sql`
+        select id, name from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
+      `)) as unknown as Array<{ id: string; name: string }>;
+      cappedTierId = tierRows.find((t) => t.name === 'Capped')!.id;
+      uncappedTierId = tierRows.find((t) => t.name === 'Uncapped')!.id;
+      await db.execute(sql`update events set status='published' where id = ${eventId}`);
+    });
+
+    it('allows changing maxPerUser and raising tier capacity', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { maxPerUser: 2, tierCapacities: [{ tierId: cappedTierId, capacity: 25 }] },
+      });
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { maxPerUser: number | null }).maxPerUser).toBe(2);
+
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+      });
+      const tiers = (detail.json() as { tiers: Array<{ id: string; capacity: number | null }> })
+        .tiers;
+      expect(tiers.find((t) => t.id === cappedTierId)!.capacity).toBe(25);
+
+      // Lowering a numeric cap (25 → 10) is a decrease and must be rejected.
+      const lower = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { tierCapacities: [{ tierId: cappedTierId, capacity: 10 }] },
+      });
+      expect(lower.statusCode).toBe(400);
+      expect(lower.json().error.code).toBe('event_capacity_decrease');
+    });
+
+    it('allows lifting a capped tier to unlimited and clearing maxPerUser', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { maxPerUser: null, tierCapacities: [{ tierId: cappedTierId, capacity: null }] },
+      });
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { maxPerUser: number | null }).maxPerUser).toBeNull();
+
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+      });
+      const tiers = (detail.json() as { tiers: Array<{ id: string; capacity: number | null }> })
+        .tiers;
+      expect(tiers.find((t) => t.id === cappedTierId)!.capacity).toBeNull();
+    });
+
+    it('rejects capping a now-unlimited tier (a decrease) with event_capacity_decrease', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { tierCapacities: [{ tierId: uncappedTierId, capacity: 5 }] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('event_capacity_decrease');
+    });
+
+    it('rejects any other field on a published event with event_not_draft', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { name: 'Sneaky rename', maxPerUser: 3 },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('event_not_draft');
+    });
+  });
 });

@@ -207,9 +207,13 @@ export interface UpdateEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Published-only: raise tiers' capacity by id (null = unlimited). The API
+   *  rejects decreases (`event_capacity_decrease`). */
+  tierCapacities?: { tierId: string; capacity: number | null }[];
 }
 
-/** PATCH an event (draft only — API returns 409 event_not_draft otherwise). */
+/** PATCH an event. Drafts: any field. Published: only `maxPerUser` +
+ *  `tierCapacities` (live settings) — anything else is 409 event_not_draft. */
 export function useUpdateEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({

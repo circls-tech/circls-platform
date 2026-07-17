@@ -26,6 +26,7 @@ import {
   maxPerUserFromApi,
   maxPerUserToPayload,
 } from '@/components/MaxPerUserField';
+import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -309,6 +310,18 @@ export default function EventDetailPage() {
                 )}
               </div>
             </Card>
+          )}
+
+          {!editing && ev.status === 'published' && (
+            <LiveEventSettings
+              key={ev.id}
+              tiers={ev.tiers}
+              maxPerUser={ev.maxPerUser}
+              saving={update.isPending}
+              onSave={async (input) => {
+                await update.mutateAsync({ eventId, input });
+              }}
+            />
           )}
 
           {editing && ev.status === 'draft' && (

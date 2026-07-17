@@ -30,6 +30,7 @@ import {
   type TierDraft,
 } from '@/components/TiersEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import { LiveEventSettings } from '@/components/LiveEventSettings';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -456,6 +457,18 @@ export default function OrgEventDetailPage() {
                 )}
               </div>
             </Card>
+          )}
+
+          {!editing && ev.status === 'published' && (
+            <LiveEventSettings
+              key={ev.id}
+              tiers={ev.tiers}
+              maxPerUser={ev.maxPerUser}
+              saving={update.isPending}
+              onSave={async (input) => {
+                await update.mutateAsync({ eventId, input });
+              }}
+            />
           )}
 
           {editing && ev.status === 'draft' && (
