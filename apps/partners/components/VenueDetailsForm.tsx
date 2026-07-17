@@ -7,6 +7,7 @@ import type { OpeningHours, Venue } from '@/lib/api/types';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { Button, Input, TagsInput } from '@/lib/ui';
 import { AddressAutocomplete } from './AddressAutocomplete';
+import { CityDidYouMean } from './CityDidYouMean';
 import { MapPinPicker } from './MapPinPicker';
 
 /**
@@ -254,14 +255,24 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         <div className="sm:col-span-2">
           <Input label="Address line 2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
         </div>
-        <Input
-          label="City"
-          value={city}
-          onChange={(e) => {
-            setCity(e.target.value);
-            setCoords(null);
-          }}
-        />
+        <div className="flex flex-col gap-1">
+          <Input
+            label="City"
+            value={city}
+            onChange={(e) => {
+              setCity(e.target.value);
+              setCoords(null);
+            }}
+          />
+          <CityDidYouMean
+            city={city}
+            country={country || null}
+            onPick={(c) => {
+              setCity(c);
+              setCoords(null);
+            }}
+          />
+        </div>
         <Input
           label="State"
           value={state}

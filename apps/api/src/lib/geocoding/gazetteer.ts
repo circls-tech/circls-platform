@@ -134,6 +134,79 @@ export function searchGazetteer(
 }
 
 /**
+ * The canonical display spelling for a typed city — alias- and case-folded
+ * against the gazetteer ("bangalore", "Bombay", "nyc" → "Bengaluru", "Mumbai",
+ * "New York"). Scoped to `country` when it's recognised, else searched across
+ * all served countries. Returns null when the city isn't known at all, so
+ * callers keep whatever the partner typed (never destructive).
+ */
+export function canonicalizeCity(
+  city: string | null | undefined,
+  country?: string | null,
+): string | null {
+  if (!city || !city.trim()) return null;
+  const raw = city.trim().toLowerCase();
+  const key = CITY_ALIASES[raw] ?? raw;
+  const scoped = normalizeCountry(country ?? null);
+  const buckets: CountryKey[] = scoped ? [scoped] : (['India', 'USA'] as CountryKey[]);
+  for (const ck of buckets) {
+    if (CITIES[ck][key]) return titleCase(key);
+  }
+  return null;
+}
+
+/** Levenshtein distance — small inputs only (city names). */
+function editDistance(a: string, b: string): number {
+  const prev = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(prev[j]! + 1, prev[j - 1]! + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * "Did you mean" for a typed city. Returns the canonical spelling when the
+ * input is an alias/case variant of a known city, or the nearest known city
+ * (or alias) within a small edit distance — "Banagalore" → "Bengaluru". Null
+ * when the input is empty, too short, already canonical, or not close to
+ * anything known. Scoped to `country` when recognised.
+ */
+export function suggestCity(
+  city: string | null | undefined,
+  country?: string | null,
+): string | null {
+  if (!city || city.trim().length < 3) return null;
+  const raw = city.trim().toLowerCase();
+  const canonical = canonicalizeCity(raw, country);
+  if (canonical) return canonical.toLowerCase() === raw ? null : canonical;
+
+  const scoped = normalizeCountry(country ?? null);
+  const buckets: CountryKey[] = scoped ? [scoped] : (['India', 'USA'] as CountryKey[]);
+  // Typos this close to a known name (or its alias) are near-certainly it.
+  const maxDist = raw.length <= 5 ? 1 : 2;
+  let best: { key: string; dist: number } | null = null;
+  const consider = (candidate: string, key: string) => {
+    if (Math.abs(candidate.length - raw.length) > maxDist) return;
+    const dist = editDistance(raw, candidate);
+    if (dist <= maxDist && (!best || dist < best.dist)) best = { key, dist };
+  };
+  for (const ck of buckets) {
+    for (const key of Object.keys(CITIES[ck])) consider(key, key);
+    for (const [alias, key] of Object.entries(CITY_ALIASES)) {
+      if (CITIES[ck][key]) consider(alias, key);
+    }
+  }
+  return best ? titleCase((best as { key: string }).key) : null;
+}
+
+/**
  * Resolve a city (within a known country) to coordinates using the gazetteer.
  * Falls back to the country centroid when the city is unknown but the country
  * is recognised. Returns null when the country itself is unrecognised.

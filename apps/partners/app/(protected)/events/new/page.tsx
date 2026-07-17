@@ -14,6 +14,7 @@ import { useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
+import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
@@ -265,7 +266,10 @@ export default function NewTenantEventPage() {
               <Input label="Address line 1" value={line1} onChange={(e) => { setLine1(e.target.value); setCoords(null); }} placeholder="Street / building" />
               <Input label="Address line 2" value={line2} onChange={(e) => setLine2(e.target.value)} placeholder="Optional" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Input label="City" value={city} onChange={(e) => { setCity(e.target.value); setCoords(null); }} />
+                <div className="flex flex-col gap-1">
+                  <Input label="City" value={city} onChange={(e) => { setCity(e.target.value); setCoords(null); }} />
+                  <CityDidYouMean city={city} country={country || null} onPick={(c) => { setCity(c); setCoords(null); }} />
+                </div>
                 <Input label="State" value={stateRegion} onChange={(e) => { setStateRegion(e.target.value); setCoords(null); }} />
                 <Input label="PIN" value={pincode} onChange={(e) => { setPincode(e.target.value); setCoords(null); }} />
               </div>

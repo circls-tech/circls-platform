@@ -3,6 +3,7 @@ import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { NotFound } from '../lib/errors.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
+import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 
 /** Trust-metadata fields shared by create + update (PR #109). */
 export interface VenueMetadataInput {
@@ -113,6 +114,11 @@ async function applyAddressDerivation(
 }
 
 export async function createVenue(tenantId: string, input: CreateVenueInput): Promise<Venue> {
+  // Fold alias/case variants of known cities to the canonical spelling
+  // ("bangalore" → "Bengaluru") so one city never splits into several in the
+  // consumer city filter. Unknown cities pass through as typed.
+  const canonicalCity = canonicalizeCity(input.city ?? null, input.country ?? null);
+  if (canonicalCity) input = { ...input, city: canonicalCity };
   const values: typeof venues.$inferInsert = {
     tenantId,
     name: input.name,
@@ -184,6 +190,13 @@ export async function updateVenue(
       postalCode: pick(patch.postalCode, 'postalCode'),
       country: pick(patch.country, 'country'),
     };
+    // Canonicalize the effective city (see createVenue) — into both the
+    // structured column and the address_json mirror derived below.
+    const canonicalCity = canonicalizeCity(eff.city, eff.country);
+    if (canonicalCity && canonicalCity !== eff.city) {
+      eff.city = canonicalCity;
+      set.city = canonicalCity;
+    }
     await applyAddressDerivation(set, eff, {
       lat: patch.lat,
       lng: patch.lng,

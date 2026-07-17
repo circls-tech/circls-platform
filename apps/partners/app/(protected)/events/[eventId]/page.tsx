@@ -20,6 +20,7 @@ import { formatMoney, useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
+import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
 import { EventImages } from '@/components/EventImages';
 import { EventRegistrations } from '@/components/EventRegistrations';
@@ -510,14 +511,24 @@ export default function OrgEventDetailPage() {
                       placeholder="Optional"
                     />
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <Input
-                        label="City"
-                        value={city}
-                        onChange={(e) => {
-                          setCity(e.target.value);
-                          setCoords(null);
-                        }}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <Input
+                          label="City"
+                          value={city}
+                          onChange={(e) => {
+                            setCity(e.target.value);
+                            setCoords(null);
+                          }}
+                        />
+                        <CityDidYouMean
+                          city={city}
+                          country={countryForm || null}
+                          onPick={(c) => {
+                            setCity(c);
+                            setCoords(null);
+                          }}
+                        />
+                      </div>
                       <Input
                         label="State"
                         value={stateRegion}

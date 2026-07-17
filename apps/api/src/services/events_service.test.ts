@@ -142,6 +142,44 @@ describe.skipIf(!runIntegration)('events_service — scoping', () => {
     expect(moved.lng).toBeCloseTo(72.8777, 3);
   });
 
+  it('canonicalizes an alias city on create, and geocodes the canonical name', async () => {
+    // "Bangalore" is an alias of "Bengaluru" in the gazetteer — the stored
+    // address must use the canonical spelling so one city never splits into
+    // several in the consumer city filter.
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { line1: '3 Alias Rd', city: 'Bangalore', country: 'India' },
+      tzName: 'Asia/Kolkata',
+      name: 'Alias City Event',
+      startsAt: new Date('2030-02-06T10:00:00Z'),
+      endsAt: new Date('2030-02-06T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    expect((ev.addressJson as Record<string, unknown>).city).toBe('Bengaluru');
+    expect(ev.lat).toBeCloseTo(12.9716, 3);
+  });
+
+  it('canonicalizes the city on update, and keeps unknown cities as typed', async () => {
+    const ev = await createEvent(ctx(), {
+      tenantId,
+      addressJson: { city: 'Pune', country: 'India' },
+      tzName: 'Asia/Kolkata',
+      name: 'Canon Update Event',
+      startsAt: new Date('2030-02-07T10:00:00Z'),
+      endsAt: new Date('2030-02-07T12:00:00Z'),
+      tiers: [{ name: 'General', pricePaise: 0 }],
+    });
+    const aliased = await updateEvent(ctx(), ev.id, {
+      addressJson: { city: 'bombay', country: 'India' },
+    });
+    expect((aliased.addressJson as Record<string, unknown>).city).toBe('Mumbai');
+    // A misspelling the gazetteer doesn't know survives untouched (never destructive).
+    const typo = await updateEvent(ctx(), ev.id, {
+      addressJson: { city: 'Banagalore', country: 'India' },
+    });
+    expect((typo.addressJson as Record<string, unknown>).city).toBe('Banagalore');
+  });
+
   it('rejects a standalone event missing an address', async () => {
     await expect(
       createEvent(ctx(), {

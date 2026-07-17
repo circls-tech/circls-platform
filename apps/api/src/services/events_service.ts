@@ -24,6 +24,7 @@ import {
   type GeocodeQuery,
   type GeoPoint,
 } from '../lib/geocoding/index.js';
+import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
 
 export interface EventBookingTicketLine {
@@ -198,6 +199,30 @@ async function deriveStandaloneCoords(
   }
 }
 
+/**
+ * Fold a standalone address's city to its canonical gazetteer spelling
+ * ("bangalore" → "Bengaluru") so one city never splits into several in the
+ * consumer city filter. Unknown cities pass through as typed. Returns the same
+ * object when nothing changes.
+ */
+function canonicalizeAddressJsonCity(
+  addressJson: Record<string, unknown>,
+): Record<string, unknown> {
+  const city = typeof addressJson.city === 'string' ? addressJson.city : null;
+  const country = typeof addressJson.country === 'string' ? addressJson.country : null;
+  const canonical = canonicalizeCity(city, country);
+  return canonical && canonical !== city ? { ...addressJson, city: canonical } : addressJson;
+}
+
+/** `canonicalizeAddressJsonCity` over every standalone input, in place. */
+function canonicalizeStandaloneCities(inputs: CreateEventInput[]): void {
+  for (const input of inputs) {
+    if (!input.venueId && input.addressJson) {
+      input.addressJson = canonicalizeAddressJsonCity(input.addressJson);
+    }
+  }
+}
+
 function validateCreateEventInput(input: CreateEventInput): void {
   if (input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
@@ -263,6 +288,7 @@ async function insertEventTx(
  */
 export async function createEvent(ctx: AuditCtx, input: CreateEventInput): Promise<Event> {
   validateCreateEventInput(input);
+  canonicalizeStandaloneCities([input]);
   await deriveStandaloneCoords([input]);
   return db.transaction(async (tx) => insertEventTx(tx, ctx, input, null));
 }
@@ -290,6 +316,7 @@ export async function createEventSeries(
     );
   }
   for (const occ of occurrences) validateCreateEventInput(occ);
+  canonicalizeStandaloneCities(occurrences);
   await deriveStandaloneCoords(occurrences);
 
   const seriesId = randomUUID();
@@ -428,6 +455,11 @@ export async function updateEvent(
   eventId: string,
   patch: UpdateEventPatch,
 ): Promise<Event> {
+  // Canonicalize the typed city first so the stored address (and the geocode
+  // query below) use the gazetteer spelling.
+  if (patch.addressJson !== undefined) {
+    patch = { ...patch, addressJson: canonicalizeAddressJsonCity(patch.addressJson) };
+  }
   // A new address without hand-set coordinates re-derives the map pin from the
   // address (before the transaction — geocoding may go to the network). A null
   // geocode leaves lat/lng out of the patch so existing coordinates survive.

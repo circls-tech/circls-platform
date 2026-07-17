@@ -26,3 +26,20 @@ export async function searchAddress(q: string, country?: string | null): Promise
   );
   return res.suggestions;
 }
+
+/**
+ * "Did you mean" for a hand-typed city: the canonical spelling when the input
+ * is an alias/typo of a known city ("Banagalore" → "Bengaluru"), or null when
+ * it's already canonical or unrecognised. Returns null for short/empty input
+ * without hitting the network.
+ */
+export async function suggestCity(city: string, country?: string | null): Promise<string | null> {
+  const q = city.trim();
+  if (q.length < 3) return null;
+  const params = new URLSearchParams({ city: q });
+  if (country) params.set('country', country);
+  const res = await apiFetch<{ suggestion: string | null }>(
+    `/v1/venues/geocode/suggest-city?${params.toString()}`,
+  );
+  return res.suggestion;
+}
