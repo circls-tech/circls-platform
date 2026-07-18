@@ -7,12 +7,18 @@ import type {
   AdminListingListResponse,
   AdminListingType,
   AdminPayoutListPage,
+  AdminQuestionFilters,
+  AdminQuestionReplyResult,
+  AdminQuestionThreadDetail,
+  AdminQuestionThreadListPage,
   AdminStats,
   AdminSupportIssue,
   AdminSupportIssueFilters,
   AdminTenantDetail,
   AdminTenantListPage,
   Coupon,
+  QuestionMessageRow,
+  QuestionStatus,
   SupportIssueStatus,
   SupportIssuePriority,
   TenantAuditLogPage,
@@ -230,6 +236,91 @@ export function useUpdateSupportIssue() {
         body: JSON.stringify({ status, priority }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'support-issues'] }),
+  });
+}
+
+// ── Questions (consumer support threads) ──────────────────────────────────────
+
+export function useAdminQuestions(filters: AdminQuestionFilters = {}) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'questions', filters],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminQuestionThreadListPage>(
+        `/v1/admin/questions${qs({ limit: 50, cursor: pageParam, ...filters })}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useAdminQuestionThread(threadId: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'question', threadId],
+    enabled: Boolean(user && threadId),
+    queryFn: () => apiFetch<AdminQuestionThreadDetail>(`/v1/admin/questions/${threadId!}`),
+  });
+}
+
+export function useAdminReplyToQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; body: string }) =>
+      apiFetch<AdminQuestionReplyResult>(`/v1/admin/questions/${args.threadId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body: args.body }),
+      }),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
+    },
+  });
+}
+
+export function useUpdateAdminQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; status: QuestionStatus }) =>
+      apiFetch<AdminQuestionThreadDetail['thread']>(`/v1/admin/questions/${args.threadId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: args.status }),
+      }),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
+    },
+  });
+}
+
+export function useHideQuestionMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; messageId: string }) =>
+      apiFetch<QuestionMessageRow>(
+        `/v1/admin/questions/${args.threadId}/messages/${args.messageId}/hide`,
+        { method: 'POST' },
+      ),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
+    },
+  });
+}
+
+export function useUnhideQuestionMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; messageId: string }) =>
+      apiFetch<QuestionMessageRow>(
+        `/v1/admin/questions/${args.threadId}/messages/${args.messageId}/unhide`,
+        { method: 'POST' },
+      ),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
+    },
   });
 }
 

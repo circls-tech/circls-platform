@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { href: '/coupons', label: 'Coupons' },
   { href: '/audit-log', label: 'Audit log' },
   { href: '/support-issues', label: 'Support issues' },
+  { href: '/questions', label: 'Questions' },
 ] as const;
 
 function HamburgerIcon() {
