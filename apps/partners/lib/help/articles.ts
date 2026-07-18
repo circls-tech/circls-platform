@@ -118,7 +118,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Answering customer questions',
     category: 'Support',
     summary:
-      'Customers can ask public or private questions on your events, arenas and membership plans — answer them from the Questions inbox, manage thread statuses, and moderate public replies.',
+      'Customers can ask public or private questions on your events, arenas and membership plans — answer them from the Questions inbox, manage thread statuses, moderate public replies, and archive abusive threads.',
     quickLink: true,
     order: 13,
   },

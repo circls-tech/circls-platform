@@ -65,6 +65,10 @@ export interface QuestionThreadListRow {
   createdAt: string;
   /** Partner/admin lists only. */
   subject?: QuestionSubjectSummary;
+  /** Staff (partner/admin) lists only: when the thread is archived. */
+  archivedAt?: string | null;
+  /** Staff lists only: who archived the thread. */
+  archivedByKind?: QuestionHiddenByKind | null;
 }
 
 /** Who hid a message (moderation hierarchy: org can only undo its own hides). */
@@ -101,6 +105,10 @@ export interface QuestionThreadDetail {
     subject: QuestionSubjectSummary;
     /** Display name of the thread author (root-message author resolution). */
     authorName: string;
+    /** Staff (partner/admin) serializations only — never on consumer payloads. */
+    archivedAt?: string | null;
+    /** Staff serializations only: who archived the thread ('org' | 'circls'). */
+    archivedByKind?: QuestionHiddenByKind | null;
   };
   messages: QuestionMessageRow[];
 }
@@ -395,7 +403,10 @@ interface RawThreadRow extends Record<string, unknown> {
   id: string;
 }
 
-function mapListRow(r: Record<string, unknown>, opts: { withSubject: boolean }): QuestionThreadListRow {
+function mapListRow(
+  r: Record<string, unknown>,
+  opts: { withSubject: boolean; staff?: boolean },
+): QuestionThreadListRow {
   const subjectType = r['subject_type'] as QuestionSubjectType;
   const subjectId = (r['event_id'] ?? r['arena_id'] ?? r['membership_id']) as string;
   const row: QuestionThreadListRow = {
@@ -424,13 +435,18 @@ function mapListRow(r: Record<string, unknown>, opts: { withSubject: boolean }):
       name: (r['subject_name'] as string | null) ?? '',
     };
   }
+  // Archive state is a staff-only detail — never on consumer list rows.
+  if (opts.staff) {
+    row.archivedAt = r['archived_at'] == null ? null : isoOf(r['archived_at']);
+    row.archivedByKind = (r['archived_by_kind'] as QuestionHiddenByKind | null) ?? null;
+  }
   return row;
 }
 
 function pageOf(
   raw: Record<string, unknown>[],
   limit: number,
-  opts: { withSubject: boolean },
+  opts: { withSubject: boolean; staff?: boolean },
 ): QuestionThreadListPage {
   const hasMore = raw.length > limit;
   const pageRows = hasMore ? raw.slice(0, limit) : raw;
@@ -446,7 +462,8 @@ function pageOf(
 
 /**
  * Public threads for a subject, newest-activity first. Threads whose root
- * message is hidden (admin moderation) are excluded entirely.
+ * message is hidden (admin moderation) — and archived threads — are excluded
+ * entirely.
  */
 export async function listPublicThreads(params: {
   subjectType: QuestionSubjectType;
@@ -478,6 +495,7 @@ export async function listPublicThreads(params: {
       join tenants tn on tn.id = t.tenant_id
      where t.visibility = 'public'
        and ${sql.raw(`t."${col}"`)} = ${params.subjectId}::uuid
+       and t.archived_at is null
        and root.hidden_at is null
        ${cur ? sql`and (t.last_message_at, t.id) < (${cur.ts}::timestamptz, ${cur.id}::uuid)` : sql``}
      order by t.last_message_at desc, t.id desc
@@ -486,7 +504,11 @@ export async function listPublicThreads(params: {
   return pageOf(rowsOf(res), limit, { withSubject: false });
 }
 
-/** The caller's own threads (both visibilities), optional subject filter. */
+/**
+ * The caller's own threads (both visibilities), optional subject filter.
+ * Archived threads are excluded — consumer surfaces treat them as nonexistent,
+ * for the thread author too.
+ */
 export async function listMyThreads(params: {
   userId: string;
   subjectType?: QuestionSubjectType | undefined;
@@ -522,6 +544,7 @@ export async function listMyThreads(params: {
       left join arenas a on a.id = t.arena_id
       left join memberships m on m.id = t.membership_id
      where t.author_user_id = ${params.userId}::uuid
+       and t.archived_at is null
        ${subjectFilter}
        ${cur ? sql`and (t.last_message_at, t.id) < (${cur.ts}::timestamptz, ${cur.id}::uuid)` : sql``}
      order by t.last_message_at desc, t.id desc
@@ -530,12 +553,17 @@ export async function listMyThreads(params: {
   return pageOf(rowsOf(res), limit, { withSubject: true });
 }
 
-/** Org inbox / admin listing. tenantId narrows to one org (partner surface). */
+/**
+ * Org inbox / admin listing. tenantId narrows to one org (partner surface).
+ * `archived` selects the archived view (default: only non-archived threads —
+ * archived ones live behind an explicit archived=true filter).
+ */
 export async function listStaffThreads(params: {
   tenantId?: string | undefined;
   status?: QuestionStatus | undefined;
   visibility?: QuestionVisibility | undefined;
   subjectType?: QuestionSubjectType | undefined;
+  archived?: boolean | undefined;
   cursor?: string | undefined;
   limit?: number | undefined;
 }): Promise<QuestionThreadListPage> {
@@ -545,6 +573,7 @@ export async function listStaffThreads(params: {
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
            t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.archived_at, t.archived_by_kind,
            t.last_message_at::text as cursor_ts,
            root.body as root_body, root.author_kind as root_author_kind,
            u.display_name as root_author_name, tn.name as tenant_name,
@@ -562,7 +591,7 @@ export async function listStaffThreads(params: {
       left join events e on e.id = t.event_id
       left join arenas a on a.id = t.arena_id
       left join memberships m on m.id = t.membership_id
-     where true
+     where ${params.archived ? sql`t.archived_at is not null` : sql`t.archived_at is null`}
        ${params.tenantId ? sql`and t.tenant_id = ${params.tenantId}::uuid` : sql``}
        ${params.status ? sql`and t.status = ${params.status}` : sql``}
        ${params.visibility ? sql`and t.visibility = ${params.visibility}` : sql``}
@@ -571,15 +600,21 @@ export async function listStaffThreads(params: {
      order by t.last_message_at desc, t.id desc
      limit ${limit + 1}
   `);
-  return pageOf(rowsOf(res), limit, { withSubject: true });
+  return pageOf(rowsOf(res), limit, { withSubject: true, staff: true });
 }
 
-/** `{ openCount }` for the partner sidebar badge. */
+/** `{ openCount }` for the partner sidebar badge. Archived threads don't count. */
 export async function countOpenThreads(tenantId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(questionThreads)
-    .where(and(eq(questionThreads.tenantId, tenantId), eq(questionThreads.status, 'open')));
+    .where(
+      and(
+        eq(questionThreads.tenantId, tenantId),
+        eq(questionThreads.status, 'open'),
+        sql`${questionThreads.archivedAt} is null`,
+      ),
+    );
   return row?.n ?? 0;
 }
 
@@ -679,9 +714,13 @@ async function loadMessages(
   return rows;
 }
 
-function serializeThread(t: QuestionThread, extras: ThreadExtras): QuestionThreadDetail['thread'] {
+function serializeThread(
+  t: QuestionThread,
+  extras: ThreadExtras,
+  opts: { staff?: boolean } = {},
+): QuestionThreadDetail['thread'] {
   const subjectId = subjectIdOf(t);
-  return {
+  const thread: QuestionThreadDetail['thread'] = {
     id: t.id,
     subjectType: t.subjectType,
     subjectId,
@@ -695,6 +734,13 @@ function serializeThread(t: QuestionThread, extras: ThreadExtras): QuestionThrea
     subject: { type: t.subjectType, id: subjectId, name: extras.subjectName },
     authorName: authorName(extras.rootAuthorKind, extras.rootDisplayName, extras.tenantName),
   };
+  // Archive state is staff-only — consumer payloads never carry it (org/circls
+  // viewers on the consumer surface use their staff surfaces for that).
+  if (opts.staff) {
+    thread.archivedAt = t.archivedAt ? t.archivedAt.toISOString() : null;
+    thread.archivedByKind = t.archivedByKind ?? null;
+  }
+  return thread;
 }
 
 function serializeMessage(
@@ -724,7 +770,9 @@ function serializeMessage(
  * included). Private threads: the author, org members, and Circls staff —
  * everyone else gets 404 `question_not_found` (no existence leak). Hidden
  * messages are omitted unless the viewer is the message's author, an org
- * member, or Circls staff.
+ * member, or Circls staff. Archived threads are nonexistent (404) for every
+ * consumer-surface viewer INCLUDING the thread author — only org/platform
+ * members retain access here, consistent with their staff surfaces.
  */
 export async function getThreadDetailForViewer(
   threadId: string,
@@ -733,6 +781,7 @@ export async function getThreadDetailForViewer(
   const t = await loadThread(threadId);
   const isThreadAuthor = viewer.userId !== null && viewer.userId === t.authorUserId;
   const privileged = viewer.isOrgMember || viewer.isPlatformMember;
+  if (t.archivedAt !== null && !privileged) threadNotFound();
   if (t.visibility === 'private' && !isThreadAuthor && !privileged) threadNotFound();
 
   const extras = await loadThreadExtras(threadId);
@@ -763,7 +812,7 @@ export async function getThreadDetailForStaff(
   const extras = await loadThreadExtras(threadId);
   const all = await loadMessages(threadId);
   return {
-    thread: serializeThread(t, extras),
+    thread: serializeThread(t, extras, { staff: true }),
     messages: all.map(({ m, displayName }) =>
       serializeMessage(m, displayName, extras.tenantName, {
         viewerUserId: opts.viewerUserId ?? null,
@@ -800,6 +849,9 @@ async function insertReply(
       .limit(1)
       .for('update');
     if (!locked) threadNotFound();
+    if (locked.archivedAt !== null) {
+      throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+    }
     if (locked.status === 'closed') {
       throw new Conflict('This question is closed', 'question_closed');
     }
@@ -861,6 +913,9 @@ async function isRootHidden(threadId: string): Promise<boolean> {
  * any outsider (they may still *read* it). Closed threads 409
  * `question_closed` for everyone; root-hidden public threads 404 for
  * outsiders (they can't see the thread, so they can't reply on it either).
+ * Archived threads: 404 for consumer-surface viewers (author included) — the
+ * thread is nonexistent to them; org/platform members get the staff-style 409
+ * `question_archived` instead, since they can still see the thread.
  */
 export async function addConsumerMessage(input: {
   threadId: string;
@@ -871,6 +926,10 @@ export async function addConsumerMessage(input: {
   const rel = await resolveViewerRelation(input.userId, t.tenantId);
   const isThreadAuthor = input.userId === t.authorUserId;
   const kind = resolveAuthorKind(rel);
+  if (t.archivedAt !== null) {
+    if (!rel.isOrgMember && !rel.isPlatformMember) threadNotFound();
+    throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+  }
   if (t.visibility === 'private' && !isThreadAuthor && kind === 'consumer') {
     threadNotFound();
   }
@@ -899,6 +958,9 @@ export async function addOrgMessage(input: {
 }): Promise<AddMessageResult> {
   const t = await loadThread(input.threadId);
   if (t.tenantId !== input.tenantId) threadNotFound();
+  if (t.archivedAt !== null) {
+    throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+  }
   if (t.status === 'closed') {
     throw new Conflict('This question is closed — reopen it first', 'question_closed');
   }
@@ -912,6 +974,9 @@ export async function addCirclsMessage(input: {
   body: string;
 }): Promise<AddMessageResult> {
   const t = await loadThread(input.threadId);
+  if (t.archivedAt !== null) {
+    throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+  }
   if (t.status === 'closed') {
     throw new Conflict('This question is closed — reopen it first', 'question_closed');
   }
@@ -920,7 +985,10 @@ export async function addCirclsMessage(input: {
 
 // ── Status patches ────────────────────────────────────────────────────────────
 
-/** Author-only status change (consumer surface): `answered` | `closed`. */
+/**
+ * Author-only status change (consumer surface): `answered` | `closed`.
+ * Archived threads 404 — nonexistent on the consumer surface, author included.
+ */
 export async function setStatusAsAuthor(input: {
   threadId: string;
   userId: string;
@@ -928,11 +996,13 @@ export async function setStatusAsAuthor(input: {
 }): Promise<QuestionThreadDetail['thread']> {
   const t = await loadThread(input.threadId);
   if (t.authorUserId !== input.userId) threadNotFound();
+  if (t.archivedAt !== null) threadNotFound();
   // Fast-path pre-check; the authoritative check re-runs on the locked row.
   if (applyAuthorStatusPatch(t.status, input.status) === null) {
     throw new Conflict('This question is closed', 'question_closed');
   }
   return persistStatus(t.id, (locked) => {
+    if (locked.archivedAt !== null) threadNotFound();
     const next = applyAuthorStatusPatch(locked.status, input.status);
     if (next === null) {
       throw new Conflict('This question is closed', 'question_closed');
@@ -941,7 +1011,10 @@ export async function setStatusAsAuthor(input: {
   });
 }
 
-/** Org/admin status change — any of the three (reopen included). */
+/**
+ * Org/admin status change — any of the three (reopen included). Archived
+ * threads reject status changes (409 question_archived) — unarchive first.
+ */
 export async function setStatusAsStaff(input: {
   threadId: string;
   status: QuestionStatus;
@@ -949,7 +1022,19 @@ export async function setStatusAsStaff(input: {
 }): Promise<QuestionThreadDetail['thread']> {
   const t = await loadThread(input.threadId);
   if (input.tenantId && t.tenantId !== input.tenantId) threadNotFound();
-  return persistStatus(t.id, () => input.status);
+  if (t.archivedAt !== null) {
+    throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+  }
+  return persistStatus(
+    t.id,
+    (locked) => {
+      if (locked.archivedAt !== null) {
+        throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+      }
+      return input.status;
+    },
+    { staff: true },
+  );
 }
 
 /**
@@ -960,6 +1045,7 @@ export async function setStatusAsStaff(input: {
 async function persistStatus(
   threadId: string,
   compute: (locked: QuestionThread) => QuestionStatus,
+  opts: { staff?: boolean } = {},
 ): Promise<QuestionThreadDetail['thread']> {
   const updated = await db.transaction(async (tx) => {
     const [locked] = await tx
@@ -977,7 +1063,7 @@ async function persistStatus(
     if (!row) threadNotFound();
     return row;
   });
-  return serializeThread(updated, await loadThreadExtras(threadId));
+  return serializeThread(updated, await loadThreadExtras(threadId), opts);
 }
 
 // ── Moderation (hide / unhide) ────────────────────────────────────────────────
@@ -1001,6 +1087,9 @@ export async function setMessageHidden(input: {
 }): Promise<QuestionMessageRow> {
   const t = await loadThread(input.threadId);
   if (input.tenantId && t.tenantId !== input.tenantId) threadNotFound();
+  if (t.archivedAt !== null) {
+    throw new Conflict('This question is archived — unarchive it first', 'question_archived');
+  }
   if (t.visibility !== 'public') {
     throw new BadRequest('Moderation applies to public threads only', 'not_public_thread');
   }
@@ -1065,4 +1154,78 @@ export async function setMessageHidden(input: {
   if (!updated) throw new NotFound('Message not found', 'question_message_not_found');
 
   return serialize(updated);
+}
+
+// ── Archiving (thread-level moderation) ───────────────────────────────────────
+
+/**
+ * Archive or unarchive a whole thread (any visibility). An archived thread
+ * disappears from every consumer surface — public list, /mine, detail, replies
+ * and author PATCH all behave as if the thread doesn't exist, thread author
+ * included — while staff (org + Circls) keep full read access. Staff
+ * replies/status/hide are rejected with 409 `question_archived` until the
+ * thread is unarchived. Silent moderation action: no notifications/emails.
+ *
+ * Hierarchy mirrors hide/unhide: archiving an already-archived thread is an
+ * idempotent no-op that never overwrites the original `archived_by_kind` (an
+ * org re-archive must not launder a Circls archive into an org-undoable one);
+ * the org can only unarchive its own archives, Circls can unarchive anything.
+ */
+export async function setThreadArchived(input: {
+  threadId: string;
+  byUserId: string;
+  byKind: QuestionHiddenByKind;
+  archived: boolean;
+  tenantId?: string | undefined;
+}): Promise<QuestionThreadDetail['thread']> {
+  const t = await loadThread(input.threadId);
+  if (input.tenantId && t.tenantId !== input.tenantId) threadNotFound();
+
+  const serializeCurrent = async (): Promise<QuestionThreadDetail['thread']> => {
+    const current = await loadThread(input.threadId);
+    return serializeThread(current, await loadThreadExtras(input.threadId), { staff: true });
+  };
+
+  if (input.archived) {
+    // Idempotent no-op on an already-archived thread — preserve the original
+    // moderator's stamp. The `archived_at is null` guard makes this race-safe:
+    // two concurrent archives can't overwrite each other's kind.
+    if (t.archivedAt !== null) return serializeCurrent();
+    const [updated] = await db
+      .update(questionThreads)
+      .set({
+        archivedAt: new Date(),
+        archivedByUserId: input.byUserId,
+        archivedByKind: input.byKind,
+      })
+      .where(and(eq(questionThreads.id, t.id), sql`${questionThreads.archivedAt} is null`))
+      .returning();
+    if (!updated) return serializeCurrent(); // lost the race — already archived
+    return serializeThread(updated, await loadThreadExtras(input.threadId), { staff: true });
+  }
+
+  // Unarchive. Already-unarchived → idempotent no-op.
+  if (t.archivedAt === null) return serializeCurrent();
+  if (input.byKind === 'org' && t.archivedByKind === 'circls') {
+    throw new Forbidden(
+      'This thread was archived by the Circls team and can only be unarchived by Circls',
+      'forbidden_moderation',
+    );
+  }
+  const [updated] = await db
+    .update(questionThreads)
+    .set({ archivedAt: null, archivedByUserId: null, archivedByKind: null })
+    .where(
+      and(
+        eq(questionThreads.id, t.id),
+        // Race guard: an org unarchive must never undo a concurrent Circls
+        // archive that landed after our read.
+        input.byKind === 'org'
+          ? sql`${questionThreads.archivedByKind} = 'org'`
+          : sql`${questionThreads.archivedAt} is not null`,
+      ),
+    )
+    .returning();
+  if (!updated) return serializeCurrent();
+  return serializeThread(updated, await loadThreadExtras(input.threadId), { staff: true });
 }

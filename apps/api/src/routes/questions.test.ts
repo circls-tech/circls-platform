@@ -47,6 +47,8 @@ interface ThreadRow {
   lastMessageAt: string;
   createdAt: string;
   subject?: { type: string; id: string; name: string };
+  archivedAt?: string | null;
+  archivedByKind?: 'org' | 'circls' | null;
 }
 
 interface MessageRow {
@@ -75,6 +77,8 @@ interface ThreadDetail {
     createdAt: string;
     subject: { type: string; id: string; name: string };
     authorName: string;
+    archivedAt?: string | null;
+    archivedByKind?: 'org' | 'circls' | null;
   };
   messages: MessageRow[];
 }
@@ -1086,5 +1090,273 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(seen).toContain(ids[1]!);
     // The µs-later thread pages out strictly before the µs-earlier one.
     expect(seen.indexOf(ids[1]!)).toBeLessThan(seen.indexOf(ids[0]!));
+  });
+
+  // ── Archiving (thread-level moderation) ────────────────────────────────────
+
+  let archThreadId: string;
+  let archRootId: string;
+
+  it('org archives a thread: it vanishes from every consumer surface', async () => {
+    // A fresh public thread by rando (asker is at the thread rate limit).
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/consumer/questions',
+      headers: bearer('rando'),
+      payload: {
+        subjectType: 'event',
+        subjectId: eventId,
+        visibility: 'public',
+        body: 'Will the QT Cup final be livestreamed?',
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const createdDetail = created.json() as ThreadDetail;
+    archThreadId = createdDetail.thread.id;
+    archRootId = createdDetail.messages[0]!.id;
+    // Consumer payloads never carry archive fields.
+    expect('archivedAt' in createdDetail.thread).toBe(false);
+
+    const summaryBefore = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/questions/summary`,
+      headers: bearer('owner'),
+    });
+    const openBefore = (summaryBefore.json() as { openCount: number }).openCount;
+
+    const archive = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/archive`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(archive.statusCode).toBe(200);
+    const archived = archive.json() as ThreadDetail['thread'];
+    expect(archived.id).toBe(archThreadId);
+    expect(archived.archivedAt).not.toBeNull();
+    expect(archived.archivedByKind).toBe('org');
+
+    // The (open) thread no longer counts towards the partner summary.
+    const summaryAfter = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/questions/summary`,
+      headers: bearer('owner'),
+    });
+    expect((summaryAfter.json() as { openCount: number }).openCount).toBe(openBefore - 1);
+
+    // Public list: gone.
+    const pub = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+    });
+    expect((pub.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(false);
+
+    // Author detail: 404 — nonexistent even for the thread author.
+    const authorDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions/${archThreadId}`,
+      headers: bearer('rando'),
+    });
+    expect(authorDetail.statusCode).toBe(404);
+    expect(authorDetail.json().error.code).toBe('question_not_found');
+
+    // Author reply: 404.
+    const authorReply = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${archThreadId}/messages`,
+      headers: bearer('rando'),
+      payload: { body: 'hello? anyone?' },
+    });
+    expect(authorReply.statusCode).toBe(404);
+    expect(authorReply.json().error.code).toBe('question_not_found');
+
+    // Author status PATCH: 404.
+    const authorPatch = await app.inject({
+      method: 'PATCH',
+      url: `/v1/consumer/questions/${archThreadId}`,
+      headers: bearer('rando'),
+      payload: { status: 'closed' },
+    });
+    expect(authorPatch.statusCode).toBe(404);
+    expect(authorPatch.json().error.code).toBe('question_not_found');
+
+    // Author /mine: excluded.
+    const mine = await app.inject({
+      method: 'GET',
+      url: '/v1/consumer/questions/mine',
+      headers: bearer('rando'),
+    });
+    expect((mine.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(false);
+
+    // Org members hitting the consumer endpoint still see it (staff parity) —
+    // but the consumer payload carries no archive fields even for them.
+    const orgView = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions/${archThreadId}`,
+      headers: bearer('owner'),
+    });
+    expect(orgView.statusCode).toBe(200);
+    expect('archivedAt' in (orgView.json() as ThreadDetail).thread).toBe(false);
+  });
+
+  it('staff mutations on an archived thread are rejected (409 question_archived)', async () => {
+    const orgReply = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/messages`,
+      headers: bearer('owner'),
+      payload: { body: 'replying into the archive' },
+    });
+    expect(orgReply.statusCode).toBe(409);
+    expect(orgReply.json().error.code).toBe('question_archived');
+
+    const orgStatus = await app.inject({
+      method: 'PATCH',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}`,
+      headers: bearer('owner'),
+      payload: { status: 'closed' },
+    });
+    expect(orgStatus.statusCode).toBe(409);
+    expect(orgStatus.json().error.code).toBe('question_archived');
+
+    const orgHide = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/messages/${archRootId}/hide`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgHide.statusCode).toBe(409);
+    expect(orgHide.json().error.code).toBe('question_archived');
+
+    const adminReply = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/questions/${archThreadId}/messages`,
+      headers: bearer('padmin'),
+      payload: { body: 'admin into the archive' },
+    });
+    expect(adminReply.statusCode).toBe(409);
+    expect(adminReply.json().error.code).toBe('question_archived');
+
+    const adminStatus = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/questions/${archThreadId}`,
+      headers: bearer('padmin'),
+      payload: { status: 'answered' },
+    });
+    expect(adminStatus.statusCode).toBe(409);
+    expect(adminStatus.json().error.code).toBe('question_archived');
+  });
+
+  it('staff lists: default omits archived threads; archived=true returns them', async () => {
+    const active = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/questions`,
+      headers: bearer('owner'),
+    });
+    expect((active.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(false);
+
+    const archivedList = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/questions?archived=true`,
+      headers: bearer('owner'),
+    });
+    const archRow = (archivedList.json() as ListPage).rows.find((r) => r.id === archThreadId);
+    expect(archRow).toBeDefined();
+    expect(archRow!.archivedAt).not.toBeNull();
+    expect(archRow!.archivedByKind).toBe('org');
+
+    // Staff detail carries the archive fields too.
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}`,
+      headers: bearer('owner'),
+    });
+    const dThread = (detail.json() as ThreadDetail).thread;
+    expect(dThread.archivedAt).not.toBeNull();
+    expect(dThread.archivedByKind).toBe('org');
+
+    // Admin surface mirrors both views.
+    const adminActive = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/questions?tenantId=${tenantId}`,
+      headers: bearer('padmin'),
+    });
+    expect((adminActive.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(false);
+    const adminArchived = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/questions?tenantId=${tenantId}&archived=true`,
+      headers: bearer('padmin'),
+    });
+    expect((adminArchived.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(true);
+  });
+
+  it('org can unarchive its own archive; Circls archives are Circls-only', async () => {
+    // Org undoes its own archive.
+    const orgUnarchive = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/unarchive`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgUnarchive.statusCode).toBe(200);
+    expect((orgUnarchive.json() as ThreadDetail['thread']).archivedAt).toBeNull();
+
+    const pubRestored = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+    });
+    expect((pubRestored.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(true);
+
+    // Circls archives it.
+    const adminArchive = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/questions/${archThreadId}/archive`,
+      headers: bearer('padmin'),
+      payload: {},
+    });
+    expect(adminArchive.statusCode).toBe(200);
+    expect((adminArchive.json() as ThreadDetail['thread']).archivedByKind).toBe('circls');
+
+    // The org can NOT undo a Circls archive (moderation hierarchy).
+    const orgUnarchiveDenied = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/unarchive`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgUnarchiveDenied.statusCode).toBe(403);
+    expect(orgUnarchiveDenied.json().error.code).toBe('forbidden_moderation');
+
+    // An org re-archive is a no-op that must NOT launder the Circls stamp.
+    const orgRearchive = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${archThreadId}/archive`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgRearchive.statusCode).toBe(200);
+    expect((orgRearchive.json() as ThreadDetail['thread']).archivedByKind).toBe('circls');
+
+    // Circls can always unarchive; the thread returns to the author.
+    const adminUnarchive = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/questions/${archThreadId}/unarchive`,
+      headers: bearer('padmin'),
+      payload: {},
+    });
+    expect(adminUnarchive.statusCode).toBe(200);
+    expect((adminUnarchive.json() as ThreadDetail['thread']).archivedAt).toBeNull();
+
+    const authorDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions/${archThreadId}`,
+      headers: bearer('rando'),
+    });
+    expect(authorDetail.statusCode).toBe(200);
+    const mine = await app.inject({
+      method: 'GET',
+      url: '/v1/consumer/questions/mine',
+      headers: bearer('rando'),
+    });
+    expect((mine.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(true);
   });
 });

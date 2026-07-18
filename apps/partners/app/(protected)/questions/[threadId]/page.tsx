@@ -7,6 +7,7 @@ import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { ApiError } from '@/lib/api/client';
 import {
+  useArchiveQuestionThread,
   useModerateQuestionMessage,
   useQuestionThread,
   useReplyToQuestion,
@@ -42,6 +43,7 @@ function subjectHref(thread: QuestionThreadDetailThread): string {
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'question_closed')   return 'This thread is closed — reopen it to reply.';
+    if (e.code === 'question_archived') return 'This thread is archived — unarchive it first.';
     if (e.code === 'cannot_hide_root')  return 'The original question cannot be hidden.';
     if (e.code === 'not_public_thread') return 'Only replies on public threads can be hidden.';
     return e.message;
@@ -53,12 +55,14 @@ function MessageBubble({
   message,
   isRoot,
   isPublicThread,
+  isArchivedThread,
   onModerate,
   moderating,
 }: {
   message: QuestionMessage;
   isRoot: boolean;
   isPublicThread: boolean;
+  isArchivedThread: boolean;
   onModerate: (messageId: string, action: 'hide' | 'unhide') => void;
   moderating: boolean;
 }) {
@@ -80,10 +84,12 @@ function MessageBubble({
   const hidden = message.hiddenAt != null;
   // The org can hide consumer replies on its public threads — never the root
   // question (server enforces both; this only controls where the button shows).
-  const canHide = isPublicThread && !isRoot && message.authorKind === 'consumer' && !hidden;
+  // Archived threads reject moderation entirely (unarchive first).
+  const canHide =
+    isPublicThread && !isArchivedThread && !isRoot && message.authorKind === 'consumer' && !hidden;
   // The org can only undo its own hides; Circls hides are read-only here.
   const hiddenByCircls = hidden && message.hiddenByKind === 'circls';
-  const canUnhide = hidden && !hiddenByCircls;
+  const canUnhide = hidden && !hiddenByCircls && !isArchivedThread;
 
   return (
     <div className={['flex flex-col', fromOrgSide ? 'items-end' : 'items-start'].join(' ')}>
@@ -143,9 +149,11 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
   const reply = useReplyToQuestion(tenantId, threadId);
   const setStatus = useSetQuestionStatus(tenantId, threadId);
   const moderate = useModerateQuestionMessage(tenantId, threadId);
+  const archive = useArchiveQuestionThread(tenantId, threadId);
 
   const [body, setBody] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -162,12 +170,24 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
 
   const { thread, messages } = data;
   const isClosed = thread.status === 'closed';
+  const isArchived = thread.archivedAt != null;
+  // The org can only undo its own archives; Circls archives are read-only here.
+  const archivedByCircls = thread.archivedByKind === 'circls';
   const trimmed = body.trim();
 
   async function changeStatus(status: QuestionStatus) {
     setActionError(null);
     try {
       await setStatus.mutateAsync(status);
+    } catch (e) {
+      setActionError(errorMessage(e));
+    }
+  }
+
+  async function handleArchive(action: 'archive' | 'unarchive') {
+    setActionError(null);
+    try {
+      await archive.mutateAsync(action);
     } catch (e) {
       setActionError(errorMessage(e));
     }
@@ -211,8 +231,10 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
           <Badge tone="held" label="Private" />
         )}
         <StatusPill status={thread.status} />
+        {isArchived && <Badge tone="warning" label="Archived" />}
         <div className="ml-auto flex items-center gap-2">
-          {thread.status === 'open' && (
+          {/* Status changes are rejected on archived threads — unarchive first. */}
+          {!isArchived && thread.status === 'open' && (
             <Button
               variant="secondary"
               size="sm"
@@ -222,7 +244,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               Mark answered
             </Button>
           )}
-          {thread.status !== 'open' && (
+          {!isArchived && thread.status !== 'open' && (
             <Button
               variant="secondary"
               size="sm"
@@ -232,7 +254,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               Reopen
             </Button>
           )}
-          {!isClosed && (
+          {!isArchived && !isClosed && (
             <Button
               variant="ghost"
               size="sm"
@@ -240,6 +262,16 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               onClick={() => setConfirmClose(true)}
             >
               Close
+            </Button>
+          )}
+          {!isArchived && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={archive.isPending}
+              onClick={() => setConfirmArchive(true)}
+            >
+              Archive
             </Button>
           )}
         </div>
@@ -250,6 +282,34 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
           ? ' · visible to everyone on the listing page'
           : ' · visible only to the asker, your team and Circls'}
       </p>
+
+      {isArchived && (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-amber-900">
+              Archived — hidden from the customer
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              The customer (and everyone else outside your team and Circls) can no longer see
+              this thread. Replies, status changes and moderation are off until it is unarchived.
+            </p>
+          </div>
+          {archivedByCircls ? (
+            <span className="whitespace-nowrap text-xs text-amber-700">
+              Archived by Circls — only the Circls team can unarchive it
+            </span>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={archive.isPending}
+              onClick={() => void handleArchive('unarchive')}
+            >
+              Unarchive
+            </Button>
+          )}
+        </div>
+      )}
 
       {actionError && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -266,6 +326,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               message={m}
               isRoot={i === 0}
               isPublicThread={thread.visibility === 'public'}
+              isArchivedThread={isArchived}
               onModerate={(messageId, action) => void handleModerate(messageId, action)}
               moderating={moderate.isPending}
             />
@@ -275,7 +336,14 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
 
       {/* Reply composer */}
       <Card title="Reply">
-        {isClosed ? (
+        {isArchived ? (
+          <p className="text-sm text-slate-500">
+            This thread is archived, so replies are off.
+            {archivedByCircls
+              ? ' Only the Circls team can unarchive it.'
+              : ' Unarchive it above to reply.'}
+          </p>
+        ) : isClosed ? (
           <p className="text-sm text-slate-500">
             This thread is closed, so replies are off. <strong>Reopen</strong> it above to reply.
           </p>
@@ -317,6 +385,16 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
         danger
         onConfirm={() => void changeStatus('closed')}
         onClose={() => setConfirmClose(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Archive this thread?"
+        message="Archiving hides the whole thread from the customer — it disappears from the listing page and from their questions, as if it never existed. Your team and Circls can still see it under the Archived tab, and you can unarchive it at any time."
+        confirmLabel="Archive thread"
+        danger
+        onConfirm={() => void handleArchive('archive')}
+        onClose={() => setConfirmArchive(false)}
       />
     </div>
   );

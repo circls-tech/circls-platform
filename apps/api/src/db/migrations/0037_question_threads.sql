@@ -43,9 +43,20 @@ CREATE TABLE IF NOT EXISTS "question_threads" (
 	"author_user_id" uuid NOT NULL,
 	"last_message_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"message_count" integer DEFAULT 1 NOT NULL,
+	-- Thread-level moderation: an archived thread disappears from every
+	-- consumer surface (staff retain access). Mirrors the per-message
+	-- hidden_at / hidden_by_* trio on question_messages.
+	"archived_at" timestamp with time zone,
+	"archived_by_user_id" uuid,
+	-- Who archived the thread ('org' = partner, 'circls' = admin). Drives the
+	-- unarchive hierarchy: the org can only undo its own archives.
+	"archived_by_kind" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	-- Exactly one subject FK is set, and it matches subject_type.
+	CONSTRAINT "question_threads_archived_by_kind_chk" CHECK (
+	  "archived_by_kind" IS NULL OR "archived_by_kind" IN ('org', 'circls')
+	),
 	CONSTRAINT "question_threads_subject_chk" CHECK (
 	  ("subject_type" = 'event'      AND "event_id" IS NOT NULL AND "arena_id" IS NULL     AND "membership_id" IS NULL) OR
 	  ("subject_type" = 'arena'      AND "arena_id" IS NOT NULL AND "event_id" IS NULL     AND "membership_id" IS NULL) OR
@@ -84,6 +95,13 @@ END $$;
 DO $$ BEGIN
   ALTER TABLE "question_threads" ADD CONSTRAINT "question_threads_author_user_id_users_id_fk"
     FOREIGN KEY ("author_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "question_threads" ADD CONSTRAINT "question_threads_archived_by_user_id_users_id_fk"
+    FOREIGN KEY ("archived_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;

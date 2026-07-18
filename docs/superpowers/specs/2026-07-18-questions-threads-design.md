@@ -24,6 +24,8 @@ Thread status lifecycle: `open → answered → closed`.
 
 Moderation (public threads only): the org can **hide** any reply on threads attached to its own subjects, except the root message; Circls admin can hide any message (root included — hiding the root effectively removes the question from public view but thread stays visible to author/org/admin with a "hidden" marker). Hidden messages remain visible (marked) to the org/admin and the message author; other viewers don't see them.
 
+**Archiving (thread-level moderation, any visibility):** the org and Circls admin can **archive** a whole thread — protection against malicious/abusive forum use. An archived thread disappears from **every consumer surface**: excluded from the public list and `/mine`, and detail/replies/author-PATCH 404 `question_not_found` for every consumer-surface viewer **including the thread author** (org/circls members hitting the consumer endpoint still see the detail, consistent with their staff access). Staff keep full access via an `archived=true` list view; staff replies, status PATCHes and hide/unhide on an archived thread are rejected 409 `question_archived` (unarchive first). Hierarchy mirrors hide/unhide: re-archiving is an idempotent no-op that never overwrites `archived_by_kind`; the org can only unarchive its own archives (else 403 `forbidden_moderation`), Circls can unarchive anything. Silent action — no notifications/emails on archive or unarchive.
+
 Out of scope for v1 (explicitly deferred): attachments, editing/deleting messages, upvotes, converting private↔public, webhook events (`question.*`), SEO/server-rendering of public threads, realtime (polling/refetch only), org email digests.
 
 ## 2. Data model (Drizzle, Postgres 18)
@@ -45,6 +47,9 @@ Follow `apps/api/src/db/schema/_columns.ts` conventions (uuidv7 PK, timestamptz 
 | `author_user_id` | uuid notNull FK→users | |
 | `last_message_at` | timestamptz notNull default now | bump on every message; sort key |
 | `message_count` | integer notNull default 1 | maintained transactionally |
+| `archived_at` | timestamptz null | thread-level moderation: hidden from all consumer surfaces |
+| `archived_by_user_id` | uuid null FK→users | |
+| `archived_by_kind` | text null (`'org'`\|`'circls'` + CHECK) | unarchive hierarchy, same style as `question_messages.hidden_by_kind` |
 | `created_at`/`updated_at` | timestamptz | |
 
 CHECK constraint: exactly one of `event_id`/`arena_id`/`membership_id` set, matching `subject_type`. Indexes: `(tenant_id, status, last_message_at desc)`, `(subject_type, event_id/arena_id/membership_id, visibility, last_message_at desc)` (partial per subject col), `(author_user_id, last_message_at desc)`.
@@ -83,22 +88,24 @@ New route file `src/routes/questions.ts` + service `src/services/questions_servi
 
 Authz: `currentUser` → `requireTenantMembership` → `assertCap`. New capabilities in `src/lib/authz/capabilities.ts`: `questions.read`, `questions.write`. Grants in `role_caps.ts` (PARTNER_CAPS): read → all roles incl. `readonly`; write → `owner`, `manager`, `staff`.
 
-- `GET /v1/tenants/:tenantId/questions?status=&visibility=&subjectType=&cursor=` — org inbox, threads on the tenant's subjects, newest-activity first, with `rootBody`, `replyCount`, subject summary `{ type, id, name }`.
-- `GET /v1/tenants/:tenantId/questions/summary` — `{ openCount }` for the sidebar badge.
+- `GET /v1/tenants/:tenantId/questions?status=&visibility=&subjectType=&archived=&cursor=` — org inbox, threads on the tenant's subjects, newest-activity first, with `rootBody`, `replyCount`, subject summary `{ type, id, name }`. `archived` (`'true'|'false'`, default `'false'`) selects the archived view; staff rows/detail serializations carry `archivedAt` + `archivedByKind` (never on consumer payloads).
+- `GET /v1/tenants/:tenantId/questions/summary` — `{ openCount }` for the sidebar badge (archived threads excluded).
 - `GET /v1/tenants/:tenantId/questions/:threadId` — thread + messages (hidden ones marked, not omitted).
-- `POST /v1/tenants/:tenantId/questions/:threadId/messages` — reply (`questions.write`); stamps `author_kind='org'`; auto-`answered` when `open`; 409 `question_closed` on closed threads (same rule as consumer replies; applies to the admin reply endpoint too).
-- `PATCH /v1/tenants/:tenantId/questions/:threadId` — `{ status }` any of the three (`questions.write`).
-- `POST /v1/tenants/:tenantId/questions/:threadId/messages/:messageId/hide` and `/unhide` — public threads only, not the root message (`questions.write`). 400 `cannot_hide_root` / `not_public_thread`.
+- `POST /v1/tenants/:tenantId/questions/:threadId/messages` — reply (`questions.write`); stamps `author_kind='org'`; auto-`answered` when `open`; 409 `question_closed` on closed threads (same rule as consumer replies; applies to the admin reply endpoint too); 409 `question_archived` on archived threads.
+- `PATCH /v1/tenants/:tenantId/questions/:threadId` — `{ status }` any of the three (`questions.write`); 409 `question_archived` on archived threads.
+- `POST /v1/tenants/:tenantId/questions/:threadId/messages/:messageId/hide` and `/unhide` — public threads only, not the root message (`questions.write`). 400 `cannot_hide_root` / `not_public_thread`; 409 `question_archived` on archived threads.
+- `POST /v1/tenants/:tenantId/questions/:threadId/archive` and `/unarchive` (`questions.write`) — returns the serialized thread. Archive is an idempotent no-op on an already-archived thread (never overwrites `archived_by_kind`); unarchive allowed only when `archived_by_kind='org'` (else 403 `forbidden_moderation`).
 
 ### Admin (`/v1/admin/questions…`)
 
 Authz triad with `getPlatformTenantId()`. New capabilities `admin.support.read`, `admin.support.write` in PLATFORM_CAPS (per #114's recommendation; existing support_issues gates left untouched this PR).
 
-- `GET /v1/admin/questions?status=&visibility=&subjectType=&tenantId=&cursor=`
+- `GET /v1/admin/questions?status=&visibility=&subjectType=&tenantId=&archived=&cursor=` — same `archived` semantics as the partner list.
 - `GET /v1/admin/questions/:threadId`
-- `POST /v1/admin/questions/:threadId/messages` — `author_kind='circls'`; auto-`answered` when `open`.
+- `POST /v1/admin/questions/:threadId/messages` — `author_kind='circls'`; auto-`answered` when `open`; 409 `question_archived` on archived threads (as are status PATCH and hide/unhide).
 - `PATCH /v1/admin/questions/:threadId` — status.
 - `POST .../messages/:messageId/hide` / `/unhide` — any message incl. root, public threads only.
+- `POST /v1/admin/questions/:threadId/archive` and `/unarchive` (`admin.support.write`) — Circls can always unarchive, org archives included; archive is the same no-op-preserving idempotent write as the partner endpoint.
 
 ## 4. Notifications
 

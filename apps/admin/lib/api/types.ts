@@ -290,6 +290,10 @@ export interface AdminQuestionThreadRow {
   lastMessageAt: string;
   createdAt: string;
   subject?: QuestionSubjectSummary;
+  /** ISO timestamp when the thread is archived (hidden from consumers). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (partner) or 'circls' (admin); null when active. */
+  archivedByKind: 'org' | 'circls' | null;
 }
 
 export interface AdminQuestionThreadListPage {
@@ -328,6 +332,10 @@ export interface AdminQuestionThreadDetail {
     subject: QuestionSubjectSummary;
     /** Display name of the asker (root-message author). */
     authorName: string;
+    /** ISO timestamp when the thread is archived (hidden from consumers). */
+    archivedAt: string | null;
+    /** Who archived: 'org' (partner) or 'circls' (admin); null when active. */
+    archivedByKind: 'org' | 'circls' | null;
   };
   messages: QuestionMessageRow[];
 }
@@ -344,4 +352,6 @@ export interface AdminQuestionFilters {
   visibility?: QuestionVisibility;
   subjectType?: QuestionSubjectType;
   tenantId?: string;
+  /** True selects the archived view; default (false) lists active threads. */
+  archived?: boolean;
 }

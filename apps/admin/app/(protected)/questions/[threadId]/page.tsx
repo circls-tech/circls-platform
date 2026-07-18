@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api/client';
 import {
   useAdminQuestionThread,
   useAdminReplyToQuestion,
+  useArchiveAdminQuestion,
   useHideQuestionMessage,
   useUnhideQuestionMessage,
   useUpdateAdminQuestion,
@@ -28,6 +29,7 @@ import {
 function errorText(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     if (err.code === 'question_closed') return 'This thread is closed — reopen it before replying.';
+    if (err.code === 'question_archived') return 'This thread is archived — unarchive it first.';
     if (err.code === 'not_public_thread') return 'Moderation is only available on public threads.';
     return err.message;
   }
@@ -37,10 +39,12 @@ function errorText(err: unknown, fallback: string): string {
 function MessageBubble({
   message,
   isPublicThread,
+  isArchivedThread,
   threadId,
 }: {
   message: QuestionMessageRow;
   isPublicThread: boolean;
+  isArchivedThread: boolean;
   threadId: string;
 }) {
   const hide = useHideQuestionMessage();
@@ -92,7 +96,8 @@ function MessageBubble({
           <span className="text-[10px] text-slate-400">
             {IST_FMT.format(new Date(message.createdAt))}
           </span>
-          {isPublicThread && (
+          {/* Archived threads reject moderation (409) — unarchive first. */}
+          {isPublicThread && !isArchivedThread && (
             <button
               type="button"
               onClick={() => void toggleHidden()}
@@ -116,10 +121,12 @@ export default function QuestionThreadPage() {
   const { data, isLoading, isError, error } = useAdminQuestionThread(threadId);
   const reply = useAdminReplyToQuestion();
   const updateStatus = useUpdateAdminQuestion();
+  const archiveThread = useArchiveAdminQuestion();
 
   const [body, setBody] = useState('');
   const [replyError, setReplyError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -144,6 +151,7 @@ export default function QuestionThreadPage() {
   const t = data.thread;
   const isClosed = t.status === 'closed';
   const isPublicThread = t.visibility === 'public';
+  const isArchived = t.archivedAt !== null;
   const trimmed = body.trim();
 
   async function handleStatusChange(next: QuestionStatus) {
@@ -152,6 +160,26 @@ export default function QuestionThreadPage() {
       await updateStatus.mutateAsync({ threadId, status: next });
     } catch (err) {
       setStatusError(errorText(err, 'Failed to update status.'));
+    }
+  }
+
+  async function handleArchiveToggle() {
+    setArchiveError(null);
+    if (
+      !isArchived &&
+      !window.confirm(
+        'Archive this thread? It disappears from all consumer surfaces (the asker included) until it is unarchived.',
+      )
+    ) {
+      return;
+    }
+    try {
+      await archiveThread.mutateAsync({
+        threadId,
+        action: isArchived ? 'unarchive' : 'archive',
+      });
+    } catch (err) {
+      setArchiveError(errorText(err, 'Failed to update the archive state.'));
     }
   }
 
@@ -181,6 +209,7 @@ export default function QuestionThreadPage() {
           <Badge label={SUBJECT_TYPE_LABELS[t.subjectType]} tone={SUBJECT_TYPE_COLORS[t.subjectType]} />
           <Badge label={VISIBILITY_LABELS[t.visibility]} tone={VISIBILITY_COLORS[t.visibility]} />
           <Badge label={STATUS_LABELS[t.status]} tone={STATUS_COLORS[t.status]} />
+          {isArchived && <Badge label="Archived" tone="bg-amber-100 text-amber-800" />}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-slate-500">
           <span>Asked by {t.authorName}</span>
@@ -197,6 +226,19 @@ export default function QuestionThreadPage() {
         </div>
       </div>
 
+      {isArchived && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium text-amber-900">
+            Archived — hidden from consumers
+            {t.archivedByKind === 'circls' ? ' (archived by Circls)' : ' (archived by the org)'}
+          </p>
+          <p className="mt-0.5 text-xs text-amber-700">
+            The thread is invisible on every consumer surface, the asker&apos;s included. Replies,
+            status changes and moderation are rejected until it is unarchived.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="thread-status" className="text-xs font-medium text-slate-500">
           Status
@@ -205,9 +247,9 @@ export default function QuestionThreadPage() {
           id="thread-status"
           value={t.status}
           onChange={(e) => void handleStatusChange(e.target.value as QuestionStatus)}
-          disabled={updateStatus.isPending}
+          disabled={updateStatus.isPending || isArchived}
           className={[
-            'rounded px-2 py-1 text-xs font-medium border-0 cursor-pointer',
+            'rounded px-2 py-1 text-xs font-medium border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60',
             STATUS_COLORS[t.status],
           ].join(' ')}
         >
@@ -218,12 +260,32 @@ export default function QuestionThreadPage() {
           ))}
         </select>
         {statusError && <p className="text-xs text-red-600">{statusError}</p>}
+        <button
+          type="button"
+          onClick={() => void handleArchiveToggle()}
+          disabled={archiveThread.isPending}
+          className={[
+            'ml-auto rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50',
+            isArchived
+              ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              : 'border-amber-200 bg-white text-amber-700 hover:bg-amber-50',
+          ].join(' ')}
+        >
+          {archiveThread.isPending ? 'Working…' : isArchived ? 'Unarchive' : 'Archive'}
+        </button>
+        {archiveError && <p className="text-xs text-red-600">{archiveError}</p>}
       </div>
 
       {/* Transcript */}
       <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
         {data.messages.map((m) => (
-          <MessageBubble key={m.id} message={m} isPublicThread={isPublicThread} threadId={threadId} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            isPublicThread={isPublicThread}
+            isArchivedThread={isArchived}
+            threadId={threadId}
+          />
         ))}
       </div>
 
@@ -236,15 +298,21 @@ export default function QuestionThreadPage() {
           id="reply-body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          disabled={isClosed || reply.isPending}
+          disabled={isArchived || isClosed || reply.isPending}
           rows={3}
           maxLength={2000}
-          placeholder={isClosed ? 'Thread is closed.' : 'Write a reply…'}
+          placeholder={
+            isArchived ? 'Thread is archived.' : isClosed ? 'Thread is closed.' : 'Write a reply…'
+          }
           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-slate-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="text-xs text-slate-400">
-            {isClosed ? (
+            {isArchived ? (
+              <span className="text-slate-500">
+                This thread is archived — unarchive it to reply.
+              </span>
+            ) : isClosed ? (
               <span className="text-slate-500">
                 This thread is closed — set status to Open or Answered to reply.
               </span>
@@ -255,7 +323,7 @@ export default function QuestionThreadPage() {
           <button
             type="button"
             onClick={() => void handleReply()}
-            disabled={isClosed || reply.isPending || trimmed.length === 0}
+            disabled={isArchived || isClosed || reply.isPending || trimmed.length === 0}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
             {reply.isPending ? 'Sending…' : 'Send reply'}

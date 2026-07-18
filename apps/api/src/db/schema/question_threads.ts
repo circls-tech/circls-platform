@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { arenas } from './arenas.js';
 import { events } from './events.js';
@@ -51,6 +51,20 @@ export const questionThreads = pgTable('question_threads', {
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
   /** Maintained transactionally alongside message inserts (root counts as 1). */
   messageCount: integer('message_count').notNull().default(1),
+  /**
+   * Thread-level moderation (abusive/malicious threads): an archived thread
+   * disappears from EVERY consumer surface — 404 for the author too — while
+   * staff (org + Circls) retain access. Staff replies/status/hide are rejected
+   * (409 question_archived) until it is unarchived.
+   */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  archivedByUserId: uuid('archived_by_user_id').references(() => users.id),
+  /**
+   * Who archived the thread: 'org' (partner) or 'circls' (admin). Drives the
+   * unarchive hierarchy — the org can only undo its own archives; Circls can
+   * unarchive anything (same shape as question_messages.hidden_by_kind).
+   */
+  archivedByKind: text('archived_by_kind', { enum: ['org', 'circls'] }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

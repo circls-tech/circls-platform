@@ -22,12 +22,21 @@ export interface QuestionThreadsParams {
   status?: QuestionStatus;
   visibility?: QuestionVisibility;
   subjectType?: QuestionSubjectType;
+  /** True selects the archived view; default (false) lists active threads. */
+  archived?: boolean;
 }
 
 /** Org inbox: threads on the tenant's subjects, newest activity first. */
 export function useQuestionThreads(tenantId: string, params: QuestionThreadsParams = {}) {
   return useInfiniteQuery({
-    queryKey: ['questions', tenantId, params.status, params.visibility, params.subjectType],
+    queryKey: [
+      'questions',
+      tenantId,
+      params.status,
+      params.visibility,
+      params.subjectType,
+      params.archived ?? false,
+    ],
     enabled: Boolean(tenantId),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: QuestionThreadsPage) => last.nextCursor ?? undefined,
@@ -36,6 +45,7 @@ export function useQuestionThreads(tenantId: string, params: QuestionThreadsPara
       if (params.status)      qs.set('status',      params.status);
       if (params.visibility)  qs.set('visibility',  params.visibility);
       if (params.subjectType) qs.set('subjectType', params.subjectType);
+      if (params.archived)    qs.set('archived',    'true');
       if (pageParam)          qs.set('cursor',      pageParam);
       const query = qs.toString();
       return apiFetch<QuestionThreadsPage>(
@@ -96,6 +106,23 @@ export function useSetQuestionStatus(tenantId: string, threadId: string) {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       }),
+    onSuccess: () => invalidateThread(qc, tenantId, threadId),
+  });
+}
+
+/**
+ * Archive or unarchive the whole thread. Archived threads disappear from every
+ * customer surface (the asker included); your team and Circls keep access via
+ * the Archived tab. You can only unarchive threads your own team archived.
+ */
+export function useArchiveQuestionThread(tenantId: string, threadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'archive' | 'unarchive') =>
+      apiFetch<QuestionThreadDetail['thread']>(
+        `/v1/tenants/${tenantId}/questions/${threadId}/${action}`,
+        { method: 'POST' },
+      ),
     onSuccess: () => invalidateThread(qc, tenantId, threadId),
   });
 }

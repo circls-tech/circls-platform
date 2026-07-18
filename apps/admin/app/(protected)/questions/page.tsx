@@ -52,7 +52,15 @@ function ThreadRow({ row }: { row: AdminQuestionThreadRow }) {
         <Badge label={VISIBILITY_LABELS[row.visibility]} tone={VISIBILITY_COLORS[row.visibility]} />
       </td>
       <td className="px-4 py-3">
-        <Badge label={STATUS_LABELS[row.status]} tone={STATUS_COLORS[row.status]} />
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge label={STATUS_LABELS[row.status]} tone={STATUS_COLORS[row.status]} />
+          {row.archivedAt !== null && (
+            <Badge
+              label={row.archivedByKind === 'circls' ? 'Archived by Circls' : 'Archived by org'}
+              tone="bg-amber-100 text-amber-800"
+            />
+          )}
+        </div>
       </td>
       <td className="px-4 py-3 text-center text-sm text-slate-700">{row.replyCount}</td>
       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
@@ -66,6 +74,7 @@ export default function QuestionsPage() {
   const [filterStatus, setFilterStatus] = useState<QuestionStatus | 'all'>('all');
   const [filterVisibility, setFilterVisibility] = useState<QuestionVisibility | 'all'>('all');
   const [filterSubjectType, setFilterSubjectType] = useState<QuestionSubjectType | 'all'>('all');
+  const [filterArchived, setFilterArchived] = useState<'active' | 'archived'>('active');
   const [tenantIdInput, setTenantIdInput] = useState('');
 
   const tenantIdTrimmed = tenantIdInput.trim();
@@ -75,6 +84,7 @@ export default function QuestionsPage() {
     ...(filterStatus !== 'all' ? { status: filterStatus } : {}),
     ...(filterVisibility !== 'all' ? { visibility: filterVisibility } : {}),
     ...(filterSubjectType !== 'all' ? { subjectType: filterSubjectType } : {}),
+    ...(filterArchived === 'archived' ? { archived: true } : {}),
     // Only send the tenant filter once it's a full, valid UUID.
     ...(tenantIdTrimmed && !tenantIdInvalid ? { tenantId: tenantIdTrimmed } : {}),
   };
@@ -138,6 +148,15 @@ export default function QuestionsPage() {
             <option value="event">Events</option>
             <option value="arena">Arenas</option>
             <option value="membership">Memberships</option>
+          </select>
+          <select
+            value={filterArchived}
+            onChange={(e) => setFilterArchived(e.target.value as 'active' | 'archived')}
+            className={selectCls}
+            aria-label="Filter archived threads"
+          >
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
           </select>
           <input
             value={tenantIdInput}

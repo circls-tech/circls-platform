@@ -720,6 +720,10 @@ export interface QuestionThreadRow {
   createdAt: string;
   /** Subject summary — present on partner list/detail responses. */
   subject?: { type: QuestionSubjectType; id: string; name: string };
+  /** ISO-8601 — set when the thread is archived (hidden from the customer). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (your team) or 'circls'; org unarchive only for 'org'. */
+  archivedByKind: 'org' | 'circls' | null;
 }
 
 export interface QuestionMessage {
@@ -762,6 +766,11 @@ export interface QuestionThreadDetailThread {
   subject: { type: QuestionSubjectType; id: string; name: string };
   /** Display name of the asker (root-message author). */
   authorName: string;
+  /** ISO-8601 — set when the thread is archived (hidden from the customer). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (your team) or 'circls'. You can only unarchive
+   *  threads your own team archived. */
+  archivedByKind: 'org' | 'circls' | null;
 }
 
 export interface QuestionThreadDetail {

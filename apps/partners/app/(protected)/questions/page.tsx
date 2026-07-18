@@ -13,10 +13,14 @@ import type {
 } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
-const TABS: { status: QuestionStatus; label: string }[] = [
-  { status: 'open',     label: 'Open' },
-  { status: 'answered', label: 'Answered' },
-  { status: 'closed',   label: 'Closed' },
+/** The three status tabs list active threads; Archived is its own view. */
+type TabKey = QuestionStatus | 'archived';
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'open',     label: 'Open' },
+  { key: 'answered', label: 'Answered' },
+  { key: 'closed',   label: 'Closed' },
+  { key: 'archived', label: 'Archived' },
 ];
 
 const SUBJECT_LABELS: Record<QuestionSubjectType, string> = {
@@ -33,7 +37,8 @@ function VisibilityBadge({ visibility }: { visibility: QuestionVisibility }) {
   );
 }
 
-function ThreadList({ tenantId, status }: { tenantId: string; status: QuestionStatus }) {
+function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
+  const archived = tab === 'archived';
   const { resolveTz } = useTimezone();
   const [visibilityFilter, setVisibilityFilter] = useState<'' | QuestionVisibility>('');
   const [subjectFilter, setSubjectFilter] = useState<'' | QuestionSubjectType>('');
@@ -60,7 +65,9 @@ function ThreadList({ tenantId, status }: { tenantId: string; status: QuestionSt
     isError,
     error,
   } = useQuestionThreads(tenantId, {
-    status,
+    // The Archived tab shows archived threads of every status; the status
+    // tabs list active (non-archived) threads only.
+    ...(archived ? { archived: true } : { status: tab as QuestionStatus }),
     ...(visibilityFilter ? { visibility: visibilityFilter } : {}),
     ...(subjectFilter ? { subjectType: subjectFilter } : {}),
   });
@@ -119,7 +126,7 @@ function ThreadList({ tenantId, status }: { tenantId: string; status: QuestionSt
       {!isLoading && !isError && rows.length === 0 && (
         <Card>
           <p className="py-4 text-center text-sm text-slate-400">
-            No {status} questions{visibilityFilter || subjectFilter ? ' match these filters' : ''}.
+            No {tab} questions{visibilityFilter || subjectFilter ? ' match these filters' : ''}.
           </p>
         </Card>
       )}
@@ -138,6 +145,7 @@ function ThreadList({ tenantId, status }: { tenantId: string; status: QuestionSt
                   </span>
                   <Badge tone="neutral" label={SUBJECT_LABELS[row.subjectType]} />
                   <VisibilityBadge visibility={row.visibility} />
+                  {row.archivedAt != null && <Badge tone="warning" label="Archived" />}
                   <span className="ml-auto whitespace-nowrap text-xs text-slate-400">
                     {fmt.format(new Date(row.lastMessageAt))}
                   </span>
@@ -173,7 +181,7 @@ function ThreadList({ tenantId, status }: { tenantId: string; status: QuestionSt
 export default function QuestionsPage() {
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId);
-  const [activeTab, setActiveTab] = useState<QuestionStatus>('open');
+  const [activeTab, setActiveTab] = useState<TabKey>('open');
 
   if (!activeTenantId) {
     return (
@@ -203,12 +211,12 @@ export default function QuestionsPage() {
       <div className="flex gap-1 border-b border-[#e5e7eb]">
         {TABS.map((tab) => (
           <button
-            key={tab.status}
+            key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.status)}
+            onClick={() => setActiveTab(tab.key)}
             className={[
               'px-4 py-2 text-sm font-medium transition-colors',
-              activeTab === tab.status
+              activeTab === tab.key
                 ? 'border-b-2 border-brand-600 text-brand-600'
                 : 'text-slate-500 hover:text-slate-700',
             ].join(' ')}
@@ -218,7 +226,7 @@ export default function QuestionsPage() {
         ))}
       </div>
 
-      <ThreadList tenantId={activeTenantId} status={activeTab} />
+      <ThreadList tenantId={activeTenantId} tab={activeTab} />
     </div>
   );
 }

@@ -29,6 +29,7 @@ import {
   setMessageHidden,
   setStatusAsAuthor,
   setStatusAsStaff,
+  setThreadArchived,
 } from '../services/questions_service.js';
 
 const subjectType = z.enum(['event', 'arena', 'membership']);
@@ -76,6 +77,8 @@ const staffListQuery = z.object({
   status: threadStatus.optional(),
   visibility: visibility.optional(),
   subjectType: subjectType.optional(),
+  /** 'true' selects the archived view; default 'false' (active threads only). */
+  archived: z.enum(['true', 'false']).optional(),
   ...cursorQuery,
 });
 
@@ -207,6 +210,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       status: q.status,
       visibility: q.visibility,
       subjectType: q.subjectType,
+      archived: q.archived === 'true',
       cursor: q.cursor,
       limit: q.limit,
     });
@@ -284,6 +288,28 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
     );
   }
 
+  // Archive/unarchive a whole thread (hidden from every consumer surface).
+  // Unarchive is hierarchy-gated: the org can only undo its own archives.
+  for (const action of ['archive', 'unarchive'] as const) {
+    app.post(
+      `/v1/tenants/:tenantId/questions/:threadId/${action}`,
+      { preHandler: requireAuth },
+      async (req) => {
+        const { tenantId, threadId } = parseOrThrow(tenantThreadParams, req.params);
+        const user = await currentUser(req);
+        const ctx = await requireTenantMembership(user.id, tenantId);
+        assertCap(ctx, 'questions.write');
+        return setThreadArchived({
+          threadId,
+          byUserId: user.id,
+          byKind: 'org',
+          archived: action === 'archive',
+          tenantId,
+        });
+      },
+    );
+  }
+
   // ── Admin (Circls) ──────────────────────────────────────────────────────────
 
   async function adminCtx(req: FastifyRequest, cap: 'admin.support.read' | 'admin.support.write') {
@@ -305,6 +331,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       status: q.status,
       visibility: q.visibility,
       subjectType: q.subjectType,
+      archived: q.archived === 'true',
       cursor: q.cursor,
       limit: q.limit,
     });
@@ -348,6 +375,24 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
           byKind: 'circls',
           hidden: action === 'hide',
           allowRoot: true,
+        });
+      },
+    );
+  }
+
+  // Circls archive/unarchive — Circls can always unarchive (any archiver).
+  for (const action of ['archive', 'unarchive'] as const) {
+    app.post(
+      `/v1/admin/questions/:threadId/${action}`,
+      { preHandler: requireAuth },
+      async (req) => {
+        const user = await adminCtx(req, 'admin.support.write');
+        const { threadId } = parseOrThrow(threadParams, req.params);
+        return setThreadArchived({
+          threadId,
+          byUserId: user.id,
+          byKind: 'circls',
+          archived: action === 'archive',
         });
       },
     );

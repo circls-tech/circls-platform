@@ -13,7 +13,7 @@ Your replies always carry an **Organizer** badge on the consumer side, so custom
 
 Open **Questions** in the sidebar. The badge next to it shows how many questions are currently **open** (waiting on you); it refreshes automatically.
 
-The inbox has three tabs — **Open**, **Answered** and **Closed** — and filters for visibility and subject type (events / arenas / memberships). Each row shows the listing the question is about, the question text, who asked, the reply count and the last activity time. Click a row to open the full thread.
+The inbox has four tabs — **Open**, **Answered**, **Closed** and **Archived** — plus filters for visibility and subject type (events / arenas / memberships). The three status tabs list your active threads; the Archived tab holds threads you (or circls) have [archived](#archiving-a-whole-thread). Each row shows the listing the question is about, the question text, who asked, the reply count and the last activity time. Click a row to open the full thread.
 
 ## Answering a question
 
@@ -38,14 +38,25 @@ Use the header buttons to move a thread between statuses: **Mark answered**, **C
 Because anyone can reply on a public thread, you can **hide** replies that don't belong there (spam, abuse, wrong information). Use the **Hide** button under a customer reply:
 
 - Hidden replies disappear for other customers. The reply's author, your team, and circls still see them, marked **Hidden** — use **Unhide** to restore one. You can only unhide replies **your own team** hid: anything hidden by the circls team shows a **Hidden by Circls** tag and only circls can restore it.
-- The **original question can't be hidden** by you (only the circls team can, in serious cases). If a whole thread is problematic, close it and [raise an issue](/help) so circls can review it.
+- The **original question can't be hidden** by you (only the circls team can, in serious cases). If a whole thread is problematic, archive it (below) — or [raise an issue](/help) so circls can review it.
 - Private threads have no hide controls — only the asker, your team and circls can see them in the first place.
+
+## Archiving a whole thread
+
+When a whole thread is the problem — spam, abuse, or someone misusing the Q&A section — you can **archive** it. Use the **Archive** button in the thread header (it asks for confirmation):
+
+- An archived thread **disappears for the customer entirely** — it's gone from the listing page, from their own questions list, and from every other customer-facing surface, as if it never existed. This works on private threads too, and no email or notification is sent.
+- Your team and circls keep full access: archived threads live under the inbox's **Archived** tab, marked with an **Archived** banner in the thread view.
+- While a thread is archived, **everything else is frozen** — no replies, no status changes, no hiding or unhiding — until it's unarchived.
+- **Unarchive** restores the thread exactly as it was, visible to the customer again. As with hiding, you can only unarchive threads **your own team** archived: a thread archived by the circls team shows **Archived by Circls** and only circls can restore it.
+
+Archiving is for protecting your listing from bad-faith threads, not for tidying up — a finished conversation should be **closed**, not archived.
 
 ## Who on your team can do what
 
 Question access follows your [team roles](/help/team):
 
-- **Owner, manager and staff** can reply, change statuses, and hide/unhide replies.
+- **Owner, manager and staff** can reply, change statuses, hide/unhide replies, and archive/unarchive threads.
 - **Read-only** members can read every thread but cannot reply or manage them.
 
 ## Email notifications

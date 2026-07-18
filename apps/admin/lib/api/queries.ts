@@ -243,13 +243,20 @@ export function useUpdateSupportIssue() {
 
 export function useAdminQuestions(filters: AdminQuestionFilters = {}) {
   const { user } = useAuth();
+  const { archived, ...rest } = filters;
   return useInfiniteQuery({
     queryKey: ['admin', 'questions', filters],
     enabled: Boolean(user),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       apiFetch<AdminQuestionThreadListPage>(
-        `/v1/admin/questions${qs({ limit: 50, cursor: pageParam, ...filters })}`,
+        `/v1/admin/questions${qs({
+          limit: 50,
+          cursor: pageParam,
+          ...rest,
+          // Server default is the active view; only the archived view is opt-in.
+          ...(archived ? { archived: 'true' } : {}),
+        })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -287,6 +294,26 @@ export function useUpdateAdminQuestion() {
         method: 'PATCH',
         body: JSON.stringify({ status: args.status }),
       }),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
+    },
+  });
+}
+
+/**
+ * Archive or unarchive a whole thread. Archived threads vanish from every
+ * consumer surface (the asker included); staff keep access. Circls can always
+ * unarchive — including org archives.
+ */
+export function useArchiveAdminQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; action: 'archive' | 'unarchive' }) =>
+      apiFetch<AdminQuestionThreadDetail['thread']>(
+        `/v1/admin/questions/${args.threadId}/${args.action}`,
+        { method: 'POST' },
+      ),
     onSuccess: (_data, args) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'question', args.threadId] });
       void qc.invalidateQueries({ queryKey: ['admin', 'questions'] });
