@@ -727,15 +727,45 @@ export interface QuestionMessage {
   threadId: string;
   authorKind: QuestionAuthorKind;
   authorName: string;
+  /** True when the message was posted by the calling portal user. */
+  own: boolean;
   body: string;
   /** ISO-8601 — set when the message is hidden by moderation, else null. */
   hiddenAt: string | null;
+  /** Who hid the message: 'org' (your team) or 'circls' (admin); null when
+   *  visible. Org unhide is only allowed for 'org' hides. */
+  hiddenByKind: 'org' | 'circls' | null;
   /** ISO-8601 */
   createdAt: string;
 }
 
+/**
+ * Thread object on DETAIL (and status-PATCH) responses. Unlike list rows it
+ * carries no `rootBody`/`replyCount` — the transcript is in `messages` — and
+ * `subject`/`authorName` are always present.
+ */
+export interface QuestionThreadDetailThread {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** DB user id of the asker. */
+  authorUserId: string;
+  messageCount: number;
+  /** ISO-8601 — bumped on every message. */
+  lastMessageAt: string;
+  /** ISO-8601 */
+  createdAt: string;
+  /** Subject summary (joined name). */
+  subject: { type: QuestionSubjectType; id: string; name: string };
+  /** Display name of the asker (root-message author). */
+  authorName: string;
+}
+
 export interface QuestionThreadDetail {
-  thread: QuestionThreadRow;
+  thread: QuestionThreadDetailThread;
   /** Chronological (asc). Hidden messages included, marked via `hiddenAt`. */
   messages: QuestionMessage[];
 }

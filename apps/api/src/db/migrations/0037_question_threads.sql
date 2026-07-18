@@ -117,8 +117,14 @@ CREATE TABLE IF NOT EXISTS "question_messages" (
 	"body" text NOT NULL,
 	"hidden_at" timestamp with time zone,
 	"hidden_by_user_id" uuid,
+	-- Who hid the message ('org' = partner moderation, 'circls' = admin).
+	-- Drives the unhide hierarchy: the org can only undo its own hides.
+	"hidden_by_kind" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "question_messages_hidden_by_kind_chk" CHECK (
+	  "hidden_by_kind" IS NULL OR "hidden_by_kind" IN ('org', 'circls')
+	)
 );
 --> statement-breakpoint
 DO $$ BEGIN

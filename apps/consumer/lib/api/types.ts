@@ -454,6 +454,8 @@ export interface QuestionMessageRow {
   threadId: string;
   authorKind: QuestionAuthorKind;
   authorName: string;
+  /** True when the message was posted by the signed-in viewer (false signed-out). */
+  own: boolean;
   body: string;
   /** ISO-8601 when moderated away, else null. */
   hiddenAt: string | null;
@@ -478,6 +480,10 @@ export interface QuestionThreadDetail {
     lastMessageAt: string;
     /** ISO-8601 */
     createdAt: string;
+    /** Subject summary (joined name) — always present on detail responses. */
+    subject: { type: QuestionSubjectType; id: string; name: string };
+    /** Display name of the asker (root-message author). */
+    authorName: string;
   };
   messages: QuestionMessageRow[];
 }

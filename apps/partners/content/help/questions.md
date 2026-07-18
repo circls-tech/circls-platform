@@ -27,7 +27,7 @@ The thread header links to the listing the question is about, so you can check d
 
 | Status | Meaning |
 | --- | --- |
-| **Open** | Waiting for an answer from you. New questions start here, and a customer replying to an answered thread reopens it. |
+| **Open** | Waiting for an answer from you. New questions start here, and the customer **who asked** replying to an answered thread reopens it (replies from other customers on a public thread don't change the status). |
 | **Answered** | Your team (or circls) has replied. Set automatically when you reply to an open question; you can also use **Mark answered** in the thread header. |
 | **Closed** | The conversation is over. **Nobody can reply to a closed thread** — not the customer, and not your team. Reopen it first if there's more to say. |
 
@@ -37,7 +37,7 @@ Use the header buttons to move a thread between statuses: **Mark answered**, **C
 
 Because anyone can reply on a public thread, you can **hide** replies that don't belong there (spam, abuse, wrong information). Use the **Hide** button under a customer reply:
 
-- Hidden replies disappear for other customers. The reply's author, your team, and circls still see them, marked **Hidden** — use **Unhide** to restore one.
+- Hidden replies disappear for other customers. The reply's author, your team, and circls still see them, marked **Hidden** — use **Unhide** to restore one. You can only unhide replies **your own team** hid: anything hidden by the circls team shows a **Hidden by Circls** tag and only circls can restore it.
 - The **original question can't be hidden** by you (only the circls team can, in serious cases). If a whole thread is problematic, close it and [raise an issue](/help) so circls can review it.
 - Private threads have no hide controls — only the asker, your team and circls can see them in the first place.
 

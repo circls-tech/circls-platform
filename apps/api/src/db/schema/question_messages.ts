@@ -34,6 +34,12 @@ export const questionMessages = pgTable('question_messages', {
   body: text('body').notNull(),
   hiddenAt: timestamp('hidden_at', { withTimezone: true }),
   hiddenByUserId: uuid('hidden_by_user_id').references(() => users.id),
+  /**
+   * Who hid the message: 'org' (partner moderation) or 'circls' (admin).
+   * Drives the unhide hierarchy — the org can only undo its own hides;
+   * Circls can unhide anything.
+   */
+  hiddenByKind: text('hidden_by_kind', { enum: ['org', 'circls'] }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

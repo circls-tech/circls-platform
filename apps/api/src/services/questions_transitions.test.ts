@@ -6,20 +6,20 @@ import {
 } from './questions_transitions.js';
 
 describe('resolveAuthorKind', () => {
-  it('platform members post as circls', () => {
-    expect(resolveAuthorKind({ isPlatformMember: true, isOrgMember: false })).toBe('circls');
+  it('admin.support.write holders post as circls', () => {
+    expect(resolveAuthorKind({ canPostAsCircls: true, canPostAsOrg: false })).toBe('circls');
   });
 
-  it('platform membership outranks org membership', () => {
-    expect(resolveAuthorKind({ isPlatformMember: true, isOrgMember: true })).toBe('circls');
+  it('the circls capability outranks the org capability', () => {
+    expect(resolveAuthorKind({ canPostAsCircls: true, canPostAsOrg: true })).toBe('circls');
   });
 
-  it('thread-tenant members post as org', () => {
-    expect(resolveAuthorKind({ isPlatformMember: false, isOrgMember: true })).toBe('org');
+  it('questions.write holders on the thread tenant post as org', () => {
+    expect(resolveAuthorKind({ canPostAsCircls: false, canPostAsOrg: true })).toBe('org');
   });
 
-  it('everyone else posts as consumer', () => {
-    expect(resolveAuthorKind({ isPlatformMember: false, isOrgMember: false })).toBe('consumer');
+  it('everyone else (incl. readonly members without the write cap) posts as consumer', () => {
+    expect(resolveAuthorKind({ canPostAsCircls: false, canPostAsOrg: false })).toBe('consumer');
   });
 });
 

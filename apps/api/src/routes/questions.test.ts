@@ -15,6 +15,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
     const map: Record<string, Record<string, unknown>> = {
       padmin: { uid: `fbuid_padmin_qt_${RUN}`, email: `padmin_qt_${RUN}@x.com`, email_verified: true },
+      preadonly: { uid: `fbuid_preadonly_qt_${RUN}`, email: `preadonly_qt_${RUN}@x.com`, email_verified: true },
       owner: { uid: `fbuid_owner_qt_${RUN}`, email: `owner_qt_${RUN}@x.com`, email_verified: true },
       readonly: { uid: `fbuid_readonly_qt_${RUN}`, email: `readonly_qt_${RUN}@x.com`, email_verified: true },
       asker: { uid: `fbuid_asker_qt_${RUN}`, email: `asker_qt_${RUN}@x.com`, email_verified: true },
@@ -53,8 +54,10 @@ interface MessageRow {
   threadId: string;
   authorKind: string;
   authorName: string;
+  own: boolean;
   body: string;
   hiddenAt: string | null;
+  hiddenByKind?: 'org' | 'circls' | null;
   createdAt: string;
 }
 
@@ -70,6 +73,8 @@ interface ThreadDetail {
     messageCount: number;
     lastMessageAt: string;
     createdAt: string;
+    subject: { type: string; id: string; name: string };
+    authorName: string;
   };
   messages: MessageRow[];
 }
@@ -131,6 +136,16 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     await db.execute(sql`
       INSERT INTO tenant_members (tenant_id, user_id, role)
       VALUES (${platformTenantId}::uuid, ${padminId}::uuid, 'manager')
+    `);
+
+    // Platform READONLY member: reads admin surfaces but lacks
+    // admin.support.write, so consumer-surface posts must stamp `consumer`.
+    const preadonlyMe = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('preadonly') });
+    expect(preadonlyMe.statusCode).toBe(200);
+    const preadonlyId = (preadonlyMe.json() as { id: string }).id;
+    await db.execute(sql`
+      INSERT INTO tenant_members (tenant_id, user_id, role)
+      VALUES (${platformTenantId}::uuid, ${preadonlyId}::uuid, 'readonly')
     `);
 
     // The org: tenant + contact email, a venue + active arena, a published
@@ -226,9 +241,13 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(detail.thread.subjectId).toBe(eventId);
     expect(detail.thread.tenantId).toBe(tenantId);
     expect(detail.thread.messageCount).toBe(1);
+    // Detail enrichment: subject summary + asker display name.
+    expect(detail.thread.subject).toEqual({ type: 'event', id: eventId, name: 'QT Cup' });
+    expect(detail.thread.authorName).toBe('Member');
     expect(detail.messages).toHaveLength(1);
     expect(detail.messages[0]!.authorKind).toBe('consumer');
     expect(detail.messages[0]!.authorName).toBe('Member');
+    expect(detail.messages[0]!.own).toBe(true);
     publicRootId = detail.messages[0]!.id;
   });
 
@@ -289,13 +308,16 @@ describe.skipIf(!runIntegration)('questions threads', () => {
 
   // ── Visibility ─────────────────────────────────────────────────────────────
 
-  it('signed-out visitor can read the public thread', async () => {
+  it('signed-out visitor can read the public thread (own is always false)', async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/v1/consumer/questions/${publicThreadId}`,
     });
     expect(res.statusCode).toBe(200);
-    expect((res.json() as ThreadDetail).messages).toHaveLength(1);
+    const detail = res.json() as ThreadDetail;
+    expect(detail.messages).toHaveLength(1);
+    expect(detail.messages[0]!.own).toBe(false);
+    expect(detail.thread.subject.name).toBe('QT Cup');
   });
 
   it('private thread 404s for signed-out and non-author viewers', async () => {
@@ -398,6 +420,7 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     const out = res.json() as { message: MessageRow; threadStatus: string };
     expect(out.message.authorKind).toBe('org');
     expect(out.message.authorName).toBe(TENANT_NAME);
+    expect(out.message.own).toBe(true);
     expect(out.threadStatus).toBe('answered');
   });
 
@@ -410,6 +433,56 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as { threadStatus: string }).threadStatus).toBe('open');
+  });
+
+  // ── Capability-gated author_kind stamping (questions.write / admin.support.write) ──
+
+  it('a READONLY org member posting via the consumer endpoint is stamped consumer', async () => {
+    // readonly lacks questions.write → must not speak for the org, and a
+    // consumer non-author reply on an open public thread leaves it open.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${publicThreadId}/messages`,
+      headers: bearer('readonly'),
+      payload: { body: 'I work there but cannot answer officially.' },
+    });
+    expect(res.statusCode).toBe(200);
+    const out = res.json() as { message: MessageRow; threadStatus: string };
+    expect(out.message.authorKind).toBe('consumer');
+    expect(out.message.own).toBe(true);
+    expect(out.threadStatus).toBe('open');
+  });
+
+  it('a READONLY org member cannot post on someone else’s private thread (404), but can read it', async () => {
+    const reply = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${privateThreadId}/messages`,
+      headers: bearer('readonly'),
+      payload: { body: 'readonly sneaking into a private thread' },
+    });
+    expect(reply.statusCode).toBe(404);
+    expect(reply.json().error.code).toBe('question_not_found');
+
+    // Reading stays allowed (questions.read parity with the partner surface).
+    const read = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions/${privateThreadId}`,
+      headers: bearer('readonly'),
+    });
+    expect(read.statusCode).toBe(200);
+  });
+
+  it('a READONLY platform member posting via the consumer endpoint is stamped consumer', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${publicThreadId}/messages`,
+      headers: bearer('preadonly'),
+      payload: { body: 'Circls employee off duty here.' },
+    });
+    expect(res.statusCode).toBe(200);
+    const out = res.json() as { message: MessageRow; threadStatus: string };
+    expect(out.message.authorKind).toBe('consumer');
+    expect(out.threadStatus).toBe('open');
   });
 
   it('replies on a closed thread are rejected everywhere (409 question_closed)', async () => {
@@ -468,6 +541,9 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     });
     expect(answered.statusCode).toBe(200);
     expect((answered.json() as { status: string }).status).toBe('answered');
+    // PATCH responses carry the enriched thread (subject + authorName).
+    expect((answered.json() as ThreadDetail['thread']).subject.name).toBe('QT Cup');
+    expect((answered.json() as ThreadDetail['thread']).authorName).toBe('Member');
 
     const closed = await app.inject({
       method: 'PATCH',
@@ -658,6 +734,7 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     });
     expect(hide.statusCode).toBe(200);
     expect((hide.json() as MessageRow).hiddenAt).not.toBeNull();
+    expect((hide.json() as MessageRow).hiddenByKind).toBe('org');
 
     // Signed-out viewer: hidden message omitted.
     const anon = await app.inject({ method: 'GET', url: `/v1/consumer/questions/${publicThreadId}` });
@@ -673,14 +750,21 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(own).toBeDefined();
     expect(own!.hiddenAt).not.toBeNull();
 
-    // Partner surface: marked, never omitted.
+    // Partner surface: marked, never omitted — with hiddenByKind + own flags.
     const org = await app.inject({
       method: 'GET',
       url: `/v1/tenants/${tenantId}/questions/${publicThreadId}`,
       headers: bearer('owner'),
     });
-    const marked = (org.json() as ThreadDetail).messages.find((m) => m.id === randoReplyId);
+    const orgDetail = org.json() as ThreadDetail;
+    expect(orgDetail.thread.subject.name).toBe('QT Cup');
+    expect(orgDetail.thread.authorName).toBe('Member');
+    const marked = orgDetail.messages.find((m) => m.id === randoReplyId);
     expect(marked!.hiddenAt).not.toBeNull();
+    expect(marked!.hiddenByKind).toBe('org');
+    expect(marked!.own).toBe(false);
+    // The owner's own org reply carries own=true on the staff surface.
+    expect(orgDetail.messages.some((m) => m.authorKind === 'org' && m.own)).toBe(true);
 
     const unhide = await app.inject({
       method: 'POST',
@@ -690,6 +774,70 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     });
     expect(unhide.statusCode).toBe(200);
     expect((unhide.json() as MessageRow).hiddenAt).toBeNull();
+    expect((unhide.json() as MessageRow).hiddenByKind).toBeNull();
+  });
+
+  it('org cannot unhide a circls-hidden message; hidden replies drop off public replyCount', async () => {
+    const listBefore = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+    });
+    const rowBefore = (listBefore.json() as ListPage).rows.find((r) => r.id === publicThreadId)!;
+
+    // Circls hides the rando reply (non-root).
+    const hide = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/questions/${publicThreadId}/messages/${randoReplyId}/hide`,
+      headers: bearer('padmin'),
+      payload: {},
+    });
+    expect(hide.statusCode).toBe(200);
+    expect((hide.json() as MessageRow).hiddenByKind).toBe('circls');
+
+    // The org can NOT undo a circls hide (moderation hierarchy).
+    const orgUnhide = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${publicThreadId}/messages/${randoReplyId}/unhide`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgUnhide.statusCode).toBe(403);
+    expect(orgUnhide.json().error.code).toBe('forbidden_moderation');
+
+    // Even an org re-hide must not launder the circls stamp into an org one.
+    const orgRehide = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/questions/${publicThreadId}/messages/${randoReplyId}/hide`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(orgRehide.statusCode).toBe(200);
+    expect((orgRehide.json() as MessageRow).hiddenByKind).toBe('circls');
+
+    // Public list replyCount counts only non-hidden replies.
+    const listAfter = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+    });
+    const rowAfter = (listAfter.json() as ListPage).rows.find((r) => r.id === publicThreadId)!;
+    expect(rowAfter.replyCount).toBe(rowBefore.replyCount - 1);
+
+    // Circls can unhide anything.
+    const unhide = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/questions/${publicThreadId}/messages/${randoReplyId}/unhide`,
+      headers: bearer('padmin'),
+      payload: {},
+    });
+    expect(unhide.statusCode).toBe(200);
+    expect((unhide.json() as MessageRow).hiddenAt).toBeNull();
+
+    const listRestored = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+    });
+    const rowRestored = (listRestored.json() as ListPage).rows.find((r) => r.id === publicThreadId)!;
+    expect(rowRestored.replyCount).toBe(rowBefore.replyCount);
   });
 
   it('org cannot hide the root message (400 cannot_hide_root)', async () => {
@@ -745,9 +893,27 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(root).toBeDefined();
     expect(root!.hiddenAt).not.toBeNull();
 
-    // Anonymous viewers can still open the thread but the root is omitted.
+    // Anonymous viewers (and signed-in outsiders) get a 404 on the detail —
+    // a root-hidden thread is fully delisted for the public, not just trimmed.
     const anon = await app.inject({ method: 'GET', url: `/v1/consumer/questions/${publicThreadId}` });
-    expect((anon.json() as ThreadDetail).messages.some((m) => m.id === publicRootId)).toBe(false);
+    expect(anon.statusCode).toBe(404);
+    expect(anon.json().error.code).toBe('question_not_found');
+    const outsider = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/questions/${publicThreadId}`,
+      headers: bearer('rando'),
+    });
+    expect(outsider.statusCode).toBe(404);
+
+    // Outsiders can't reply on a thread they can't see either.
+    const outsiderReply = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${publicThreadId}/messages`,
+      headers: bearer('rando'),
+      payload: { body: 'replying into the void' },
+    });
+    expect(outsiderReply.statusCode).toBe(404);
+    expect(outsiderReply.json().error.code).toBe('question_not_found');
 
     // Org cannot unhide the (admin-hidden) root.
     const orgUnhide = await app.inject({
@@ -822,6 +988,24 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     }
   });
 
+  it('malformed cursors are a 400 bad_request, not a 500', async () => {
+    const cases = [
+      'not-a-cursor',
+      'garbage|also-garbage',
+      `2026-07-18T10:00:00.000Z|not-a-uuid`,
+      `un)parsable ts|${eventId}`,
+      `2026-07-18T10:00:00.000Z; drop table question_threads|${eventId}`,
+    ];
+    for (const cursor of cases) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}&cursor=${encodeURIComponent(cursor)}`,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('bad_request');
+    }
+  });
+
   it('11th thread in 24h is rate limited (429 question_rate_limited)', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -855,5 +1039,52 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(detail.thread.subjectType).toBe('arena');
     expect(detail.thread.tenantId).toBe(tenantId);
     expect(detail.thread.authorUserId).not.toBe(askerId);
+    expect(detail.thread.subject).toEqual({ type: 'arena', id: arenaId, name: 'QT Court 1' });
+  });
+
+  it('cursor pagination is lossless across a sub-millisecond boundary', async () => {
+    // Two more public arena threads, then force their activity timestamps into
+    // the SAME millisecond, microseconds apart — a ms-truncated cursor would
+    // skip the earlier one at the page boundary.
+    const ids: string[] = [];
+    for (const body of ['sub-ms boundary probe one', 'sub-ms boundary probe two']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('rando'),
+        payload: { subjectType: 'arena', subjectId: arenaId, visibility: 'public', body },
+      });
+      expect(res.statusCode).toBe(200);
+      ids.push((res.json() as ThreadDetail).thread.id);
+    }
+    await db.execute(sql`
+      UPDATE question_threads SET last_message_at = '2026-01-02 00:00:00.123456+00'::timestamptz
+      WHERE id = ${ids[0]}::uuid
+    `);
+    await db.execute(sql`
+      UPDATE question_threads SET last_message_at = '2026-01-02 00:00:00.123999+00'::timestamptz
+      WHERE id = ${ids[1]}::uuid
+    `);
+
+    // Walk the whole arena list one row per page; every thread must appear
+    // exactly once (no skips, no repeats), newest activity first.
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let guard = 0; guard < 10; guard++) {
+      const url =
+        `/v1/consumer/questions?subjectType=arena&subjectId=${arenaId}&limit=1` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+      const page = await app.inject({ method: 'GET', url });
+      expect(page.statusCode).toBe(200);
+      const body = page.json() as ListPage;
+      seen.push(...body.rows.map((r) => r.id));
+      cursor = body.nextCursor;
+      if (cursor === null) break;
+    }
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).toContain(ids[0]!);
+    expect(seen).toContain(ids[1]!);
+    // The µs-later thread pages out strictly before the µs-earlier one.
+    expect(seen.indexOf(ids[1]!)).toBeLessThan(seen.indexOf(ids[0]!));
   });
 });

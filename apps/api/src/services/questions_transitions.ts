@@ -8,17 +8,19 @@ import type { QuestionAuthorKind } from '../db/schema/question_messages.js';
 import type { QuestionStatus } from '../db/schema/question_threads.js';
 
 /**
- * Resolve who a poster writes *as*, from their memberships:
- * platform-tenant member → `circls`; member of the thread's tenant → `org`;
- * everyone else → `consumer`. A user who is both the asker and an org member
- * posts as `org` (accepted edge per the design doc).
+ * Resolve who a poster writes *as*, from their resolved write capabilities
+ * (not bare membership — a `readonly` member must not speak for the org):
+ * `admin.support.write` on the platform tenant → `circls`; `questions.write`
+ * on the thread's tenant → `org`; everyone else → `consumer`. A user who is
+ * both the asker and a cap-holding org member posts as `org` (accepted edge
+ * per the design doc).
  */
 export function resolveAuthorKind(opts: {
-  isPlatformMember: boolean;
-  isOrgMember: boolean;
+  canPostAsCircls: boolean;
+  canPostAsOrg: boolean;
 }): QuestionAuthorKind {
-  if (opts.isPlatformMember) return 'circls';
-  if (opts.isOrgMember) return 'org';
+  if (opts.canPostAsCircls) return 'circls';
+  if (opts.canPostAsOrg) return 'org';
   return 'consumer';
 }
 

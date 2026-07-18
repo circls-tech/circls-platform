@@ -16,6 +16,7 @@ import {
   addCirclsMessage,
   addConsumerMessage,
   addOrgMessage,
+  ANONYMOUS_RELATION,
   countOpenThreads,
   createThread,
   getThreadDetailForStaff,
@@ -153,11 +154,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
     );
     const userId = await maybeAuthedUserId(req);
     if (userId === null) {
-      return getThreadDetailForViewer(threadId, {
-        userId: null,
-        isOrgMember: false,
-        isPlatformMember: false,
-      });
+      return getThreadDetailForViewer(threadId, { userId: null, ...ANONYMOUS_RELATION });
     }
     // Signed-in: resolve the viewer's org/platform relationship against the
     // thread's tenant (404s cleanly when the thread doesn't exist), then run
@@ -235,7 +232,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, 'questions.read');
-      return getThreadDetailForStaff(threadId, { tenantId });
+      return getThreadDetailForStaff(threadId, { tenantId, viewerUserId: user.id });
     },
   );
 
@@ -278,6 +275,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
           threadId,
           messageId,
           byUserId: user.id,
+          byKind: 'org',
           hidden: action === 'hide',
           allowRoot: false,
           tenantId,
@@ -313,9 +311,9 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v1/admin/questions/:threadId', { preHandler: requireAuth }, async (req) => {
-    await adminCtx(req, 'admin.support.read');
+    const user = await adminCtx(req, 'admin.support.read');
     const { threadId } = parseOrThrow(threadParams, req.params);
-    return getThreadDetailForStaff(threadId);
+    return getThreadDetailForStaff(threadId, { viewerUserId: user.id });
   });
 
   app.post(
@@ -347,6 +345,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
           threadId,
           messageId,
           byUserId: user.id,
+          byKind: 'circls',
           hidden: action === 'hide',
           allowRoot: true,
         });

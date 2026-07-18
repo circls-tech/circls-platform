@@ -20,9 +20,11 @@ import {
   type QuestionThread,
   type QuestionVisibility,
 } from '../db/schema/question_threads.js';
+import type { TenantRole } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
-import { BadRequest, Conflict, NotFound, RateLimit } from '../lib/errors.js';
+import { can } from '../lib/authz/can.js';
+import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
 import {
   applyAuthorStatusPatch,
@@ -65,14 +67,21 @@ export interface QuestionThreadListRow {
   subject?: QuestionSubjectSummary;
 }
 
+/** Who hid a message (moderation hierarchy: org can only undo its own hides). */
+export type QuestionHiddenByKind = 'org' | 'circls';
+
 export interface QuestionMessageRow {
   id: string;
   threadId: string;
   authorKind: QuestionAuthorKind;
   authorName: string;
+  /** True when the message was posted by the requesting (bearer) user. */
+  own: boolean;
   body: string;
   /** Set only when the message is hidden AND the viewer may see it marked. */
   hiddenAt: string | null;
+  /** Staff (partner/admin) serializations only: who hid the message. */
+  hiddenByKind?: QuestionHiddenByKind | null;
   createdAt: string;
 }
 
@@ -88,6 +97,10 @@ export interface QuestionThreadDetail {
     messageCount: number;
     lastMessageAt: string;
     createdAt: string;
+    /** Subject summary (joined name), same shape as staff list rows. */
+    subject: QuestionSubjectSummary;
+    /** Display name of the thread author (root-message author resolution). */
+    authorName: string;
   };
   messages: QuestionMessageRow[];
 }
@@ -122,12 +135,32 @@ function threadNotFound(): never {
   throw new NotFound('Question not found', 'question_not_found');
 }
 
-/** Cursor = `${lastMessageAtIso}|${id}` (webhook deliveries convention). */
-function parseCursor(cursor: string | undefined): { ts: string; id: string } | null {
+/**
+ * Cursor = `${lastMessageAt}|${id}` (webhook deliveries convention). The
+ * timestamp is emitted by Postgres itself (`last_message_at::text`, µs
+ * precision) so it round-trips losslessly — `Date.toISOString()` truncates to
+ * milliseconds while Postgres stores microseconds, which can skip rows at
+ * page boundaries. Accepts both the Postgres text format and strict ISO.
+ */
+const CURSOR_TS_RE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Parse + validate a cursor. Malformed cursors are a 400, never a SQL 500. */
+export function parseCursor(cursor: string | undefined): { ts: string; id: string } | null {
   if (!cursor) return null;
   const idx = cursor.lastIndexOf('|');
-  if (idx <= 0) return null;
-  return { ts: cursor.slice(0, idx), id: cursor.slice(idx + 1) };
+  const ts = idx > 0 ? cursor.slice(0, idx) : '';
+  const id = idx > 0 ? cursor.slice(idx + 1) : '';
+  if (!CURSOR_TS_RE.test(ts) || !UUID_RE.test(id)) {
+    throw new BadRequest('Invalid cursor', 'bad_request');
+  }
+  return { ts, id };
+}
+
+/** Build the cursor for a raw list row (uses the µs-precision `cursor_ts`). */
+export function encodeCursor(raw: Record<string, unknown>): string {
+  return `${String(raw['cursor_ts'])}|${String(raw['id'])}`;
 }
 
 function clampLimit(limit: number | undefined): number {
@@ -146,32 +179,57 @@ function isoOf(v: unknown): string {
 // ── Viewer relationship ───────────────────────────────────────────────────────
 
 export interface ViewerRelation {
+  /** Member of a platform tenant — read access (private threads, hidden msgs). */
   isPlatformMember: boolean;
+  /** Member of the thread's tenant (any role) — read access, partner-surface parity. */
   isOrgMember: boolean;
+  /** Holds `questions.write` on the thread's tenant → posts stamped `org`. */
+  canPostAsOrg: boolean;
+  /** Holds `admin.support.write` on the platform tenant → posts stamped `circls`. */
+  canPostAsCircls: boolean;
 }
 
+/** The relation of a signed-out (or unrelated) viewer. */
+export const ANONYMOUS_RELATION: ViewerRelation = {
+  isPlatformMember: false,
+  isOrgMember: false,
+  canPostAsOrg: false,
+  canPostAsCircls: false,
+};
+
 /**
- * A single query answering both membership questions for author_kind stamping
- * and hidden-message visibility. Checks `is_platform` directly (not the cached
- * platform-tenant id) so it degrades safely when the platform tenant isn't
- * bootstrapped.
+ * A single query answering the membership + capability questions behind
+ * author_kind stamping and hidden-message visibility. Bare membership grants
+ * *read* parity with the staff surfaces, but posting *as* the org / Circls
+ * requires the corresponding write capability (`can()` on the member's role) —
+ * a `readonly` member must never be stamped `org`/`circls`. Checks
+ * `is_platform` directly (not the cached platform-tenant id) so it degrades
+ * safely when the platform tenant isn't bootstrapped.
  */
 export async function resolveViewerRelation(
   userId: string,
   tenantId: string,
 ): Promise<ViewerRelation> {
   const res = await db.execute<Record<string, unknown>>(sql`
-    select bool_or(t.is_platform)                       as is_platform_member,
-           bool_or(tm.tenant_id = ${tenantId}::uuid)    as is_org_member
+    select tm.tenant_id::text as tenant_id, tm.role as role, t.is_platform as is_platform
       from tenant_members tm
       join tenants t on t.id = tm.tenant_id
      where tm.user_id = ${userId}::uuid
   `);
-  const r = rowsOf(res)[0] ?? {};
-  return {
-    isPlatformMember: Boolean(r['is_platform_member']),
-    isOrgMember: Boolean(r['is_org_member']),
-  };
+  const rel: ViewerRelation = { ...ANONYMOUS_RELATION };
+  for (const r of rowsOf(res)) {
+    const role = r['role'] as TenantRole;
+    const isPlatform = Boolean(r['is_platform']);
+    if (r['tenant_id'] === tenantId) {
+      rel.isOrgMember = true;
+      if (can({ role, isPlatform }, 'questions.write')) rel.canPostAsOrg = true;
+    }
+    if (isPlatform) {
+      rel.isPlatformMember = true;
+      if (can({ role, isPlatform: true }, 'admin.support.write')) rel.canPostAsCircls = true;
+    }
+  }
+  return rel;
 }
 
 // ── Subject validation (POST /v1/consumer/questions) ─────────────────────────
@@ -348,7 +406,9 @@ function mapListRow(r: Record<string, unknown>, opts: { withSubject: boolean }):
     visibility: r['visibility'] as QuestionVisibility,
     status: r['status'] as QuestionStatus,
     rootBody: excerpt((r['root_body'] as string | null) ?? ''),
-    replyCount: Math.max(Number(r['message_count'] ?? 1) - 1, 0),
+    // Public rows carry `visible_count` (non-hidden messages) so anonymous
+    // viewers' counts match what they can actually see; staff rows use totals.
+    replyCount: Math.max(Number(r['visible_count'] ?? r['message_count'] ?? 1) - 1, 0),
     authorName: authorName(
       r['root_author_kind'] as QuestionAuthorKind,
       (r['root_author_name'] as string | null) ?? null,
@@ -376,9 +436,10 @@ function pageOf(
   const pageRows = hasMore ? raw.slice(0, limit) : raw;
   const rows = pageRows.map((r) => mapListRow(r, opts));
   let nextCursor: string | null = null;
-  if (hasMore && rows.length > 0) {
-    const last = rows[rows.length - 1]!;
-    nextCursor = `${last.lastMessageAt}|${last.id}`;
+  if (hasMore && pageRows.length > 0) {
+    // Cursor from the raw row's µs-precision `cursor_ts`, not the ms-truncated
+    // ISO string — sub-ms neighbours must not be skipped at the boundary.
+    nextCursor = encodeCursor(pageRows[pageRows.length - 1]!);
   }
   return { rows, nextCursor };
 }
@@ -400,6 +461,9 @@ export async function listPublicThreads(params: {
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
            t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.last_message_at::text as cursor_ts,
+           (select count(*)::int from question_messages qmv
+             where qmv.thread_id = t.id and qmv.hidden_at is null) as visible_count,
            root.body as root_body, root.author_kind as root_author_kind,
            u.display_name as root_author_name, tn.name as tenant_name
       from question_threads t
@@ -440,6 +504,7 @@ export async function listMyThreads(params: {
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
            t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.last_message_at::text as cursor_ts,
            root.body as root_body, root.author_kind as root_author_kind,
            u.display_name as root_author_name, tn.name as tenant_name,
            coalesce(e.name, a.name, m.name) as subject_name
@@ -480,6 +545,7 @@ export async function listStaffThreads(params: {
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
            t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.last_message_at::text as cursor_ts,
            root.body as root_body, root.author_kind as root_author_kind,
            u.display_name as root_author_name, tn.name as tenant_name,
            coalesce(e.name, a.name, m.name) as subject_name
@@ -557,6 +623,50 @@ async function loadTenantName(tenantId: string): Promise<string> {
   return t?.name ?? 'Organizer';
 }
 
+/** Joined context for a thread's DETAIL serialization (subject + root author). */
+interface ThreadExtras {
+  subjectName: string;
+  tenantName: string;
+  rootAuthorKind: QuestionAuthorKind;
+  rootDisplayName: string | null;
+  /** True when the root message is hidden (admin moderation). */
+  rootHidden: boolean;
+}
+
+async function loadThreadExtras(threadId: string): Promise<ThreadExtras> {
+  const res = await db.execute<Record<string, unknown>>(sql`
+    select coalesce(e.name, a.name, m.name) as subject_name,
+           tn.name as tenant_name,
+           root.author_kind as root_author_kind,
+           (root.hidden_at is not null) as root_hidden,
+           u.display_name as root_author_name
+      from question_threads t
+      join tenants tn on tn.id = t.tenant_id
+      left join events e on e.id = t.event_id
+      left join arenas a on a.id = t.arena_id
+      left join memberships m on m.id = t.membership_id
+      join lateral (
+        select qm.author_kind, qm.author_user_id, qm.hidden_at
+          from question_messages qm
+         where qm.thread_id = t.id
+         order by qm.created_at asc, qm.id asc
+         limit 1
+      ) root on true
+      left join users u on u.id = root.author_user_id
+     where t.id = ${threadId}::uuid
+     limit 1
+  `);
+  const r = rowsOf(res)[0];
+  if (!r) threadNotFound();
+  return {
+    subjectName: (r['subject_name'] as string | null) ?? '',
+    tenantName: (r['tenant_name'] as string | null) ?? 'Organizer',
+    rootAuthorKind: r['root_author_kind'] as QuestionAuthorKind,
+    rootDisplayName: (r['root_author_name'] as string | null) ?? null,
+    rootHidden: Boolean(r['root_hidden']),
+  };
+}
+
 async function loadMessages(
   threadId: string,
 ): Promise<{ m: QuestionMessage; displayName: string | null }[]> {
@@ -569,11 +679,12 @@ async function loadMessages(
   return rows;
 }
 
-function serializeThread(t: QuestionThread): QuestionThreadDetail['thread'] {
+function serializeThread(t: QuestionThread, extras: ThreadExtras): QuestionThreadDetail['thread'] {
+  const subjectId = subjectIdOf(t);
   return {
     id: t.id,
     subjectType: t.subjectType,
-    subjectId: subjectIdOf(t),
+    subjectId,
     tenantId: t.tenantId,
     visibility: t.visibility,
     status: t.status,
@@ -581,6 +692,8 @@ function serializeThread(t: QuestionThread): QuestionThreadDetail['thread'] {
     messageCount: t.messageCount,
     lastMessageAt: t.lastMessageAt.toISOString(),
     createdAt: t.createdAt.toISOString(),
+    subject: { type: t.subjectType, id: subjectId, name: extras.subjectName },
+    authorName: authorName(extras.rootAuthorKind, extras.rootDisplayName, extras.tenantName),
   };
 }
 
@@ -588,16 +701,22 @@ function serializeMessage(
   m: QuestionMessage,
   displayName: string | null,
   tenantName: string,
+  opts: { viewerUserId: string | null; staff?: boolean },
 ): QuestionMessageRow {
-  return {
+  const row: QuestionMessageRow = {
     id: m.id,
     threadId: m.threadId,
     authorKind: m.authorKind,
     authorName: authorName(m.authorKind, displayName, tenantName),
+    own: opts.viewerUserId !== null && m.authorUserId === opts.viewerUserId,
     body: m.body,
     hiddenAt: m.hiddenAt ? m.hiddenAt.toISOString() : null,
     createdAt: m.createdAt.toISOString(),
   };
+  // Only staff surfaces learn who hid a message; consumer payloads never
+  // expose moderation attribution (nor any replier user ids).
+  if (opts.staff) row.hiddenByKind = m.hiddenByKind ?? null;
+  return row;
 }
 
 /**
@@ -616,30 +735,41 @@ export async function getThreadDetailForViewer(
   const privileged = viewer.isOrgMember || viewer.isPlatformMember;
   if (t.visibility === 'private' && !isThreadAuthor && !privileged) threadNotFound();
 
-  const tenantName = await loadTenantName(t.tenantId);
+  const extras = await loadThreadExtras(threadId);
+  // Root-hidden threads are delisted from the public feed; outsiders get a
+  // 404 on the detail too (the author and staff-adjacent viewers still see it).
+  if (extras.rootHidden && !isThreadAuthor && !privileged) threadNotFound();
+
   const all = await loadMessages(threadId);
   const messages = all
     .filter(
       ({ m }) =>
         m.hiddenAt === null || privileged || (viewer.userId !== null && m.authorUserId === viewer.userId),
     )
-    .map(({ m, displayName }) => serializeMessage(m, displayName, tenantName));
+    .map(({ m, displayName }) =>
+      serializeMessage(m, displayName, extras.tenantName, { viewerUserId: viewer.userId }),
+    );
 
-  return { thread: serializeThread(t), messages };
+  return { thread: serializeThread(t, extras), messages };
 }
 
 /** Partner/admin thread detail: hidden messages marked, never omitted. */
 export async function getThreadDetailForStaff(
   threadId: string,
-  opts: { tenantId?: string | undefined } = {},
+  opts: { tenantId?: string | undefined; viewerUserId?: string | undefined } = {},
 ): Promise<QuestionThreadDetail> {
   const t = await loadThread(threadId);
   if (opts.tenantId && t.tenantId !== opts.tenantId) threadNotFound();
-  const tenantName = await loadTenantName(t.tenantId);
+  const extras = await loadThreadExtras(threadId);
   const all = await loadMessages(threadId);
   return {
-    thread: serializeThread(t),
-    messages: all.map(({ m, displayName }) => serializeMessage(m, displayName, tenantName)),
+    thread: serializeThread(t, extras),
+    messages: all.map(({ m, displayName }) =>
+      serializeMessage(m, displayName, extras.tenantName, {
+        viewerUserId: opts.viewerUserId ?? null,
+        staff: true,
+      }),
+    ),
   };
 }
 
@@ -655,11 +785,25 @@ async function insertReply(
   userId: string,
   kind: QuestionAuthorKind,
   body: string,
+  opts: { staff: boolean },
 ): Promise<AddMessageResult> {
   const isThreadAuthor = userId === t.authorUserId;
-  const newStatus = nextStatusOnReply(t.status, kind, isThreadAuthor);
 
-  const message = await db.transaction(async (tx) => {
+  const { message, newStatus } = await db.transaction(async (tx) => {
+    // Re-read under lock: the callers' closed pre-check is a fast path that
+    // races with a concurrent close/reply between the check and this write.
+    // The transition is computed from the locked row, never the stale one.
+    const [locked] = await tx
+      .select()
+      .from(questionThreads)
+      .where(eq(questionThreads.id, t.id))
+      .limit(1)
+      .for('update');
+    if (!locked) threadNotFound();
+    if (locked.status === 'closed') {
+      throw new Conflict('This question is closed', 'question_closed');
+    }
+    const next = nextStatusOnReply(locked.status, kind, isThreadAuthor);
     const [m] = await tx
       .insert(questionMessages)
       .values({ threadId: t.id, authorUserId: userId, authorKind: kind, body })
@@ -670,10 +814,10 @@ async function insertReply(
       .set({
         lastMessageAt: m.createdAt,
         messageCount: sql`${questionThreads.messageCount} + 1`,
-        status: newStatus,
+        status: next,
       })
       .where(eq(questionThreads.id, t.id));
-    return m;
+    return { message: m, newStatus: next };
   });
 
   // Org/Circls replies email the thread author (best-effort; no email when the
@@ -689,15 +833,34 @@ async function insertReply(
     .where(eq(users.id, userId))
     .limit(1);
   return {
-    message: serializeMessage(message, displayRow?.displayName ?? null, tenantName),
+    message: serializeMessage(message, displayRow?.displayName ?? null, tenantName, {
+      viewerUserId: userId,
+      staff: opts.staff,
+    }),
     threadStatus: newStatus,
   };
 }
 
+/** True when the thread's root (earliest) message is hidden by moderation. */
+async function isRootHidden(threadId: string): Promise<boolean> {
+  const res = await db.execute<Record<string, unknown>>(sql`
+    select (qm.hidden_at is not null) as root_hidden
+      from question_messages qm
+     where qm.thread_id = ${threadId}::uuid
+     order by qm.created_at asc, qm.id asc
+     limit 1
+  `);
+  return Boolean(rowsOf(res)[0]?.['root_hidden']);
+}
+
 /**
  * Consumer-surface reply. Allowed: thread author (any visibility), any
- * signed-in user on public threads, org/circls members. Private threads 404
- * for everyone else; closed threads 409 `question_closed` for everyone.
+ * signed-in user on public threads, and cap-holding org/circls staff. Members
+ * whose role lacks the write capability (e.g. `readonly`) post as plain
+ * consumers — so on a private thread they aren't the author of, they 404 like
+ * any outsider (they may still *read* it). Closed threads 409
+ * `question_closed` for everyone; root-hidden public threads 404 for
+ * outsiders (they can't see the thread, so they can't reply on it either).
  */
 export async function addConsumerMessage(input: {
   threadId: string;
@@ -707,14 +870,24 @@ export async function addConsumerMessage(input: {
   const t = await loadThread(input.threadId);
   const rel = await resolveViewerRelation(input.userId, t.tenantId);
   const isThreadAuthor = input.userId === t.authorUserId;
-  if (t.visibility === 'private' && !isThreadAuthor && !rel.isOrgMember && !rel.isPlatformMember) {
+  const kind = resolveAuthorKind(rel);
+  if (t.visibility === 'private' && !isThreadAuthor && kind === 'consumer') {
     threadNotFound();
   }
   if (t.status === 'closed') {
     throw new Conflict('This question is closed', 'question_closed');
   }
+  if (
+    t.visibility === 'public' &&
+    !isThreadAuthor &&
+    !rel.isOrgMember &&
+    !rel.isPlatformMember &&
+    (await isRootHidden(t.id))
+  ) {
+    threadNotFound();
+  }
   await assertMessageRateLimit(input.userId);
-  return insertReply(t, input.userId, resolveAuthorKind(rel), input.body);
+  return insertReply(t, input.userId, kind, input.body, { staff: false });
 }
 
 /** Partner-surface reply — always stamped `org`. Caller has questions.write. */
@@ -729,7 +902,7 @@ export async function addOrgMessage(input: {
   if (t.status === 'closed') {
     throw new Conflict('This question is closed — reopen it first', 'question_closed');
   }
-  return insertReply(t, input.userId, 'org', input.body);
+  return insertReply(t, input.userId, 'org', input.body, { staff: true });
 }
 
 /** Admin-surface reply — always stamped `circls`. */
@@ -742,7 +915,7 @@ export async function addCirclsMessage(input: {
   if (t.status === 'closed') {
     throw new Conflict('This question is closed — reopen it first', 'question_closed');
   }
-  return insertReply(t, input.userId, 'circls', input.body);
+  return insertReply(t, input.userId, 'circls', input.body, { staff: true });
 }
 
 // ── Status patches ────────────────────────────────────────────────────────────
@@ -755,11 +928,17 @@ export async function setStatusAsAuthor(input: {
 }): Promise<QuestionThreadDetail['thread']> {
   const t = await loadThread(input.threadId);
   if (t.authorUserId !== input.userId) threadNotFound();
-  const next = applyAuthorStatusPatch(t.status, input.status);
-  if (next === null) {
+  // Fast-path pre-check; the authoritative check re-runs on the locked row.
+  if (applyAuthorStatusPatch(t.status, input.status) === null) {
     throw new Conflict('This question is closed', 'question_closed');
   }
-  return persistStatus(t.id, next);
+  return persistStatus(t.id, (locked) => {
+    const next = applyAuthorStatusPatch(locked.status, input.status);
+    if (next === null) {
+      throw new Conflict('This question is closed', 'question_closed');
+    }
+    return next;
+  });
 }
 
 /** Org/admin status change — any of the three (reopen included). */
@@ -770,34 +949,52 @@ export async function setStatusAsStaff(input: {
 }): Promise<QuestionThreadDetail['thread']> {
   const t = await loadThread(input.threadId);
   if (input.tenantId && t.tenantId !== input.tenantId) threadNotFound();
-  return persistStatus(t.id, input.status);
+  return persistStatus(t.id, () => input.status);
 }
 
+/**
+ * Persist a status change computed from the row as it is at write time: the
+ * row is re-read FOR UPDATE inside the transaction so a concurrent
+ * close/reply can't slip between the caller's pre-check and the write.
+ */
 async function persistStatus(
   threadId: string,
-  status: QuestionStatus,
+  compute: (locked: QuestionThread) => QuestionStatus,
 ): Promise<QuestionThreadDetail['thread']> {
-  const [updated] = await db
-    .update(questionThreads)
-    .set({ status })
-    .where(eq(questionThreads.id, threadId))
-    .returning();
-  if (!updated) threadNotFound();
-  return serializeThread(updated);
+  const updated = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(questionThreads)
+      .where(eq(questionThreads.id, threadId))
+      .limit(1)
+      .for('update');
+    if (!locked) threadNotFound();
+    const [row] = await tx
+      .update(questionThreads)
+      .set({ status: compute(locked) })
+      .where(eq(questionThreads.id, threadId))
+      .returning();
+    if (!row) threadNotFound();
+    return row;
+  });
+  return serializeThread(updated, await loadThreadExtras(threadId));
 }
 
 // ── Moderation (hide / unhide) ────────────────────────────────────────────────
 
 /**
  * Hide or unhide a message on a public thread. Org callers (`allowRoot:
- * false`) can never touch the root message; Circls admin (`allowRoot: true`)
- * can hide any message — hiding the root removes the thread from the public
- * list while staying visible (marked) to author/org/admin.
+ * false`, `byKind: 'org'`) can never touch the root message; Circls admin
+ * (`allowRoot: true`, `byKind: 'circls'`) can hide any message — hiding the
+ * root removes the thread from the public list while staying visible (marked)
+ * to author/org/admin. Moderation hierarchy: the org can only undo its own
+ * hides — a message hidden by Circls stays hidden until Circls unhides it.
  */
 export async function setMessageHidden(input: {
   threadId: string;
   messageId: string;
   byUserId: string;
+  byKind: QuestionHiddenByKind;
   hidden: boolean;
   allowRoot: boolean;
   tenantId?: string | undefined;
@@ -829,22 +1026,43 @@ export async function setMessageHidden(input: {
     }
   }
 
+  const tenantName = await loadTenantName(t.tenantId);
+  const serialize = async (m: QuestionMessage): Promise<QuestionMessageRow> => {
+    const [displayRow] = await db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, m.authorUserId))
+      .limit(1);
+    return serializeMessage(m, displayRow?.displayName ?? null, tenantName, {
+      viewerUserId: input.byUserId,
+      staff: true,
+    });
+  };
+
+  if (input.hidden) {
+    // Idempotent no-op on an already-hidden message: never overwrite the
+    // original moderator's stamp (an org re-hide must not launder a Circls
+    // hide into an org-unhidable one).
+    if (msg.hiddenAt !== null) return serialize(msg);
+  } else {
+    if (input.byKind === 'org' && msg.hiddenAt !== null && msg.hiddenByKind === 'circls') {
+      throw new Forbidden(
+        'This message was hidden by the Circls team and can only be unhidden by Circls',
+        'forbidden_moderation',
+      );
+    }
+  }
+
   const [updated] = await db
     .update(questionMessages)
     .set(
       input.hidden
-        ? { hiddenAt: new Date(), hiddenByUserId: input.byUserId }
-        : { hiddenAt: null, hiddenByUserId: null },
+        ? { hiddenAt: new Date(), hiddenByUserId: input.byUserId, hiddenByKind: input.byKind }
+        : { hiddenAt: null, hiddenByUserId: null, hiddenByKind: null },
     )
     .where(eq(questionMessages.id, msg.id))
     .returning();
   if (!updated) throw new NotFound('Message not found', 'question_message_not_found');
 
-  const tenantName = await loadTenantName(t.tenantId);
-  const [displayRow] = await db
-    .select({ displayName: users.displayName })
-    .from(users)
-    .where(eq(users.id, updated.authorUserId))
-    .limit(1);
-  return serializeMessage(updated, displayRow?.displayName ?? null, tenantName);
+  return serialize(updated);
 }

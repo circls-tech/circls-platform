@@ -104,10 +104,6 @@ export function ThreadView({
   // The asker's DB id is on the thread; MyProfile carries the viewer's DB id
   // (Firebase uids don't match DB uuids, so this is the only sound comparison).
   const isAuthor = Boolean(thread && profileQ.data && thread.authorUserId === profileQ.data.id);
-  // The root message is authored by the asker, so its authorName identifies
-  // the viewer's own consumer messages when they are the author (best effort —
-  // display names aren't unique, but alignment + kind keep it unambiguous).
-  const rootAuthorName = messages[0]?.authorName;
   const closed = thread?.status === 'closed';
 
   // Reset per-thread state whenever a different thread opens.
@@ -154,7 +150,9 @@ export function ThreadView({
       ariaLabel="Question thread"
       title={
         <>
-          <h2 className="truncate font-display text-lg font-extrabold text-ink">Question</h2>
+          <h2 className="truncate font-display text-lg font-extrabold text-ink">
+            {thread?.subject.name || 'Question'}
+          </h2>
           {thread && <QuestionStatusBadge status={thread.status} />}
         </>
       }
@@ -188,13 +186,7 @@ export function ThreadView({
             )}
           </div>
         ) : (
-          messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              msg={msg}
-              own={isAuthor && msg.authorKind === 'consumer' && msg.authorName === rootAuthorName}
-            />
-          ))
+          messages.map((msg) => <MessageBubble key={msg.id} msg={msg} own={msg.own} />)
         )}
       </div>
 

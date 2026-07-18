@@ -1,6 +1,7 @@
 'use client';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { isTopOverlay, popOverlay, pushOverlay } from '@/lib/ui/overlay_stack';
 
 /**
  * Right-side slide-over panel (HelpWidget pattern): portals to document.body
@@ -23,24 +24,26 @@ export function SlideOver({
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
+  const overlayId = useId();
 
   // Portal target is only available in the browser.
   useEffect(() => setMounted(true), []);
 
-  // Escape-to-close + lock body scroll while open.
+  // Escape-to-close + body-scroll lock via the shared overlay stack: only the
+  // topmost overlay reacts to Escape, and scroll is restored when the last
+  // overlay closes (nested open/close in any order is safe).
   useEffect(() => {
     if (!open) return;
+    pushOverlay(overlayId);
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && isTopOverlay(overlayId)) onClose();
     }
     document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
+      popOverlay(overlayId);
     };
-  }, [open, onClose]);
+  }, [open, onClose, overlayId]);
 
   if (!open || !mounted) return null;
 

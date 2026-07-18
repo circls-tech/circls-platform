@@ -16,7 +16,7 @@ import type {
   QuestionMessage,
   QuestionStatus,
   QuestionSubjectType,
-  QuestionThreadRow,
+  QuestionThreadDetailThread,
 } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -30,7 +30,7 @@ const SUBJECT_LABELS: Record<QuestionSubjectType, string> = {
 };
 
 /** Portal page for the thread's subject (memberships have no per-id page). */
-function subjectHref(thread: QuestionThreadRow): string {
+function subjectHref(thread: QuestionThreadDetailThread): string {
   switch (thread.subjectType) {
     case 'event':      return `/events/${thread.subjectId}`;
     case 'arena':      return `/arenas/${thread.subjectId}`;
@@ -81,6 +81,9 @@ function MessageBubble({
   // The org can hide consumer replies on its public threads — never the root
   // question (server enforces both; this only controls where the button shows).
   const canHide = isPublicThread && !isRoot && message.authorKind === 'consumer' && !hidden;
+  // The org can only undo its own hides; Circls hides are read-only here.
+  const hiddenByCircls = hidden && message.hiddenByKind === 'circls';
+  const canUnhide = hidden && !hiddenByCircls;
 
   return (
     <div className={['flex flex-col', fromOrgSide ? 'items-end' : 'items-start'].join(' ')}>
@@ -114,7 +117,7 @@ function MessageBubble({
               Hide
             </Button>
           )}
-          {hidden && (
+          {canUnhide && (
             <Button
               variant="ghost"
               size="sm"
@@ -123,6 +126,11 @@ function MessageBubble({
             >
               Unhide
             </Button>
+          )}
+          {hiddenByCircls && (
+            <span className="px-1 text-[11px] text-slate-400">
+              Hidden by Circls — only the Circls team can unhide it
+            </span>
           )}
         </div>
       )}

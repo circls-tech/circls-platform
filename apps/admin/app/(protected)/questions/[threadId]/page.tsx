@@ -80,7 +80,12 @@ function MessageBubble({
             label={AUTHOR_KIND_LABELS[message.authorKind]}
             tone={AUTHOR_KIND_COLORS[message.authorKind]}
           />
-          {hidden && <Badge label="Hidden" tone="bg-rose-100 text-rose-800" />}
+          {hidden && (
+            <Badge
+              label={message.hiddenByKind === 'org' ? 'Hidden by org' : 'Hidden by Circls'}
+              tone="bg-rose-100 text-rose-800"
+            />
+          )}
         </div>
         <p className="whitespace-pre-line text-sm text-slate-800">{message.body}</p>
         <div className="mt-1 flex items-center gap-3">
@@ -169,13 +174,16 @@ export default function QuestionThreadPage() {
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold text-slate-900">
-            Question on {SUBJECT_TYPE_LABELS[t.subjectType].toLowerCase()}
+            {t.subject.name
+              ? `Question on ${t.subject.name}`
+              : `Question on ${SUBJECT_TYPE_LABELS[t.subjectType].toLowerCase()}`}
           </h1>
           <Badge label={SUBJECT_TYPE_LABELS[t.subjectType]} tone={SUBJECT_TYPE_COLORS[t.subjectType]} />
           <Badge label={VISIBILITY_LABELS[t.visibility]} tone={VISIBILITY_COLORS[t.visibility]} />
           <Badge label={STATUS_LABELS[t.status]} tone={STATUS_COLORS[t.status]} />
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <span>Asked by {t.authorName}</span>
           <span>
             Subject <span className="font-mono">{t.subjectId}</span>
           </span>

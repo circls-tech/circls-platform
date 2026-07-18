@@ -302,9 +302,13 @@ export interface QuestionMessageRow {
   threadId: string;
   authorKind: QuestionAuthorKind;
   authorName: string;
+  /** True when the message was posted by the calling admin user. */
+  own: boolean;
   body: string;
   /** ISO timestamp when hidden by moderation; null when visible. */
   hiddenAt: string | null;
+  /** Who hid the message: 'org' (partner) or 'circls' (admin); null when visible. */
+  hiddenByKind: 'org' | 'circls' | null;
   createdAt: string;
 }
 
@@ -320,6 +324,10 @@ export interface AdminQuestionThreadDetail {
     messageCount: number;
     lastMessageAt: string;
     createdAt: string;
+    /** Subject summary (joined name) — always present on detail responses. */
+    subject: QuestionSubjectSummary;
+    /** Display name of the asker (root-message author). */
+    authorName: string;
   };
   messages: QuestionMessageRow[];
 }
