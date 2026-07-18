@@ -28,7 +28,7 @@ export default function EventsPage() {
   const upcoming = (events.data ?? [])
     // Defensive guard: never show a past event even if the API regresses.
     .filter((e) => new Date(e.endsAt).getTime() >= now)
-    // Shared location → within EVENT_RADIUS_KM of the user; manual city pick or
+    // Shared location → within NEARBY_RADIUS_KM of the user; manual city pick or
     // no selection → country-wide (unknown-location events stay visible).
     .filter((e) => eventInRange(e, { city, country, coords }));
   const groups = groupByDay(upcoming);

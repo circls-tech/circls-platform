@@ -11,14 +11,15 @@ import { Input } from '@/lib/ui';
 
 export default function VenuesPage() {
   const [search, setSearch] = useState('');
-  const { city, country, openPicker } = useLocation();
-  // Country is the market boundary; a selected city is a HARD filter — venues in
-  // other cities are hidden, and a city with no venues shows the empty state.
-  // The label prefers the CITY (matching the events page); country covers legacy
-  // country-only selections.
-  const areaLabel = city ?? country;
+  const { city, country, coords, openPicker } = useLocation();
+  // Country is the market boundary; a selected city is a HARD filter; shared
+  // coords without a city (user outside every served city) restrict geolocated
+  // venues to the nearby radius, mirroring events. The label prefers the CITY,
+  // says "near you" in radius mode, and falls back to the country.
+  const nearYou = Boolean(coords) && !city;
+  const areaLabel = city ?? (nearYou ? 'near you' : country);
   const venues = useVenues(search);
-  const filtered = venuesForArea(venues.data ?? [], { city, country });
+  const filtered = venuesForArea(venues.data ?? [], { city, country, coords });
 
   return (
     <div className="min-h-screen">
@@ -40,7 +41,8 @@ export default function VenuesPage() {
           <p className="mt-3 text-sm text-text-secondary">
             {areaLabel ? (
               <>
-                Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
+                Showing venues {nearYou ? '' : 'in '}
+                <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
                 <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                   Change
                 </button>
@@ -66,7 +68,7 @@ export default function VenuesPage() {
             title="No venues here yet"
             body={
               areaLabel
-                ? `No venues in ${areaLabel} yet. Check back soon, or change your location to browse elsewhere.`
+                ? `No venues ${city ? `in ${city}` : areaLabel === 'near you' ? 'near you' : `in ${areaLabel}`} yet. Check back soon, or change your location to browse elsewhere.`
                 : 'Try a different search, or check back soon — new venues are added often.'
             }
           />

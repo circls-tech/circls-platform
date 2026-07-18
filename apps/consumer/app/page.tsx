@@ -22,23 +22,26 @@ export default function LandingPage() {
   const events = useUpcomingEvents(100);
   const memberships = useAllMemberships(100);
 
-  // Country is the market boundary; a selected city HARD-filters venues, so
-  // this rail simply hides when the user's city has none.
-  const nearbyVenues = venuesForArea(venues.data ?? [], { city, country }).slice(0, 10);
+  // Country is the market boundary; a selected city HARD-filters venues, and
+  // shared coords without a city restrict geolocated venues to the nearby
+  // radius. The rail simply hides when nothing survives.
+  const nearYou = Boolean(coords) && !city;
+  const nearbyVenues = venuesForArea(venues.data ?? [], { city, country, coords }).slice(0, 10);
   const venuesTitle = city
     ? `Venues in ${city}`
-    : country
-      ? `Venues in ${country}`
-      : 'Venues near you';
-  // Shared location → only events within EVENT_RADIUS_KM; manual city pick or
+    : nearYou || !country
+      ? 'Venues near you'
+      : `Venues in ${country}`;
+  // Shared location → only events within NEARBY_RADIUS_KM; manual city pick or
   // no selection → country-wide, as before.
   const nearbyEvents = (events.data ?? [])
     .filter((e) => eventInRange(e, { city, country, coords }))
     .slice(0, 10);
-  // Memberships: country boundary, city HARD filter for venue-scoped plans;
-  // tenant-wide plans stay visible across the country.
+  // Memberships: country boundary, city HARD filter for venue-scoped plans,
+  // nearby radius when only coords are shared; tenant-wide plans stay visible
+  // across the country.
   const nearbyMemberships = (memberships.data ?? [])
-    .filter((m) => membershipInArea(m, { city, country }))
+    .filter((m) => membershipInArea(m, { city, country, coords }))
     .slice(0, 10);
 
   // With a location set and every rail empty, the page would be just the hero —
@@ -105,7 +108,18 @@ export default function LandingPage() {
         )}
 
         {nearbyMemberships.length > 0 && (
-          <HScroll title={(city ?? country) ? `Memberships in ${city ?? country}` : 'Memberships'} viewAllHref="/memberships">
+          <HScroll
+            title={
+              city
+                ? `Memberships in ${city}`
+                : nearYou
+                  ? 'Memberships near you'
+                  : country
+                    ? `Memberships in ${country}`
+                    : 'Memberships'
+            }
+            viewAllHref="/memberships"
+          >
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
