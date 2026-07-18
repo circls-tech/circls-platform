@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
+import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { useMembership, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
@@ -194,6 +195,11 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                 <OrgBrandBlock brand={m.brand} org={orgQ.data} variant="full" label="Offered by" />
               </section>
             )}
+
+            {/* Q&A with the organiser (#106 questions threads). */}
+            <section className="mt-8">
+              <QuestionsSection subjectType="membership" subjectId={m.id} subjectName={m.name} />
+            </section>
           </>
         )}
       </main>

@@ -7,6 +7,7 @@ import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
+import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { useEvent, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
@@ -228,6 +229,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </Card>
               </section>
             )}
+
+            {/* Q&A with the organiser (#106 questions threads). */}
+            <section className="mt-8">
+              <QuestionsSection subjectType="event" subjectId={ev.id} subjectName={ev.name} />
+            </section>
           </>
         )}
       </main>

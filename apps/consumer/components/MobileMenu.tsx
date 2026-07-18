@@ -120,6 +120,9 @@ export function MobileMenu() {
                     <Link href="/me/bookings" onClick={() => setOpen(false)}>
                       <Button variant="secondary" size="md" className="w-full">My bookings</Button>
                     </Link>
+                    <Link href="/me/questions" onClick={() => setOpen(false)}>
+                      <Button variant="secondary" size="md" className="w-full">My questions</Button>
+                    </Link>
                     <Link href="/me/profile" onClick={() => setOpen(false)}>
                       <Button variant="secondary" size="md" className="w-full">My profile</Button>
                     </Link>

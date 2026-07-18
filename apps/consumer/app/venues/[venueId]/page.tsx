@@ -6,6 +6,8 @@ import { BackBar } from '@/components/BackBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
+import { QuestionsSection } from '@/components/questions/QuestionsSection';
+import { SlideOver } from '@/components/questions/SlideOver';
 import { matchSport } from '@/lib/sportImages';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import {
@@ -297,6 +299,7 @@ function ArenaCard({
   onToggleSlot: (slot: CartSlot) => void;
 }) {
   const [date, setDate] = useState(todayLocal());
+  const [questionsOpen, setQuestionsOpen] = useState(false);
   const { from, to } = dayBounds(date);
   const slotsQ = useArenaSlots(arena.id, from, to);
   const slots = slotsQ.data ?? [];
@@ -309,6 +312,15 @@ function ArenaCard({
           <p className="mt-0.5 text-sm text-text-secondary">
             {arena.sport ?? 'General'}
             {arena.capacity != null ? ` · up to ${arena.capacity}` : ''}
+            {' · '}
+            {/* Q&A on this court (#106); threads load lazily when the panel opens. */}
+            <button
+              type="button"
+              onClick={() => setQuestionsOpen(true)}
+              className="font-semibold text-coral-deep underline"
+            >
+              Questions
+            </button>
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-text-secondary">
@@ -322,6 +334,26 @@ function ArenaCard({
           />
         </label>
       </div>
+
+      <SlideOver
+        open={questionsOpen}
+        onClose={() => setQuestionsOpen(false)}
+        ariaLabel={`Questions about ${arena.name}`}
+        title={
+          <h3 className="truncate font-display text-lg font-extrabold text-ink">
+            Questions · {arena.name}
+          </h3>
+        }
+      >
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <QuestionsSection
+            subjectType="arena"
+            subjectId={arena.id}
+            subjectName={arena.name}
+            showHeading={false}
+          />
+        </div>
+      </SlideOver>
 
       <div className="mt-4">
         {slotsQ.isLoading ? (
