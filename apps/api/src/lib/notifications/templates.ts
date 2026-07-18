@@ -46,6 +46,8 @@ interface TemplateDef {
  *   booking.reminder_* → venueName, arenaName, when
  *   otp.login          → code
  *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
+ *   question.asked     → subjectName, excerpt, visibility, portalUrl
+ *   question.replied   → subjectName, excerpt, authorName, link
  */
 const TEMPLATES: Record<string, TemplateDef> = {
   'booking.confirmed': {
@@ -106,6 +108,34 @@ const TEMPLATES: Record<string, TemplateDef> = {
   'otp.login': {
     sms: {
       body: 'Your Circls login code is {{code}}. Valid for 10 minutes. Do not share.',
+    },
+  },
+
+  // Questions threads (design doc 2026-07-18): org hears about new questions,
+  // the asker hears about org/Circls replies. Email-only in v1.
+  'question.asked': {
+    email: {
+      subject: 'New question on {{subjectName}}',
+      body:
+        'Hello,\n\n' +
+        'A customer asked a new {{visibility}} question on {{subjectName}}:\n\n' +
+        '"{{excerpt}}"\n\n' +
+        'Reply from your Questions inbox:\n' +
+        '{{portalUrl}}\n\n' +
+        '— Circls\n',
+    },
+  },
+
+  'question.replied': {
+    email: {
+      subject: 'New reply to your question — {{subjectName}}',
+      body:
+        'Hello,\n\n' +
+        '{{authorName}} replied to your question on {{subjectName}}:\n\n' +
+        '"{{excerpt}}"\n\n' +
+        'View the conversation:\n' +
+        '{{link}}\n\n' +
+        '— Circls\n',
     },
   },
 

@@ -328,3 +328,105 @@ export async function notifyBookingCancelled(bookingId: string): Promise<void> {
   }
 }
 
+// ── Questions threads (design doc 2026-07-18) ────────────────────────────────
+
+const QUESTION_EXCERPT_LEN = 280;
+
+/**
+ * Email the owning org about a brand-new question thread. Recipient is the
+ * tenant's `contact_email` — silently skipped when unset. Called via the
+ * best-effort `onQuestionAsked` hook (never throws through to the write path).
+ */
+export async function notifyQuestionAsked(threadId: string): Promise<void> {
+  const res = await db.execute<Record<string, unknown>>(sql`
+    select t.tenant_id                        as tenant_id,
+           t.visibility                       as visibility,
+           tn.contact_email                   as contact_email,
+           coalesce(e.name, a.name, m.name)   as subject_name,
+           root.body                          as root_body
+      from question_threads t
+      join tenants tn on tn.id = t.tenant_id
+      left join events e on e.id = t.event_id
+      left join arenas a on a.id = t.arena_id
+      left join memberships m on m.id = t.membership_id
+      join lateral (
+        select qm.body from question_messages qm
+         where qm.thread_id = t.id
+         order by qm.created_at asc, qm.id asc limit 1
+      ) root on true
+     where t.id = ${threadId}
+     limit 1
+  `);
+  const arr = res as unknown as Record<string, unknown>[];
+  const r = arr[0];
+  if (!r) {
+    logger.warn({ threadId }, 'notify_question_asked_missing');
+    return;
+  }
+  const contactEmail = (r['contact_email'] as string | null) ?? null;
+  if (!contactEmail || !isEmail(contactEmail)) return;
+
+  await safeDispatch({
+    tenantId: r['tenant_id'] as string,
+    userId: null,
+    channel: 'email' as NotificationChannel,
+    recipient: contactEmail,
+    templateKey: 'question.asked',
+    payload: {
+      subjectName: (r['subject_name'] as string | null) ?? 'your listing',
+      excerpt: String(r['root_body'] ?? '').slice(0, QUESTION_EXCERPT_LEN),
+      visibility: r['visibility'] as string,
+      portalUrl: `${env.PARTNERS_BASE_URL}/questions/${threadId}`,
+    },
+  });
+}
+
+/**
+ * Email the thread author when the org or the Circls team replies. Recipient
+ * is the author's `users.email` — silently skipped when unset. Consumer
+ * replies on public threads never email anyone (spec §4).
+ */
+export async function notifyQuestionReplied(threadId: string, messageId: string): Promise<void> {
+  const res = await db.execute<Record<string, unknown>>(sql`
+    select t.tenant_id                        as tenant_id,
+           t.author_user_id                   as author_user_id,
+           au.email                           as author_email,
+           tn.name                            as tenant_name,
+           coalesce(e.name, a.name, m.name)   as subject_name,
+           qm.body                            as reply_body,
+           qm.author_kind                     as reply_author_kind
+      from question_threads t
+      join tenants tn on tn.id = t.tenant_id
+      join users au on au.id = t.author_user_id
+      left join events e on e.id = t.event_id
+      left join arenas a on a.id = t.arena_id
+      left join memberships m on m.id = t.membership_id
+      join question_messages qm on qm.id = ${messageId} and qm.thread_id = t.id
+     where t.id = ${threadId}
+     limit 1
+  `);
+  const arr = res as unknown as Record<string, unknown>[];
+  const r = arr[0];
+  if (!r) {
+    logger.warn({ threadId, messageId }, 'notify_question_replied_missing');
+    return;
+  }
+  const authorEmail = (r['author_email'] as string | null) ?? null;
+  if (!authorEmail || !isEmail(authorEmail)) return;
+
+  const kind = r['reply_author_kind'] as string;
+  await safeDispatch({
+    tenantId: r['tenant_id'] as string,
+    userId: r['author_user_id'] as string,
+    channel: 'email' as NotificationChannel,
+    recipient: authorEmail,
+    templateKey: 'question.replied',
+    payload: {
+      subjectName: (r['subject_name'] as string | null) ?? 'a listing',
+      excerpt: String(r['reply_body'] ?? '').slice(0, QUESTION_EXCERPT_LEN),
+      authorName: kind === 'circls' ? 'The Circls team' : ((r['tenant_name'] as string | null) ?? 'The organizer'),
+      link: `${env.CONSUMER_BASE_URL}/me/questions`,
+    },
+  });
+}
+

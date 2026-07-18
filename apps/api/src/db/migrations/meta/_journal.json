@@ -253,6 +253,13 @@
       "when": 1782000000000,
       "tag": "0036_event_max_per_user",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1782080000000,
+      "tag": "0037_question_threads",
+      "breakpoints": true
     }
   ]
 }
