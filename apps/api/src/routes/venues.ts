@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
+import { suggestCity } from '../lib/geocoding/gazetteer.js';
 import {
   createVenue,
   getVenueById,
@@ -80,6 +81,11 @@ const geocodeSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).optional(),
 });
 
+const suggestCitySchema = z.object({
+  city: z.string().trim().min(1).max(120),
+  country: z.string().trim().max(120).optional(),
+});
+
 export const venueRoutes: FastifyPluginAsync = async (app) => {
   // Address autocomplete for the venue form. Auth-gated (partner-only) so the
   // upstream geocoder isn't an open proxy; results are normalised + restricted
@@ -93,6 +99,20 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const { q, country, limit } = parsed.data;
     const suggestions = await getGeocoder().search(q, { country: country ?? null, limit: limit ?? 5 });
     return { suggestions };
+  });
+
+  // "Did you mean" for a hand-typed city: canonical spelling for alias/case
+  // variants, or the nearest known city within a small edit distance
+  // ("Banagalore" → "Bengaluru"). Purely offline (gazetteer) — no upstream
+  // geocoder call. Null when the input is already canonical or unrecognised.
+  app.get('/v1/venues/geocode/suggest-city', { preHandler: requireAuth }, async (req) => {
+    const parsed = suggestCitySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid city query', 'bad_request', { issues: parsed.error.issues });
+    }
+    await currentUser(req); // any authenticated partner
+    const { city, country } = parsed.data;
+    return { suggestion: suggestCity(city, country ?? null) };
   });
 
   app.post('/v1/tenants/:tenantId/venues', { preHandler: requireAuth }, async (req) => {

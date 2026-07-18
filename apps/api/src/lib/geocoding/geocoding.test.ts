@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { COUNTRY_CENTROID, lookupGazetteer, normalizeCountry, searchGazetteer } from './gazetteer.js';
+import {
+  COUNTRY_CENTROID,
+  canonicalizeCity,
+  lookupGazetteer,
+  normalizeCountry,
+  searchGazetteer,
+  suggestCity,
+} from './gazetteer.js';
 import { __resetGeocoderForTesting, getGeocoder, hasGeocodableAddress } from './index.js';
 
 afterEach(() => __resetGeocoderForTesting());
@@ -72,6 +79,51 @@ describe('searchGazetteer', () => {
 
   it('returns nothing for a blank query', () => {
     expect(searchGazetteer('')).toEqual([]);
+  });
+});
+
+describe('canonicalizeCity', () => {
+  it('folds aliases and case to the canonical spelling', () => {
+    expect(canonicalizeCity('bangalore', 'India')).toBe('Bengaluru');
+    expect(canonicalizeCity('Bombay', 'India')).toBe('Mumbai');
+    expect(canonicalizeCity('  MYSORE ', 'India')).toBe('Mysuru');
+    expect(canonicalizeCity('nyc', 'USA')).toBe('New York');
+    expect(canonicalizeCity('bengaluru', 'India')).toBe('Bengaluru');
+  });
+  it('searches all served countries when the country is missing or unknown', () => {
+    expect(canonicalizeCity('bangalore', null)).toBe('Bengaluru');
+    expect(canonicalizeCity('boston', 'Germany')).toBe('Boston');
+  });
+  it('returns null for unknown cities and empty input (never destructive)', () => {
+    expect(canonicalizeCity('Banagalore', 'India')).toBeNull();
+    expect(canonicalizeCity('Springfield', 'India')).toBeNull();
+    expect(canonicalizeCity('', 'India')).toBeNull();
+    expect(canonicalizeCity(null, 'India')).toBeNull();
+  });
+});
+
+describe('suggestCity', () => {
+  it('suggests the canonical spelling for aliases', () => {
+    expect(suggestCity('Bangalore', 'India')).toBe('Bengaluru');
+    expect(suggestCity('bombay', 'India')).toBe('Mumbai');
+  });
+  it('suggests the nearest known city for small typos (the "Banagalore" case)', () => {
+    expect(suggestCity('Banagalore', 'India')).toBe('Bengaluru');
+    expect(suggestCity('Mumbay', 'India')).toBe('Mumbai');
+    expect(suggestCity('Bostn', 'USA')).toBe('Boston');
+  });
+  it('stays silent when the input is already canonical (any case)', () => {
+    expect(suggestCity('Bengaluru', 'India')).toBeNull();
+    expect(suggestCity('bengaluru', 'India')).toBeNull();
+  });
+  it('stays silent for short input and things unlike any known city', () => {
+    expect(suggestCity('Xy', 'India')).toBeNull();
+    expect(suggestCity('Springfield', 'India')).toBeNull();
+    expect(suggestCity(null, 'India')).toBeNull();
+  });
+  it('respects the country scope', () => {
+    // "Bostn" is near Boston (USA) but nothing in India.
+    expect(suggestCity('Bostn', 'India')).toBeNull();
   });
 });
 
