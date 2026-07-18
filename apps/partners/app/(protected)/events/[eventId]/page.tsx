@@ -31,6 +31,12 @@ import {
   type TierDraft,
 } from '@/components/TiersEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import { LiveEventSettings } from '@/components/LiveEventSettings';
+import {
+  MaxPerUserField,
+  maxPerUserFromApi,
+  maxPerUserToPayload,
+} from '@/components/MaxPerUserField';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
 import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -125,6 +131,8 @@ export default function OrgEventDetailPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  // null = no per-customer ticket limit; else the count input's string value.
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   // '' => standalone; otherwise a venue id.
   const [venueChoice, setVenueChoice] = useState('');
   // Standalone address fields (shown when venueChoice === '').
@@ -174,6 +182,7 @@ export default function OrgEventDetailPage() {
     setEndsAtLocal(isoToTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQrConfig(ev.qrTicketConfig ?? null);
+    setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setVenueChoice(ev.venueId ?? '');
     // Prefill the standalone address from whatever the event already carries.
     const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
@@ -286,6 +295,7 @@ export default function OrgEventDetailPage() {
           startsAt: localToTzIso(startsAtLocal, editTz),
           endsAt: localToTzIso(endsAtLocal, editTz),
           tiers: tiersToPayload(tiers),
+          maxPerUser: maxPerUserToPayload(maxPerUser),
           qrTicketConfig: qrConfig,
           ...scopePatch,
         },
@@ -450,6 +460,18 @@ export default function OrgEventDetailPage() {
             </Card>
           )}
 
+          {!editing && ev.status === 'published' && (
+            <LiveEventSettings
+              key={ev.id}
+              tiers={ev.tiers}
+              maxPerUser={ev.maxPerUser}
+              saving={update.isPending}
+              onSave={async (input) => {
+                await update.mutateAsync({ eventId, input });
+              }}
+            />
+          )}
+
           {editing && ev.status === 'draft' && (
             <Card
               title="Edit event"
@@ -592,6 +614,8 @@ export default function OrgEventDetailPage() {
                   onChange={setTiers}
                   currency={editCurrency}
                 />
+
+                <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
                 <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
 

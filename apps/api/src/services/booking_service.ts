@@ -459,6 +459,10 @@ export interface BookEventResult {
  *     tier.pricePaise * quantity across the lines (event.pricePaise is only the
  *     min-tier display price and is NOT used for charging).
  *
+ * Per-customer cap (event-level): when event.maxPerUser is set, the buyer's
+ *   total tickets for the event — across ALL tiers and all their non-cancelled
+ *   bookings — may not exceed it (`event_user_limit` Conflict).
+ *
  * Free path  (basePaise === 0): inserts booking with status='confirmed',
  *   paymentMethod='free'. No KYC check.
  *
@@ -492,6 +496,42 @@ export async function bookEvent(
     const tierIds = lines.map((l) => l.tierId);
     if (new Set(tierIds).size !== tierIds.length) {
       throw new BadRequest('Duplicate ticket tier in request', 'bad_request');
+    }
+
+    // Per-customer event cap: the buyer's tickets for this event — summed
+    // across ALL tiers and all their non-cancelled bookings — plus this request
+    // may not exceed event.maxPerUser. The event row is locked first (before
+    // the tier locks below, keeping one event→tier lock order) so two
+    // concurrent bookings by the same user serialize rather than both passing.
+    if (ev.maxPerUser !== null) {
+      await tx
+        .select({ id: events.id })
+        .from(events)
+        .where(eq(events.id, eventId))
+        .for('update');
+      const requested = lines.reduce((sum, l) => sum + l.quantity, 0);
+      const [row] = await tx
+        .select({ held: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
+        .from(eventBookingTickets)
+        .innerJoin(eventTicketTiers, eq(eventTicketTiers.id, eventBookingTickets.tierId))
+        .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
+        .where(
+          and(
+            eq(eventTicketTiers.eventId, eventId),
+            ne(bookings.status, 'cancelled'),
+            eq(bookings.customerUserId, customer.userId),
+          ),
+        );
+      const held = row?.held ?? 0;
+      if (held + requested > ev.maxPerUser) {
+        throw new Conflict(
+          held >= ev.maxPerUser
+            ? `You've already booked the maximum of ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} for this event`
+            : `This event is limited to ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} per person`,
+          'event_user_limit',
+          { maxPerUser: ev.maxPerUser, held },
+        );
+      }
     }
 
     // Lock the referenced tiers (serialize concurrent buyers), validate ownership,

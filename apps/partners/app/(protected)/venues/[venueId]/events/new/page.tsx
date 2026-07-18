@@ -7,6 +7,7 @@ import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
 import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
   RecurrenceEditor,
@@ -59,6 +60,8 @@ export default function NewEventPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  // null = no per-customer ticket limit; else the count input's string value.
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [err, setErr] = useState<string | null>(null);
@@ -120,6 +123,7 @@ export default function NewEventPage() {
               endsAt: localToVenueTzIso(endsAtLocal, tz),
             }),
         tiers: tiersToPayload(tiers),
+        maxPerUser: maxPerUserToPayload(maxPerUser),
       });
       // For a series, photos land on the first date — the other dates (and the
       // consumer pages) borrow that gallery.
@@ -210,6 +214,8 @@ export default function NewEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
           <PendingPhotosPicker photos={photos} onChange={setPhotos} />
 

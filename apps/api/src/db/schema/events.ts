@@ -48,6 +48,9 @@ export const events = pgTable('events', {
   endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   capacity: integer('capacity'),
+  /** Per-customer ticket cap for the whole event (summed across all tiers and
+   *  all the user's non-cancelled bookings); null = no limit. */
+  maxPerUser: integer('max_per_user'),
   /** QR entry-ticket rules for this event (null = QR tickets disabled). */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   /**
