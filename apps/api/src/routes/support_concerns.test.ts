@@ -2,8 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// Consumer Help concerns (#114): consumer submit/list + admin list filters, plus
-// a regression proving the existing partner submit + admin list still work.
+// Consumer Help concerns (#114), amended by the support→threads design
+// (2026-07-18): the consumer POST intake is GONE (410) — new concerns are
+// question threads. Historical reads (consumer GET + admin list/patch) and the
+// partner submit path still work; those rows are now seeded directly in SQL
+// since the intake route no longer exists.
 // Integration (RUN_INTEGRATION + a real Postgres).
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
@@ -99,6 +102,17 @@ describe.skipIf(!runIntegration)('consumer support concerns (#114)', () => {
       RETURNING id
     `);
     ownedBookingId = ((bRows as unknown as { id: string }[])[0]!).id;
+
+    // Historical consumer concerns, seeded directly (the POST intake is gone —
+    // new consumer concerns are question threads now).
+    await db.execute(sql`
+      INSERT INTO support_issues (user_id, message, source, category, booking_id, flow_answers)
+      VALUES
+        (${consumerId}::uuid, 'General question about the app.', 'consumer_chatbot', 'other', NULL,
+         '[{"question":"What can we help you with?","answer":"Something else"}]'::jsonb),
+        (${consumerId}::uuid, 'My booking shows the wrong time.', 'consumer_chatbot', 'booking_issue',
+         ${ownedBookingId}::uuid, '[{"question":"Which booking?","answer":"Event booking"}]'::jsonb)
+    `);
   });
 
   afterAll(async () => {
@@ -123,82 +137,39 @@ describe.skipIf(!runIntegration)('consumer support concerns (#114)', () => {
     expect(issue.bookingId).toBeNull();
   });
 
-  it('rejects an unauthenticated concern (401)', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/consumer/support/concerns',
-      payload: { category: 'other', flowAnswers: [], message: 'hi' },
-    });
-    expect(res.statusCode).toBe(401);
-  });
+  it('the consumer concern POST is gone (410) — with or without auth', async () => {
+    const countRows = async (): Promise<number> => {
+      const res = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM support_issues
+        WHERE user_id = ${consumerId}::uuid AND source = 'consumer_chatbot'
+      `);
+      return ((res as unknown as { n: number }[])[0]!).n;
+    };
+    const before = await countRows();
 
-  it('rejects an invalid category (400)', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/consumer/support/concerns',
-      headers: bearer('consumer'),
-      payload: { category: 'not_a_category', flowAnswers: [], message: 'hi' },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('bad_request');
-  });
-
-  it('rejects a bookingId not owned by the caller (404)', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/consumer/support/concerns',
-      headers: bearer('consumer'),
-      payload: {
-        category: 'booking_issue',
-        bookingId: '00000000-0000-0000-0000-0000000000aa',
-        flowAnswers: [],
-        message: 'about a booking that is not mine',
-      },
-    });
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error.code).toBe('booking_not_found');
-  });
-
-  it('creates a consumer concern (no booking) with source=consumer_chatbot + round-trips flowAnswers', async () => {
-    const res = await app.inject({
+    const authed = await app.inject({
       method: 'POST',
       url: '/v1/consumer/support/concerns',
       headers: bearer('consumer'),
       payload: {
         category: 'other',
-        flowAnswers: [
-          { question: 'What can we help you with?', answer: 'Something else' },
-        ],
-        message: 'General question about the app.',
+        flowAnswers: [],
+        message: 'this intake no longer exists',
       },
     });
-    expect(res.statusCode).toBe(200);
-    const issue = res.json() as IssueRow;
-    expect(issue.source).toBe('consumer_chatbot');
-    expect(issue.category).toBe('other');
-    expect(issue.bookingId).toBeNull();
-    expect(issue.status).toBe('unresolved');
-    expect(issue.flowAnswers).toEqual([
-      { question: 'What can we help you with?', answer: 'Something else' },
-    ]);
-  });
+    expect(authed.statusCode).toBe(410);
+    expect(authed.json().error.code).toBe('gone');
 
-  it('creates a consumer concern linked to a booking the caller owns', async () => {
-    const res = await app.inject({
+    const anon = await app.inject({
       method: 'POST',
       url: '/v1/consumer/support/concerns',
-      headers: bearer('consumer'),
-      payload: {
-        category: 'booking_issue',
-        bookingId: ownedBookingId,
-        flowAnswers: [{ question: 'Which booking?', answer: 'Event booking' }],
-        message: 'My booking shows the wrong time.',
-      },
+      payload: { category: 'other', flowAnswers: [], message: 'hi' },
     });
-    expect(res.statusCode).toBe(200);
-    const issue = res.json() as IssueRow;
-    expect(issue.bookingId).toBe(ownedBookingId);
-    expect(issue.category).toBe('booking_issue');
+    expect(anon.statusCode).toBe(410);
+    expect(anon.json().error.code).toBe('gone');
+
+    // Nothing was written.
+    expect(await countRows()).toBe(before);
   });
 
   it('GET /v1/consumer/support/concerns returns only the caller’s concerns', async () => {

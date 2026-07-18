@@ -3,14 +3,13 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { supportIssues } from '../db/schema/support_issues.js';
-import { BadRequest } from '../lib/errors.js';
+import { AppError, BadRequest } from '../lib/errors.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { assertCap } from '../middleware/require_cap.js';
 import {
-  createConsumerConcern,
   listAdminSupportIssues,
   listConsumerConcerns,
 } from '../services/support_service.js';
@@ -24,8 +23,7 @@ const updateIssueSchema = z.object({
   priority: z.enum(['low', 'medium', 'high']).optional(),
 });
 
-// Consumer Help chatbot concern (#114). category drives admin triage; bookingId
-// is optional and ownership-checked in the service; flowAnswers is the MCQ path.
+// Consumer Help chatbot concern category (#114) — kept for the admin list filter.
 const concernCategory = z.enum([
   'booking_issue',
   'refund_request',
@@ -34,16 +32,6 @@ const concernCategory = z.enum([
   'payment',
   'other',
 ]);
-const flowAnswerSchema = z.object({
-  question: z.string().min(1).max(500),
-  answer: z.string().min(1).max(500),
-});
-const createConcernSchema = z.object({
-  category: concernCategory,
-  bookingId: z.string().uuid().optional(),
-  flowAnswers: z.array(flowAnswerSchema).max(50),
-  message: z.string().min(1).max(2000),
-});
 
 // Admin list filters (#114): all optional; absent = no filter.
 const adminListQuery = z.object({
@@ -67,21 +55,16 @@ export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
     return issue;
   });
 
-  // Consumer: log a Help-chatbot concern (#114). Firebase-auth required; the
-  // bookingId (if any) must belong to the caller — enforced in the service.
-  app.post('/v1/consumer/support/concerns', { preHandler: requireAuth }, async (req) => {
-    const parsed = createConcernSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new BadRequest('Invalid concern payload', 'bad_request', { issues: parsed.error.issues });
-    }
-    const user = await currentUser(req);
-    return createConsumerConcern({
-      userId: user.id,
-      category: parsed.data.category,
-      bookingId: parsed.data.bookingId,
-      flowAnswers: parsed.data.flowAnswers,
-      message: parsed.data.message,
-    });
+  // Consumer concern intake is GONE (support→threads design, 2026-07-18): the
+  // Help widget now creates a private question thread instead —
+  // POST /v1/consumer/questions with `origin: 'support'`. The GET variants
+  // below stay for historical reads; partner + admin issue routes are intact.
+  app.post('/v1/consumer/support/concerns', async () => {
+    throw new AppError(
+      'gone',
+      'Consumer concerns are now question threads — POST /v1/consumer/questions with origin "support"',
+      410,
+    );
   });
 
   // Consumer: list the caller's own past concerns (#114).

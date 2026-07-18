@@ -379,9 +379,18 @@ export interface PublicMembershipWithScope extends PublicMembership {
   country: string | null;
 }
 
-// ── Help concerns (#115) ──────────────────────────────────────────────────────
+// ── Questions threads (support Q&A on events / arenas / memberships) ──────────
 
-export type ConcernCategory =
+export type QuestionSubjectType = 'event' | 'arena' | 'membership' | 'general';
+/** Subject types with a listing page — `general` (support-only) has none. */
+export type ListableQuestionSubjectType = Exclude<QuestionSubjectType, 'general'>;
+export type QuestionVisibility = 'public' | 'private';
+export type QuestionStatus = 'open' | 'answered' | 'closed';
+export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+/** Intake channel: organic ask ('forum') vs Help-widget interview ('support'). */
+export type QuestionOrigin = 'forum' | 'support';
+/** Help-interview triage category; null on forum threads. */
+export type QuestionCategory =
   | 'booking_issue'
   | 'refund_request'
   | 'reschedule'
@@ -389,46 +398,28 @@ export type ConcernCategory =
   | 'payment'
   | 'other';
 
-/** Body of POST /v1/consumer/support/concerns. */
-export interface SubmitConcernInput {
-  category: ConcernCategory;
-  bookingId?: string;
-  flowAnswers: { question: string; answer: string }[];
-  message: string;
+/** Subject summary. `general` threads (support questions with no listing
+ *  subject) serialize as `{ type: 'general', id: null, name: 'General' }` —
+ *  the one subject shape with a null id. */
+export interface QuestionSubjectSummary {
+  type: QuestionSubjectType;
+  id: string | null;
+  name: string;
 }
-
-/** A consumer support concern as returned by the API (the support_issues row). */
-export interface ConsumerConcern {
-  id: string;
-  userId: string;
-  message: string;
-  status: string;
-  priority: string;
-  source: string;
-  category: ConcernCategory | null;
-  bookingId: string | null;
-  flowAnswers: { question: string; answer: string }[] | null;
-  /** ISO-8601 */
-  createdAt: string;
-  /** ISO-8601 */
-  updatedAt: string;
-}
-
-// ── Questions threads (support Q&A on events / arenas / memberships) ──────────
-
-export type QuestionSubjectType = 'event' | 'arena' | 'membership';
-export type QuestionVisibility = 'public' | 'private';
-export type QuestionStatus = 'open' | 'answered' | 'closed';
-export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
 
 /** A thread row in a questions list (GET /v1/consumer/questions[/mine]). */
 export interface QuestionThreadListRow {
   id: string;
   subjectType: QuestionSubjectType;
-  subjectId: string;
+  /** Null for `general` threads (no subject row). */
+  subjectId: string | null;
   tenantId: string;
   visibility: QuestionVisibility;
   status: QuestionStatus;
+  /** Intake channel: 'forum' (organic ask) or 'support' (Help interview). */
+  origin: QuestionOrigin;
+  /** Interview triage category; null on forum threads. */
+  category: QuestionCategory | null;
   /** Excerpt of the root message (first 280 chars). */
   rootBody: string;
   replyCount: number;
@@ -438,7 +429,7 @@ export interface QuestionThreadListRow {
   /** ISO-8601 */
   createdAt: string;
   /** Subject summary — present on /mine rows so the list can name the subject. */
-  subject?: { type: QuestionSubjectType; id: string; name: string };
+  subject?: QuestionSubjectSummary;
 }
 
 /** A cursor page of question threads. */
@@ -469,10 +460,15 @@ export interface QuestionThreadDetail {
   thread: {
     id: string;
     subjectType: QuestionSubjectType;
-    subjectId: string;
+    /** Null for `general` threads (no subject row). */
+    subjectId: string | null;
     tenantId: string;
     visibility: QuestionVisibility;
     status: QuestionStatus;
+    /** Intake channel: 'forum' (organic ask) or 'support' (Help interview). */
+    origin: QuestionOrigin;
+    /** Interview triage category; null on forum threads. */
+    category: QuestionCategory | null;
     /** DB user id of the asker — compare against MyProfile.id, not the Firebase uid. */
     authorUserId: string;
     messageCount: number;
@@ -481,20 +477,38 @@ export interface QuestionThreadDetail {
     /** ISO-8601 */
     createdAt: string;
     /** Subject summary (joined name) — always present on detail responses. */
-    subject: { type: QuestionSubjectType; id: string; name: string };
+    subject: QuestionSubjectSummary;
     /** Display name of the asker (root-message author). */
     authorName: string;
   };
   messages: QuestionMessageRow[];
 }
 
-/** Body of POST /v1/consumer/questions. */
+/** Body of POST /v1/consumer/questions (forum ask on a listed subject). */
 export interface AskQuestionInput {
-  subjectType: QuestionSubjectType;
+  subjectType: ListableQuestionSubjectType;
   subjectId: string;
   visibility: QuestionVisibility;
   /** 1–2000 chars. */
   body: string;
+}
+
+/**
+ * Body of POST /v1/consumer/questions for the Help-widget support intake.
+ * No subjectType/visibility: the server derives the subject from the booking
+ * (or `general` when none) and forces the thread private. Returns the same
+ * QuestionThreadDetail as a forum ask. Errors: 404 `booking_not_found`,
+ * 429 `question_rate_limited`, 400 `bad_request`.
+ */
+export interface SupportThreadInput {
+  origin: 'support';
+  category: QuestionCategory;
+  /** 1–2000 chars — becomes the thread's root message. */
+  body: string;
+  /** Must be the caller's own (non-cancelled) booking. */
+  bookingId?: string;
+  /** Interview transcript for staff; ≤50 entries, fields 1–500 chars. */
+  flowAnswers?: { question: string; answer: string }[];
 }
 
 /** Result of POST /v1/consumer/questions/:threadId/messages. */

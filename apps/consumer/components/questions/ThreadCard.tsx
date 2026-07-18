@@ -1,7 +1,12 @@
 'use client';
 import { Badge, type BadgeTone } from '@/lib/ui';
 import { formatRelativeTime } from '@/lib/format';
-import type { QuestionStatus, QuestionSubjectType, QuestionThreadListRow } from '@/lib/api/types';
+import type {
+  QuestionCategory,
+  QuestionStatus,
+  QuestionSubjectType,
+  QuestionThreadListRow,
+} from '@/lib/api/types';
 
 /** Consumer-friendly labels for question thread statuses. */
 const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; tone: BadgeTone }> = {
@@ -20,7 +25,29 @@ export const SUBJECT_TYPE_LABELS: Record<QuestionSubjectType, string> = {
   event: 'Event',
   arena: 'Court',
   membership: 'Membership',
+  general: 'General',
 };
+
+/** Short consumer-facing labels for the Help-interview triage categories. */
+export const QUESTION_CATEGORY_LABELS: Record<QuestionCategory, string> = {
+  booking_issue: 'Booking issue',
+  refund_request: 'Refund',
+  reschedule: 'Reschedule',
+  venue_question: 'Venue question',
+  payment: 'Payment',
+  other: 'Support',
+};
+
+/** Small chip naming a support thread's triage category. */
+export function QuestionCategoryChip({
+  category,
+  className,
+}: {
+  category: QuestionCategory;
+  className?: string;
+}) {
+  return <Badge tone="sport" label={QUESTION_CATEGORY_LABELS[category]} className={className} />;
+}
 
 /**
  * One question thread in a list — excerpt, status, reply count, author and
@@ -44,12 +71,16 @@ export function ThreadCard({
     >
       {showSubject && row.subject && (
         <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-ink-soft">
-          {SUBJECT_TYPE_LABELS[row.subject.type]} · {row.subject.name}
+          {row.subject.type === 'general'
+            ? // `general` threads have no subject page — just name the bucket once.
+              SUBJECT_TYPE_LABELS.general
+            : `${SUBJECT_TYPE_LABELS[row.subject.type]} · ${row.subject.name}`}
         </p>
       )}
       <p className="text-sm text-ink line-clamp-2">{row.rootBody}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-text-secondary">
         <QuestionStatusBadge status={row.status} />
+        {row.category && <QuestionCategoryChip category={row.category} />}
         {row.visibility === 'private' && <Badge tone="neutral" label="Private" />}
         <span className="font-medium text-ink">{row.authorName}</span>
         <span aria-hidden>·</span>

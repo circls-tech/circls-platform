@@ -26,12 +26,20 @@ export interface FlowState {
   freeText: string;
 }
 
-/** The payload posted to POST /v1/consumer/support/concerns. */
-export interface ConcernSubmission {
+/**
+ * The support-intake payload posted to POST /v1/consumer/questions. Creates a
+ * private question thread (server derives subject/tenant from the booking, or
+ * `general` when none). Structurally matches `SupportThreadInput` in
+ * `lib/api/types.ts`.
+ */
+export interface SupportSubmission {
+  origin: 'support';
   category: ConcernCategory;
+  /** 1–2000 chars — the thread's root message. */
+  body: string;
   bookingId?: string;
-  flowAnswers: AnswerEntry[];
-  message: string;
+  /** ≤50 entries, question/answer 1–500 chars each. */
+  flowAnswers?: AnswerEntry[];
 }
 
 /** Resolve a node by id, throwing on an unknown id (a malformed flow is a bug). */
@@ -121,27 +129,47 @@ export function terminalCategory(flow: HelpFlow, state: FlowState): ConcernCateg
   return node.category;
 }
 
-const MAX_MESSAGE = 2000;
+// POST /v1/consumer/questions support-intake limits (apps/api questions route).
+const MAX_BODY = 2000;
+const MAX_FLOW_ANSWERS = 50;
+const MAX_FLOW_FIELD = 500;
+
+/** Trim + clamp a flowAnswers field to the API's 500-char limit. */
+function clampField(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > MAX_FLOW_FIELD ? trimmed.slice(0, MAX_FLOW_FIELD) : trimmed;
+}
 
 /**
- * Build the submission payload from a terminal state. The stored `message` is a
- * human-readable digest of the MCQ path plus any free text, capped at the
- * backend's 2000-char limit; the structured path also rides along in
- * `flowAnswers`.
+ * Build the support-intake payload from a terminal state: the interview's
+ * category, the user's free text as the thread's root message (falling back to
+ * a digest of the MCQ path when none was given), the structured MCQ path as
+ * `flowAnswers`, and the picked booking (if any). All fields are trimmed and
+ * clamped to the API limits.
  */
-export function buildSubmission(flow: HelpFlow, state: FlowState): ConcernSubmission {
+export function buildSubmission(flow: HelpFlow, state: FlowState): SupportSubmission {
   const node = currentNode(flow, state);
   if (node.kind !== 'terminal') throw new Error('Cannot submit before reaching a terminal node');
 
-  const lines = state.transcript.map((t) => `• ${t.question} → ${t.answer}`);
-  let message = `Help chatbot enquiry (${node.category}):\n${lines.join('\n')}`;
-  if (message.length > MAX_MESSAGE) message = message.slice(0, MAX_MESSAGE);
+  // The user's own words become the root message; when the interview collected
+  // none, digest the MCQ path so the message is never empty.
+  let body = state.freeText.trim();
+  if (body.length === 0) {
+    body = `Support request — ${state.transcript.map((t) => t.answer).join(' → ')}`;
+  }
+  if (body.length > MAX_BODY) body = body.slice(0, MAX_BODY);
 
-  const submission: ConcernSubmission = {
+  const flowAnswers = state.transcript
+    .slice(0, MAX_FLOW_ANSWERS)
+    .map((t) => ({ question: clampField(t.question), answer: clampField(t.answer) }))
+    .filter((t) => t.question.length > 0 && t.answer.length > 0);
+
+  const submission: SupportSubmission = {
+    origin: 'support',
     category: node.category,
-    flowAnswers: state.transcript,
-    message,
+    body,
   };
+  if (flowAnswers.length > 0) submission.flowAnswers = flowAnswers;
   if (state.bookingId) submission.bookingId = state.bookingId;
   return submission;
 }

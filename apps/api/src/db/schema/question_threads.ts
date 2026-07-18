@@ -1,8 +1,10 @@
-import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { arenas } from './arenas.js';
+import { bookings } from './bookings.js';
 import { events } from './events.js';
 import { memberships } from './memberships.js';
+import type { FlowAnswer } from './support_issues.js';
 import { tenants } from './tenants.js';
 import { users } from './users.js';
 
@@ -17,7 +19,27 @@ export const questionSubjectType = pgEnum('question_subject_type', [
   'event',
   'arena',
   'membership',
+  /**
+   * Support threads with no (surviving) listing subject — app/platform
+   * questions and bookings whose subject row is gone. Always `private`
+   * (DB CHECK `question_threads_general_private_chk`); all three subject FKs
+   * are null. Never listed on any public surface.
+   */
+  'general',
 ]);
+
+/** Intake channel: organic ask on a listing vs the Help-widget interview. */
+export const QUESTION_ORIGINS = ['forum', 'support'] as const;
+
+/** Support-interview triage category (mirrors support_issues.category). */
+export const QUESTION_CATEGORIES = [
+  'booking_issue',
+  'refund_request',
+  'reschedule',
+  'venue_question',
+  'payment',
+  'other',
+] as const;
 
 export const questionVisibility = pgEnum('question_visibility', ['public', 'private']);
 
@@ -65,6 +87,18 @@ export const questionThreads = pgTable('question_threads', {
    * unarchive anything (same shape as question_messages.hidden_by_kind).
    */
   archivedByKind: text('archived_by_kind', { enum: ['org', 'circls'] }),
+  /**
+   * Intake channel (DB CHECK `question_threads_origin_chk`): 'forum' for
+   * organic asks on a listing, 'support' for threads created by the consumer
+   * Help-widget interview.
+   */
+  origin: text('origin', { enum: QUESTION_ORIGINS }).notNull().default('forum'),
+  /** Interview triage category; null on forum threads (DB CHECK). */
+  category: text('category', { enum: QUESTION_CATEGORIES }),
+  /** Booking pinned as resolver context by the support interview. */
+  contextBookingId: uuid('context_booking_id').references(() => bookings.id),
+  /** Interview transcript — the support_issues.flow_answers shape. */
+  flowAnswers: jsonb('flow_answers').$type<FlowAnswer[]>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -74,3 +108,5 @@ export type NewQuestionThread = typeof questionThreads.$inferInsert;
 export type QuestionSubjectType = (typeof questionSubjectType.enumValues)[number];
 export type QuestionVisibility = (typeof questionVisibility.enumValues)[number];
 export type QuestionStatus = (typeof questionStatus.enumValues)[number];
+export type QuestionOrigin = (typeof QUESTION_ORIGINS)[number];
+export type QuestionCategory = (typeof QUESTION_CATEGORIES)[number];

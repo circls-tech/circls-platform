@@ -12,12 +12,14 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { assertCap } from '../middleware/require_cap.js';
+import { getThreadContext } from '../services/questions_context_service.js';
 import {
   addCirclsMessage,
   addConsumerMessage,
   addOrgMessage,
   ANONYMOUS_RELATION,
   countOpenThreads,
+  createSupportThread,
   createThread,
   getThreadDetailForStaff,
   getThreadDetailForViewer,
@@ -33,8 +35,11 @@ import {
 } from '../services/questions_service.js';
 
 const subjectType = z.enum(['event', 'arena', 'membership']);
+/** Staff filters additionally accept `general` (support threads, no subject). */
+const staffSubjectType = z.enum(['event', 'arena', 'membership', 'general']);
 const threadStatus = z.enum(['open', 'answered', 'closed']);
 const visibility = z.enum(['public', 'private']);
+const threadOrigin = z.enum(['forum', 'support']);
 
 const cursorQuery = {
   cursor: z.string().min(3).max(200).optional(),
@@ -62,12 +67,42 @@ const messageBody = z.object({
   body: z.string().trim().min(1).max(2000),
 });
 
-const createThreadBody = z.object({
-  subjectType,
-  subjectId: z.string().uuid(),
-  visibility,
-  body: z.string().trim().min(1).max(2000),
+// Forum ask (unchanged contract; `origin: 'forum'` may be sent explicitly).
+// `.strict()` keeps support-intake fields (category/bookingId/flowAnswers)
+// off this shape — and vice versa below.
+const createThreadBody = z
+  .object({
+    origin: z.literal('forum').optional(),
+    subjectType,
+    subjectId: z.string().uuid(),
+    visibility,
+    body: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
+// Support intake (Help-widget interview): no subjectType/visibility from the
+// client — the server derives the subject from the booking (or `general`) and
+// forces `private`.
+const flowAnswerSchema = z.object({
+  question: z.string().min(1).max(500),
+  answer: z.string().min(1).max(500),
 });
+const createSupportThreadBody = z
+  .object({
+    origin: z.literal('support'),
+    category: z.enum([
+      'booking_issue',
+      'refund_request',
+      'reschedule',
+      'venue_question',
+      'payment',
+      'other',
+    ]),
+    body: z.string().trim().min(1).max(2000),
+    bookingId: z.string().uuid().optional(),
+    flowAnswers: z.array(flowAnswerSchema).max(50).optional(),
+  })
+  .strict();
 
 /** Author can mark answered/closed; reopening = the org/admin surfaces. */
 const authorPatchBody = z.object({ status: z.enum(['answered', 'closed']) });
@@ -76,7 +111,9 @@ const staffPatchBody = z.object({ status: threadStatus });
 const staffListQuery = z.object({
   status: threadStatus.optional(),
   visibility: visibility.optional(),
-  subjectType: subjectType.optional(),
+  subjectType: staffSubjectType.optional(),
+  /** Filter by intake channel: organic asks vs Help-interview support threads. */
+  origin: threadOrigin.optional(),
   /** 'true' selects the archived view; default 'false' (active threads only). */
   archived: z.enum(['true', 'false']).optional(),
   ...cursorQuery,
@@ -135,10 +172,24 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  // Ask a question (starts a thread). Subject must be publicly visible.
+  // Ask a question (starts a thread). Two intake shapes, discriminated on
+  // `origin`: the forum ask (default; subject must be publicly visible) and
+  // the Help-widget support intake (`origin: 'support'`; server-derived
+  // subject, forced-private).
   app.post('/v1/consumer/questions', { preHandler: requireAuth }, async (req) => {
-    const body = parseOrThrow(createThreadBody, req.body);
+    const raw = req.body as Record<string, unknown> | null | undefined;
     const user = await currentUser(req);
+    if (raw && raw['origin'] === 'support') {
+      const body = parseOrThrow(createSupportThreadBody, req.body);
+      return createSupportThread({
+        userId: user.id,
+        category: body.category,
+        body: body.body,
+        bookingId: body.bookingId,
+        flowAnswers: body.flowAnswers,
+      });
+    }
+    const body = parseOrThrow(createThreadBody, req.body);
     return createThread({
       userId: user.id,
       subjectType: body.subjectType,
@@ -210,6 +261,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       status: q.status,
       visibility: q.visibility,
       subjectType: q.subjectType,
+      origin: q.origin,
       archived: q.archived === 'true',
       cursor: q.cursor,
       limit: q.limit,
@@ -237,6 +289,20 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, 'questions.read');
       return getThreadDetailForStaff(threadId, { tenantId, viewerUserId: user.id });
+    },
+  );
+
+  // Resolver context panel: who the asker is, the pinned booking, and their
+  // relationship with this tenant. Contact details only on private threads.
+  app.get(
+    '/v1/tenants/:tenantId/questions/:threadId/context',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, threadId } = parseOrThrow(tenantThreadParams, req.params);
+      const user = await currentUser(req);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'questions.read');
+      return getThreadContext(threadId, { tenantId });
     },
   );
 
@@ -331,6 +397,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       status: q.status,
       visibility: q.visibility,
       subjectType: q.subjectType,
+      origin: q.origin,
       archived: q.archived === 'true',
       cursor: q.cursor,
       limit: q.limit,
@@ -341,6 +408,14 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
     const user = await adminCtx(req, 'admin.support.read');
     const { threadId } = parseOrThrow(threadParams, req.params);
     return getThreadDetailForStaff(threadId, { viewerUserId: user.id });
+  });
+
+  // Admin resolver context: cross-tenant lists + activity/support-issue
+  // extras; contact details always included.
+  app.get('/v1/admin/questions/:threadId/context', { preHandler: requireAuth }, async (req) => {
+    await adminCtx(req, 'admin.support.read');
+    const { threadId } = parseOrThrow(threadParams, req.params);
+    return getThreadContext(threadId, { admin: true });
   });
 
   app.post(

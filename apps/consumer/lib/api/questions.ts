@@ -3,11 +3,12 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AskQuestionInput,
+  ListableQuestionSubjectType,
   QuestionReplyResult,
   QuestionStatus,
-  QuestionSubjectType,
   QuestionThreadDetail,
   QuestionThreadListPage,
+  SupportThreadInput,
 } from './types';
 
 // Small pages keep the detail-page section compact; "Show more" fetches the next.
@@ -16,7 +17,7 @@ const PAGE_SIZE = 10;
 // ── Lists ─────────────────────────────────────────────────────────────────────
 
 /** Public question threads for a subject — no auth required, works signed-out. */
-export function usePublicQuestions(subjectType: QuestionSubjectType, subjectId: string) {
+export function usePublicQuestions(subjectType: ListableQuestionSubjectType, subjectId: string) {
   return useInfiniteQuery({
     queryKey: ['questions', subjectType, subjectId],
     initialPageParam: undefined as string | undefined,
@@ -35,7 +36,10 @@ export function usePublicQuestions(subjectType: QuestionSubjectType, subjectId: 
  * Pass a subject to scope to one event/arena/membership (detail-page strip);
  * omit it for the full "/me/questions" list (rows then carry `subject` names).
  */
-export function useMyQuestions(subject?: { subjectType: QuestionSubjectType; subjectId: string }) {
+export function useMyQuestions(subject?: {
+  subjectType: ListableQuestionSubjectType;
+  subjectId: string;
+}) {
   const { user } = useAuth();
   return useInfiniteQuery({
     queryKey: ['my-questions', user?.uid, subject?.subjectType ?? null, subject?.subjectId ?? null],
@@ -90,6 +94,32 @@ export function useAskQuestion() {
       void qc.invalidateQueries({
         queryKey: ['questions', detail.thread.subjectType, detail.thread.subjectId],
       });
+      void qc.invalidateQueries({ queryKey: ['my-questions'] });
+    },
+  });
+}
+
+/**
+ * Start a private support thread from the Help-widget interview (same endpoint,
+ * `origin: 'support'` intake shape). The server derives the subject from the
+ * picked booking — or `general` when none — and forces the thread private.
+ * Errors: 404 `booking_not_found` (not yours / cancelled), 429
+ * `question_rate_limited`.
+ */
+export function useSubmitSupportThread() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: (input: SupportThreadInput) =>
+      apiFetch<QuestionThreadDetail>('/v1/consumer/questions', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (detail) => {
+      // Seed the detail cache so "View your conversation" opens instantly.
+      qc.setQueryData(['question-thread', user?.uid, detail.thread.id], detail);
+      // Support threads are always private — they never appear in public
+      // subject lists, only in the caller's own thread lists.
       void qc.invalidateQueries({ queryKey: ['my-questions'] });
     },
   });

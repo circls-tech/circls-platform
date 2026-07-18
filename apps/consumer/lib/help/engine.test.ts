@@ -83,6 +83,7 @@ describe('help flow engine', () => {
     s = submitFreeText(helpFlow, s, 'prefer next weekend');
 
     const sub = buildSubmission(helpFlow, s);
+    expect(sub.origin).toBe('support');
     expect(sub.category).toBe('reschedule');
     expect(sub.bookingId).toBe('bk-123');
     expect(sub.flowAnswers).toEqual([
@@ -90,8 +91,8 @@ describe('help flow engine', () => {
       { question: 'Which booking would you like to reschedule?', answer: 'Tennis @ Smash Arena' },
       { question: 'What new time works for you? (optional)', answer: 'prefer next weekend' },
     ]);
-    expect(sub.message).toContain('reschedule');
-    expect(sub.message).toContain('Tennis @ Smash Arena');
+    // The user's free text becomes the thread's root message verbatim.
+    expect(sub.body).toBe('prefer next weekend');
   });
 
   it('allows skipping the booking picker (no booking attached)', () => {
@@ -103,9 +104,39 @@ describe('help flow engine', () => {
     expect(s.bookingId).toBeNull();
     s = submitFreeText(helpFlow, s, '₹500 charged, no booking');
     const sub = buildSubmission(helpFlow, s);
+    expect(sub.origin).toBe('support');
     expect(sub.category).toBe('payment');
     expect(sub.bookingId).toBeUndefined();
-    expect(sub.flowAnswers.some((a) => a.answer === 'No specific booking')).toBe(true);
+    expect(sub.body).toBe('₹500 charged, no booking');
+    expect(sub.flowAnswers?.some((a) => a.answer === 'No specific booking')).toBe(true);
+  });
+
+  it('falls back to an MCQ digest body when no free text was given', () => {
+    let s = startFlow(helpFlow);
+    s = pickLabel(helpFlow, s, 'Something else');
+    s = submitFreeText(helpFlow, s, '   ');
+    const sub = buildSubmission(helpFlow, s);
+    expect(sub.body.length).toBeGreaterThan(0);
+    expect(sub.body).toContain('Something else');
+    expect(sub.category).toBe('other');
+  });
+
+  it('clamps flowAnswers fields to 500 chars (long free text stays in body)', () => {
+    const longText = 'x'.repeat(1200);
+    let s = startFlow(helpFlow);
+    s = pickLabel(helpFlow, s, 'Something else');
+    s = submitFreeText(helpFlow, s, longText);
+    const sub = buildSubmission(helpFlow, s);
+    // Full text is the root message; the transcript copy is clamped to the
+    // API's 500-char flowAnswers field limit.
+    expect(sub.body).toBe(longText);
+    for (const a of sub.flowAnswers ?? []) {
+      expect(a.question.length).toBeLessThanOrEqual(500);
+      expect(a.answer.length).toBeLessThanOrEqual(500);
+      expect(a.question.length).toBeGreaterThan(0);
+      expect(a.answer.length).toBeGreaterThan(0);
+    }
+    expect(sub.flowAnswers?.at(-1)?.answer).toBe('x'.repeat(500));
   });
 
   it('empty free text is recorded as a placeholder answer', () => {

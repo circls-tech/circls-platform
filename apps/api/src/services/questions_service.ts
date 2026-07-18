@@ -6,24 +6,29 @@
  * lifecycle. This module owns all DB access + authz-adjacent lookups; the
  * pure transition/author-kind rules live in questions_transitions.ts.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   questionMessages,
   type QuestionAuthorKind,
   type QuestionMessage,
 } from '../db/schema/question_messages.js';
+import { bookings } from '../db/schema/bookings.js';
 import {
   questionThreads,
+  type QuestionCategory,
+  type QuestionOrigin,
   type QuestionStatus,
   type QuestionSubjectType,
   type QuestionThread,
   type QuestionVisibility,
 } from '../db/schema/question_threads.js';
+import type { FlowAnswer } from '../db/schema/support_issues.js';
 import type { TenantRole } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
 import { can } from '../lib/authz/can.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
 import {
@@ -44,19 +49,29 @@ const EXCERPT_LEN = 280;
 
 // ── Serialized shapes ─────────────────────────────────────────────────────────
 
+/**
+ * Subject summary. `general` threads (support questions with no listing
+ * subject) serialize as `{ type: 'general', id: null, name: 'General' }` — the
+ * one subject shape with a null id.
+ */
 export interface QuestionSubjectSummary {
   type: QuestionSubjectType;
-  id: string;
+  id: string | null;
   name: string;
 }
 
 export interface QuestionThreadListRow {
   id: string;
   subjectType: QuestionSubjectType;
-  subjectId: string;
+  /** Null for `general` threads (no subject row). */
+  subjectId: string | null;
   tenantId: string;
   visibility: QuestionVisibility;
   status: QuestionStatus;
+  /** Intake channel: 'forum' (organic ask) or 'support' (Help interview). */
+  origin: QuestionOrigin;
+  /** Interview triage category; null on forum threads. */
+  category: QuestionCategory | null;
   /** Excerpt (first 280 chars) of the root message. */
   rootBody: string;
   replyCount: number;
@@ -69,6 +84,8 @@ export interface QuestionThreadListRow {
   archivedAt?: string | null;
   /** Staff lists only: who archived the thread. */
   archivedByKind?: QuestionHiddenByKind | null;
+  /** Staff lists only: the booking pinned as context by the support intake. */
+  contextBookingId?: string | null;
 }
 
 /** Who hid a message (moderation hierarchy: org can only undo its own hides). */
@@ -93,10 +110,15 @@ export interface QuestionThreadDetail {
   thread: {
     id: string;
     subjectType: QuestionSubjectType;
-    subjectId: string;
+    /** Null for `general` threads (no subject row). */
+    subjectId: string | null;
     tenantId: string;
     visibility: QuestionVisibility;
     status: QuestionStatus;
+    /** Intake channel: 'forum' (organic ask) or 'support' (Help interview). */
+    origin: QuestionOrigin;
+    /** Interview triage category; null on forum threads. */
+    category: QuestionCategory | null;
     authorUserId: string;
     messageCount: number;
     lastMessageAt: string;
@@ -109,6 +131,10 @@ export interface QuestionThreadDetail {
     archivedAt?: string | null;
     /** Staff serializations only: who archived the thread ('org' | 'circls'). */
     archivedByKind?: QuestionHiddenByKind | null;
+    /** Staff serializations only: booking pinned by the support intake. */
+    contextBookingId?: string | null;
+    /** Staff serializations only: the support-interview transcript. */
+    flowAnswers?: FlowAnswer[] | null;
   };
   messages: QuestionMessageRow[];
 }
@@ -124,9 +150,25 @@ function excerpt(body: string): string {
   return body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) : body;
 }
 
-function subjectIdOf(t: Pick<QuestionThread, 'eventId' | 'arenaId' | 'membershipId'>): string {
-  // The DB CHECK guarantees exactly one is set.
-  return (t.eventId ?? t.arenaId ?? t.membershipId)!;
+function subjectIdOf(
+  t: Pick<QuestionThread, 'eventId' | 'arenaId' | 'membershipId'>,
+): string | null {
+  // The DB CHECK guarantees exactly one is set — or none for `general`.
+  return t.eventId ?? t.arenaId ?? t.membershipId ?? null;
+}
+
+/** Display name for `general` threads (no subject row to take a name from). */
+const GENERAL_SUBJECT_NAME = 'General';
+
+function subjectSummaryOf(
+  subjectType: QuestionSubjectType,
+  subjectId: string | null,
+  joinedName: string | null,
+): QuestionSubjectSummary {
+  if (subjectType === 'general') {
+    return { type: 'general', id: null, name: GENERAL_SUBJECT_NAME };
+  }
+  return { type: subjectType, id: subjectId, name: joinedName ?? '' };
 }
 
 function authorName(
@@ -255,7 +297,7 @@ interface ResolvedSubject {
  * tenant (arena → its venue's tenant).
  */
 export async function resolveVisibleSubject(
-  subjectType: QuestionSubjectType,
+  subjectType: ListableSubjectType,
   subjectId: string,
 ): Promise<ResolvedSubject> {
   if (subjectType === 'event') {
@@ -346,54 +388,209 @@ async function assertMessageRateLimit(userId: string): Promise<void> {
 
 // ── Create thread ─────────────────────────────────────────────────────────────
 
+/**
+ * Shared tail of both intake paths: rate limit, thread + root message in one
+ * transaction, best-effort org email, and the author's view of the result.
+ */
+async function insertThreadWithRoot(
+  values: typeof questionThreads.$inferInsert,
+  userId: string,
+  body: string,
+): Promise<QuestionThreadDetail> {
+  await assertThreadRateLimit(userId);
+  const rel = await resolveViewerRelation(userId, values.tenantId);
+  const kind = resolveAuthorKind(rel);
+
+  const thread = await db.transaction(async (tx) => {
+    const [t] = await tx.insert(questionThreads).values(values).returning();
+    if (!t) throw new Error('question_thread_insert_failed');
+    await tx.insert(questionMessages).values({
+      threadId: t.id,
+      authorUserId: userId,
+      authorKind: kind,
+      body,
+    });
+    return t;
+  });
+
+  // Best-effort org email — never blocks or fails the write. For `general`
+  // threads the "org" is the platform tenant (its contact email, when set).
+  await onQuestionAsked(thread.id);
+
+  return getThreadDetailForViewer(thread.id, { userId, ...rel });
+}
+
 export async function createThread(input: {
   userId: string;
-  subjectType: QuestionSubjectType;
+  subjectType: Exclude<QuestionSubjectType, 'general'>;
   subjectId: string;
   visibility: QuestionVisibility;
   body: string;
 }): Promise<QuestionThreadDetail> {
   const subject = await resolveVisibleSubject(input.subjectType, input.subjectId);
-  await assertThreadRateLimit(input.userId);
-
-  const rel = await resolveViewerRelation(input.userId, subject.tenantId);
-  const kind = resolveAuthorKind(rel);
-
-  const thread = await db.transaction(async (tx) => {
-    const [t] = await tx
-      .insert(questionThreads)
-      .values({
-        tenantId: subject.tenantId,
-        subjectType: input.subjectType,
-        eventId: input.subjectType === 'event' ? input.subjectId : null,
-        arenaId: input.subjectType === 'arena' ? input.subjectId : null,
-        membershipId: input.subjectType === 'membership' ? input.subjectId : null,
-        visibility: input.visibility,
-        authorUserId: input.userId,
-      })
-      .returning();
-    if (!t) throw new Error('question_thread_insert_failed');
-    await tx.insert(questionMessages).values({
-      threadId: t.id,
+  return insertThreadWithRoot(
+    {
+      tenantId: subject.tenantId,
+      subjectType: input.subjectType,
+      eventId: input.subjectType === 'event' ? input.subjectId : null,
+      arenaId: input.subjectType === 'arena' ? input.subjectId : null,
+      membershipId: input.subjectType === 'membership' ? input.subjectId : null,
+      visibility: input.visibility,
       authorUserId: input.userId,
-      authorKind: kind,
-      body: input.body,
-    });
-    return t;
-  });
+    },
+    input.userId,
+    input.body,
+  );
+}
 
-  // Best-effort org email — never blocks or fails the write.
-  await onQuestionAsked(thread.id);
+// ── Support intake (Help-widget interview → private thread) ──────────────────
 
-  return getThreadDetailForViewer(thread.id, {
-    userId: input.userId,
-    ...rel,
-  });
+/** Subject derived from a booking's item; null id ⇒ fall back to `general`. */
+interface DerivedSubject {
+  subjectType: QuestionSubjectType;
+  subjectId: string | null;
+}
+
+/**
+ * Map a booking to the thread subject its concern is about: slot → the arena
+ * (`slot_arena_id`), event → `item_data.eventId`, membership →
+ * `item_data.membershipId`. When the referenced row no longer exists (deleted
+ * listing, malformed item_data) — or exists but belongs to a DIFFERENT tenant
+ * than the booking (corrupt/forged item_data; belt-and-braces so a thread can
+ * never pin one org's listing under another org's tenant) — the thread falls
+ * back to `general` under the booking's tenant: the org still sees it, it
+ * just isn't pinned to a listing.
+ */
+async function deriveSubjectFromBooking(booking: {
+  tenantId: string;
+  itemType: string;
+  slotArenaId: string | null;
+  itemData: Record<string, unknown> | null;
+}): Promise<DerivedSubject> {
+  const exists = async (
+    id: string | undefined | null,
+    query: (id: string) => SQL,
+  ): Promise<string | null> => {
+    if (!id || !UUID_RE.test(id)) return null;
+    const res = await db.execute<Record<string, unknown>>(query(id));
+    return rowsOf(res)[0] ? id : null;
+  };
+
+  if (booking.itemType === 'slot') {
+    // Arenas carry no tenant_id — scope via their venue.
+    const arenaId = await exists(
+      booking.slotArenaId,
+      (id) => sql`
+        select a.id from arenas a
+          join venues v on v.id = a.venue_id
+         where a.id = ${id}::uuid and v.tenant_id = ${booking.tenantId}::uuid
+         limit 1`,
+    );
+    return arenaId
+      ? { subjectType: 'arena', subjectId: arenaId }
+      : { subjectType: 'general', subjectId: null };
+  }
+  if (booking.itemType === 'event') {
+    const eventId = await exists(
+      booking.itemData?.['eventId'] as string | undefined,
+      (id) => sql`
+        select id from events
+         where id = ${id}::uuid and tenant_id = ${booking.tenantId}::uuid
+         limit 1`,
+    );
+    return eventId
+      ? { subjectType: 'event', subjectId: eventId }
+      : { subjectType: 'general', subjectId: null };
+  }
+  const membershipId = await exists(
+    booking.itemData?.['membershipId'] as string | undefined,
+    (id) => sql`
+      select id from memberships
+       where id = ${id}::uuid and tenant_id = ${booking.tenantId}::uuid
+       limit 1`,
+  );
+  return membershipId
+    ? { subjectType: 'membership', subjectId: membershipId }
+    : { subjectType: 'general', subjectId: null };
+}
+
+/**
+ * Create a thread from the consumer Help-widget interview (design doc
+ * 2026-07-18-support-context-threads §3). Visibility is forced `private`;
+ * `origin='support'`; the interview's category/transcript are stored for
+ * staff. With a booking: the booking must belong to the caller
+ * (customer_user_id OR created_by_user_id — else 404 `booking_not_found`;
+ * cancelled bookings are ALLOWED — refund concerns are precisely about
+ * cancelled bookings, and the thread must route to the org that owes the
+ * refund), the subject is derived from the booking's item, the tenant is the
+ * booking's tenant, and the booking is pinned as `context_booking_id`.
+ * Without a booking: subject `general` under the platform tenant (asker +
+ * Circls only).
+ */
+export async function createSupportThread(input: {
+  userId: string;
+  category: QuestionCategory;
+  body: string;
+  bookingId?: string | undefined;
+  flowAnswers?: FlowAnswer[] | undefined;
+}): Promise<QuestionThreadDetail> {
+  let tenantId: string;
+  let derived: DerivedSubject;
+  let contextBookingId: string | null = null;
+
+  if (input.bookingId) {
+    const [booking] = await db
+      .select({
+        id: bookings.id,
+        tenantId: bookings.tenantId,
+        itemType: bookings.itemType,
+        slotArenaId: bookings.slotArenaId,
+        itemData: bookings.itemData,
+      })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.id, input.bookingId),
+          sql`(${bookings.customerUserId} = ${input.userId}::uuid or ${bookings.createdByUserId} = ${input.userId}::uuid)`,
+        ),
+      )
+      .limit(1);
+    // Ownership only — any status (incl. cancelled) is fine; same 404 for
+    // "not yours" and "doesn't exist", no existence leak.
+    if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
+    tenantId = booking.tenantId;
+    derived = await deriveSubjectFromBooking(booking);
+    contextBookingId = booking.id;
+  } else {
+    tenantId = await getPlatformTenantId();
+    derived = { subjectType: 'general', subjectId: null };
+  }
+
+  return insertThreadWithRoot(
+    {
+      tenantId,
+      subjectType: derived.subjectType,
+      eventId: derived.subjectType === 'event' ? derived.subjectId : null,
+      arenaId: derived.subjectType === 'arena' ? derived.subjectId : null,
+      membershipId: derived.subjectType === 'membership' ? derived.subjectId : null,
+      visibility: 'private',
+      authorUserId: input.userId,
+      origin: 'support',
+      category: input.category,
+      contextBookingId,
+      flowAnswers: input.flowAnswers ?? null,
+    },
+    input.userId,
+    input.body,
+  );
 }
 
 // ── Listings ──────────────────────────────────────────────────────────────────
 
-const SUBJECT_COL: Record<QuestionSubjectType, string> = {
+/** Subject-scoped listings only apply to real subjects — never `general`. */
+type ListableSubjectType = Exclude<QuestionSubjectType, 'general'>;
+
+const SUBJECT_COL: Record<ListableSubjectType, string> = {
   event: 'event_id',
   arena: 'arena_id',
   membership: 'membership_id',
@@ -408,7 +605,9 @@ function mapListRow(
   opts: { withSubject: boolean; staff?: boolean },
 ): QuestionThreadListRow {
   const subjectType = r['subject_type'] as QuestionSubjectType;
-  const subjectId = (r['event_id'] ?? r['arena_id'] ?? r['membership_id']) as string;
+  const subjectId = (r['event_id'] ?? r['arena_id'] ?? r['membership_id'] ?? null) as
+    | string
+    | null;
   const row: QuestionThreadListRow = {
     id: r['id'] as string,
     subjectType,
@@ -416,6 +615,8 @@ function mapListRow(
     tenantId: r['tenant_id'] as string,
     visibility: r['visibility'] as QuestionVisibility,
     status: r['status'] as QuestionStatus,
+    origin: r['origin'] as QuestionOrigin,
+    category: (r['category'] as QuestionCategory | null) ?? null,
     rootBody: excerpt((r['root_body'] as string | null) ?? ''),
     // Public rows carry `visible_count` (non-hidden messages) so anonymous
     // viewers' counts match what they can actually see; staff rows use totals.
@@ -429,16 +630,13 @@ function mapListRow(
     createdAt: isoOf(r['created_at']),
   };
   if (opts.withSubject) {
-    row.subject = {
-      type: subjectType,
-      id: subjectId,
-      name: (r['subject_name'] as string | null) ?? '',
-    };
+    row.subject = subjectSummaryOf(subjectType, subjectId, (r['subject_name'] as string | null) ?? null);
   }
-  // Archive state is a staff-only detail — never on consumer list rows.
+  // Archive/context state is a staff-only detail — never on consumer list rows.
   if (opts.staff) {
     row.archivedAt = r['archived_at'] == null ? null : isoOf(r['archived_at']);
     row.archivedByKind = (r['archived_by_kind'] as QuestionHiddenByKind | null) ?? null;
+    row.contextBookingId = (r['context_booking_id'] as string | null) ?? null;
   }
   return row;
 }
@@ -466,7 +664,7 @@ function pageOf(
  * entirely.
  */
 export async function listPublicThreads(params: {
-  subjectType: QuestionSubjectType;
+  subjectType: ListableSubjectType;
   subjectId: string;
   cursor?: string | undefined;
   limit?: number | undefined;
@@ -477,7 +675,8 @@ export async function listPublicThreads(params: {
 
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
-           t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.visibility, t.status, t.origin, t.category,
+           t.last_message_at, t.message_count, t.created_at,
            t.last_message_at::text as cursor_ts,
            (select count(*)::int from question_messages qmv
              where qmv.thread_id = t.id and qmv.hidden_at is null) as visible_count,
@@ -511,7 +710,7 @@ export async function listPublicThreads(params: {
  */
 export async function listMyThreads(params: {
   userId: string;
-  subjectType?: QuestionSubjectType | undefined;
+  subjectType?: ListableSubjectType | undefined;
   subjectId?: string | undefined;
   cursor?: string | undefined;
   limit?: number | undefined;
@@ -525,7 +724,8 @@ export async function listMyThreads(params: {
 
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
-           t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.visibility, t.status, t.origin, t.category,
+           t.last_message_at, t.message_count, t.created_at,
            t.last_message_at::text as cursor_ts,
            root.body as root_body, root.author_kind as root_author_kind,
            u.display_name as root_author_name, tn.name as tenant_name,
@@ -563,6 +763,7 @@ export async function listStaffThreads(params: {
   status?: QuestionStatus | undefined;
   visibility?: QuestionVisibility | undefined;
   subjectType?: QuestionSubjectType | undefined;
+  origin?: QuestionOrigin | undefined;
   archived?: boolean | undefined;
   cursor?: string | undefined;
   limit?: number | undefined;
@@ -572,7 +773,8 @@ export async function listStaffThreads(params: {
 
   const res = await db.execute<RawThreadRow>(sql`
     select t.id, t.tenant_id, t.subject_type, t.event_id, t.arena_id, t.membership_id,
-           t.visibility, t.status, t.last_message_at, t.message_count, t.created_at,
+           t.visibility, t.status, t.origin, t.category, t.context_booking_id,
+           t.last_message_at, t.message_count, t.created_at,
            t.archived_at, t.archived_by_kind,
            t.last_message_at::text as cursor_ts,
            root.body as root_body, root.author_kind as root_author_kind,
@@ -596,6 +798,7 @@ export async function listStaffThreads(params: {
        ${params.status ? sql`and t.status = ${params.status}` : sql``}
        ${params.visibility ? sql`and t.visibility = ${params.visibility}` : sql``}
        ${params.subjectType ? sql`and t.subject_type = ${params.subjectType}` : sql``}
+       ${params.origin ? sql`and t.origin = ${params.origin}` : sql``}
        ${cur ? sql`and (t.last_message_at, t.id) < (${cur.ts}::timestamptz, ${cur.id}::uuid)` : sql``}
      order by t.last_message_at desc, t.id desc
      limit ${limit + 1}
@@ -727,18 +930,23 @@ function serializeThread(
     tenantId: t.tenantId,
     visibility: t.visibility,
     status: t.status,
+    origin: t.origin,
+    category: t.category ?? null,
     authorUserId: t.authorUserId,
     messageCount: t.messageCount,
     lastMessageAt: t.lastMessageAt.toISOString(),
     createdAt: t.createdAt.toISOString(),
-    subject: { type: t.subjectType, id: subjectId, name: extras.subjectName },
+    subject: subjectSummaryOf(t.subjectType, subjectId, extras.subjectName || null),
     authorName: authorName(extras.rootAuthorKind, extras.rootDisplayName, extras.tenantName),
   };
-  // Archive state is staff-only — consumer payloads never carry it (org/circls
-  // viewers on the consumer surface use their staff surfaces for that).
+  // Archive + support-context state is staff-only — consumer payloads never
+  // carry it (org/circls viewers on the consumer surface use their staff
+  // surfaces for that). Consumers do see origin/category on their own threads.
   if (opts.staff) {
     thread.archivedAt = t.archivedAt ? t.archivedAt.toISOString() : null;
     thread.archivedByKind = t.archivedByKind ?? null;
+    thread.contextBookingId = t.contextBookingId ?? null;
+    thread.flowAnswers = t.flowAnswers ?? null;
   }
   return thread;
 }

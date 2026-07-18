@@ -1,43 +1,51 @@
 'use client';
 
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { ApiError } from '@/lib/api/client';
+import { asCurrencyCode, formatMoney } from '@/lib/currency';
 import {
   useArchiveQuestionThread,
   useModerateQuestionMessage,
+  useQuestionContext,
   useQuestionThread,
   useReplyToQuestion,
   useSetQuestionStatus,
 } from '@/lib/api/questions';
 import type {
+  QuestionContextBooking,
+  QuestionFlowAnswer,
   QuestionMessage,
   QuestionStatus,
-  QuestionSubjectType,
   QuestionThreadDetailThread,
 } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CATEGORY_LABELS, SUBJECT_LABELS } from '../labels';
 
 const MAX_BODY = 2000;
 
-const SUBJECT_LABELS: Record<QuestionSubjectType, string> = {
-  event:      'Event',
-  arena:      'Arena',
-  membership: 'Membership',
-};
-
-/** Portal page for the thread's subject (memberships have no per-id page). */
-function subjectHref(thread: QuestionThreadDetailThread): string {
+/**
+ * Portal page for the thread's subject. Memberships have no per-id page and
+ * `general` threads (support requests with no listing) have no subject at all.
+ */
+function subjectHref(thread: QuestionThreadDetailThread): string | null {
   switch (thread.subjectType) {
-    case 'event':      return `/events/${thread.subjectId}`;
-    case 'arena':      return `/arenas/${thread.subjectId}`;
+    case 'event':      return thread.subjectId != null ? `/events/${thread.subjectId}` : null;
+    case 'arena':      return thread.subjectId != null ? `/arenas/${thread.subjectId}` : null;
     case 'membership': return '/memberships';
+    case 'general':    return null;
   }
 }
+
+const BOOKING_ITEM_LABELS: Record<QuestionContextBooking['itemType'], string> = {
+  slot:       'Slot',
+  event:      'Event',
+  membership: 'Membership',
+};
 
 /** Translate API error codes into partner-friendly copy. */
 function errorMessage(e: unknown): string {
@@ -144,6 +152,242 @@ function MessageBubble({
   );
 }
 
+/**
+ * The Help-assistant interview transcript — what the customer picked before
+ * this thread was created. Rendered as a muted preamble above the transcript.
+ */
+function InterviewAnswers({ answers }: { answers: QuestionFlowAnswer[] }) {
+  return (
+    <div className="rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        Interview answers
+      </p>
+      <dl className="mt-2 flex flex-col gap-2">
+        {answers.map((fa, i) => (
+          <div key={i}>
+            <dt className="text-xs text-slate-500">{fa.question}</dt>
+            <dd className="text-sm font-medium text-slate-800">{fa.answer}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-[11px] text-slate-400">
+        What the customer picked in the Help assistant before this thread was created.
+      </p>
+    </div>
+  );
+}
+
+function ContextSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function bookingAmount(b: QuestionContextBooking): string {
+  return b.totalPaise != null ? formatMoney(b.totalPaise, asCurrencyCode(b.currency)) : '—';
+}
+
+/**
+ * Resolver context about the asker: who they are, the booking their support
+ * request is about, and their history with this organisation. Tenant-scoped
+ * server-side; contact details only arrive on private threads.
+ */
+function CustomerContext({
+  tenantId,
+  threadId,
+  isPrivateThread,
+}: {
+  tenantId: string;
+  threadId: string;
+  isPrivateThread: boolean;
+}) {
+  const { data, isLoading, isError } = useQuestionContext(tenantId, threadId);
+  const [collapsed, setCollapsed] = useState(false);
+  const { resolveTz } = useTimezone();
+
+  const fmtMonth = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'long',
+      }),
+    [resolveTz],
+  );
+  const fmtDate = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+      }),
+    [resolveTz],
+  );
+  const fmtDateTime = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-IN', {
+        timeZone: resolveTz(),
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
+    [resolveTz],
+  );
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-[#0f172a]">Customer context</h2>
+        <Button variant="ghost" size="sm" onClick={() => setCollapsed((c) => !c)}>
+          {collapsed ? 'Show' : 'Hide'}
+        </Button>
+      </div>
+
+      {!collapsed && isLoading && (
+        <p className="mt-3 text-sm text-slate-400">Loading&hellip;</p>
+      )}
+      {!collapsed && isError && (
+        <p className="mt-3 text-sm text-slate-400">Customer context could not be loaded.</p>
+      )}
+
+      {!collapsed && data && (
+        <div className="mt-3 flex flex-col gap-5">
+          {/* Member */}
+          <div>
+            <p className="text-sm font-medium text-slate-900">{data.member.displayName}</p>
+            <p className="text-xs text-slate-500">
+              Member since {fmtMonth.format(new Date(data.member.memberSince))}
+            </p>
+            {data.member.email != null && data.member.email !== '' && (
+              <p className="mt-1 break-all text-xs text-slate-600">{data.member.email}</p>
+            )}
+            {data.member.phone != null && data.member.phone !== '' && (
+              <p className="mt-0.5 text-xs text-slate-600">{data.member.phone}</p>
+            )}
+            {!isPrivateThread && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Contact details are hidden on public questions.
+              </p>
+            )}
+          </div>
+
+          {/* Pinned booking (support intake) */}
+          {data.contextBooking != null && (
+            <ContextSection title="Booking in question">
+              <div className="rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-sm font-medium text-slate-900">
+                    {data.contextBooking.label}
+                  </span>
+                  <Badge
+                    tone="neutral"
+                    label={BOOKING_ITEM_LABELS[data.contextBooking.itemType]}
+                  />
+                  <StatusPill status={data.contextBooking.status} />
+                </div>
+                {data.contextBooking.timeRange != null && (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {fmtDateTime.format(new Date(data.contextBooking.timeRange.start))}
+                    {' – '}
+                    {fmtDateTime.format(new Date(data.contextBooking.timeRange.end))}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  {bookingAmount(data.contextBooking)}
+                  {' · '}
+                  {data.contextBooking.paymentMethod}
+                  {' · booked '}
+                  {fmtDate.format(new Date(data.contextBooking.createdAt))}
+                </p>
+              </div>
+            </ContextSection>
+          )}
+
+          {/* Recent bookings */}
+          <ContextSection title="Recent bookings">
+            {data.recentBookings.length === 0 ? (
+              <p className="text-xs text-slate-400">No bookings with your organisation.</p>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <tbody className="divide-y divide-slate-100">
+                  {data.recentBookings.map((b) => (
+                    <tr key={b.id}>
+                      <td className="max-w-0 py-1.5 pr-2" style={{ width: '55%' }}>
+                        <p className="truncate text-slate-700">{b.label}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {fmtDate.format(new Date(b.createdAt))}
+                        </p>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <StatusPill status={b.status} />
+                      </td>
+                      <td className="whitespace-nowrap py-1.5 text-right text-slate-700">
+                        {bookingAmount(b)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </ContextSection>
+
+          {/* Memberships */}
+          <ContextSection title="Memberships">
+            {data.memberships.length === 0 ? (
+              <p className="text-xs text-slate-400">No memberships with your organisation.</p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {data.memberships.map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="font-medium text-slate-700">{m.name}</span>
+                    <StatusPill status={m.status} />
+                    <span className="text-slate-400">
+                      {fmtDate.format(new Date(m.startsAt))}
+                      {' – '}
+                      {fmtDate.format(new Date(m.endsAt))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ContextSection>
+
+          {/* Prior threads */}
+          <ContextSection title="Other threads">
+            {data.priorThreads.length === 0 ? (
+              <p className="text-xs text-slate-400">No other threads with your organisation.</p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {data.priorThreads.map((t) => (
+                  <li key={t.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <Link
+                      href={`/questions/${t.id}`}
+                      className="font-medium text-slate-700 hover:text-brand-700 hover:underline"
+                    >
+                      {t.subject.name}
+                    </Link>
+                    {t.origin === 'support' && <Badge tone="support" label="Support" />}
+                    <StatusPill status={t.status} />
+                    <span className="text-slate-400">
+                      {fmtDate.format(new Date(t.lastMessageAt))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ContextSection>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string }) {
   const { data, isLoading, isError, error } = useQuestionThread(tenantId, threadId);
   const reply = useReplyToQuestion(tenantId, threadId);
@@ -214,17 +458,33 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
     }
   }
 
+  const href = subjectHref(thread);
+
   return (
-    <div className="flex flex-col gap-6">
+    // Single column on small screens; on lg+ the customer-context panel moves
+    // into a right-hand sidebar (aside below spans both content rows).
+    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
+      <div className="flex flex-col gap-6 lg:col-start-1">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={subjectHref(thread)}
-          className="text-lg font-semibold text-[#0f172a] hover:text-brand-700 hover:underline"
-        >
-          {thread.subject?.name ?? 'Listing'}
-        </Link>
+        {href != null ? (
+          <Link
+            href={href}
+            className="text-lg font-semibold text-[#0f172a] hover:text-brand-700 hover:underline"
+          >
+            {thread.subject?.name ?? 'Listing'}
+          </Link>
+        ) : (
+          // `general` support threads have no listing page to link to.
+          <span className="text-lg font-semibold text-[#0f172a]">
+            {thread.subject?.name ?? 'Listing'}
+          </span>
+        )}
         <Badge tone="neutral" label={SUBJECT_LABELS[thread.subjectType]} />
+        {thread.origin === 'support' && <Badge tone="support" label="Support" />}
+        {thread.origin === 'support' && thread.category != null && (
+          <Badge tone="neutral" label={CATEGORY_LABELS[thread.category]} />
+        )}
         {thread.visibility === 'public' ? (
           <Badge tone="booked" label="Public" />
         ) : (
@@ -316,6 +576,22 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
           {actionError}
         </p>
       )}
+      </div>
+
+      {/* Customer context — right sidebar on lg+, stacked before the transcript otherwise */}
+      <aside className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
+        <CustomerContext
+          tenantId={tenantId}
+          threadId={threadId}
+          isPrivateThread={thread.visibility === 'private'}
+        />
+      </aside>
+
+      <div className="flex flex-col gap-6 lg:col-start-1">
+      {/* Interview answers — Help-assistant intake transcript preamble */}
+      {thread.flowAnswers != null && thread.flowAnswers.length > 0 && (
+        <InterviewAnswers answers={thread.flowAnswers} />
+      )}
 
       {/* Transcript */}
       <Card>
@@ -396,6 +672,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
         onConfirm={() => void handleArchive('archive')}
         onClose={() => setConfirmArchive(false)}
       />
+      </div>
     </div>
   );
 }
@@ -405,7 +682,7 @@ export default function QuestionThreadPage() {
   const { activeTenantId } = useOrg();
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <div>
         <Link
           href="/questions"

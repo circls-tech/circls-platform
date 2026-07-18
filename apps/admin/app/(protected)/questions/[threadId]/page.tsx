@@ -17,7 +17,10 @@ import {
   AUTHOR_KIND_COLORS,
   AUTHOR_KIND_LABELS,
   Badge,
+  CATEGORY_LABELS,
   IST_FMT,
+  ORIGIN_COLORS,
+  ORIGIN_LABELS,
   STATUS_COLORS,
   STATUS_LABELS,
   SUBJECT_TYPE_COLORS,
@@ -25,6 +28,7 @@ import {
   VISIBILITY_COLORS,
   VISIBILITY_LABELS,
 } from '../badges';
+import { CustomerContextPanel } from './context_panel';
 
 function errorText(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
@@ -202,10 +206,18 @@ export default function QuestionThreadPage() {
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold text-slate-900">
-            {t.subject.name
-              ? `Question on ${t.subject.name}`
-              : `Question on ${SUBJECT_TYPE_LABELS[t.subjectType].toLowerCase()}`}
+            {t.subjectType === 'general'
+              ? 'General question'
+              : t.subject.name
+                ? `Question on ${t.subject.name}`
+                : `Question on ${SUBJECT_TYPE_LABELS[t.subjectType].toLowerCase()}`}
           </h1>
+          {t.origin === 'support' && (
+            <Badge label={ORIGIN_LABELS.support} tone={ORIGIN_COLORS.support} />
+          )}
+          {t.category && (
+            <Badge label={CATEGORY_LABELS[t.category]} tone="bg-slate-100 text-slate-700" />
+          )}
           <Badge label={SUBJECT_TYPE_LABELS[t.subjectType]} tone={SUBJECT_TYPE_COLORS[t.subjectType]} />
           <Badge label={VISIBILITY_LABELS[t.visibility]} tone={VISIBILITY_COLORS[t.visibility]} />
           <Badge label={STATUS_LABELS[t.status]} tone={STATUS_COLORS[t.status]} />
@@ -213,9 +225,11 @@ export default function QuestionThreadPage() {
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-slate-500">
           <span>Asked by {t.authorName}</span>
-          <span>
-            Subject <span className="font-mono">{t.subjectId}</span>
-          </span>
+          {t.subjectId && (
+            <span>
+              Subject <span className="font-mono">{t.subjectId}</span>
+            </span>
+          )}
           <span>
             Tenant{' '}
             <Link href={`/tenants/${t.tenantId}`} className="font-mono text-blue-700 hover:underline">
@@ -275,6 +289,27 @@ export default function QuestionThreadPage() {
         </button>
         {archiveError && <p className="text-xs text-red-600">{archiveError}</p>}
       </div>
+
+      {/* Resolver context about the asker (member, bookings, history …). */}
+      <CustomerContextPanel threadId={threadId} />
+
+      {/* Support-intake interview transcript (support-origin threads only). */}
+      {t.flowAnswers && t.flowAnswers.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Interview answers
+          </h2>
+          <ol className="space-y-1.5">
+            {t.flowAnswers.map((a, i) => (
+              <li key={i} className="text-xs text-slate-600">
+                <span className="text-slate-500">{a.question}</span>
+                <span className="mx-1 text-slate-400">→</span>
+                <span className="font-medium text-slate-800">{a.answer}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {/* Transcript */}
       <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4">

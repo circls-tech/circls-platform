@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useAdminSupportIssues, useUpdateSupportIssue } from '@/lib/api/queries';
 import type {
@@ -193,6 +194,13 @@ export default function SupportIssuesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+        New consumer concerns now arrive as private{' '}
+        <Link href="/questions?origin=support" className="font-medium underline">
+          Questions threads
+        </Link>
+        ; partner-raised issues continue to land here.
+      </p>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Support Issues</h1>

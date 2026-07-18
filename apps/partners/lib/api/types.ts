@@ -698,18 +698,51 @@ export interface MembershipWindows {
 
 // ── Questions (customer support threads) ──────────────────────────────────────
 
-export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+/** `general` = support threads with no listing subject (Help-assistant intake). */
+export type QuestionSubjectType = 'event' | 'arena' | 'membership' | 'general';
 export type QuestionVisibility = 'public' | 'private';
 export type QuestionStatus = 'open' | 'answered' | 'closed';
 export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+/** Intake channel: 'forum' (organic ask on a listing) or 'support' (Help interview). */
+export type QuestionOrigin = 'forum' | 'support';
+/** Triage category picked by the Help interview; null on forum threads. */
+export type QuestionCategory =
+  | 'booking_issue'
+  | 'refund_request'
+  | 'reschedule'
+  | 'venue_question'
+  | 'payment'
+  | 'other';
+
+/** One step of the Help-interview transcript. */
+export interface QuestionFlowAnswer {
+  question: string;
+  answer: string;
+}
+
+/**
+ * Subject summary. `general` threads (support requests with no listing
+ * subject) serialize as `{ type: 'general', id: null, name: 'General' }` —
+ * the one subject shape with a null id.
+ */
+export interface QuestionSubjectSummary {
+  type: QuestionSubjectType;
+  id: string | null;
+  name: string;
+}
 
 export interface QuestionThreadRow {
   id: string;
   subjectType: QuestionSubjectType;
-  subjectId: string;
+  /** Null for `general` threads (no subject row). */
+  subjectId: string | null;
   tenantId: string;
   visibility: QuestionVisibility;
   status: QuestionStatus;
+  /** Intake channel: organic ask vs Help-interview support request. */
+  origin: QuestionOrigin;
+  /** Interview triage category; null on forum threads. */
+  category: QuestionCategory | null;
   /** First 280 chars of the root (question) message. */
   rootBody: string;
   replyCount: number;
@@ -719,11 +752,13 @@ export interface QuestionThreadRow {
   /** ISO-8601 */
   createdAt: string;
   /** Subject summary — present on partner list/detail responses. */
-  subject?: { type: QuestionSubjectType; id: string; name: string };
+  subject?: QuestionSubjectSummary;
   /** ISO-8601 — set when the thread is archived (hidden from the customer). */
   archivedAt: string | null;
   /** Who archived: 'org' (your team) or 'circls'; org unarchive only for 'org'. */
   archivedByKind: 'org' | 'circls' | null;
+  /** Booking pinned as context by the support intake; null when none. */
+  contextBookingId: string | null;
 }
 
 export interface QuestionMessage {
@@ -751,10 +786,15 @@ export interface QuestionMessage {
 export interface QuestionThreadDetailThread {
   id: string;
   subjectType: QuestionSubjectType;
-  subjectId: string;
+  /** Null for `general` threads (no subject row). */
+  subjectId: string | null;
   tenantId: string;
   visibility: QuestionVisibility;
   status: QuestionStatus;
+  /** Intake channel: organic ask vs Help-interview support request. */
+  origin: QuestionOrigin;
+  /** Interview triage category; null on forum threads. */
+  category: QuestionCategory | null;
   /** DB user id of the asker. */
   authorUserId: string;
   messageCount: number;
@@ -763,7 +803,7 @@ export interface QuestionThreadDetailThread {
   /** ISO-8601 */
   createdAt: string;
   /** Subject summary (joined name). */
-  subject: { type: QuestionSubjectType; id: string; name: string };
+  subject: QuestionSubjectSummary;
   /** Display name of the asker (root-message author). */
   authorName: string;
   /** ISO-8601 — set when the thread is archived (hidden from the customer). */
@@ -771,6 +811,10 @@ export interface QuestionThreadDetailThread {
   /** Who archived: 'org' (your team) or 'circls'. You can only unarchive
    *  threads your own team archived. */
   archivedByKind: 'org' | 'circls' | null;
+  /** Booking pinned as context by the support intake; null when none. */
+  contextBookingId: string | null;
+  /** Help-interview transcript; null on forum threads. */
+  flowAnswers: QuestionFlowAnswer[] | null;
 }
 
 export interface QuestionThreadDetail {
@@ -792,4 +836,68 @@ export interface QuestionReplyResult {
   message: QuestionMessage;
   /** Thread status after the reply (org replies auto-mark `answered`). */
   threadStatus: QuestionStatus;
+}
+
+// ── Question thread resolver context (customer-context panel) ─────────────────
+
+export interface QuestionContextMember {
+  id: string;
+  displayName: string;
+  /** ISO-8601 — when this person joined Circls. */
+  memberSince: string;
+  /** Present only when the thread is PRIVATE — public askers haven't opted
+   *  into sharing contact details. Absent (not null) on public threads. */
+  email?: string | null;
+  phone?: string | null;
+}
+
+/** One booking row — the pinned context booking and the recent-bookings list. */
+export interface QuestionContextBooking {
+  id: string;
+  itemType: 'slot' | 'event' | 'membership';
+  /** Human label: arena / event / membership name (venue name as fallback). */
+  label: string;
+  status: string;
+  totalPaise: number | null;
+  currency: string;
+  paymentMethod: string;
+  timeRange: { start: string; end: string } | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+export interface QuestionContextMembership {
+  id: string;
+  membershipId: string;
+  name: string;
+  status: string;
+  /** ISO-8601 */
+  startsAt: string;
+  /** ISO-8601 */
+  endsAt: string;
+}
+
+export interface QuestionContextPriorThread {
+  id: string;
+  status: QuestionStatus;
+  visibility: QuestionVisibility;
+  origin: QuestionOrigin;
+  category: QuestionCategory | null;
+  subject: QuestionSubjectSummary;
+  /** ISO-8601 */
+  lastMessageAt: string;
+}
+
+/**
+ * GET /v1/tenants/:tenantId/questions/:threadId/context — everything is
+ * tenant-scoped (this asker's relationship with YOUR organisation only);
+ * lists are capped at 10 rows, `priorThreads` excludes the current thread.
+ */
+export interface QuestionThreadContext {
+  member: QuestionContextMember;
+  /** The booking pinned by the support intake; null when none. */
+  contextBooking: QuestionContextBooking | null;
+  recentBookings: QuestionContextBooking[];
+  memberships: QuestionContextMembership[];
+  priorThreads: QuestionContextPriorThread[];
 }
