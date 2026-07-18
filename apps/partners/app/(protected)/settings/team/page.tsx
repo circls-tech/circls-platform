@@ -12,8 +12,7 @@ import {
   useUpdateMemberRole,
 } from '@/lib/api/queries';
 import type { TenantRole } from '@/lib/api/types';
-
-const ROLES: TenantRole[] = ['owner', 'manager', 'staff', 'readonly'];
+import { ROLE_INFO, ROLE_ORDER } from '@/lib/roles';
 
 export default function TeamPage() {
   const { activeTenantId } = useOrg();
@@ -68,8 +67,26 @@ export default function TeamPage() {
       <section>
         <h1 className="text-xl font-semibold">Team</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Invite teammates, change roles, or remove members. Owners can do everything;
-          staff can manage bookings.
+          Invite teammates, change roles, or remove members. Each role grants a fixed
+          set of rights, described below.
+        </p>
+      </section>
+
+      <section className="rounded border border-slate-200 bg-white p-4">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          What each role can do
+        </h2>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+          {ROLE_ORDER.map((r) => (
+            <div key={r}>
+              <dt className="text-sm font-medium text-slate-800">{ROLE_INFO[r].label}</dt>
+              <dd className="mt-0.5 text-xs text-slate-500">{ROLE_INFO[r].description}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3 text-xs text-slate-400">
+          Choose the least-privileged role that lets someone do their job — you can always
+          upgrade them later.
         </p>
       </section>
 
@@ -101,8 +118,8 @@ export default function TeamPage() {
               onChange={(e) => setInviteRole(e.target.value as TenantRole)}
               className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm"
             >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
+              {ROLE_ORDER.map((r) => (
+                <option key={r} value={r}>{ROLE_INFO[r].label}</option>
               ))}
             </select>
           </div>
@@ -114,6 +131,10 @@ export default function TeamPage() {
             {createInvite.isPending ? 'Sending…' : 'Send invitation'}
           </button>
         </form>
+        <p className="mt-2 text-xs text-slate-500">
+          <span className="font-medium">{ROLE_INFO[inviteRole].label}:</span>{' '}
+          {ROLE_INFO[inviteRole].description}
+        </p>
         {lastToken && (
           <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-xs">
             <p className="font-medium">Invite link (also emailed):</p>
@@ -132,7 +153,7 @@ export default function TeamPage() {
               <div>
                 <div className="font-medium">{inv.email}</div>
                 <div className="text-xs text-slate-500">
-                  Invited as {inv.role} &middot; expires {dateTimeFmt.format(new Date(inv.expiresAt))}
+                  Invited as {ROLE_INFO[inv.role].label} &middot; expires {dateTimeFmt.format(new Date(inv.expiresAt))}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -176,10 +197,13 @@ export default function TeamPage() {
                   onChange={(e) =>
                     updateRole.mutate({ userId: m.userId, role: e.target.value as TenantRole })
                   }
+                  title={ROLE_INFO[m.role].description}
                   className="rounded border border-slate-300 px-2 py-1 text-xs"
                 >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                  {ROLE_ORDER.map((r) => (
+                    <option key={r} value={r} title={ROLE_INFO[r].description}>
+                      {ROLE_INFO[r].label}
+                    </option>
                   ))}
                 </select>
                 <button

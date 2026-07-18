@@ -10,6 +10,7 @@ import {
   useTenantAuditLog,
 } from '@/lib/api/queries';
 import type { AdminTenantDetail, TenantAuditLogItem } from '@/lib/api/types';
+import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -173,7 +174,7 @@ function OverviewTab({ data }: { data: AdminTenantDetail }) {
             <Field label="Name" value={owner.displayName} />
             <Field label="Email" value={owner.email} />
             <Field label="Phone" value={owner.phoneE164} mono />
-            <Field label="Role" value={owner.role} />
+            <Field label="Role" value={formatRole(owner.role)} />
           </>
         ) : (
           <p className="text-sm text-slate-400">No owner on record.</p>
@@ -189,11 +190,25 @@ function OverviewTab({ data }: { data: AdminTenantDetail }) {
   );
 }
 
+function RoleLegend() {
+  return (
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+      {(Object.keys(ROLE_LABELS) as TenantRole[]).map((r) => (
+        <div key={r} className="text-sm">
+          <dt className="inline font-medium text-slate-800">{ROLE_LABELS[r]}</dt>
+          <dd className="inline text-slate-500"> — {PARTNER_ROLE_INFO[r]}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function MembersTab({ data }: { data: AdminTenantDetail }) {
   if (data.members.length === 0) {
     return <p className="text-sm text-slate-400">No members on this tenant.</p>;
   }
   return (
+    <div className="space-y-4">
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -213,12 +228,16 @@ function MembersTab({ data }: { data: AdminTenantDetail }) {
               </td>
               <td className="px-4 py-2.5 text-slate-700">{m.email ?? '—'}</td>
               <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{m.phoneE164 ?? '—'}</td>
-              <td className="px-4 py-2.5 text-slate-700">{m.role}</td>
+              <td className="px-4 py-2.5 text-slate-700">
+                <span title={PARTNER_ROLE_INFO[m.role]}>{ROLE_LABELS[m.role]}</span>
+              </td>
               <td className="px-4 py-2.5 text-xs text-slate-500">{fmtIST(m.createdAt)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+    <RoleLegend />
     </div>
   );
 }
