@@ -371,6 +371,9 @@ export interface PublicEventWithVenue extends Omit<PublicEvent, 'venueId'> {
 export interface PublicMembershipWithScope extends PublicMembership {
   scopeName: string;
   venueTags: string[];
+  /** Owning venue's city for venue-scoped plans; null for tenant-wide (a brand
+   *  pass isn't city-bound) or when the venue has no city on file. */
+  city: string | null;
   /** Country the plan's prices are denominated in (owning venue's country,
    *  falling back to the tenant's) — drives the display currency. */
   country: string | null;

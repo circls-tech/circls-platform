@@ -6,17 +6,17 @@ import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useVenues } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { venueInCity, venuesForArea } from '@/lib/location/geo';
-import { Badge, Input } from '@/lib/ui';
+import { venuesForArea } from '@/lib/location/geo';
+import { Input } from '@/lib/ui';
 
 export default function VenuesPage() {
   const [search, setSearch] = useState('');
   const { city, country, openPicker } = useLocation();
-  // We scope the list to the COUNTRY (a single market). The user's city is only a
-  // soft signal — same-city venues are sorted first and flagged "Near you" — so a
-  // country with venues never shows an empty list just because the exact city has
-  // none. The empty state is reserved for a country that genuinely has no venues.
-  const areaLabel = country ?? city;
+  // Country is the market boundary; a selected city is a HARD filter — venues in
+  // other cities are hidden, and a city with no venues shows the empty state.
+  // The label prefers the CITY (matching the events page); country covers legacy
+  // country-only selections.
+  const areaLabel = city ?? country;
   const venues = useVenues(search);
   const filtered = venuesForArea(venues.data ?? [], { city, country });
 
@@ -40,8 +40,7 @@ export default function VenuesPage() {
           <p className="mt-3 text-sm text-text-secondary">
             {areaLabel ? (
               <>
-                Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>
-                {city ? <> — closest to <span className="font-semibold text-ink">{city}</span> first</> : null}.{' '}
+                Showing venues in <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
                 <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                   Change
                 </button>
@@ -64,26 +63,17 @@ export default function VenuesPage() {
           </p>
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="No venues found"
+            title="No venues here yet"
             body={
               areaLabel
-                ? `No venues in ${areaLabel} match your search. Try changing your location or search.`
+                ? `No venues in ${areaLabel} yet. Check back soon, or change your location to browse elsewhere.`
                 : 'Try a different search, or check back soon — new venues are added often.'
             }
           />
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((v) => (
-              <div key={v.id} className="relative">
-                {venueInCity(v.addressJson, city) && (
-                  <Badge
-                    tone="success"
-                    label="Near you"
-                    className="absolute right-2 top-2 z-10 shadow-offset-sm"
-                  />
-                )}
-                <VenueCard venue={v} />
-              </div>
+              <VenueCard key={v.id} venue={v} />
             ))}
           </div>
         )}

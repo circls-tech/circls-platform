@@ -7,7 +7,7 @@ import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { eventInRange, matchesCountry, venueInCity, venuesForArea } from '@/lib/location/geo';
+import { eventInRange, membershipInArea, venuesForArea } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
 
 const MOTIF: React.CSSProperties = {
@@ -16,20 +16,16 @@ const MOTIF: React.CSSProperties = {
 };
 
 export default function LandingPage() {
-  const { city, country, coords } = useLocation();
+  const { city, country, coords, openPicker } = useLocation();
   // Fetch a wider set so location filtering still has cards to show, then cap to 10.
   const venues = useVenues('', 100);
   const events = useUpcomingEvents(100);
   const memberships = useAllMemberships(100);
 
-  // Venues and events both scope to the COUNTRY (one "market" — discovery never
-  // crosses borders). The user's city is only a soft signal for venues: same-city
-  // venues sort first, but we fall back to all in-country venues so this rail is
-  // never silently empty for a country that has venues.
-  const areaVenues = venuesForArea(venues.data ?? [], { city, country });
-  const nearbyVenues = areaVenues.slice(0, 10);
-  const hasCityVenues = areaVenues.some((v) => venueInCity(v.addressJson, city));
-  const venuesTitle = hasCityVenues
+  // Country is the market boundary; a selected city HARD-filters venues, so
+  // this rail simply hides when the user's city has none.
+  const nearbyVenues = venuesForArea(venues.data ?? [], { city, country }).slice(0, 10);
+  const venuesTitle = city
     ? `Venues in ${city}`
     : country
       ? `Venues in ${country}`
@@ -39,11 +35,24 @@ export default function LandingPage() {
   const nearbyEvents = (events.data ?? [])
     .filter((e) => eventInRange(e, { city, country, coords }))
     .slice(0, 10);
-  // Memberships scope to the country too — a plan is priced and honoured in its
-  // venue's (or tenant's) country, so it's never useful across the border.
+  // Memberships: country boundary, city HARD filter for venue-scoped plans;
+  // tenant-wide plans stay visible across the country.
   const nearbyMemberships = (memberships.data ?? [])
-    .filter((m) => matchesCountry(m.country, country))
+    .filter((m) => membershipInArea(m, { city, country }))
     .slice(0, 10);
+
+  // With a location set and every rail empty, the page would be just the hero —
+  // say why instead of rendering silence. Suppressed while queries load so the
+  // message never flashes before the rails appear.
+  const loading = venues.isLoading || events.isLoading || memberships.isLoading;
+  const hasArea = Boolean(city || country || coords);
+  const nothingNearby =
+    !loading &&
+    hasArea &&
+    nearbyVenues.length === 0 &&
+    nearbyEvents.length === 0 &&
+    nearbyMemberships.length === 0;
+  const nothingLabel = city ?? (coords ? 'your area' : country);
 
   return (
     <div className="min-h-screen">
@@ -68,6 +77,18 @@ export default function LandingPage() {
       </section>
 
       <main className="py-6">
+        {nothingNearby && (
+          <p className="mx-auto max-w-6xl px-4 py-10 text-center text-sm text-text-secondary">
+            Nothing in <span className="font-semibold text-ink">{nothingLabel}</span> yet — check
+            back soon.{' '}
+            <button
+              onClick={openPicker}
+              className="font-semibold text-ink underline hover:text-coral-deep"
+            >
+              Change location
+            </button>
+          </p>
+        )}
         {nearbyVenues.length > 0 && (
           <HScroll title={venuesTitle} viewAllHref="/venues">
             {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
@@ -84,7 +105,7 @@ export default function LandingPage() {
         )}
 
         {nearbyMemberships.length > 0 && (
-          <HScroll title={country ? `Memberships in ${country}` : 'Memberships'} viewAllHref="/memberships">
+          <HScroll title={(city ?? country) ? `Memberships in ${city ?? country}` : 'Memberships'} viewAllHref="/memberships">
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}

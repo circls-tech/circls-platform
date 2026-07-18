@@ -347,7 +347,7 @@ describe.skipIf(!runIntegration)('listPublicMemberships (venue scope enrichment)
     tenantId = t!.id;
     const [v] = await db
       .insert(venues)
-      .values({ tenantId, name: `VScope Venue ${tag}`, status: 'active', tags: ['Padel'] })
+      .values({ tenantId, name: `VScope Venue ${tag}`, status: 'active', tags: ['Padel'], city: 'Nagpur' })
       .returning();
     venueId = v!.id;
     await db.insert(memberships).values([
@@ -368,9 +368,12 @@ describe.skipIf(!runIntegration)('listPublicMemberships (venue scope enrichment)
     const wide = rows.find((m) => m.name === 'VWide')!;
     expect(scoped.scopeName).toBe(`VScope Venue ${tag}`);
     expect(scoped.venueTags).toEqual(['Padel']);
+    // Venue-scoped plans carry their venue's city (for the consumer city filter).
+    expect(scoped.city).toBe('Nagpur');
     expect(wide.venueId).toBeNull();
     expect(wide.scopeName).toBe(`VScope Brand ${tag}`);
     expect(wide.venueTags).toEqual([]);
+    expect(wide.city).toBeNull();
   });
 });
 
