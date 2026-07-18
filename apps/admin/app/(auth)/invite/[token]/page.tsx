@@ -10,6 +10,7 @@ import {
 import { auth } from '@/lib/firebase/client';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from '@/lib/api/client';
+import { PLATFORM_ROLE_INFO, ROLE_LABELS, formatRole } from '@/lib/roles';
 
 interface InviteMeta {
   tenantName: string;
@@ -203,7 +204,8 @@ export default function AcceptInvitePage() {
             <h1 className="text-2xl font-semibold">Role updated</h1>
             <p className="text-sm text-slate-600">
               You were already a member of <strong>{result.tenantName}</strong>. Your role has been
-              upgraded from <strong>{result.previousRole}</strong> to <strong>{result.role}</strong>.
+              upgraded from <strong>{formatRole(result.previousRole ?? '')}</strong> to{' '}
+              <strong>{formatRole(result.role)}</strong>.
             </p>
           </>
         ) : (
@@ -211,7 +213,7 @@ export default function AcceptInvitePage() {
             <h1 className="text-2xl font-semibold">You&apos;re already a member</h1>
             <p className="text-sm text-slate-600">
               You&apos;re already part of <strong>{result.tenantName}</strong> as{' '}
-              <strong>{result.role}</strong>. There&apos;s nothing to accept.
+              <strong>{formatRole(result.role)}</strong>. There&apos;s nothing to accept.
             </p>
           </>
         )}
@@ -224,8 +226,10 @@ export default function AcceptInvitePage() {
 
   const invitedAs = (
     <>
-      You&apos;ve been invited to <strong>{meta.tenantName}</strong> as <strong>{meta.role}</strong>
-      {meta.inviterEmail ? ` by ${meta.inviterEmail}` : ''}.
+      You&apos;ve been invited to <strong>{meta.tenantName}</strong> as{' '}
+      <strong>{ROLE_LABELS[meta.role]}</strong>
+      {meta.inviterEmail ? ` by ${meta.inviterEmail}` : ''}.{' '}
+      <span className="text-slate-500">{PLATFORM_ROLE_INFO[meta.role]}</span>
     </>
   );
 
