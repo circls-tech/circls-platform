@@ -89,6 +89,9 @@ export const envSchema = z
   // Admin portal base URL (used to build Circls-internal invite links).
   ADMIN_BASE_URL: z.string().url().default('https://admin.circls.app'),
 
+  // Consumer app base URL (used to build "view your question" email links).
+  CONSUMER_BASE_URL: z.string().url().default('https://circls.app'),
+
   // Outbound webhooks. Phase 17.
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),

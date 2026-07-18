@@ -34,6 +34,8 @@ export type Capability =
   | 'memberships.write'
   | 'discounts.read'
   | 'discounts.write'
+  | 'questions.read'
+  | 'questions.write'
   // integration
   | 'integration.api_keys.manage'
   // platform-only (granted only when ctx.tenant.isPlatform === true)
@@ -44,7 +46,9 @@ export type Capability =
   | 'admin.payouts.execute'
   | 'admin.audit.read'
   | 'admin.coupons.read'
-  | 'admin.coupons.write';
+  | 'admin.coupons.write'
+  | 'admin.support.read'
+  | 'admin.support.write';
 
 /** Used by snapshot tests + by tooling that needs to walk every capability. */
 export const ALL_CAPABILITIES: readonly Capability[] = [
@@ -60,9 +64,11 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'events.read', 'events.write',
   'memberships.read', 'memberships.write',
   'discounts.read', 'discounts.write',
+  'questions.read', 'questions.write',
   'integration.api_keys.manage',
   'admin.tenants.read', 'admin.tenants.suspend',
   'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
   'admin.audit.read',
   'admin.coupons.read', 'admin.coupons.write',
+  'admin.support.read', 'admin.support.write',
 ] as const;

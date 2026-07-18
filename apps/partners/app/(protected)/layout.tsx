@@ -4,7 +4,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyTenants } from '@/lib/api/queries';
-import { OrgProvider } from '@/lib/org_context';
+import { useQuestionsSummary } from '@/lib/api/questions';
+import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
@@ -19,6 +20,7 @@ const NAV_LINKS = [
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
   { href: '/check-in', label: 'Check-in' },
+  { href: '/questions', label: 'Questions' },
   { href: '/coupons', label: 'Coupons' },
   { href: '/settings', label: 'Settings' },
 ] as const;
@@ -41,6 +43,19 @@ function HamburgerIcon() {
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="18" x2="21" y2="18" />
     </svg>
+  );
+}
+
+/** Open-questions count next to the "Questions" nav entry (polled every 60s). */
+function OpenQuestionsBadge() {
+  const { activeTenantId } = useOrg();
+  const { data } = useQuestionsSummary(activeTenantId);
+  const openCount = data?.openCount ?? 0;
+  if (openCount === 0) return null;
+  return (
+    <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+      {openCount > 99 ? '99+' : openCount}
+    </span>
   );
 }
 
@@ -94,6 +109,7 @@ function Sidebar({
                 ].join(' ')}
               >
                 {label}
+                {href === '/questions' && <OpenQuestionsBadge />}
               </Link>
             );
           })}

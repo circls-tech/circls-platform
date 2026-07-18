@@ -31,3 +31,6 @@ export * from './coupons.js';
 export * from './coupon_redemptions.js';
 export * from './qr_ticket_config.js';
 export * from './qr_tickets.js';
+// Questions threads on events / arenas / memberships (epic #106 follow-on).
+export * from './question_threads.js';
+export * from './question_messages.js';

@@ -695,3 +695,101 @@ export interface MembershipWindows {
   starting: MembershipWindowItem[];
   ending: MembershipWindowItem[];
 }
+
+// ── Questions (customer support threads) ──────────────────────────────────────
+
+export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+export type QuestionVisibility = 'public' | 'private';
+export type QuestionStatus = 'open' | 'answered' | 'closed';
+export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+
+export interface QuestionThreadRow {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** First 280 chars of the root (question) message. */
+  rootBody: string;
+  replyCount: number;
+  authorName: string;
+  /** ISO-8601 — bumped on every message; the list sort key. */
+  lastMessageAt: string;
+  /** ISO-8601 */
+  createdAt: string;
+  /** Subject summary — present on partner list/detail responses. */
+  subject?: { type: QuestionSubjectType; id: string; name: string };
+  /** ISO-8601 — set when the thread is archived (hidden from the customer). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (your team) or 'circls'; org unarchive only for 'org'. */
+  archivedByKind: 'org' | 'circls' | null;
+}
+
+export interface QuestionMessage {
+  id: string;
+  threadId: string;
+  authorKind: QuestionAuthorKind;
+  authorName: string;
+  /** True when the message was posted by the calling portal user. */
+  own: boolean;
+  body: string;
+  /** ISO-8601 — set when the message is hidden by moderation, else null. */
+  hiddenAt: string | null;
+  /** Who hid the message: 'org' (your team) or 'circls' (admin); null when
+   *  visible. Org unhide is only allowed for 'org' hides. */
+  hiddenByKind: 'org' | 'circls' | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+/**
+ * Thread object on DETAIL (and status-PATCH) responses. Unlike list rows it
+ * carries no `rootBody`/`replyCount` — the transcript is in `messages` — and
+ * `subject`/`authorName` are always present.
+ */
+export interface QuestionThreadDetailThread {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** DB user id of the asker. */
+  authorUserId: string;
+  messageCount: number;
+  /** ISO-8601 — bumped on every message. */
+  lastMessageAt: string;
+  /** ISO-8601 */
+  createdAt: string;
+  /** Subject summary (joined name). */
+  subject: { type: QuestionSubjectType; id: string; name: string };
+  /** Display name of the asker (root-message author). */
+  authorName: string;
+  /** ISO-8601 — set when the thread is archived (hidden from the customer). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (your team) or 'circls'. You can only unarchive
+   *  threads your own team archived. */
+  archivedByKind: 'org' | 'circls' | null;
+}
+
+export interface QuestionThreadDetail {
+  thread: QuestionThreadDetailThread;
+  /** Chronological (asc). Hidden messages included, marked via `hiddenAt`. */
+  messages: QuestionMessage[];
+}
+
+export interface QuestionThreadsPage {
+  rows: QuestionThreadRow[];
+  nextCursor: string | null;
+}
+
+export interface QuestionsSummary {
+  openCount: number;
+}
+
+export interface QuestionReplyResult {
+  message: QuestionMessage;
+  /** Thread status after the reply (org replies auto-mark `answered`). */
+  threadStatus: QuestionStatus;
+}

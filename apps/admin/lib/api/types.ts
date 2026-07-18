@@ -261,3 +261,97 @@ export interface AdminSupportIssueFilters {
   category?: SupportIssueCategory;
   status?: SupportIssueStatus;
 }
+
+// ── Questions (consumer support threads) ──────────────────────────────────────
+// Keep aligned with apps/api/src/services/questions_service.ts.
+
+export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+export type QuestionVisibility = 'public' | 'private';
+export type QuestionStatus = 'open' | 'answered' | 'closed';
+export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+
+export interface QuestionSubjectSummary {
+  type: QuestionSubjectType;
+  id: string;
+  name: string;
+}
+
+export interface AdminQuestionThreadRow {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** Excerpt (first 280 chars) of the root message. */
+  rootBody: string;
+  replyCount: number;
+  authorName: string;
+  lastMessageAt: string;
+  createdAt: string;
+  subject?: QuestionSubjectSummary;
+  /** ISO timestamp when the thread is archived (hidden from consumers). */
+  archivedAt: string | null;
+  /** Who archived: 'org' (partner) or 'circls' (admin); null when active. */
+  archivedByKind: 'org' | 'circls' | null;
+}
+
+export interface AdminQuestionThreadListPage {
+  rows: AdminQuestionThreadRow[];
+  nextCursor: string | null;
+}
+
+export interface QuestionMessageRow {
+  id: string;
+  threadId: string;
+  authorKind: QuestionAuthorKind;
+  authorName: string;
+  /** True when the message was posted by the calling admin user. */
+  own: boolean;
+  body: string;
+  /** ISO timestamp when hidden by moderation; null when visible. */
+  hiddenAt: string | null;
+  /** Who hid the message: 'org' (partner) or 'circls' (admin); null when visible. */
+  hiddenByKind: 'org' | 'circls' | null;
+  createdAt: string;
+}
+
+export interface AdminQuestionThreadDetail {
+  thread: {
+    id: string;
+    subjectType: QuestionSubjectType;
+    subjectId: string;
+    tenantId: string;
+    visibility: QuestionVisibility;
+    status: QuestionStatus;
+    authorUserId: string;
+    messageCount: number;
+    lastMessageAt: string;
+    createdAt: string;
+    /** Subject summary (joined name) — always present on detail responses. */
+    subject: QuestionSubjectSummary;
+    /** Display name of the asker (root-message author). */
+    authorName: string;
+    /** ISO timestamp when the thread is archived (hidden from consumers). */
+    archivedAt: string | null;
+    /** Who archived: 'org' (partner) or 'circls' (admin); null when active. */
+    archivedByKind: 'org' | 'circls' | null;
+  };
+  messages: QuestionMessageRow[];
+}
+
+/** POST …/messages response: the new message + the (possibly updated) status. */
+export interface AdminQuestionReplyResult {
+  message: QuestionMessageRow;
+  threadStatus: QuestionStatus;
+}
+
+/** Optional filters for the admin questions list. */
+export interface AdminQuestionFilters {
+  status?: QuestionStatus;
+  visibility?: QuestionVisibility;
+  subjectType?: QuestionSubjectType;
+  tenantId?: string;
+  /** True selects the archived view; default (false) lists active threads. */
+  archived?: boolean;
+}

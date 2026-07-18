@@ -78,6 +78,10 @@ Click **View buyers** on a plan to expand its buyer list. For each member you'll
 
 A purchased membership runs for the plan's **duration in days** from the purchase date, then automatically becomes **expired**. Individual memberships can be **active**, **expired** or **cancelled**.
 
+## Customer questions
+
+Customers viewing a plan can ask **questions** on it — "Does the pass cover both venues?", "Can I pause it?" — either publicly (shown on the plan's consumer page) or privately. Answer them from the **Questions** inbox in the sidebar. A clear public answer often saves you the same question twice. See [Answering customer questions](/help/questions).
+
 ## Tips
 
 - Use **benefits** rows (not just the description) to spell out exactly what the pass includes — they render as a clear list customers read before buying. Add **artwork** and **terms** to build trust.

@@ -414,6 +414,96 @@ export interface ConsumerConcern {
   updatedAt: string;
 }
 
+// ── Questions threads (support Q&A on events / arenas / memberships) ──────────
+
+export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+export type QuestionVisibility = 'public' | 'private';
+export type QuestionStatus = 'open' | 'answered' | 'closed';
+export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+
+/** A thread row in a questions list (GET /v1/consumer/questions[/mine]). */
+export interface QuestionThreadListRow {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** Excerpt of the root message (first 280 chars). */
+  rootBody: string;
+  replyCount: number;
+  authorName: string;
+  /** ISO-8601 — bumped on every message; lists sort by it, newest first. */
+  lastMessageAt: string;
+  /** ISO-8601 */
+  createdAt: string;
+  /** Subject summary — present on /mine rows so the list can name the subject. */
+  subject?: { type: QuestionSubjectType; id: string; name: string };
+}
+
+/** A cursor page of question threads. */
+export interface QuestionThreadListPage {
+  rows: QuestionThreadListRow[];
+  nextCursor: string | null;
+}
+
+/** One message in a thread. Hidden messages are only returned to viewers
+ *  allowed to see them (the message author, the org, Circls staff). */
+export interface QuestionMessageRow {
+  id: string;
+  threadId: string;
+  authorKind: QuestionAuthorKind;
+  authorName: string;
+  /** True when the message was posted by the signed-in viewer (false signed-out). */
+  own: boolean;
+  body: string;
+  /** ISO-8601 when moderated away, else null. */
+  hiddenAt: string | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+/** Full thread view (GET /v1/consumer/questions/:threadId). The root message
+ *  is the earliest entry of `messages`. */
+export interface QuestionThreadDetail {
+  thread: {
+    id: string;
+    subjectType: QuestionSubjectType;
+    subjectId: string;
+    tenantId: string;
+    visibility: QuestionVisibility;
+    status: QuestionStatus;
+    /** DB user id of the asker — compare against MyProfile.id, not the Firebase uid. */
+    authorUserId: string;
+    messageCount: number;
+    /** ISO-8601 */
+    lastMessageAt: string;
+    /** ISO-8601 */
+    createdAt: string;
+    /** Subject summary (joined name) — always present on detail responses. */
+    subject: { type: QuestionSubjectType; id: string; name: string };
+    /** Display name of the asker (root-message author). */
+    authorName: string;
+  };
+  messages: QuestionMessageRow[];
+}
+
+/** Body of POST /v1/consumer/questions. */
+export interface AskQuestionInput {
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  visibility: QuestionVisibility;
+  /** 1–2000 chars. */
+  body: string;
+}
+
+/** Result of POST /v1/consumer/questions/:threadId/messages. */
+export interface QuestionReplyResult {
+  message: QuestionMessageRow;
+  /** The thread status after the reply's auto-transitions applied. */
+  threadStatus: QuestionStatus;
+}
+
 // ── My profile ────────────────────────────────────────────────────────────────
 
 /** The signed-in consumer's own profile (GET/PATCH /v1/consumer/me). */

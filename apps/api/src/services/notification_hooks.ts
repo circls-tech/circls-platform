@@ -13,6 +13,8 @@ import { logger } from '../lib/logger.js';
 import {
   notifyBookingCancelled,
   notifyBookingConfirmed,
+  notifyQuestionAsked,
+  notifyQuestionReplied,
 } from './notification_service.js';
 import {
   issueQrTicketsForBooking,
@@ -34,6 +36,30 @@ export async function onBookingConfirmed(bookingId: string): Promise<void> {
     await notifyBookingConfirmed(bookingId);
   } catch (err) {
     logger.warn({ err, bookingId }, 'on_booking_confirmed_hook_failed');
+  }
+}
+
+/**
+ * Call after a question thread is created (thread + root message committed).
+ * Emails the owning org's contact_email. Never throws.
+ */
+export async function onQuestionAsked(threadId: string): Promise<void> {
+  try {
+    await notifyQuestionAsked(threadId);
+  } catch (err) {
+    logger.warn({ err, threadId }, 'on_question_asked_hook_failed');
+  }
+}
+
+/**
+ * Call after an org/Circls reply lands on a question thread. Emails the
+ * thread author. Never throws.
+ */
+export async function onQuestionReplied(threadId: string, messageId: string): Promise<void> {
+  try {
+    await notifyQuestionReplied(threadId, messageId);
+  } catch (err) {
+    logger.warn({ err, threadId, messageId }, 'on_question_replied_hook_failed');
   }
 }
 

@@ -1,7 +1,8 @@
 'use client';
 
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
+import { isTopOverlay, popOverlay, pushOverlay } from './overlay_stack';
 
 export interface ModalProps {
   open: boolean;
@@ -11,14 +12,18 @@ export interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, children }: ModalProps) {
+  const overlayId = useId();
+  // Escape-to-close via the shared overlay stack: only the topmost overlay
+  // reacts, and body scroll is restored when the last overlay closes.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    pushOverlay(overlayId);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isTopOverlay(overlayId)) onClose();
+    };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [open, onClose]);
+    return () => { document.removeEventListener('keydown', onKey); popOverlay(overlayId); };
+  }, [open, onClose, overlayId]);
 
   if (!open || typeof document === 'undefined') return null;
 
