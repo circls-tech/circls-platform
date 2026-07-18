@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyQuestions, usePublicQuestions } from '@/lib/api/questions';
-import type { QuestionSubjectType, QuestionThreadDetail } from '@/lib/api/types';
+import type { ListableQuestionSubjectType, QuestionThreadDetail } from '@/lib/api/types';
 import { Button } from '@/lib/ui';
 import { AskQuestionModal } from './AskQuestionModal';
 import { ThreadCard } from './ThreadCard';
@@ -20,7 +20,7 @@ export function QuestionsSection({
   subjectName,
   showHeading = true,
 }: {
-  subjectType: QuestionSubjectType;
+  subjectType: ListableQuestionSubjectType;
   subjectId: string;
   /** Context shown in the ask modal, e.g. the event name. */
   subjectName?: string;

@@ -10,7 +10,7 @@ import type { QuestionMessageRow } from '@/lib/api/types';
 import { formatRelativeTime } from '@/lib/format';
 import { Button } from '@/lib/ui';
 import { SlideOver } from './SlideOver';
-import { QuestionStatusBadge } from './ThreadCard';
+import { QuestionCategoryChip, QuestionStatusBadge } from './ThreadCard';
 
 const MAX_BODY = 2000;
 
@@ -153,13 +153,17 @@ export function ThreadView({
           <h2 className="truncate font-display text-lg font-extrabold text-ink">
             {thread?.subject.name || 'Question'}
           </h2>
+          {thread?.category && <QuestionCategoryChip category={thread.category} />}
           {thread && <QuestionStatusBadge status={thread.status} />}
         </>
       }
     >
       {thread?.visibility === 'private' && (
         <p className="border-b-[2px] border-ink/10 bg-lav-soft px-4 py-2 text-xs font-medium text-ink">
-          Private — only you, the organiser and the Circls team can see this thread.
+          {thread.subjectType === 'general'
+            ? // General threads have no organiser — they go straight to Circls.
+              'Private — only you and the Circls team can see this thread.'
+            : 'Private — only you, the organiser and the Circls team can see this thread.'}
         </p>
       )}
 

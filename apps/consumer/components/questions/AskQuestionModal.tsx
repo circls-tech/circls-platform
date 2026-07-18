@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useAskQuestion } from '@/lib/api/questions';
 import { ApiError } from '@/lib/api/client';
 import type {
-  QuestionSubjectType,
+  ListableQuestionSubjectType,
   QuestionThreadDetail,
   QuestionVisibility,
 } from '@/lib/api/types';
@@ -41,7 +41,7 @@ export function AskQuestionModal({
 }: {
   open: boolean;
   onClose: () => void;
-  subjectType: QuestionSubjectType;
+  subjectType: ListableQuestionSubjectType;
   subjectId: string;
   /** Shown as context above the form, e.g. the event name. */
   subjectName?: string;

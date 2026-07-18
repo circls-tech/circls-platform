@@ -1,10 +1,13 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { useMyBookings, useSubmitConcern } from '@/lib/api/consumer';
+import { useMyBookings } from '@/lib/api/consumer';
+import { useSubmitSupportThread } from '@/lib/api/questions';
+import { ApiError } from '@/lib/api/client';
 import type { MyBooking } from '@/lib/api/types';
+import { ThreadView } from '@/components/questions/ThreadView';
 import { Button } from '@/lib/ui';
 import { helpFlow } from '@/lib/help/flows';
 import {
@@ -12,7 +15,6 @@ import {
   chooseBooking,
   chooseOption,
   currentNode,
-  isTerminal,
   startFlow,
   submitFreeText,
   type FlowState,
@@ -46,15 +48,28 @@ function Bubble({ from, children }: { from: 'bot' | 'user'; children: React.Reac
 
 type Phase = 'flow' | 'submitting' | 'done';
 
+/** Friendly transcript copy for a failed support-thread submission. */
+function submitErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'question_rate_limited') {
+      return 'You’ve started quite a few conversations today — please try again a little later.';
+    }
+    if (e.code === 'booking_not_found') {
+      return 'We couldn’t find that booking on your account — it may have been cancelled. Tap “Start over” and pick a different booking (or skip the picker).';
+    }
+  }
+  return 'Couldn’t send that — please try again.';
+}
+
 function HelpConversation({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<FlowState>(() => startFlow(helpFlow));
   const [phase, setPhase] = useState<Phase>('flow');
-  const [reference, setReference] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
   const [text, setText] = useState('');
 
-  const submit = useSubmitConcern();
+  const submit = useSubmitSupportThread();
   const node = currentNode(helpFlow, state);
-  const atTerminal = isTerminal(helpFlow, state);
 
   // Bookings are only needed once we reach a picker; fetch lazily but harmlessly.
   const needsBookings = node.kind === 'booking_picker';
@@ -63,7 +78,8 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
   function restart() {
     setState(startFlow(helpFlow));
     setText('');
-    setReference(null);
+    setThreadId(null);
+    setViewOpen(false);
     setPhase('flow');
     submit.reset();
   }
@@ -71,8 +87,8 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
   async function handleSubmit() {
     setPhase('submitting');
     try {
-      const created = await submit.mutateAsync(buildSubmission(helpFlow, state));
-      setReference(created.id);
+      const detail = await submit.mutateAsync(buildSubmission(helpFlow, state));
+      setThreadId(detail.thread.id);
       setPhase('done');
     } catch {
       // mutation error surfaces via submit.isError; allow retry.
@@ -85,8 +101,8 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
       {/* Transcript */}
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         <Bubble from="bot">
-          We’re not offering live chat just yet — but tell us what’s up and we’ll log
-          your enquiry and follow up. (Live assistance is coming soon.)
+          Answer a few quick questions and we’ll start a conversation with the right
+          team — you can follow their replies right here on Circls.
         </Bubble>
 
         {state.transcript.map((entry, i) => (
@@ -99,14 +115,27 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
         {/* Current bot prompt (until done) */}
         {phase !== 'done' && <Bubble from="bot">{node.prompt}</Bubble>}
 
-        {phase === 'done' && reference && (
+        {/* Submission failure reads as part of the conversation (429 / bad booking). */}
+        {phase === 'flow' && submit.isError && (
           <Bubble from="bot">
-            <p className="font-semibold">We’ve logged your enquiry. ✅</p>
+            <p className="font-semibold text-petal-red">{submitErrorMessage(submit.error)}</p>
+          </Bubble>
+        )}
+
+        {phase === 'done' && threadId && (
+          <Bubble from="bot">
+            <p className="font-semibold">Your conversation has started. ✅</p>
             <p className="mt-1">
-              Reference{' '}
-              <span className="font-mono">#{reference.slice(0, 8)}</span>. Our team will
-              follow up. Live chat is coming soon — for now this is the fastest way to
-              reach us.
+              We’ve shared your details with the right team — replies will land in this
+              thread, and you can pick it up any time from{' '}
+              <Link
+                href="/me/questions"
+                className="font-semibold text-coral-deep underline"
+                onClick={onClose}
+              >
+                My questions
+              </Link>
+              .
             </p>
           </Bubble>
         )}
@@ -115,11 +144,14 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
       {/* Controls */}
       <div className="border-t-[2px] border-ink/10 px-4 py-3">
         {phase === 'done' ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" size="sm" onClick={() => setViewOpen(true)}>
+              View your conversation
+            </Button>
             <Button variant="secondary" size="sm" onClick={restart}>
               Ask something else
             </Button>
-            <Button variant="primary" size="sm" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>
           </div>
@@ -194,20 +226,15 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
             </Button>
           </div>
         ) : (
-          // terminal node: review + submit
+          // terminal node: review + submit (errors surface as a transcript bubble)
           <div className="flex flex-col gap-2">
-            {submit.isError && (
-              <p className="text-sm text-petal-red">
-                Couldn’t send that — please try again.
-              </p>
-            )}
             <Button
               variant="primary"
               size="sm"
               loading={phase === 'submitting'}
               onClick={() => void handleSubmit()}
             >
-              Send to support
+              Start the conversation
             </Button>
             <Button variant="ghost" size="sm" onClick={restart}>
               Start over
@@ -215,14 +242,20 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+
+      {/* Slide-over transcript of the created thread. ThreadView portals to
+          document.body after the help panel's own portal, so it stacks above
+          the panel (both z-50; later sibling wins). */}
+      <ThreadView threadId={viewOpen ? threadId : null} onClose={() => setViewOpen(false)} />
     </div>
   );
 }
 
 /**
  * Help entry point + slide-over (#115). Renders a "Help" trigger; clicking it
- * opens a right-side panel running the deterministic MCQ flow. Signed-out users
- * get a prompt to sign in, since logging a concern requires an authed user (#114).
+ * opens a right-side panel running the deterministic MCQ flow, whose terminal
+ * step starts a private question thread (support → threads refactor). Signed-out
+ * users get a prompt to sign in, since starting a thread requires an authed user.
  */
 export function HelpWidget() {
   const { user } = useAuth();
@@ -271,8 +304,8 @@ export function HelpWidget() {
                   <Button variant="primary" size="sm">Sign in</Button>
                 </Link>
                 <p className="text-xs text-ink-soft">
-                  Live chat isn’t available yet — we’re building it. For now we log your
-                  enquiry and follow up.
+                  Answer a few guided questions and we’ll start a private conversation
+                  with the right team — you can follow replies in My questions.
                 </p>
               </div>
             )}
