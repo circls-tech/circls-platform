@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // Questions threads (design doc 2026-07-18): consumer ask (public + private),
@@ -20,6 +20,10 @@ vi.mock('../lib/firebase_admin.js', () => ({
       readonly: { uid: `fbuid_readonly_qt_${RUN}`, email: `readonly_qt_${RUN}@x.com`, email_verified: true },
       asker: { uid: `fbuid_asker_qt_${RUN}`, email: `asker_qt_${RUN}@x.com`, email_verified: true },
       rando: { uid: `fbuid_rando_qt_${RUN}`, email: `rando_qt_${RUN}@x.com`, email_verified: true },
+      // Support-intake persona: owns the bookings used by the intake + context
+      // tests (kept separate so the earlier personas' thread rate limits don't
+      // interfere).
+      booker: { uid: `fbuid_booker_qt_${RUN}`, email: `booker_qt_${RUN}@x.com`, email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
@@ -37,18 +41,21 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 interface ThreadRow {
   id: string;
   subjectType: string;
-  subjectId: string;
+  subjectId: string | null;
   tenantId: string;
   visibility: string;
   status: string;
+  origin: string;
+  category: string | null;
   rootBody: string;
   replyCount: number;
   authorName: string;
   lastMessageAt: string;
   createdAt: string;
-  subject?: { type: string; id: string; name: string };
+  subject?: { type: string; id: string | null; name: string };
   archivedAt?: string | null;
   archivedByKind?: 'org' | 'circls' | null;
+  contextBookingId?: string | null;
 }
 
 interface MessageRow {
@@ -67,18 +74,22 @@ interface ThreadDetail {
   thread: {
     id: string;
     subjectType: string;
-    subjectId: string;
+    subjectId: string | null;
     tenantId: string;
     visibility: string;
     status: string;
+    origin: string;
+    category: string | null;
     authorUserId: string;
     messageCount: number;
     lastMessageAt: string;
     createdAt: string;
-    subject: { type: string; id: string; name: string };
+    subject: { type: string; id: string | null; name: string };
     authorName: string;
     archivedAt?: string | null;
     archivedByKind?: 'org' | 'circls' | null;
+    contextBookingId?: string | null;
+    flowAnswers?: { question: string; answer: string }[] | null;
   };
   messages: MessageRow[];
 }
@@ -95,6 +106,7 @@ function firstRow<T>(res: unknown): T {
 describe.skipIf(!runIntegration)('questions threads', () => {
   let app: FastifyInstance;
   let tenantId: string;
+  let platformTenantId: string;
   let eventId: string;
   let draftEventId: string;
   let membershipId: string;
@@ -136,7 +148,7 @@ describe.skipIf(!runIntegration)('questions threads', () => {
       VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
       RETURNING id
     `);
-    const platformTenantId = firstRow<{ id: string }>(ptRows).id;
+    platformTenantId = firstRow<{ id: string }>(ptRows).id;
     await db.execute(sql`
       INSERT INTO tenant_members (tenant_id, user_id, role)
       VALUES (${platformTenantId}::uuid, ${padminId}::uuid, 'manager')
@@ -1358,5 +1370,537 @@ describe.skipIf(!runIntegration)('questions threads', () => {
       headers: bearer('rando'),
     });
     expect((mine.json() as ListPage).rows.some((r) => r.id === archThreadId)).toBe(true);
+  });
+
+  // ── Support intake + resolver context (2026-07-18 support→threads design) ──
+
+  describe('support intake + resolver context', () => {
+    interface ContextBooking {
+      id: string;
+      itemType: string;
+      label: string;
+      status: string;
+      totalPaise: number | null;
+      currency: string;
+      paymentMethod: string;
+      timeRange: { start: string; end: string } | null;
+      createdAt: string;
+    }
+    interface ThreadContext {
+      member: {
+        id: string;
+        displayName: string;
+        memberSince: string;
+        email?: string | null;
+        phone?: string | null;
+      };
+      contextBooking: ContextBooking | null;
+      recentBookings: ContextBooking[];
+      memberships: { id: string; membershipId: string; name: string; status: string }[];
+      priorThreads: { id: string; status: string; subject: { type: string; id: string | null; name: string }; lastMessageAt: string }[];
+      recentActivity?: { id: string; eventType: string; createdAt: string }[];
+      supportIssues?: { id: string; source: string; category: string | null; status: string; messageExcerpt: string; createdAt: string }[];
+    }
+
+    let bookerId: string;
+    let slotBookingId: string;
+    let eventBookingId: string;
+    let membershipBookingId: string;
+    let ghostBookingId: string;
+    let cancelledBookingId: string;
+    let otherUsersBookingId: string;
+    const GHOST_EVENT_ID = '00000000-0000-0000-0000-00000000dead';
+
+    let slotThreadId: string;
+    let eventThreadId: string;
+    let membershipThreadId: string;
+    let ghostThreadId: string;
+    let platformThreadId: string;
+
+    const FLOW = [
+      { question: 'What can we help you with?', answer: 'A booking issue' },
+      { question: 'Which booking?', answer: 'My court booking' },
+    ];
+
+    beforeAll(async () => {
+      const me = await app.inject({ method: 'GET', url: '/v1/consumer/me', headers: bearer('booker') });
+      expect(me.statusCode).toBe(200);
+      bookerId = (me.json() as { profile: { id: string } }).profile.id;
+
+      // Bookings owned by booker, one per item type + edge cases. Inserted
+      // directly (the full pay-and-book flow is out of scope here).
+      const ins = async (q: SQL): Promise<string> =>
+        firstRow<{ id: string }>(await db.execute<{ id: string }>(q)).id;
+
+      slotBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, slot_arena_id, time_range, channel, payment_method, status, customer_user_id, total_paise, currency)
+        VALUES (${tenantId}::uuid, 'slot', ${arenaId}::uuid,
+                tstzrange(now() + interval '1 day', now() + interval '1 day 1 hour'),
+                'circls', 'external', 'confirmed', ${bookerId}::uuid, 40000, 'INR')
+        RETURNING id
+      `);
+      // Ownership via created_by_user_id (booked for someone else).
+      eventBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, created_by_user_id, total_paise, currency)
+        VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId, eventName: 'QT Cup' })}::jsonb,
+                'circls', 'free', 'confirmed', ${bookerId}::uuid, 0, 'INR')
+        RETURNING id
+      `);
+      membershipBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id, total_paise, currency)
+        VALUES (${tenantId}::uuid, 'membership', ${JSON.stringify({ membershipId })}::jsonb,
+                'circls', 'external', 'confirmed', ${bookerId}::uuid, 150000, 'INR')
+        RETURNING id
+      `);
+      // item_data points at an event row that no longer exists → general fallback.
+      ghostBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id)
+        VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId: GHOST_EVENT_ID })}::jsonb,
+                'circls', 'free', 'cancelled', ${bookerId}::uuid)
+        RETURNING id
+      `);
+      // Re-insert as confirmed (the cancelled row above doubles as the
+      // cancelled-booking rejection case).
+      cancelledBookingId = ghostBookingId;
+      ghostBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id)
+        VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId: GHOST_EVENT_ID })}::jsonb,
+                'circls', 'free', 'confirmed', ${bookerId}::uuid)
+        RETURNING id
+      `);
+      otherUsersBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id)
+        VALUES (${tenantId}::uuid, 'event', 'circls', 'free', 'confirmed', ${askerId}::uuid)
+        RETURNING id
+      `);
+
+      // Relationship rows for the context panel: an active membership,
+      // consumer activity, and a historical support issue.
+      await db.execute(sql`
+        INSERT INTO user_memberships (user_id, membership_id, starts_at, ends_at, status)
+        VALUES (${bookerId}::uuid, ${membershipId}::uuid, now() - interval '5 days', now() + interval '25 days', 'active')
+      `);
+      await db.execute(sql`
+        INSERT INTO consumer_activity (user_id, event_type, item_type, item_id, client_ts)
+        VALUES (${bookerId}::uuid, 'screen_view', NULL, NULL, now() - interval '2 hours'),
+               (${bookerId}::uuid, 'item_view', 'event', ${eventId}::uuid, now() - interval '1 hour')
+      `);
+      await db.execute(sql`
+        INSERT INTO support_issues (user_id, message, source, category)
+        VALUES (${bookerId}::uuid, 'Historical concern from the old chatbot intake.', 'consumer_chatbot', 'payment')
+      `);
+    });
+
+    it('slot-booking intake → private arena thread, origin/category on the consumer payload only', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'booking_issue',
+          bookingId: slotBookingId,
+          flowAnswers: FLOW,
+          body: 'My court booking shows the wrong start time.',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      slotThreadId = detail.thread.id;
+      expect(detail.thread.subjectType).toBe('arena');
+      expect(detail.thread.subjectId).toBe(arenaId);
+      expect(detail.thread.subject).toEqual({ type: 'arena', id: arenaId, name: 'QT Court 1' });
+      expect(detail.thread.tenantId).toBe(tenantId);
+      expect(detail.thread.visibility).toBe('private');
+      expect(detail.thread.origin).toBe('support');
+      expect(detail.thread.category).toBe('booking_issue');
+      expect(detail.thread.status).toBe('open');
+      // Consumer payloads never expose the pinned booking or the transcript.
+      expect('contextBookingId' in detail.thread).toBe(false);
+      expect('flowAnswers' in detail.thread).toBe(false);
+
+      // Staff detail carries the full support context.
+      const staff = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${slotThreadId}`,
+        headers: bearer('owner'),
+      });
+      const staffThread = (staff.json() as ThreadDetail).thread;
+      expect(staffThread.origin).toBe('support');
+      expect(staffThread.category).toBe('booking_issue');
+      expect(staffThread.contextBookingId).toBe(slotBookingId);
+      expect(staffThread.flowAnswers).toEqual(FLOW);
+    });
+
+    it('event-booking intake (created_by ownership) → event thread', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'refund_request',
+          bookingId: eventBookingId,
+          body: 'I need a refund for the QT Cup tickets.',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      eventThreadId = detail.thread.id;
+      expect(detail.thread.subjectType).toBe('event');
+      expect(detail.thread.subjectId).toBe(eventId);
+      expect(detail.thread.tenantId).toBe(tenantId);
+      expect(detail.thread.visibility).toBe('private');
+      expect(detail.thread.origin).toBe('support');
+      expect(detail.thread.category).toBe('refund_request');
+    });
+
+    it('membership-booking intake → membership thread', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'payment',
+          bookingId: membershipBookingId,
+          body: 'I was charged twice for QT Gold.',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      membershipThreadId = detail.thread.id;
+      expect(detail.thread.subjectType).toBe('membership');
+      expect(detail.thread.subjectId).toBe(membershipId);
+      expect(detail.thread.subject.name).toBe('QT Gold');
+      expect(detail.thread.tenantId).toBe(tenantId);
+      expect(detail.thread.visibility).toBe('private');
+    });
+
+    it('booking whose subject row is gone → general thread under the booking tenant', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'booking_issue',
+          bookingId: ghostBookingId,
+          body: 'The event I booked has vanished from the app.',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      ghostThreadId = detail.thread.id;
+      expect(detail.thread.subjectType).toBe('general');
+      expect(detail.thread.subjectId).toBeNull();
+      expect(detail.thread.subject).toEqual({ type: 'general', id: null, name: 'General' });
+      expect(detail.thread.tenantId).toBe(tenantId);
+      expect(detail.thread.visibility).toBe('private');
+
+      // The org still sees it (the booking is theirs), pinned booking intact.
+      const staff = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${ghostThreadId}`,
+        headers: bearer('owner'),
+      });
+      expect(staff.statusCode).toBe(200);
+      expect((staff.json() as ThreadDetail).thread.contextBookingId).toBe(ghostBookingId);
+    });
+
+    it('no-booking intake → general thread under the platform tenant, invisible to orgs + public', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'other',
+          flowAnswers: [{ question: 'What can we help you with?', answer: 'Something else' }],
+          body: 'How do I change the email on my account?',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      platformThreadId = detail.thread.id;
+      expect(detail.thread.subjectType).toBe('general');
+      expect(detail.thread.tenantId).toBe(platformTenantId);
+      expect(detail.thread.visibility).toBe('private');
+      expect(detail.thread.origin).toBe('support');
+
+      // /mine shows it to the asker, with the general subject summary.
+      const mine = await app.inject({
+        method: 'GET',
+        url: '/v1/consumer/questions/mine',
+        headers: bearer('booker'),
+      });
+      const mineRow = (mine.json() as ListPage).rows.find((r) => r.id === platformThreadId);
+      expect(mineRow).toBeDefined();
+      expect(mineRow!.subject).toEqual({ type: 'general', id: null, name: 'General' });
+      expect(mineRow!.origin).toBe('support');
+      expect(mineRow!.category).toBe('other');
+
+      // The org inbox of a NORMAL tenant never sees platform-general threads.
+      const orgInbox = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions`,
+        headers: bearer('owner'),
+      });
+      expect((orgInbox.json() as ListPage).rows.some((r) => r.id === platformThreadId)).toBe(false);
+
+      // Not on any public surface: private → outsiders 404 on the detail.
+      const outsider = await app.inject({
+        method: 'GET',
+        url: `/v1/consumer/questions/${platformThreadId}`,
+        headers: bearer('rando'),
+      });
+      expect(outsider.statusCode).toBe(404);
+
+      // Admin sees it (platform tenant), with the support fields.
+      const adminList = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions?tenantId=${platformTenantId}`,
+        headers: bearer('padmin'),
+      });
+      const adminRow = (adminList.json() as ListPage).rows.find((r) => r.id === platformThreadId);
+      expect(adminRow).toBeDefined();
+      expect(adminRow!.subjectType).toBe('general');
+      expect(adminRow!.origin).toBe('support');
+      expect(adminRow!.contextBookingId).toBeNull();
+    });
+
+    it('rejects other users’ and cancelled bookings (404 booking_not_found)', async () => {
+      for (const bookingId of [otherUsersBookingId, cancelledBookingId]) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/consumer/questions',
+          headers: bearer('booker'),
+          payload: {
+            origin: 'support',
+            category: 'booking_issue',
+            bookingId,
+            body: 'trying to attach a booking that is not attachable',
+          },
+        });
+        expect(res.statusCode).toBe(404);
+        expect(res.json().error.code).toBe('booking_not_found');
+      }
+    });
+
+    it('intake shapes are strict: forum and support fields cannot mix', async () => {
+      // Forum shape with support-only fields → 400.
+      const forumMix = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          subjectType: 'event',
+          subjectId: eventId,
+          visibility: 'public',
+          body: 'sneaking a category into the forum shape',
+          category: 'other',
+        },
+      });
+      expect(forumMix.statusCode).toBe(400);
+      expect(forumMix.json().error.code).toBe('bad_request');
+
+      // Support shape with forum-only fields → 400 (subject/visibility are
+      // server-derived on the support path).
+      for (const extra of [
+        { subjectType: 'event', subjectId: eventId },
+        { visibility: 'public' },
+      ]) {
+        const supportMix = await app.inject({
+          method: 'POST',
+          url: '/v1/consumer/questions',
+          headers: bearer('booker'),
+          payload: {
+            origin: 'support',
+            category: 'other',
+            body: 'trying to pick my own subject/visibility',
+            ...extra,
+          },
+        });
+        expect(supportMix.statusCode).toBe(400);
+        expect(supportMix.json().error.code).toBe('bad_request');
+      }
+    });
+
+    it('origin filter works on both staff lists', async () => {
+      const partnerSupport = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions?origin=support`,
+        headers: bearer('owner'),
+      });
+      const supportRows = (partnerSupport.json() as ListPage).rows;
+      expect(supportRows.length).toBeGreaterThanOrEqual(4);
+      expect(supportRows.every((r) => r.origin === 'support')).toBe(true);
+      expect(supportRows.some((r) => r.id === slotThreadId)).toBe(true);
+      expect(supportRows.some((r) => r.id === publicThreadId)).toBe(false);
+
+      const partnerForum = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions?origin=forum`,
+        headers: bearer('owner'),
+      });
+      const forumRows = (partnerForum.json() as ListPage).rows;
+      expect(forumRows.every((r) => r.origin === 'forum')).toBe(true);
+      expect(forumRows.some((r) => r.id === publicThreadId)).toBe(true);
+      expect(forumRows.some((r) => r.id === slotThreadId)).toBe(false);
+
+      const adminSupport = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions?origin=support`,
+        headers: bearer('padmin'),
+      });
+      const adminRows = (adminSupport.json() as ListPage).rows;
+      expect(adminRows.every((r) => r.origin === 'support')).toBe(true);
+      expect(adminRows.some((r) => r.id === platformThreadId)).toBe(true);
+      const adminForum = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions?origin=forum&tenantId=${tenantId}`,
+        headers: bearer('padmin'),
+      });
+      expect((adminForum.json() as ListPage).rows.some((r) => r.id === slotThreadId)).toBe(false);
+    });
+
+    it('partner context: member + pinned booking + tenant-scoped relationship lists', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${slotThreadId}/context`,
+        headers: bearer('owner'),
+      });
+      expect(res.statusCode).toBe(200);
+      const ctx = res.json() as ThreadContext;
+
+      expect(ctx.member.id).toBe(bookerId);
+      expect(ctx.member.displayName).toBe('Member');
+      expect(ctx.member.memberSince).toBeTruthy();
+      // Private thread → contact details included on the partner surface.
+      expect(ctx.member.email).toBe(`booker_qt_${RUN}@x.com`);
+
+      expect(ctx.contextBooking).not.toBeNull();
+      expect(ctx.contextBooking!.id).toBe(slotBookingId);
+      expect(ctx.contextBooking!.itemType).toBe('slot');
+      expect(ctx.contextBooking!.label).toBe('QT Court 1');
+      expect(ctx.contextBooking!.status).toBe('confirmed');
+      expect(ctx.contextBooking!.totalPaise).toBe(40000);
+      expect(ctx.contextBooking!.currency).toBe('INR');
+      expect(ctx.contextBooking!.paymentMethod).toBe('external');
+      expect(ctx.contextBooking!.timeRange).not.toBeNull();
+
+      const bookingIds = ctx.recentBookings.map((b) => b.id);
+      expect(bookingIds).toContain(slotBookingId);
+      expect(bookingIds).toContain(eventBookingId);
+      expect(bookingIds).toContain(membershipBookingId);
+      expect(bookingIds).not.toContain(otherUsersBookingId);
+      const eventRow = ctx.recentBookings.find((b) => b.id === eventBookingId)!;
+      expect(eventRow.label).toBe('QT Cup');
+      const membershipRow = ctx.recentBookings.find((b) => b.id === membershipBookingId)!;
+      expect(membershipRow.label).toBe('QT Gold');
+
+      expect(ctx.memberships).toHaveLength(1);
+      expect(ctx.memberships[0]!.name).toBe('QT Gold');
+      expect(ctx.memberships[0]!.status).toBe('active');
+
+      // Prior threads: booker's other threads with THIS tenant — the
+      // platform-tenant general thread must NOT leak into the org's panel.
+      const priorIds = ctx.priorThreads.map((p) => p.id);
+      expect(priorIds).not.toContain(slotThreadId);
+      expect(priorIds).toContain(eventThreadId);
+      expect(priorIds).toContain(membershipThreadId);
+      expect(priorIds).toContain(ghostThreadId);
+      expect(priorIds).not.toContain(platformThreadId);
+
+      // Partner-only extras stay admin-only.
+      expect(ctx.recentActivity).toBeUndefined();
+      expect(ctx.supportIssues).toBeUndefined();
+    });
+
+    it('partner context: tenant scoping 404s and contact details are private-only', async () => {
+      // A thread belonging to ANOTHER tenant (the platform-general thread)
+      // 404s on this org's surface — no cross-tenant leak.
+      const wrongTenant = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${platformThreadId}/context`,
+        headers: bearer('owner'),
+      });
+      expect(wrongTenant.statusCode).toBe(404);
+      expect(wrongTenant.json().error.code).toBe('question_not_found');
+
+      // Non-members are denied outright.
+      const nonMember = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${slotThreadId}/context`,
+        headers: bearer('rando'),
+      });
+      expect(nonMember.statusCode).toBe(403);
+
+      // Public thread → no contact details on the partner surface.
+      const pub = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${publicThreadId}/context`,
+        headers: bearer('owner'),
+      });
+      expect(pub.statusCode).toBe(200);
+      const ctx = pub.json() as ThreadContext;
+      expect('email' in ctx.member).toBe(false);
+      expect('phone' in ctx.member).toBe(false);
+    });
+
+    it('admin context: cross-tenant lists + activity/support-issue extras + contact always', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions/${slotThreadId}/context`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      const ctx = res.json() as ThreadContext;
+
+      expect(ctx.member.id).toBe(bookerId);
+      expect(ctx.member.email).toBe(`booker_qt_${RUN}@x.com`);
+
+      // Cross-tenant prior threads: the platform-general thread appears here.
+      const priorIds = ctx.priorThreads.map((p) => p.id);
+      expect(priorIds).toContain(platformThreadId);
+      expect(priorIds).not.toContain(slotThreadId);
+
+      expect(ctx.recentActivity).toBeDefined();
+      expect(ctx.recentActivity!.length).toBeGreaterThanOrEqual(2);
+      expect(ctx.recentActivity!.some((a) => a.eventType === 'item_view')).toBe(true);
+
+      expect(ctx.supportIssues).toBeDefined();
+      expect(ctx.supportIssues!.length).toBeGreaterThanOrEqual(1);
+      expect(ctx.supportIssues![0]!.source).toBe('consumer_chatbot');
+      expect(ctx.supportIssues![0]!.category).toBe('payment');
+      expect(ctx.supportIssues![0]!.messageExcerpt).toContain('Historical concern');
+
+      // Admin contact details even on PUBLIC threads.
+      const pub = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions/${publicThreadId}/context`,
+        headers: bearer('padmin'),
+      });
+      const pubCtx = pub.json() as ThreadContext;
+      expect(pubCtx.member.email).toBe(`asker_qt_${RUN}@x.com`);
+    });
+
+    it('forum threads keep origin=forum and a null category everywhere', async () => {
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/v1/consumer/questions/${publicThreadId}`,
+      });
+      const thread = (detail.json() as ThreadDetail).thread;
+      expect(thread.origin).toBe('forum');
+      expect(thread.category).toBeNull();
+
+      const pubList = await app.inject({
+        method: 'GET',
+        url: `/v1/consumer/questions?subjectType=event&subjectId=${eventId}`,
+      });
+      const row = (pubList.json() as ListPage).rows.find((r) => r.id === publicThreadId)!;
+      expect(row.origin).toBe('forum');
+      expect(row.category).toBeNull();
+    });
   });
 });

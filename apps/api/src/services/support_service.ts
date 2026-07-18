@@ -1,78 +1,30 @@
 /**
- * Support concerns service (epic #106). Extends the existing partner
- * `support_issues` system with the consumer Help-chatbot channel:
+ * Support concerns service (epic #106). Historical reads for the consumer
+ * Help-chatbot channel plus the admin triage list:
  *
- *  - createConsumerConcern: validates an optional booking link belongs to the
- *    caller (same `customer_user_id OR created_by_user_id` ownership rule as
- *    listMyBookings), then inserts a `source = consumer_chatbot` row.
  *  - listConsumerConcerns: the caller's own chatbot concerns, newest first.
  *  - listAdminSupportIssues: admin triage list across BOTH sources, with
  *    optional source/category/status filters and resolved booking context.
  *
- * The partner submit path (POST /v1/support/issues) and admin PATCH are
- * untouched and continue to write `source = partner_help` via the column default.
+ * The consumer *intake* (createConsumerConcern) was removed by the
+ * support→threads design (2026-07-18): new consumer concerns are private
+ * question threads (`POST /v1/consumer/questions` with `origin: 'support'`,
+ * see questions_service.createSupportThread). Existing `consumer_chatbot`
+ * rows stay readable here; the partner submit path (POST /v1/support/issues)
+ * and admin PATCH are untouched.
  */
-import { and, desc, eq, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { bookings } from '../db/schema/bookings.js';
 import {
   supportIssues,
   venues,
-  type FlowAnswer,
   type SupportIssue,
 } from '../db/schema/index.js';
-import { NotFound } from '../lib/errors.js';
 
 export type SupportIssueSource = (typeof supportIssues.source.enumValues)[number];
 export type SupportIssueCategory = (typeof supportIssues.category.enumValues)[number];
 export type SupportIssueStatus = (typeof supportIssues.status.enumValues)[number];
-
-export interface CreateConsumerConcernInput {
-  userId: string;
-  category: SupportIssueCategory;
-  bookingId?: string | undefined;
-  flowAnswers: FlowAnswer[];
-  message: string;
-}
-
-/**
- * Create a consumer-sourced support concern. If a `bookingId` is supplied it
- * MUST belong to the caller (as customer or creator); otherwise we 404 so a
- * user can't attach someone else's booking. Returns the created row.
- */
-export async function createConsumerConcern(
-  input: CreateConsumerConcernInput,
-): Promise<SupportIssue> {
-  if (input.bookingId) {
-    const [owned] = await db
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.id, input.bookingId),
-          or(
-            eq(bookings.customerUserId, input.userId),
-            eq(bookings.createdByUserId, input.userId),
-          ),
-        ),
-      )
-      .limit(1);
-    if (!owned) throw new NotFound('Booking not found', 'booking_not_found');
-  }
-
-  const [issue] = await db
-    .insert(supportIssues)
-    .values({
-      userId: input.userId,
-      message: input.message,
-      source: 'consumer_chatbot',
-      category: input.category,
-      bookingId: input.bookingId ?? null,
-      flowAnswers: input.flowAnswers,
-    })
-    .returning();
-  return issue!;
-}
 
 /** The caller's own chatbot-sourced concerns, newest first (for "your past enquiries"). */
 export async function listConsumerConcerns(userId: string): Promise<SupportIssue[]> {
