@@ -48,7 +48,7 @@ On `question_threads` (edit migration in place on the stacked branch — still u
 
 - Existing: `{ subjectType: event|arena|membership, subjectId, visibility, body }` → `origin='forum'` (unchanged).
 - New: `{ origin: 'support', category, body, bookingId? , flowAnswers? }` — no subjectType/visibility from the client:
-  - `bookingId` present: must belong to the caller (`customer_user_id` or `created_by_user_id`, not cancelled); server derives subject from the booking's item (slot→arena via `slot_arena_id`; event→event id from `item_data`; membership→membership id from `item_data`) and `tenant_id` from the booking. If the derived subject row no longer exists, fall back to `general` under the booking's tenant. Sets `context_booking_id`.
+  - `bookingId` present: must belong to the caller (`customer_user_id` or `created_by_user_id`); any booking status is accepted, **including `cancelled`** — refund/cancellation concerns are precisely about cancelled bookings, and the thread must route to the org that owes the refund, not the platform tenant. Server derives subject from the booking's item (slot→arena via `slot_arena_id`; event→event id from `item_data`; membership→membership id from `item_data`) and `tenant_id` from the booking. If the derived subject row no longer exists — or belongs to a different tenant than the booking — fall back to `general` under the booking's tenant. Sets `context_booking_id`.
   - No `bookingId`: subject `general`, `tenant_id` = platform tenant.
   - Visibility forced `private`. Rate limits, notifications (`question.asked` to tenant contact email — for `general`, the platform tenant's contact email), and everything else inherited.
 

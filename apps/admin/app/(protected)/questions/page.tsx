@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useAdminQuestions } from '@/lib/api/queries';
 import type {
   AdminQuestionFilters,
@@ -96,6 +96,13 @@ function QuestionsPageContent() {
   const [filterOrigin, setFilterOrigin] = useState<QuestionOrigin | 'all'>(initialOrigin);
   const [filterArchived, setFilterArchived] = useState<'active' | 'archived'>('active');
   const [tenantIdInput, setTenantIdInput] = useState('');
+
+  // useState only seeds on mount, but in-app navigation (?origin=support →
+  // bare /questions) re-renders this same mounted component with a new search
+  // param — re-sync the select whenever the param changes (null → 'all').
+  useEffect(() => {
+    setFilterOrigin(originParam === 'support' || originParam === 'forum' ? originParam : 'all');
+  }, [originParam]);
 
   const tenantIdTrimmed = tenantIdInput.trim();
   const tenantIdInvalid = tenantIdTrimmed !== '' && !isUuid(tenantIdTrimmed);

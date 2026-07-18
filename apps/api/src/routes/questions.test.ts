@@ -1456,16 +1456,15 @@ describe.skipIf(!runIntegration)('questions threads', () => {
       ghostBookingId = await ins(sql`
         INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id)
         VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId: GHOST_EVENT_ID })}::jsonb,
-                'circls', 'free', 'cancelled', ${bookerId}::uuid)
+                'circls', 'free', 'confirmed', ${bookerId}::uuid)
         RETURNING id
       `);
-      // Re-insert as confirmed (the cancelled row above doubles as the
-      // cancelled-booking rejection case).
-      cancelledBookingId = ghostBookingId;
-      ghostBookingId = await ins(sql`
-        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id)
-        VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId: GHOST_EVENT_ID })}::jsonb,
-                'circls', 'free', 'confirmed', ${bookerId}::uuid)
+      // Cancelled booking on a REAL event — refund flows are about cancelled
+      // bookings, so the intake must accept it (and route to the org tenant).
+      cancelledBookingId = await ins(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id, total_paise, currency)
+        VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId, eventName: 'QT Cup' })}::jsonb,
+                'circls', 'external', 'cancelled', ${bookerId}::uuid, 25000, 'INR')
         RETURNING id
       `);
       otherUsersBookingId = await ins(sql`
@@ -1669,22 +1668,90 @@ describe.skipIf(!runIntegration)('questions threads', () => {
       expect(adminRow!.contextBookingId).toBeNull();
     });
 
-    it('rejects other users’ and cancelled bookings (404 booking_not_found)', async () => {
-      for (const bookingId of [otherUsersBookingId, cancelledBookingId]) {
-        const res = await app.inject({
-          method: 'POST',
-          url: '/v1/consumer/questions',
-          headers: bearer('booker'),
-          payload: {
-            origin: 'support',
-            category: 'booking_issue',
-            bookingId,
-            body: 'trying to attach a booking that is not attachable',
-          },
-        });
-        expect(res.statusCode).toBe(404);
-        expect(res.json().error.code).toBe('booking_not_found');
-      }
+    it('cancelled booking accepted → context pinned + routed to the booking tenant', async () => {
+      // Product decision: refund concerns are precisely about cancelled
+      // bookings — rejecting them would strand the user AND mis-route the
+      // thread to the platform tenant instead of the org that owes the refund.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'refund_request',
+          bookingId: cancelledBookingId,
+          body: 'My QT Cup booking was cancelled — where is my refund?',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      expect(detail.thread.subjectType).toBe('event');
+      expect(detail.thread.subjectId).toBe(eventId);
+      expect(detail.thread.tenantId).toBe(tenantId);
+      expect(detail.thread.visibility).toBe('private');
+      expect(detail.thread.category).toBe('refund_request');
+
+      // The org sees it with the cancelled booking pinned.
+      const staff = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/questions/${detail.thread.id}`,
+        headers: bearer('owner'),
+      });
+      expect(staff.statusCode).toBe(200);
+      expect((staff.json() as ThreadDetail).thread.contextBookingId).toBe(cancelledBookingId);
+    });
+
+    it('rejects other users’ bookings (404 booking_not_found)', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'booking_issue',
+          bookingId: otherUsersBookingId,
+          body: 'trying to attach a booking that is not attachable',
+        },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('booking_not_found');
+    });
+
+    it('subject row from a different tenant than the booking → general fallback', async () => {
+      // Belt-and-braces in deriveSubjectFromBooking: item_data pointing at a
+      // listing of ANOTHER tenant must not pin that listing — the thread falls
+      // back to general under the booking's own tenant.
+      const mismatch = firstRow<{ id: string }>(await db.execute<{ id: string }>(sql`
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, customer_user_id)
+        VALUES (${platformTenantId}::uuid, 'event', ${JSON.stringify({ eventId })}::jsonb,
+                'circls', 'free', 'confirmed', ${bookerId}::uuid)
+        RETURNING id
+      `)).id;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/questions',
+        headers: bearer('booker'),
+        payload: {
+          origin: 'support',
+          category: 'other',
+          bookingId: mismatch,
+          body: 'booking whose item_data points at another tenant’s event',
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const detail = res.json() as ThreadDetail;
+      expect(detail.thread.subjectType).toBe('general');
+      expect(detail.thread.subjectId).toBeNull();
+      expect(detail.thread.tenantId).toBe(platformTenantId);
+
+      // The pinned booking survives the fallback (admin surface).
+      const adminDetail = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/questions/${detail.thread.id}`,
+        headers: bearer('padmin'),
+      });
+      expect(adminDetail.statusCode).toBe(200);
+      expect((adminDetail.json() as ThreadDetail).thread.contextBookingId).toBe(mismatch);
     });
 
     it('intake shapes are strict: forum and support fields cannot mix', async () => {

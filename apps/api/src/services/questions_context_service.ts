@@ -209,12 +209,17 @@ export async function getThreadContext(
     member.phone = u.phoneE164 ?? null;
   }
 
-  // Pinned booking (no tenant filter needed: the thread's tenant IS the
-  // booking's tenant by construction of the support intake).
+  // Pinned booking. The thread's tenant IS the booking's tenant by
+  // construction of the support intake, but the partner surface re-checks it
+  // anyway (defense in depth): a mismatched pin renders as "no booking"
+  // rather than leaking another org's booking. Admin stays unscoped.
   let contextBooking: ContextBooking | null = null;
   if (t.contextBookingId) {
     const res = await db.execute<Record<string, unknown>>(
-      bookingSelect(sql`where b.id = ${t.contextBookingId}::uuid limit 1`),
+      bookingSelect(sql`
+        where b.id = ${t.contextBookingId}::uuid
+          ${tenantScope ? sql`and b.tenant_id = ${tenantScope}::uuid` : sql``}
+        limit 1`),
     );
     const r = rowsOf(res)[0];
     contextBooking = r ? mapBookingRow(r) : null;

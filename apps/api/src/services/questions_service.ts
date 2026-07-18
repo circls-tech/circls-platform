@@ -6,7 +6,7 @@
  * lifecycle. This module owns all DB access + authz-adjacent lookups; the
  * pure transition/author-kind rules live in questions_transitions.ts.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   questionMessages,
@@ -455,37 +455,59 @@ interface DerivedSubject {
  * Map a booking to the thread subject its concern is about: slot → the arena
  * (`slot_arena_id`), event → `item_data.eventId`, membership →
  * `item_data.membershipId`. When the referenced row no longer exists (deleted
- * listing, malformed item_data), the thread falls back to `general` under the
- * booking's tenant — the org still sees it, it just isn't pinned to a listing.
+ * listing, malformed item_data) — or exists but belongs to a DIFFERENT tenant
+ * than the booking (corrupt/forged item_data; belt-and-braces so a thread can
+ * never pin one org's listing under another org's tenant) — the thread falls
+ * back to `general` under the booking's tenant: the org still sees it, it
+ * just isn't pinned to a listing.
  */
 async function deriveSubjectFromBooking(booking: {
+  tenantId: string;
   itemType: string;
   slotArenaId: string | null;
   itemData: Record<string, unknown> | null;
 }): Promise<DerivedSubject> {
-  const exists = async (table: string, id: string | undefined | null): Promise<string | null> => {
+  const exists = async (
+    id: string | undefined | null,
+    query: (id: string) => SQL,
+  ): Promise<string | null> => {
     if (!id || !UUID_RE.test(id)) return null;
-    const res = await db.execute<Record<string, unknown>>(
-      sql`select id from ${sql.raw(`"${table}"`)} where id = ${id}::uuid limit 1`,
-    );
+    const res = await db.execute<Record<string, unknown>>(query(id));
     return rowsOf(res)[0] ? id : null;
   };
 
   if (booking.itemType === 'slot') {
-    const arenaId = await exists('arenas', booking.slotArenaId);
+    // Arenas carry no tenant_id — scope via their venue.
+    const arenaId = await exists(
+      booking.slotArenaId,
+      (id) => sql`
+        select a.id from arenas a
+          join venues v on v.id = a.venue_id
+         where a.id = ${id}::uuid and v.tenant_id = ${booking.tenantId}::uuid
+         limit 1`,
+    );
     return arenaId
       ? { subjectType: 'arena', subjectId: arenaId }
       : { subjectType: 'general', subjectId: null };
   }
   if (booking.itemType === 'event') {
-    const eventId = await exists('events', booking.itemData?.['eventId'] as string | undefined);
+    const eventId = await exists(
+      booking.itemData?.['eventId'] as string | undefined,
+      (id) => sql`
+        select id from events
+         where id = ${id}::uuid and tenant_id = ${booking.tenantId}::uuid
+         limit 1`,
+    );
     return eventId
       ? { subjectType: 'event', subjectId: eventId }
       : { subjectType: 'general', subjectId: null };
   }
   const membershipId = await exists(
-    'memberships',
     booking.itemData?.['membershipId'] as string | undefined,
+    (id) => sql`
+      select id from memberships
+       where id = ${id}::uuid and tenant_id = ${booking.tenantId}::uuid
+       limit 1`,
   );
   return membershipId
     ? { subjectType: 'membership', subjectId: membershipId }
@@ -497,11 +519,13 @@ async function deriveSubjectFromBooking(booking: {
  * 2026-07-18-support-context-threads §3). Visibility is forced `private`;
  * `origin='support'`; the interview's category/transcript are stored for
  * staff. With a booking: the booking must belong to the caller
- * (customer_user_id OR created_by_user_id, not cancelled — else 404
- * `booking_not_found`), the subject is derived from the booking's item, the
- * tenant is the booking's tenant, and the booking is pinned as
- * `context_booking_id`. Without a booking: subject `general` under the
- * platform tenant (asker + Circls only).
+ * (customer_user_id OR created_by_user_id — else 404 `booking_not_found`;
+ * cancelled bookings are ALLOWED — refund concerns are precisely about
+ * cancelled bookings, and the thread must route to the org that owes the
+ * refund), the subject is derived from the booking's item, the tenant is the
+ * booking's tenant, and the booking is pinned as `context_booking_id`.
+ * Without a booking: subject `general` under the platform tenant (asker +
+ * Circls only).
  */
 export async function createSupportThread(input: {
   userId: string;
@@ -522,18 +546,17 @@ export async function createSupportThread(input: {
         itemType: bookings.itemType,
         slotArenaId: bookings.slotArenaId,
         itemData: bookings.itemData,
-        status: bookings.status,
       })
       .from(bookings)
       .where(
         and(
           eq(bookings.id, input.bookingId),
           sql`(${bookings.customerUserId} = ${input.userId}::uuid or ${bookings.createdByUserId} = ${input.userId}::uuid)`,
-          sql`${bookings.status} != 'cancelled'`,
         ),
       )
       .limit(1);
-    // Same 404 for "not yours" and "cancelled" — no existence leak.
+    // Ownership only — any status (incl. cancelled) is fine; same 404 for
+    // "not yours" and "doesn't exist", no existence leak.
     if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
     tenantId = booking.tenantId;
     derived = await deriveSubjectFromBooking(booking);

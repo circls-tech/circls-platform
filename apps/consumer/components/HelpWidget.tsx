@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -26,7 +26,10 @@ function bookingLabel(b: MyBooking): string {
     month: 'short',
     year: 'numeric',
   });
-  return `${b.venueName} · ${b.itemType} · ${when}`;
+  // Cancelled bookings stay pickable (refund concerns are about them) but are
+  // marked so users know what they're attaching.
+  const cancelled = b.status === 'cancelled' ? ' (cancelled)' : '';
+  return `${b.venueName} · ${b.itemType} · ${when}${cancelled}`;
 }
 
 /** A single chat bubble — bot (left, surface) or user (right, coral). */
@@ -55,7 +58,7 @@ function submitErrorMessage(e: unknown): string {
       return 'You’ve started quite a few conversations today — please try again a little later.';
     }
     if (e.code === 'booking_not_found') {
-      return 'We couldn’t find that booking on your account — it may have been cancelled. Tap “Start over” and pick a different booking (or skip the picker).';
+      return 'We couldn’t find that booking on your account. Tap “Start over” and pick a different booking (or skip the picker).';
     }
   }
   return 'Couldn’t send that — please try again.';
@@ -70,6 +73,14 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
 
   const submit = useSubmitSupportThread();
   const node = currentNode(helpFlow, state);
+
+  // A failed submission appends an error bubble at the transcript's tail —
+  // make sure it's actually on screen (long interviews scroll it out of view).
+  const errorRef = useRef<HTMLDivElement>(null);
+  const showError = phase === 'flow' && submit.isError;
+  useEffect(() => {
+    if (showError) errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [showError]);
 
   // Bookings are only needed once we reach a picker; fetch lazily but harmlessly.
   const needsBookings = node.kind === 'booking_picker';
@@ -116,10 +127,12 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
         {phase !== 'done' && <Bubble from="bot">{node.prompt}</Bubble>}
 
         {/* Submission failure reads as part of the conversation (429 / bad booking). */}
-        {phase === 'flow' && submit.isError && (
-          <Bubble from="bot">
-            <p className="font-semibold text-petal-red">{submitErrorMessage(submit.error)}</p>
-          </Bubble>
+        {showError && (
+          <div ref={errorRef}>
+            <Bubble from="bot">
+              <p className="font-semibold text-petal-red">{submitErrorMessage(submit.error)}</p>
+            </Bubble>
+          </div>
         )}
 
         {phase === 'done' && threadId && (

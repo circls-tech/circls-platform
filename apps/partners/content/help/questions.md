@@ -14,7 +14,8 @@ Your replies always carry an **Organizer** badge on the consumer side, so custom
 When a customer raises a concern through the app's **Help assistant**, the guided interview ends by opening a conversation with you — it arrives in this same inbox as a **private thread** marked with a purple **Support** badge and a category chip (Booking issue, Refund request, Reschedule, Venue question, Payment or Other).
 
 - If the concern is about a **booking**, the thread is attached to the relevant listing (a slot booking → the arena, and so on) and the booking is **pinned** in the thread's [customer context panel](#the-customer-context-panel) so you can see exactly what it's about.
-- Concerns that aren't about a booking (app questions, account issues) go to the **circls team**, not to you — they won't appear in your inbox. If one ever shows up marked **General**, it's a circls-handled thread with no listing attached.
+- Concerns that aren't about a booking (app questions, account issues) go to the **circls team**, not to you — they won't appear in your inbox.
+- A support thread marked **General** usually means a platform-level question handled by circls. But one **can** appear in *your* inbox: if the concern is about one of your bookings whose original listing has since been removed (a deleted event, for example), the thread still routes to you — it just has no listing to attach to. The pinned booking in the [customer context panel](#the-customer-context-panel) tells you what it's about.
 - Support threads are **always private** — the customer can't make them public, and they behave like any other private thread: reply, change statuses, archive.
 
 Use the inbox's **Type** filter to see only support requests (or only organic questions).

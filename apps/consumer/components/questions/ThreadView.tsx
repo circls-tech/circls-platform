@@ -161,8 +161,10 @@ export function ThreadView({
       {thread?.visibility === 'private' && (
         <p className="border-b-[2px] border-ink/10 bg-lav-soft px-4 py-2 text-xs font-medium text-ink">
           {thread.subjectType === 'general'
-            ? // General threads have no organiser — they go straight to Circls.
-              'Private — only you and the Circls team can see this thread.'
+            ? // Neutral copy: general threads are usually platform-handled, but a
+              // ghost-subject fallback lives under a partner tenant (the org CAN
+              // see it) — "support team" covers both.
+              'Private — only you and the support team can see this conversation.'
             : 'Private — only you, the organiser and the Circls team can see this thread.'}
         </p>
       )}
