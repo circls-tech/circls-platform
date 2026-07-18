@@ -1,4 +1,4 @@
-Customers can ask questions on any of your **events**, **arenas** and **membership plans** — "Is parking available?", "Can I join mid-month?" — and you answer them from one inbox in the portal. Each question starts a **thread**: the original question plus chat-style replies. This guide covers where questions come from, answering them, thread statuses, and moderating public threads.
+Customers can ask questions on any of your **events**, **arenas** and **membership plans** — "Is parking available?", "Can I join mid-month?" — and you answer them from one inbox in the portal. Each question starts a **thread**: the original question plus chat-style replies. **Support requests** raised through the app's Help assistant land in this same inbox as private threads, marked with a **Support** badge. This guide covers where questions come from, support requests, the customer context panel, answering, thread statuses, and moderating public threads.
 
 ## Public vs private questions
 
@@ -9,11 +9,33 @@ When a customer asks a question, they choose its visibility. It **cannot be chan
 
 Your replies always carry an **Organizer** badge on the consumer side, so customers know the answer is official. Replies from the circls team carry a **Circls** badge.
 
+## Support requests from the Help assistant
+
+When a customer raises a concern through the app's **Help assistant**, the guided interview ends by opening a conversation with you — it arrives in this same inbox as a **private thread** marked with a purple **Support** badge and a category chip (Booking issue, Refund request, Reschedule, Venue question, Payment or Other).
+
+- If the concern is about a **booking**, the thread is attached to the relevant listing (a slot booking → the arena, and so on) and the booking is **pinned** in the thread's [customer context panel](#the-customer-context-panel) so you can see exactly what it's about.
+- Concerns that aren't about a booking (app questions, account issues) go to the **circls team**, not to you — they won't appear in your inbox. If one ever shows up marked **General**, it's a circls-handled thread with no listing attached.
+- Support threads are **always private** — the customer can't make them public, and they behave like any other private thread: reply, change statuses, archive.
+
+Use the inbox's **Type** filter to see only support requests (or only organic questions).
+
+## The customer context panel
+
+Every thread's detail page has a **Customer context** panel (on the right on wide screens, above the conversation on small ones — use **Hide/Show** to collapse it). It shows who you're talking to and their history with **your organisation only**:
+
+- **Member** — display name and how long they've been on circls. **Contact details (email/phone) appear only on private threads**: customers asking public questions haven't opted into sharing them, so on public threads they stay hidden.
+- **Booking in question** — for support requests tied to a booking: what was booked, its status, time, amount and payment method.
+- **Recent bookings** — their latest bookings with your organisation (up to 10).
+- **Memberships** — their membership purchases with you and each one's status.
+- **Other threads** — their previous question threads with your organisation, linked so you can check earlier conversations.
+
+Support threads also show an **Interview answers** block above the conversation — the options the customer picked in the Help assistant before the thread was created, so you don't have to re-ask the basics.
+
 ## The Questions inbox
 
 Open **Questions** in the sidebar. The badge next to it shows how many questions are currently **open** (waiting on you); it refreshes automatically.
 
-The inbox has four tabs — **Open**, **Answered**, **Closed** and **Archived** — plus filters for visibility and subject type (events / arenas / memberships). The three status tabs list your active threads; the Archived tab holds threads you (or circls) have [archived](#archiving-a-whole-thread). Each row shows the listing the question is about, the question text, who asked, the reply count and the last activity time. Click a row to open the full thread.
+The inbox has four tabs — **Open**, **Answered**, **Closed** and **Archived** — plus filters for type (questions / support requests), visibility and subject (events / arenas / memberships / general). The three status tabs list your active threads; the Archived tab holds threads you (or circls) have [archived](#archiving-a-whole-thread). Each row shows the listing the question is about, the question text, who asked, the reply count and the last activity time — support requests additionally carry the **Support** badge and their category. Click a row to open the full thread.
 
 ## Answering a question
 
@@ -21,7 +43,7 @@ Open a thread to see the whole conversation — the customer's messages on the l
 
 Replying to an **open** question automatically marks it **answered** — you don't need to update the status yourself.
 
-The thread header links to the listing the question is about, so you can check details (schedules, tiers, photos) before answering.
+The thread header links to the listing the question is about, so you can check details (schedules, tiers, photos) before answering. (**General** support threads have no listing, so there's nothing to link to.) For everything about the customer themselves, use the [customer context panel](#the-customer-context-panel).
 
 ## Question statuses
 

@@ -6,12 +6,14 @@ import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { useQuestionThreads } from '@/lib/api/questions';
 import type {
+  QuestionOrigin,
   QuestionStatus,
   QuestionSubjectType,
   QuestionThreadRow,
   QuestionVisibility,
 } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
+import { CATEGORY_LABELS, SUBJECT_LABELS } from './labels';
 
 /** The three status tabs list active threads; Archived is its own view. */
 type TabKey = QuestionStatus | 'archived';
@@ -22,12 +24,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'closed',   label: 'Closed' },
   { key: 'archived', label: 'Archived' },
 ];
-
-const SUBJECT_LABELS: Record<QuestionSubjectType, string> = {
-  event:      'Event',
-  arena:      'Arena',
-  membership: 'Membership',
-};
 
 function VisibilityBadge({ visibility }: { visibility: QuestionVisibility }) {
   return visibility === 'public' ? (
@@ -42,6 +38,7 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
   const { resolveTz } = useTimezone();
   const [visibilityFilter, setVisibilityFilter] = useState<'' | QuestionVisibility>('');
   const [subjectFilter, setSubjectFilter] = useState<'' | QuestionSubjectType>('');
+  const [originFilter, setOriginFilter] = useState<'' | QuestionOrigin>('');
 
   const fmt = useMemo(
     () =>
@@ -70,6 +67,7 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
     ...(archived ? { archived: true } : { status: tab as QuestionStatus }),
     ...(visibilityFilter ? { visibility: visibilityFilter } : {}),
     ...(subjectFilter ? { subjectType: subjectFilter } : {}),
+    ...(originFilter ? { origin: originFilter } : {}),
   });
 
   const rows: QuestionThreadRow[] = data?.pages.flatMap((p) => p.rows) ?? [];
@@ -78,6 +76,18 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
     <div className="flex flex-col gap-4">
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-slate-500">Type</label>
+          <select
+            value={originFilter}
+            onChange={(e) => setOriginFilter(e.target.value as '' | QuestionOrigin)}
+            className="rounded border border-[#e5e7eb] bg-white px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">All</option>
+            <option value="forum">Questions</option>
+            <option value="support">Support requests</option>
+          </select>
+        </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-slate-500">Visibility</label>
           <select
@@ -101,15 +111,17 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
             <option value="event">Events</option>
             <option value="arena">Arenas</option>
             <option value="membership">Memberships</option>
+            <option value="general">General</option>
           </select>
         </div>
-        {(visibilityFilter || subjectFilter) && (
+        {(visibilityFilter || subjectFilter || originFilter) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setVisibilityFilter('');
               setSubjectFilter('');
+              setOriginFilter('');
             }}
           >
             Clear
@@ -126,7 +138,8 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
       {!isLoading && !isError && rows.length === 0 && (
         <Card>
           <p className="py-4 text-center text-sm text-slate-400">
-            No {tab} questions{visibilityFilter || subjectFilter ? ' match these filters' : ''}.
+            No {tab} questions
+            {visibilityFilter || subjectFilter || originFilter ? ' match these filters' : ''}.
           </p>
         </Card>
       )}
@@ -144,6 +157,14 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
                     {row.subject?.name ?? 'Listing'}
                   </span>
                   <Badge tone="neutral" label={SUBJECT_LABELS[row.subjectType]} />
+                  {row.origin === 'support' && (
+                    <>
+                      <Badge tone="support" label="Support" />
+                      {row.category != null && (
+                        <Badge tone="neutral" label={CATEGORY_LABELS[row.category]} />
+                      )}
+                    </>
+                  )}
                   <VisibilityBadge visibility={row.visibility} />
                   {row.archivedAt != null && <Badge tone="warning" label="Archived" />}
                   <span className="ml-auto whitespace-nowrap text-xs text-slate-400">
@@ -202,8 +223,8 @@ export default function QuestionsPage() {
         <h1 className="text-xl font-semibold text-[#0f172a]">Questions</h1>
         <p className="mt-0.5 text-sm text-slate-500">
           {activeTenant
-            ? `Customer questions on ${activeTenant.name}'s events, arenas and memberships.`
-            : 'Customer questions on your events, arenas and memberships.'}
+            ? `Customer questions and support requests on ${activeTenant.name}'s events, arenas and memberships.`
+            : 'Customer questions and support requests on your events, arenas and memberships.'}
         </p>
       </div>
 

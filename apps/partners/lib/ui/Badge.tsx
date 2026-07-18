@@ -8,7 +8,8 @@ export type BadgeTone =
   | 'neutral'
   | 'success'
   | 'warning'
-  | 'danger';
+  | 'danger'
+  | 'support';
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone;
@@ -24,6 +25,9 @@ const toneClasses: Record<BadgeTone, string> = {
   success: 'bg-green-100 text-green-800',
   warning: 'bg-yellow-100 text-yellow-800',
   danger:  'bg-red-100 text-red-700',
+  // Support-request threads (Help-assistant intake) — distinct from the
+  // amber Private badge these rows always carry.
+  support: 'bg-violet-100 text-violet-800',
 };
 
 export function Badge({ tone = 'neutral', label, className = '', ...rest }: BadgeProps) {

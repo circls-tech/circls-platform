@@ -9,10 +9,12 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiFetch } from './client';
 import type {
   QuestionMessage,
+  QuestionOrigin,
   QuestionReplyResult,
   QuestionsSummary,
   QuestionStatus,
   QuestionSubjectType,
+  QuestionThreadContext,
   QuestionThreadDetail,
   QuestionThreadsPage,
   QuestionVisibility,
@@ -22,6 +24,8 @@ export interface QuestionThreadsParams {
   status?: QuestionStatus;
   visibility?: QuestionVisibility;
   subjectType?: QuestionSubjectType;
+  /** Intake channel: 'forum' (organic asks) or 'support' (Help-interview). */
+  origin?: QuestionOrigin;
   /** True selects the archived view; default (false) lists active threads. */
   archived?: boolean;
 }
@@ -35,6 +39,7 @@ export function useQuestionThreads(tenantId: string, params: QuestionThreadsPara
       params.status,
       params.visibility,
       params.subjectType,
+      params.origin,
       params.archived ?? false,
     ],
     enabled: Boolean(tenantId),
@@ -45,6 +50,7 @@ export function useQuestionThreads(tenantId: string, params: QuestionThreadsPara
       if (params.status)      qs.set('status',      params.status);
       if (params.visibility)  qs.set('visibility',  params.visibility);
       if (params.subjectType) qs.set('subjectType', params.subjectType);
+      if (params.origin)      qs.set('origin',      params.origin);
       if (params.archived)    qs.set('archived',    'true');
       if (pageParam)          qs.set('cursor',      pageParam);
       const query = qs.toString();
@@ -71,6 +77,22 @@ export function useQuestionThread(tenantId: string, threadId: string) {
     enabled: Boolean(tenantId && threadId),
     queryFn: () =>
       apiFetch<QuestionThreadDetail>(`/v1/tenants/${tenantId}/questions/${threadId}`),
+  });
+}
+
+/**
+ * Resolver context for a thread: who the asker is (contact details on private
+ * threads only), the booking pinned by the support intake, and the asker's
+ * tenant-scoped relationship (recent bookings, memberships, prior threads).
+ */
+export function useQuestionContext(tenantId: string, threadId: string) {
+  return useQuery({
+    queryKey: ['question-context', tenantId, threadId],
+    enabled: Boolean(tenantId && threadId),
+    queryFn: () =>
+      apiFetch<QuestionThreadContext>(
+        `/v1/tenants/${tenantId}/questions/${threadId}/context`,
+      ),
   });
 }
 
