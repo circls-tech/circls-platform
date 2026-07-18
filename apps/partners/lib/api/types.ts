@@ -695,3 +695,62 @@ export interface MembershipWindows {
   starting: MembershipWindowItem[];
   ending: MembershipWindowItem[];
 }
+
+// ── Questions (customer support threads) ──────────────────────────────────────
+
+export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+export type QuestionVisibility = 'public' | 'private';
+export type QuestionStatus = 'open' | 'answered' | 'closed';
+export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+
+export interface QuestionThreadRow {
+  id: string;
+  subjectType: QuestionSubjectType;
+  subjectId: string;
+  tenantId: string;
+  visibility: QuestionVisibility;
+  status: QuestionStatus;
+  /** First 280 chars of the root (question) message. */
+  rootBody: string;
+  replyCount: number;
+  authorName: string;
+  /** ISO-8601 — bumped on every message; the list sort key. */
+  lastMessageAt: string;
+  /** ISO-8601 */
+  createdAt: string;
+  /** Subject summary — present on partner list/detail responses. */
+  subject?: { type: QuestionSubjectType; id: string; name: string };
+}
+
+export interface QuestionMessage {
+  id: string;
+  threadId: string;
+  authorKind: QuestionAuthorKind;
+  authorName: string;
+  body: string;
+  /** ISO-8601 — set when the message is hidden by moderation, else null. */
+  hiddenAt: string | null;
+  /** ISO-8601 */
+  createdAt: string;
+}
+
+export interface QuestionThreadDetail {
+  thread: QuestionThreadRow;
+  /** Chronological (asc). Hidden messages included, marked via `hiddenAt`. */
+  messages: QuestionMessage[];
+}
+
+export interface QuestionThreadsPage {
+  rows: QuestionThreadRow[];
+  nextCursor: string | null;
+}
+
+export interface QuestionsSummary {
+  openCount: number;
+}
+
+export interface QuestionReplyResult {
+  message: QuestionMessage;
+  /** Thread status after the reply (org replies auto-mark `answered`). */
+  threadStatus: QuestionStatus;
+}

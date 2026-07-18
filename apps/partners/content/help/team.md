@@ -6,10 +6,10 @@ Every member has one of four roles:
 
 | Role | What they can do |
 | --- | --- |
-| **Owner** | Full control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings and events, and update or delete the organisation. |
-| **Manager** | Operational control — manage the team and roles, and manage all venues, arenas, schedules, pricing, bookings and events. Cannot delete the organisation. |
-| **Staff** | Day-to-day operations — create and cancel bookings and view analytics. Can view venues, arenas, pricing, events and memberships, but cannot change them or manage the team. |
-| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics). Cannot create, change or delete anything. |
+| **Owner** | Full control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings and events, answer and manage [customer questions](/help/questions), and update or delete the organisation. |
+| **Manager** | Operational control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings and events, and answer and manage customer questions. Cannot delete the organisation. |
+| **Staff** | Day-to-day operations — create and cancel bookings, view analytics, and reply to and manage customer questions. Can view venues, arenas, pricing, events and memberships, but cannot change them or manage the team. |
+| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, customer questions). Cannot create, change or delete anything — including replying to questions. |
 
 Choose the least-privileged role that lets someone do their job — you can always upgrade them later.
 

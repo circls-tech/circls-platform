@@ -114,6 +114,15 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 11,
   },
   {
+    slug: 'questions',
+    title: 'Answering customer questions',
+    category: 'Support',
+    summary:
+      'Customers can ask public or private questions on your events, arenas and membership plans — answer them from the Questions inbox, manage thread statuses, and moderate public replies.',
+    quickLink: true,
+    order: 13,
+  },
+  {
     slug: 'coupons',
     title: 'Creating and managing discount coupons',
     category: 'Discounts',

@@ -159,6 +159,10 @@ Every row in the **Registered** table has a **Cancel** button. Cancelling on beh
 
 Free registrations and payments that were never completed are simply cancelled — there is nothing to refund. Cancellation can't be undone; the attendee has to register again if plans change.
 
+## Customer questions
+
+Customers browsing a published event can ask **questions** on it — public ones appear on the event's consumer page as a Q&A section, private ones are visible only to the asker and your team. Answer them from the **Questions** inbox in the sidebar; each thread links back to the event it's about. See [Answering customer questions](/help/questions).
+
 ## Where to find your events
 
 - **Events** (top-level) shows every event across your whole organisation.

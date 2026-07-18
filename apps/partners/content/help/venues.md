@@ -63,6 +63,10 @@ Both venues and arenas move through the same set of statuses:
 
 Consumers only ever see **active** arenas inside **active** venues. If something isn't showing up publicly, check its status here first.
 
+## Customer questions
+
+Customers can ask **questions** on your arenas — publicly (visible to everyone browsing the venue) or privately. They land in the **Questions** inbox in the sidebar, tagged with the arena they're about, and answering there is how you respond. See [Answering customer questions](/help/questions).
+
 ## Tips
 
 - Set the correct **timezone** before releasing slots — it governs how every time is interpreted.

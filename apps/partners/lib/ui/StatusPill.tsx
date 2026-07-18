@@ -20,6 +20,10 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   cancelled:      { label: 'Cancelled',      tone: 'neutral' },
   paused:         { label: 'Paused',         tone: 'warning' },
   expired:        { label: 'Expired',        tone: 'neutral' },
+  // Question-thread lifecycle (customer questions inbox).
+  open:           { label: 'Open',           tone: 'booked' },
+  answered:       { label: 'Answered',       tone: 'success' },
+  closed:         { label: 'Closed',         tone: 'neutral' },
 };
 
 export interface StatusPillProps {
