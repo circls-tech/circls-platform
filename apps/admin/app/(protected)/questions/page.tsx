@@ -1,11 +1,12 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
 import { useAdminQuestions } from '@/lib/api/queries';
 import type {
   AdminQuestionFilters,
   AdminQuestionThreadRow,
+  QuestionOrigin,
   QuestionStatus,
   QuestionSubjectType,
   QuestionVisibility,
@@ -13,7 +14,10 @@ import type {
 
 import {
   Badge,
+  CATEGORY_LABELS,
   IST_FMT,
+  ORIGIN_COLORS,
+  ORIGIN_LABELS,
   STATUS_COLORS,
   STATUS_LABELS,
   SUBJECT_TYPE_COLORS,
@@ -34,12 +38,20 @@ function ThreadRow({ row }: { row: AdminQuestionThreadRow }) {
       className="cursor-pointer border-b border-slate-100 align-top hover:bg-slate-50"
     >
       <td className="px-4 py-3">
-        <div className="mb-1 flex items-center gap-2">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          {row.origin === 'support' && (
+            <Badge label={ORIGIN_LABELS.support} tone={ORIGIN_COLORS.support} />
+          )}
           <Badge label={SUBJECT_TYPE_LABELS[row.subjectType]} tone={SUBJECT_TYPE_COLORS[row.subjectType]} />
           {row.subject?.name ? (
             <span className="text-xs font-medium text-slate-700">{row.subject.name}</span>
-          ) : (
+          ) : row.subjectId ? (
             <span className="font-mono text-[10px] text-slate-400">{row.subjectId.slice(0, 8)}…</span>
+          ) : null}
+          {row.category && (
+            <span className="text-xs font-medium text-slate-600">
+              {CATEGORY_LABELS[row.category]}
+            </span>
           )}
         </div>
         <p className="max-w-md text-sm text-slate-800 line-clamp-2 whitespace-pre-line">{row.rootBody}</p>
@@ -70,10 +82,18 @@ function ThreadRow({ row }: { row: AdminQuestionThreadRow }) {
   );
 }
 
-export default function QuestionsPage() {
+function QuestionsPageContent() {
+  // `/questions?origin=support` (linked from Support Issues) pre-selects the
+  // origin filter; the select stays fully interactive afterwards.
+  const searchParams = useSearchParams();
+  const originParam = searchParams.get('origin');
+  const initialOrigin: QuestionOrigin | 'all' =
+    originParam === 'support' || originParam === 'forum' ? originParam : 'all';
+
   const [filterStatus, setFilterStatus] = useState<QuestionStatus | 'all'>('all');
   const [filterVisibility, setFilterVisibility] = useState<QuestionVisibility | 'all'>('all');
   const [filterSubjectType, setFilterSubjectType] = useState<QuestionSubjectType | 'all'>('all');
+  const [filterOrigin, setFilterOrigin] = useState<QuestionOrigin | 'all'>(initialOrigin);
   const [filterArchived, setFilterArchived] = useState<'active' | 'archived'>('active');
   const [tenantIdInput, setTenantIdInput] = useState('');
 
@@ -84,6 +104,7 @@ export default function QuestionsPage() {
     ...(filterStatus !== 'all' ? { status: filterStatus } : {}),
     ...(filterVisibility !== 'all' ? { visibility: filterVisibility } : {}),
     ...(filterSubjectType !== 'all' ? { subjectType: filterSubjectType } : {}),
+    ...(filterOrigin !== 'all' ? { origin: filterOrigin } : {}),
     ...(filterArchived === 'archived' ? { archived: true } : {}),
     // Only send the tenant filter once it's a full, valid UUID.
     ...(tenantIdTrimmed && !tenantIdInvalid ? { tenantId: tenantIdTrimmed } : {}),
@@ -118,6 +139,16 @@ export default function QuestionsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-slate-500">Filter:</span>
           <select
+            value={filterOrigin}
+            onChange={(e) => setFilterOrigin(e.target.value as QuestionOrigin | 'all')}
+            className={selectCls}
+            aria-label="Filter by origin"
+          >
+            <option value="all">All origins</option>
+            <option value="forum">Forum</option>
+            <option value="support">Support</option>
+          </select>
+          <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as QuestionStatus | 'all')}
             className={selectCls}
@@ -148,6 +179,7 @@ export default function QuestionsPage() {
             <option value="event">Events</option>
             <option value="arena">Arenas</option>
             <option value="membership">Memberships</option>
+            <option value="general">General</option>
           </select>
           <select
             value={filterArchived}
@@ -225,5 +257,21 @@ export default function QuestionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function QuestionsPage() {
+  // useSearchParams requires a Suspense boundary for static prerendering.
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+          Loading…
+        </div>
+      }
+    >
+      <QuestionsPageContent />
+    </Suspense>
   );
 }

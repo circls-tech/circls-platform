@@ -1,6 +1,8 @@
 // Shared badge maps + helpers for the Questions list and detail pages.
 import type {
   QuestionAuthorKind,
+  QuestionCategory,
+  QuestionOrigin,
   QuestionStatus,
   QuestionSubjectType,
   QuestionVisibility,
@@ -42,12 +44,34 @@ export const SUBJECT_TYPE_LABELS: Record<QuestionSubjectType, string> = {
   event: 'Event',
   arena: 'Arena',
   membership: 'Membership',
+  general: 'General',
 };
 
 export const SUBJECT_TYPE_COLORS: Record<QuestionSubjectType, string> = {
   event: 'bg-indigo-100 text-indigo-800',
   arena: 'bg-teal-100 text-teal-800',
   membership: 'bg-rose-100 text-rose-800',
+  general: 'bg-slate-100 text-slate-700',
+};
+
+export const ORIGIN_LABELS: Record<QuestionOrigin, string> = {
+  forum: 'Forum',
+  support: 'Support',
+};
+
+export const ORIGIN_COLORS: Record<QuestionOrigin, string> = {
+  forum: 'bg-slate-100 text-slate-700',
+  support: 'bg-orange-100 text-orange-800',
+};
+
+/** Interview triage categories — mirror the support-issues page labels. */
+export const CATEGORY_LABELS: Record<QuestionCategory, string> = {
+  booking_issue: 'Booking issue',
+  refund_request: 'Refund / cancel',
+  reschedule: 'Reschedule',
+  venue_question: 'Venue / event',
+  payment: 'Payment',
+  other: 'Other',
 };
 
 export const AUTHOR_KIND_LABELS: Record<QuestionAuthorKind, string> = {

@@ -9,6 +9,7 @@ import type {
   AdminPayoutListPage,
   AdminQuestionFilters,
   AdminQuestionReplyResult,
+  AdminQuestionThreadContext,
   AdminQuestionThreadDetail,
   AdminQuestionThreadListPage,
   AdminStats,
@@ -268,6 +269,21 @@ export function useAdminQuestionThread(threadId: string | null) {
     queryKey: ['admin', 'question', threadId],
     enabled: Boolean(user && threadId),
     queryFn: () => apiFetch<AdminQuestionThreadDetail>(`/v1/admin/questions/${threadId!}`),
+  });
+}
+
+/**
+ * Resolver context for a thread: who the asker is (contact details included),
+ * the pinned booking, cross-tenant bookings/memberships/prior threads, recent
+ * consumer activity and historical support issues.
+ */
+export function useAdminQuestionContext(threadId: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'question-context', threadId],
+    enabled: Boolean(user && threadId),
+    queryFn: () =>
+      apiFetch<AdminQuestionThreadContext>(`/v1/admin/questions/${threadId!}/context`),
   });
 }
 

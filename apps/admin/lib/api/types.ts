@@ -265,24 +265,39 @@ export interface AdminSupportIssueFilters {
 // ── Questions (consumer support threads) ──────────────────────────────────────
 // Keep aligned with apps/api/src/services/questions_service.ts.
 
-export type QuestionSubjectType = 'event' | 'arena' | 'membership';
+/** `general` = support-intake threads with no listing subject (platform tenant). */
+export type QuestionSubjectType = 'event' | 'arena' | 'membership' | 'general';
 export type QuestionVisibility = 'public' | 'private';
 export type QuestionStatus = 'open' | 'answered' | 'closed';
 export type QuestionAuthorKind = 'consumer' | 'org' | 'circls';
+/** Intake channel: 'forum' (organic ask) or 'support' (Help interview). */
+export type QuestionOrigin = 'forum' | 'support';
+/** Interview triage category — same six values as support-issue categories. */
+export type QuestionCategory = SupportIssueCategory;
 
+/**
+ * Subject summary. `general` threads serialize as
+ * `{ type: 'general', id: null, name: 'General' }` — the one shape with a null id.
+ */
 export interface QuestionSubjectSummary {
   type: QuestionSubjectType;
-  id: string;
+  id: string | null;
   name: string;
 }
 
 export interface AdminQuestionThreadRow {
   id: string;
   subjectType: QuestionSubjectType;
-  subjectId: string;
+  /** Null for `general` threads (no subject row). */
+  subjectId: string | null;
   tenantId: string;
   visibility: QuestionVisibility;
   status: QuestionStatus;
+  origin: QuestionOrigin;
+  /** Null on forum threads. */
+  category: QuestionCategory | null;
+  /** Booking pinned as context by the support intake; null otherwise. */
+  contextBookingId?: string | null;
   /** Excerpt (first 280 chars) of the root message. */
   rootBody: string;
   replyCount: number;
@@ -320,10 +335,18 @@ export interface AdminQuestionThreadDetail {
   thread: {
     id: string;
     subjectType: QuestionSubjectType;
-    subjectId: string;
+    /** Null for `general` threads (no subject row). */
+    subjectId: string | null;
     tenantId: string;
     visibility: QuestionVisibility;
     status: QuestionStatus;
+    origin: QuestionOrigin;
+    /** Null on forum threads. */
+    category: QuestionCategory | null;
+    /** Booking pinned as context by the support intake; null otherwise. */
+    contextBookingId?: string | null;
+    /** The support-interview transcript; null on forum threads. */
+    flowAnswers?: SupportFlowAnswer[] | null;
     authorUserId: string;
     messageCount: number;
     lastMessageAt: string;
@@ -351,7 +374,89 @@ export interface AdminQuestionFilters {
   status?: QuestionStatus;
   visibility?: QuestionVisibility;
   subjectType?: QuestionSubjectType;
+  origin?: QuestionOrigin;
   tenantId?: string;
   /** True selects the archived view; default (false) lists active threads. */
   archived?: boolean;
+}
+
+// ── Question thread resolver context ──────────────────────────────────────────
+// GET /v1/admin/questions/:threadId/context — keep aligned with
+// apps/api/src/services/questions_context_service.ts (admin surface).
+
+export interface QuestionContextMember {
+  id: string;
+  displayName: string;
+  /** When this person joined Circls. */
+  memberSince: string;
+  /** Always present on the admin surface (null when the user has none). */
+  email: string | null;
+  phone: string | null;
+}
+
+/** One booking row — the pinned booking and the recent list share this shape. */
+export interface QuestionContextBooking {
+  id: string;
+  itemType: string;
+  /** Human label: arena / event / membership name (venue name as fallback). */
+  label: string;
+  status: string;
+  totalPaise: number | null;
+  currency: string;
+  paymentMethod: string;
+  timeRange: { start: string; end: string } | null;
+  createdAt: string;
+}
+
+export interface QuestionContextMembership {
+  id: string;
+  membershipId: string;
+  name: string;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface QuestionContextPriorThread {
+  id: string;
+  status: QuestionStatus;
+  visibility: QuestionVisibility;
+  origin: QuestionOrigin;
+  category: QuestionCategory | null;
+  subject: QuestionSubjectSummary;
+  lastMessageAt: string;
+}
+
+export interface QuestionContextActivityRow {
+  id: string;
+  eventType: string;
+  itemType: string | null;
+  itemId: string | null;
+  props: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface QuestionContextSupportIssue {
+  id: string;
+  source: string;
+  category: string | null;
+  status: string;
+  /** First 280 chars of the free-text message. */
+  messageExcerpt: string;
+  createdAt: string;
+}
+
+export interface AdminQuestionThreadContext {
+  member: QuestionContextMember;
+  /** The booking pinned by the support intake; null when none. */
+  contextBooking: QuestionContextBooking | null;
+  /** Cross-tenant, latest 10. */
+  recentBookings: QuestionContextBooking[];
+  memberships: QuestionContextMembership[];
+  /** Cross-tenant, latest 10, excludes the current thread. */
+  priorThreads: QuestionContextPriorThread[];
+  /** Latest 20 consumer-activity rows. */
+  recentActivity: QuestionContextActivityRow[];
+  /** Historical support_issues by the same user, latest 10. */
+  supportIssues: QuestionContextSupportIssue[];
 }
