@@ -7,6 +7,7 @@ import { useMyTenants } from '@/lib/api/queries';
 import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
+import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
 import { Button, BrandMark } from '@/lib/ui';
@@ -151,6 +152,20 @@ function Sidebar({
   );
 }
 
+/**
+ * Blocks the portal behind the Terms & Conditions gate when the active org has
+ * not accepted the current version (orgs predating the feature, or a version
+ * bump). The Help Centre stays reachable so a blocked user can still read docs.
+ */
+function GatedContent({ children, pathname }: { children: React.ReactNode; pathname: string }) {
+  const { activeTenantId } = useOrg();
+  const { data: tenants } = useMyTenants();
+  const activeTenant = tenants?.find((t) => t.id === activeTenantId);
+  const helpPath = pathname === '/help' || pathname.startsWith('/help/');
+  if (tenantNeedsTermsGate(activeTenant) && !helpPath) return <TermsGate />;
+  return <>{children}</>;
+}
+
 function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; pathname: string }) {
   const [showOrgSelector, setShowOrgSelector] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -207,7 +222,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
 
           {/* Content area */}
           <main className="flex-1 bg-[#f8fafc] p-6">
-            {children}
+            <GatedContent pathname={pathname}>{children}</GatedContent>
           </main>
         </div>
       </div>

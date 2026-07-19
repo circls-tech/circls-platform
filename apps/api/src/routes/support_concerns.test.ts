@@ -89,7 +89,7 @@ describe.skipIf(!runIntegration)('consumer support concerns (#114)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: `SC Co ${SUFFIX}`, slug: `sc-co-${SUFFIX}` },
+      payload: { name: `SC Co ${SUFFIX}`, slug: `sc-co-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
     tenantId = (t.json() as { id: string }).id;

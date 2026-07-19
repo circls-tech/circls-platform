@@ -31,7 +31,7 @@ describe.skipIf(!runIntegration)('venues', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Venue Co', slug: `vco-${Date.now()}` },
+      payload: { name: 'Venue Co', slug: `vco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
   });

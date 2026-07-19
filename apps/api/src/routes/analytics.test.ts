@@ -104,7 +104,7 @@ async function setup(
     method: 'POST',
     url: '/v1/tenants',
     headers: bearer(token),
-    payload: { name: `Analytics Co ${slug}`, slug },
+    payload: { name: `Analytics Co ${slug}`, slug, country: 'India', acceptTerms: true },
   });
   expect(t.statusCode).toBe(200);
   const tenantId = t.json().id as string;

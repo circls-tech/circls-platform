@@ -16,6 +16,10 @@ export interface Tenant {
   isPlatform?: boolean;
   subscriptionStatus: string;
   status: string;
+  /** Terms & Conditions acceptance state — null until the org accepts. */
+  termsVersion?: string | null;
+  termsRegion?: 'US' | 'IN' | null;
+  termsAcceptedAt?: string | null;
 }
 
 /** Social handles/URLs an org advertises (PR #107). All optional. */
@@ -49,6 +53,9 @@ export interface TenantProfile {
   logoStorageKey: string | null;
   logoUrl: string | null;
   status: string;
+  termsVersion: string | null;
+  termsRegion: 'US' | 'IN' | null;
+  termsAcceptedAt: string | null;
 }
 
 /**

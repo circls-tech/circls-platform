@@ -54,7 +54,7 @@ describe.skipIf(!runIntegration)('invitations + C1 unverified-email guards', () 
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Invite Acme', slug },
+      payload: { name: 'Invite Acme', slug, country: 'India', acceptTerms: true },
     });
     expect(created.statusCode).toBe(200);
     tenantId = (created.json() as { id: string }).id;

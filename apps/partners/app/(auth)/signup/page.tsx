@@ -84,6 +84,13 @@ export default function SignupPage() {
       <Link href="/login" className="text-center text-sm text-blue-700 hover:underline">
         Already have an account? Sign in
       </Link>
+      <p className="text-center text-xs text-slate-400">
+        Creating an organisation requires accepting the{' '}
+        <Link href="/terms" className="text-slate-500 underline-offset-2 hover:underline">
+          Partner Terms &amp; Conditions
+        </Link>
+        .
+      </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </main>
   );

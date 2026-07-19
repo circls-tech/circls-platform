@@ -55,9 +55,28 @@ export function useMyTenants() {
 export function useCreateTenant() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; slug: string }) =>
+    mutationFn: (input: { name: string; slug: string; country: string; acceptTerms: true }) =>
       apiFetch<Tenant>('/v1/tenants', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenants'] }),
+  });
+}
+
+/**
+ * Accept the current Partner Terms & Conditions for an existing org
+ * (owner/manager only). `version` pins the revision the user was shown.
+ */
+export function useAcceptTerms(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { version: string; country?: string }) =>
+      apiFetch<TenantProfile>(`/v1/tenants/${tenantId}/terms/accept`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tenants'] });
+      void qc.invalidateQueries({ queryKey: ['tenant-profile', tenantId] });
+    },
   });
 }
 

@@ -50,7 +50,7 @@ async function setupArena(
     method: 'POST',
     url: '/v1/tenants',
     headers: bearer(token),
-    payload: { name: `Read Co ${opts.slug}`, slug: opts.slug },
+    payload: { name: `Read Co ${opts.slug}`, slug: opts.slug, country: 'India', acceptTerms: true },
   });
   const tenantId = t.json().id as string;
 

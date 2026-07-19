@@ -78,12 +78,17 @@ describe.skipIf(!runIntegration)('tenants', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Acme Sports', slug },
+      payload: { name: 'Acme Sports', slug, country: 'India', acceptTerms: true },
     });
     expect(res.statusCode).toBe(200);
     const t = res.json();
     expect(t.slug).toBe(slug);
     expect(t.status).toBe('active');
+    // Creation stamps acceptance of the current Terms for the org's region.
+    expect(t.country).toBe('India');
+    expect(t.termsRegion).toBe('IN');
+    expect(t.termsVersion).toBeTruthy();
+    expect(t.termsAcceptedAt).toBeTruthy();
 
     const mine = await app.inject({ method: 'GET', url: '/v1/me/tenants', headers: bearer('owner') });
     expect(mine.json().some((x: { slug: string }) => x.slug === slug)).toBe(true);
@@ -99,10 +104,122 @@ describe.skipIf(!runIntegration)('tenants', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Dup', slug },
+      payload: { name: 'Dup', slug, country: 'India', acceptTerms: true },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('slug_taken');
+  });
+
+  it('rejects tenant creation without explicit terms acceptance', async () => {
+    const noAccept = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'No Terms Co', slug: `noterms-${SUFFIX}`, country: 'India' },
+    });
+    expect(noAccept.statusCode).toBe(400);
+
+    const noCountry = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'No Country Co', slug: `nocountry-${SUFFIX}`, acceptTerms: true },
+    });
+    expect(noCountry.statusCode).toBe(400);
+  });
+
+  it('US orgs sign the US terms document', async () => {
+    const usSlug = `us-co-${SUFFIX}`;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'US Co', slug: usSlug, country: 'USA', acceptTerms: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().termsRegion).toBe('US');
+    const usTenantId = res.json().id as string;
+    await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${usTenantId}::uuid`);
+    await db.execute(sql`DELETE FROM tenants WHERE id = ${usTenantId}::uuid`);
+  });
+
+  it('gates venue creation until an un-accepted org re-accepts the current terms', async () => {
+    // A pre-terms org: created via the route, then acceptance wiped to simulate
+    // an org that existed before the feature shipped.
+    const legacySlug = `legacy-${SUFFIX}`;
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'Legacy Co', slug: legacySlug, country: 'India', acceptTerms: true },
+    });
+    const legacyId = created.json().id as string;
+    await db.execute(sql`
+      UPDATE tenants
+      SET terms_version = NULL, terms_region = NULL,
+          terms_accepted_at = NULL, terms_accepted_by_user_id = NULL, country = NULL
+      WHERE id = ${legacyId}::uuid
+    `);
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${legacyId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Blocked Venue' },
+    });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json().error.code).toBe('terms_required');
+
+    // Accepting without a country when the org has none is a 400 …
+    const noCountry = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${legacyId}/terms/accept`,
+      headers: bearer('owner'),
+      payload: {},
+    });
+    expect(noCountry.statusCode).toBe(400);
+    expect(noCountry.json().error.code).toBe('country_required');
+
+    // … a stale version is a 409 …
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${legacyId}/terms/accept`,
+      headers: bearer('owner'),
+      payload: { version: 'obsolete-version', country: 'India' },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe('terms_version_stale');
+
+    // … and a proper acceptance unblocks creation and backfills the country.
+    const accepted = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${legacyId}/terms/accept`,
+      headers: bearer('owner'),
+      payload: { country: 'India' },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json().termsRegion).toBe('IN');
+    expect(accepted.json().country).toBe('India');
+    expect(accepted.json().termsAcceptedAt).toBeTruthy();
+
+    const unblocked = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${legacyId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Unblocked Venue' },
+    });
+    expect(unblocked.statusCode).toBe(200);
+
+    await db.execute(sql`DELETE FROM audit_log WHERE tenant_id = ${legacyId}::uuid`);
+    await db.execute(sql`DELETE FROM venues WHERE tenant_id = ${legacyId}::uuid`);
+    await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${legacyId}::uuid`);
+    await db.execute(sql`DELETE FROM tenants WHERE id = ${legacyId}::uuid`);
+  });
+
+  it('exposes the current terms version publicly', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/terms/current' });
+    expect(res.statusCode).toBe(200);
+    expect(typeof res.json().version).toBe('string');
   });
 
   it('GET /v1/tenants is admin-only (platform member gets 200, non-member gets 403)', async () => {

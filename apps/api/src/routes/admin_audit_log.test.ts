@@ -40,7 +40,7 @@ async function createTenantViaApi(app: FastifyInstance, token: string, slug: str
     method: 'POST',
     url: '/v1/tenants',
     headers: bearer(token),
-    payload: { name: `Audit Co ${slug}`, slug },
+    payload: { name: `Audit Co ${slug}`, slug, country: 'India', acceptTerms: true },
   });
   expect(res.statusCode).toBe(200);
   return (res.json() as { id: string }).id;

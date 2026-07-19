@@ -74,7 +74,7 @@ describe.skipIf(!runIntegration)('admin refund route authz (M7)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Refund Co', slug: `refund-co-${SUFFIX}` },
+      payload: { name: 'Refund Co', slug: `refund-co-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
     tenantId = (t.json() as { id: string }).id;

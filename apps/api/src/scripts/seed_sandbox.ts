@@ -14,6 +14,7 @@ import { and, eq } from 'drizzle-orm';
 import { closeDb, db } from '../db/client.js';
 import { env } from '../config/env.js';
 import { firebaseAuth } from '../lib/firebase_admin.js';
+import { CURRENT_TERMS_VERSION } from '../lib/terms.js';
 import { tenants } from '../db/schema/tenants.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
@@ -59,7 +60,18 @@ async function ensureTenant(slug: string, name: string, isPlatform: boolean): Pr
   if (existing) return existing.id;
   const [created] = await db
     .insert(tenants)
-    .values({ slug, name, isPlatform, status: 'active' })
+    .values({
+      slug,
+      name,
+      isPlatform,
+      status: 'active',
+      // Demo orgs come pre-accepted so seeded flows aren't blocked by the
+      // terms gate (India document — the sandbox default region).
+      country: 'India',
+      termsVersion: CURRENT_TERMS_VERSION,
+      termsRegion: 'IN',
+      termsAcceptedAt: new Date(),
+    })
     .returning({ id: tenants.id });
   if (!created) throw new Error(`tenant insert returned no row for ${slug}`);
   return created.id;

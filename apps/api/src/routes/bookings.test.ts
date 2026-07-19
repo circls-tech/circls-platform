@@ -56,7 +56,7 @@ describe.skipIf(!runIntegration)('walk-in bookings (slot-based)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Book Co', slug: `bco-${Date.now()}` },
+      payload: { name: 'Book Co', slug: `bco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
 
@@ -235,7 +235,7 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Tier Co', slug: `tierco-${SUFFIX}` },
+      payload: { name: 'Tier Co', slug: `tierco-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
 

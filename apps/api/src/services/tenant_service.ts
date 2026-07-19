@@ -2,15 +2,22 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { type Tenant, type TenantSocials, tenantMembers, tenants } from '../db/schema/index.js';
-import { Conflict, NotFound } from '../lib/errors.js';
+import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage } from '../lib/storage.js';
+import { CURRENT_TERMS_VERSION, type TermsRegion, termsRegionForCountry } from '../lib/terms.js';
 
 export interface CreateTenantInput {
   name: string;
   slug: string;
+  /** Canonical country ('India' | 'USA') — picks the regional Terms document. */
+  country: string;
 }
 
-/** Create a tenant and make the creator its owner, atomically. */
+/**
+ * Create a tenant and make the creator its owner, atomically. Creation implies
+ * acceptance of the current Terms & Conditions (the route requires an explicit
+ * acceptTerms flag), so the acceptance columns are stamped in the same insert.
+ */
 export async function createTenant(ownerUserId: string, input: CreateTenantInput): Promise<Tenant> {
   try {
     return await db.transaction(async (tx) => {
@@ -19,6 +26,11 @@ export async function createTenant(ownerUserId: string, input: CreateTenantInput
         .values({
           name: input.name,
           slug: input.slug,
+          country: input.country,
+          termsVersion: CURRENT_TERMS_VERSION,
+          termsRegion: termsRegionForCountry(input.country),
+          termsAcceptedAt: new Date(),
+          termsAcceptedByUserId: ownerUserId,
         })
         .returning();
       if (!tenant) throw new Error('tenant insert returned no row');
@@ -78,6 +90,9 @@ export interface TenantProfileDTO {
   logoStorageKey: string | null;
   logoUrl: string | null;
   status: Tenant['status'];
+  termsVersion: string | null;
+  termsRegion: TermsRegion | null;
+  termsAcceptedAt: string | null;
 }
 
 function toTenantProfile(t: Tenant): TenantProfileDTO {
@@ -99,7 +114,59 @@ function toTenantProfile(t: Tenant): TenantProfileDTO {
     logoStorageKey: t.logoStorageKey,
     logoUrl: t.logoStorageKey ? getStorage().publicUrl(t.logoStorageKey) : null,
     status: t.status,
+    termsVersion: t.termsVersion,
+    termsRegion: t.termsRegion,
+    termsAcceptedAt: t.termsAcceptedAt ? t.termsAcceptedAt.toISOString() : null,
   };
+}
+
+// ── Terms & Conditions acceptance ─────────────────────────────────────────────
+
+export interface AcceptTermsInput {
+  /**
+   * The revision the accepting user was shown. Optional — when present it must
+   * match the current version, so a stale client can't record consent to a
+   * document its user never saw.
+   */
+  version?: string | undefined;
+  /** Canonical country ('India' | 'USA'). Required if the org has none yet. */
+  country?: string | undefined;
+}
+
+/**
+ * Record acceptance of the current Terms & Conditions for an existing org.
+ * Caller has already asserted the actor may bind the org (tenant.update cap).
+ */
+export async function acceptTenantTerms(
+  tenantId: string,
+  actorUserId: string,
+  input: AcceptTermsInput,
+): Promise<TenantProfileDTO> {
+  if (input.version !== undefined && input.version !== CURRENT_TERMS_VERSION) {
+    throw new Conflict('The Terms & Conditions have been updated — reload to review the current version', 'terms_version_stale', {
+      currentVersion: CURRENT_TERMS_VERSION,
+    });
+  }
+  const tenant = await getTenantById(tenantId);
+  if (!tenant) throw new NotFound('Tenant not found', 'tenant_not_found');
+  const country = input.country ?? tenant.country;
+  if (!country) {
+    throw new BadRequest('Organisation country is required to pick the applicable Terms', 'country_required');
+  }
+  const [row] = await db
+    .update(tenants)
+    .set({
+      // Backfill the org country when acceptance is the first time we learn it.
+      ...(tenant.country ? {} : { country }),
+      termsVersion: CURRENT_TERMS_VERSION,
+      termsRegion: termsRegionForCountry(country),
+      termsAcceptedAt: new Date(),
+      termsAcceptedByUserId: actorUserId,
+    })
+    .where(eq(tenants.id, tenantId))
+    .returning();
+  if (!row) throw new NotFound('Tenant not found', 'tenant_not_found');
+  return toTenantProfile(row);
 }
 
 export async function getTenantProfile(tenantId: string): Promise<TenantProfileDTO> {

@@ -4,6 +4,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
@@ -124,6 +125,7 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'venues.write');
+    assertTermsAccepted(ctx);
     const { name, tzName, lat, lng, addressJson, tags } = parsed.data;
     return createVenue(tenantId, {
       name,

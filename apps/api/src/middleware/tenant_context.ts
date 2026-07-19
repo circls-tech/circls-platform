@@ -10,6 +10,9 @@ export interface TenantContext {
   role: TenantMember['role'];
   /** True only for the Circls platform tenant. Drives the authz map choice. */
   isPlatform: boolean;
+  /** Terms & Conditions acceptance state — read by assertTermsAccepted. */
+  termsVersion: string | null;
+  termsAcceptedAt: Date | null;
 }
 
 /**
@@ -26,11 +29,20 @@ export async function requireTenantMembership(
     .select({
       role: tenantMembers.role,
       isPlatform: tenants.isPlatform,
+      termsVersion: tenants.termsVersion,
+      termsAcceptedAt: tenants.termsAcceptedAt,
     })
     .from(tenantMembers)
     .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
     .where(and(eq(tenantMembers.userId, userId), eq(tenantMembers.tenantId, tenantId)))
     .limit(1);
   if (!row) throw new Forbidden('Not a member of this tenant', 'tenant_forbidden');
-  return { tenantId, userId, role: row.role, isPlatform: row.isPlatform };
+  return {
+    tenantId,
+    userId,
+    role: row.role,
+    isPlatform: row.isPlatform,
+    termsVersion: row.termsVersion,
+    termsAcceptedAt: row.termsAcceptedAt,
+  };
 }

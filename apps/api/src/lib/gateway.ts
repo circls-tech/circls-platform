@@ -89,7 +89,7 @@ export function getGateway(provider: PaymentProviderId): PaymentGateway {
  * The venue country dropdown stores display names ('India' | 'USA'); the
  * tenant profile is free text. Normalize the common US spellings.
  */
-function isUsCountry(country: string | null | undefined): boolean {
+export function isUsCountry(country: string | null | undefined): boolean {
   if (!country) return false;
   const c = country.trim().toUpperCase();
   return c === 'US' || c === 'USA' || c === 'UNITED STATES' || c === 'UNITED STATES OF AMERICA';

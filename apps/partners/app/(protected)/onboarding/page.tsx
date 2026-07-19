@@ -7,6 +7,8 @@ import { inferSport } from '@/lib/api/sport_inference';
 import { useOrg } from '@/lib/org_context';
 import { Badge, Button, Card, Input, TagsInput } from '@/lib/ui';
 import type { Tenant } from '@/lib/api/types';
+import { TermsAcceptance } from '@/components/TermsAcceptance';
+import type { TermsCountry } from '@/lib/terms/constants';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,8 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
+  const [country, setCountry] = useState<TermsCountry>('India');
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const createTenant = useCreateTenant();
   const { setActiveTenantId } = useOrg();
@@ -111,8 +115,14 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
     setError(null);
     if (!name.trim()) { setError('Organisation name is required.'); return; }
     if (!slug.trim()) { setError('Slug is required.'); return; }
+    if (!agreed) { setError('You must accept the Terms & Conditions to continue.'); return; }
     try {
-      const tenant = await createTenant.mutateAsync({ name: name.trim(), slug: slug.trim() });
+      const tenant = await createTenant.mutateAsync({
+        name: name.trim(),
+        slug: slug.trim(),
+        country,
+        acceptTerms: true,
+      });
       setActiveTenantId(tenant.id);
       onDone(tenant);
     } catch (err) {
@@ -145,8 +155,19 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
         value={slug}
         onChange={(e) => handleSlugChange(e.target.value)}
         hint="lowercase letters, numbers and dashes only"
-        error={error && name.trim() ? error : undefined}
+        error={error && name.trim() && !slug.trim() ? error : undefined}
       />
+
+      <TermsAcceptance
+        country={country}
+        onCountryChange={setCountry}
+        agreed={agreed}
+        onAgreedChange={setAgreed}
+      />
+
+      {error && name.trim() && slug.trim() && (
+        <p className="text-sm text-red-600">{error}</p>
+      )}
 
       <div className="flex items-center justify-between pt-2">
         <span />
@@ -154,7 +175,7 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
           type="submit"
           variant="primary"
           loading={createTenant.isPending}
-          disabled={!name.trim() || !slug.trim()}
+          disabled={!name.trim() || !slug.trim() || !agreed}
         >
           Create &amp; continue
         </Button>

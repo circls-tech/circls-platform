@@ -9,7 +9,9 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getAnalytics } from '../services/analytics_service.js';
 import { listAuditLog } from '../services/audit_log_service.js';
+import { CURRENT_TERMS_VERSION } from '../lib/terms.js';
 import {
+  acceptTenantTerms,
   createTenant,
   finalizeTenantLogo,
   getTenantProfile,
@@ -28,6 +30,15 @@ const createTenantSchema = z.object({
     .min(2)
     .max(80)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug must be lowercase alphanumeric with dashes'),
+  /** Canonical country — picks the regional Terms document (and currency). */
+  country: z.enum(['India', 'USA']),
+  /** Creating an org binds it to the current Terms; consent must be explicit. */
+  acceptTerms: z.literal(true),
+});
+
+const acceptTermsSchema = z.object({
+  version: z.string().min(1).max(40).optional(),
+  country: z.enum(['India', 'USA']).optional(),
 });
 
 // ── Org/brand profile (PR #107) ───────────────────────────────────────────────
@@ -96,8 +107,25 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid tenant payload', 'bad_request', { issues: parsed.error.issues });
     }
     const user = await currentUser(req);
-    const { name, slug } = parsed.data;
-    return createTenant(user.id, { name, slug });
+    const { name, slug, country } = parsed.data;
+    return createTenant(user.id, { name, slug, country });
+  });
+
+  // Public: the current Terms revision (document text ships with the clients).
+  app.get('/v1/terms/current', async () => ({ version: CURRENT_TERMS_VERSION }));
+
+  // Partner: accept the current Terms for an existing org (owner/manager only —
+  // accepting binds the organisation, so it rides the tenant.update cap).
+  app.post('/v1/tenants/:id/terms/accept', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const parsed = acceptTermsSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new BadRequest('Invalid terms payload', 'bad_request', { issues: parsed.error.issues });
+    }
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, id);
+    assertCap(ctx, 'tenant.update');
+    return acceptTenantTerms(id, user.id, parsed.data);
   });
 
   // Partner: tenants the caller belongs to.

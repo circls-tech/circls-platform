@@ -91,7 +91,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Activity Co', slug: `actco-${Date.now()}` },
+      payload: { name: 'Activity Co', slug: `actco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
     tenantId = t.json().id as string;
