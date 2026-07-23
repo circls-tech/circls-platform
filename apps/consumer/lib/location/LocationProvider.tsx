@@ -44,7 +44,7 @@ interface LocationContextValue {
   /**
    * The user's shared device position, or null when the area was picked
    * manually (or nothing is set). When present, events are restricted to
-   * EVENT_RADIUS_KM around it.
+   * NEARBY_RADIUS_KM around it.
    */
   coords: Coords | null;
   /** Cities derived from existing venues + events, for the manual picker. */

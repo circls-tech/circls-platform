@@ -506,6 +506,10 @@ export interface PublicMembershipWithScope extends Membership {
   /** Owning venue's city for venue-scoped plans; null for tenant-wide (a
    *  brand pass isn't city-bound) or when the venue has no city on file. */
   city: string | null;
+  /** Owning venue's coordinates for venue-scoped plans (for the consumer
+   *  "near you" radius); null for tenant-wide or ungeocoded venues. */
+  lat: number | null;
+  lng: number | null;
   /** Country the plan's prices are denominated in: the owning venue's country,
    *  falling back to the tenant's (mirrors the gateway's settlement rule). */
   country: string | null;
@@ -564,6 +568,8 @@ interface MembershipJoinRow {
   venueName: string | null;
   venueTags: string[] | null;
   venueCity: string | null;
+  venueLat: number | null;
+  venueLng: number | null;
   venueCountry: string | null;
   tenantName: string;
   tenantCountry: string | null;
@@ -576,6 +582,8 @@ const PUBLIC_MEMBERSHIP_COLUMNS = {
   venueName: venues.name,
   venueTags: venues.tags,
   venueCity: venues.city,
+  venueLat: venues.lat,
+  venueLng: venues.lng,
   venueCountry: venues.country,
   tenantName: tenants.name,
   tenantCountry: tenants.country,
@@ -588,6 +596,8 @@ function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
     venueId: r.m.venueId,
     scopeName: r.venueName ?? r.tenantName,
     city: r.m.venueId ? r.venueCity : null,
+    lat: r.m.venueId ? r.venueLat : null,
+    lng: r.m.venueId ? r.venueLng : null,
     country: r.venueCountry ?? r.tenantCountry,
     venueTags: r.venueTags ?? [],
     benefits: coerceBenefits(r.m.benefits),

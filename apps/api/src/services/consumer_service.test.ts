@@ -347,7 +347,7 @@ describe.skipIf(!runIntegration)('listPublicMemberships (venue scope enrichment)
     tenantId = t!.id;
     const [v] = await db
       .insert(venues)
-      .values({ tenantId, name: `VScope Venue ${tag}`, status: 'active', tags: ['Padel'], city: 'Nagpur' })
+      .values({ tenantId, name: `VScope Venue ${tag}`, status: 'active', tags: ['Padel'], city: 'Nagpur', lat: 21.1458, lng: 79.0882 })
       .returning();
     venueId = v!.id;
     await db.insert(memberships).values([
@@ -368,12 +368,17 @@ describe.skipIf(!runIntegration)('listPublicMemberships (venue scope enrichment)
     const wide = rows.find((m) => m.name === 'VWide')!;
     expect(scoped.scopeName).toBe(`VScope Venue ${tag}`);
     expect(scoped.venueTags).toEqual(['Padel']);
-    // Venue-scoped plans carry their venue's city (for the consumer city filter).
+    // Venue-scoped plans carry their venue's city + coordinates (for the
+    // consumer city filter and "near you" radius).
     expect(scoped.city).toBe('Nagpur');
+    expect(scoped.lat).toBeCloseTo(21.1458, 4);
+    expect(scoped.lng).toBeCloseTo(79.0882, 4);
     expect(wide.venueId).toBeNull();
     expect(wide.scopeName).toBe(`VScope Brand ${tag}`);
     expect(wide.venueTags).toEqual([]);
     expect(wide.city).toBeNull();
+    expect(wide.lat).toBeNull();
+    expect(wide.lng).toBeNull();
   });
 });
 

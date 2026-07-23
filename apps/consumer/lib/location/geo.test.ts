@@ -237,6 +237,31 @@ describe('venuesForArea (hard city filter)', () => {
   });
 });
 
+describe('venuesForArea (nearby radius — the Delhi case)', () => {
+  // Nagpur venue with real coordinates; a Delhi user is ~700 km away.
+  const nagpurGeo = venue({ lat: 21.1458, lng: 79.0882, address: { city: 'Nagpur', country: 'India' } });
+  const noGeo = venue({ address: { city: 'Nagpur', country: 'India' } });
+  const delhi = { lat: 28.6139, lng: 77.209 };
+  const nagpurUser = { lat: 21.13, lng: 79.05 };
+
+  it('hides geolocated venues outside the radius when only coords are shared', () => {
+    expect(venuesForArea([nagpurGeo], { city: null, country: 'India', coords: delhi })).toEqual([]);
+  });
+
+  it('keeps geolocated venues within the radius', () => {
+    expect(venuesForArea([nagpurGeo], { city: null, country: 'India', coords: nagpurUser })).toEqual([nagpurGeo]);
+  });
+
+  it('keeps ungeocoded venues via the lenient country fallback', () => {
+    expect(venuesForArea([noGeo], { city: null, country: 'India', coords: delhi })).toEqual([noGeo]);
+  });
+
+  it('lets a selected city override the radius (manual pick wins)', () => {
+    // City selection means "show me that city", even from far away.
+    expect(venuesForArea([nagpurGeo], { city: 'Nagpur', country: 'India', coords: delhi })).toEqual([nagpurGeo]);
+  });
+});
+
 describe('membershipInArea', () => {
   const scoped = { city: 'Nagpur', country: 'India' };
   const otherCity = { city: 'Mumbai', country: 'India' };
@@ -262,6 +287,26 @@ describe('membershipInArea', () => {
   it('matches everything with an empty selection', () => {
     expect(membershipInArea(usPlan, { city: null, country: null })).toBe(true);
     expect(membershipInArea(brandWide, { city: null, country: null })).toBe(true);
+  });
+
+  describe('nearby radius (the Delhi case)', () => {
+    const delhi = { lat: 28.6139, lng: 77.209 };
+    const nagpurUser = { lat: 21.13, lng: 79.05 };
+    const nagpurPlan = { city: 'Nagpur', country: 'India', lat: 21.1458, lng: 79.0882 };
+    const noGeoPlan = { city: 'Nagpur', country: 'India', lat: null, lng: null };
+
+    it('hides venue-scoped plans outside the radius when only coords are shared', () => {
+      expect(membershipInArea(nagpurPlan, { city: null, country: 'India', coords: delhi })).toBe(false);
+    });
+
+    it('keeps venue-scoped plans within the radius', () => {
+      expect(membershipInArea(nagpurPlan, { city: null, country: 'India', coords: nagpurUser })).toBe(true);
+    });
+
+    it('keeps brand-wide and ungeocoded plans via the country fallback', () => {
+      expect(membershipInArea(brandWide, { city: null, country: 'India', coords: delhi })).toBe(true);
+      expect(membershipInArea(noGeoPlan, { city: null, country: 'India', coords: delhi })).toBe(true);
+    });
   });
 });
 

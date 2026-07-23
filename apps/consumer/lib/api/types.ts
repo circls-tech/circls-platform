@@ -374,6 +374,10 @@ export interface PublicMembershipWithScope extends PublicMembership {
   /** Owning venue's city for venue-scoped plans; null for tenant-wide (a brand
    *  pass isn't city-bound) or when the venue has no city on file. */
   city: string | null;
+  /** Owning venue's coordinates for venue-scoped plans (drives the "near you"
+   *  radius); null for tenant-wide or ungeocoded venues. */
+  lat: number | null;
+  lng: number | null;
   /** Country the plan's prices are denominated in (owning venue's country,
    *  falling back to the tenant's) — drives the display currency. */
   country: string | null;

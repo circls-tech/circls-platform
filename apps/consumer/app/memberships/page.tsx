@@ -8,14 +8,18 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { membershipInArea } from '@/lib/location/geo';
 
 export default function MembershipsPage() {
-  const { city, country, openPicker } = useLocation();
+  const { city, country, coords, openPicker } = useLocation();
   const memberships = useAllMemberships(100);
   // Country is the market boundary; a selected city HARD-filters venue-scoped
-  // plans by their venue's city. Tenant-wide plans (city: null) stay visible
-  // across the country — a brand pass isn't city-bound. The label prefers the
-  // CITY (matching the events page); country covers legacy selections.
-  const areaLabel = city ?? country;
-  const rows = (memberships.data ?? []).filter((m) => membershipInArea(m, { city, country }));
+  // plans by their venue's city, and shared coords without a city restrict
+  // them to the nearby radius. Tenant-wide plans stay visible across the
+  // country — a brand pass isn't city-bound. The label prefers the CITY, says
+  // "near you" in radius mode, and falls back to the country.
+  const nearYou = Boolean(coords) && !city;
+  const areaLabel = city ?? (nearYou ? 'near you' : country);
+  const rows = (memberships.data ?? []).filter((m) =>
+    membershipInArea(m, { city, country, coords }),
+  );
 
   return (
     <div className="min-h-screen">
@@ -25,7 +29,8 @@ export default function MembershipsPage() {
         <p className="mb-8 text-sm text-text-secondary">
           {areaLabel ? (
             <>
-              Plans and passes in <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
+              Plans and passes {nearYou ? '' : 'in '}
+              <span className="font-semibold text-ink">{areaLabel}</span>.{' '}
               <button onClick={openPicker} className="font-semibold text-ink underline hover:text-coral-deep">
                 Change
               </button>

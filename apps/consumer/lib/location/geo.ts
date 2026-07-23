@@ -185,38 +185,56 @@ export function venueCountry(v: PublicVenue): string | null {
 }
 
 /**
- * Venues for the selected area — country boundary first, then a HARD city
- * filter: with a city selected, only that city's venues are returned, and an
- * empty result means the caller should show its empty state rather than fall
- * back to the whole country. Venues without a city on file are hidden while a
- * city is selected (they can't prove they're local) but stay visible for
- * country-only selections (lenient, per `inCountry`). The input array is not
- * mutated. Pass the already-search-filtered rows from the API.
+ * Venues for the selected area — country boundary first, then:
+ * - a selected CITY is a HARD filter: only that city's venues return, and an
+ *   empty result means the caller shows its empty state (no country fallback).
+ *   Venues without a city on file are hidden (they can't prove they're local).
+ * - shared COORDS without a city (the user is outside every served city, e.g.
+ *   Delhi with only Nagpur served): geolocated venues must lie within
+ *   NEARBY_RADIUS_KM, mirroring events. Ungeocoded venues fall back to the
+ *   lenient country match — we never hide untagged data.
+ * - country-only or empty selections behave as before.
+ * The input array is not mutated. Pass the already-search-filtered API rows.
  */
 export function venuesForArea(venues: PublicVenue[], sel: AreaSelection): PublicVenue[] {
   const inSel = venues.filter((v) => matchesCountry(venueCountry(v), sel.country));
-  if (!sel.city) return inSel;
-  return inSel.filter((v) => sameCity(venueCity(v), sel.city));
+  if (sel.city) return inSel.filter((v) => sameCity(venueCity(v), sel.city));
+  const coords = sel.coords ?? null;
+  if (coords) {
+    return inSel.filter(
+      (v) =>
+        typeof v.lat !== 'number' ||
+        typeof v.lng !== 'number' ||
+        haversineKm(coords, { lat: v.lat, lng: v.lng }) <= NEARBY_RADIUS_KM,
+    );
+  }
+  return inSel;
 }
 
 /**
  * Whether a membership is visible for the selected area. Country is the market
  * boundary (a plan is priced and honoured in one country). A venue-scoped plan
- * carries its venue's city and is HARD-filtered by it; tenant-wide plans (and
- * venue plans with no city on file) have `city: null` and stay visible across
- * the country — a brand pass isn't city-bound.
+ * carries its venue's city + coordinates: a selected city HARD-filters by
+ * city; shared coords without a city apply the NEARBY_RADIUS_KM radius.
+ * Tenant-wide plans (and venue plans with no location on file) stay visible
+ * across the country — a brand pass isn't city-bound.
  */
 export function membershipInArea(
-  m: { city: string | null; country: string | null },
+  m: { city: string | null; country: string | null; lat?: number | null; lng?: number | null },
   sel: AreaSelection,
 ): boolean {
   if (!matchesCountry(m.country, sel.country)) return false;
-  if (sel.city && m.city != null && !sameCity(m.city, sel.city)) return false;
+  if (sel.city) return m.city == null || sameCity(m.city, sel.city);
+  const coords = sel.coords ?? null;
+  if (coords && typeof m.lat === 'number' && typeof m.lng === 'number') {
+    return haversineKm(coords, { lat: m.lat, lng: m.lng }) <= NEARBY_RADIUS_KM;
+  }
   return true;
 }
 
-/** Events are visible within this distance of the user's shared location. */
-export const EVENT_RADIUS_KM = 50;
+/** Events, venues, and venue-scoped plans are visible within this distance of
+ *  the user's shared location. Internal — the UI never shows the number. */
+export const NEARBY_RADIUS_KM = 50;
 
 /**
  * Whether an event is visible for the given selection. When the user shared
@@ -230,7 +248,7 @@ export const EVENT_RADIUS_KM = 50;
 export function eventInRange(
   e: { locLat: number | null; locLng: number | null; locAddressJson: Record<string, unknown> | null },
   sel: AreaSelection,
-  radiusKm: number = EVENT_RADIUS_KM,
+  radiusKm: number = NEARBY_RADIUS_KM,
 ): boolean {
   const coords = sel.coords ?? null;
   if (coords && typeof e.locLat === 'number' && typeof e.locLng === 'number') {
