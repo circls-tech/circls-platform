@@ -22,14 +22,14 @@ const NAV_LINKS: { href: string; label: string }[] = [
  */
 export function MobileMenu() {
   const { user, loading, signOut } = useAuth();
-  const { city, country, openPicker } = useLocation();
+  const { city, country, placeLabel, openPicker } = useLocation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const locationLabel = city ?? country ?? 'Set location';
+  const locationLabel = city ?? placeLabel ?? country ?? 'Set location';
 
   // Portal target is only available in the browser.
   useEffect(() => setMounted(true), []);

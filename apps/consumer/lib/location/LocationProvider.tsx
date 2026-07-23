@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useUpcomingEvents, useVenues } from '@/lib/api/consumer';
+import { reverseGeocode, useUpcomingEvents, useVenues } from '@/lib/api/consumer';
 import { Button, Modal } from '@/lib/ui';
 import {
   countryForCity,
@@ -24,10 +24,11 @@ import {
   type Coords,
 } from './geo';
 
-// v3 adds `coords` (the user's shared position, for radius-based event
-// filtering). The key bump abandons v2 entries, so previously-located users go
-// through the auto-locate flow once more and pick up coords.
-const STORAGE_KEY = 'circls:loc:v3';
+// v4 adds `placeLabel` (the reverse-geocoded name of the user's actual place,
+// shown when they're outside every served city). The key bump abandons v3
+// entries, so previously-located users go through the auto-locate flow once
+// more and pick up a label instead of a bare country.
+const STORAGE_KEY = 'circls:loc:v4';
 /**
  * Within this distance the user is treated as "in" the nearest city, so we adopt
  * its name (and filter venues by it). Farther away we still adopt the country —
@@ -47,6 +48,12 @@ interface LocationContextValue {
    * NEARBY_RADIUS_KM around it.
    */
   coords: Coords | null;
+  /**
+   * Display-only name of the user's actual place (reverse-geocoded), present
+   * only when they located themselves outside every served city. The pin
+   * label prefers `city`, then this, then `country`.
+   */
+  placeLabel: string | null;
   /** Cities derived from existing venues + events, for the manual picker. */
   cities: CityOption[];
   /** Set (or clear, with null) the active city. */
@@ -96,7 +103,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           typeof parsed.coords?.lat === 'number' && typeof parsed.coords?.lng === 'number'
             ? { lat: parsed.coords.lat, lng: parsed.coords.lng }
             : null;
-        setSel({ city: parsed.city ?? null, country: parsed.country ?? null, coords });
+        setSel({
+          city: parsed.city ?? null,
+          country: parsed.country ?? null,
+          coords,
+          placeLabel: typeof parsed.placeLabel === 'string' ? parsed.placeLabel : null,
+        });
       }
     } catch {
       /* localStorage unavailable or malformed — fall through to the auto-ask flow */
@@ -122,8 +134,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     (next: string | null) => {
       persist(
         next
-          ? { city: next, country: countryForCity(cities, next), coords: null }
-          : { city: null, country: null, coords: null },
+          ? { city: next, country: countryForCity(cities, next), coords: null, placeLabel: null }
+          : { city: null, country: null, coords: null, placeLabel: null },
       );
       setPickerOpen(false);
     },
@@ -134,8 +146,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   // Ask the browser for the user's position and map it to the nearest known city.
   // We always adopt that city's COUNTRY (the nearest market — what events filter
-  // by); the city name is adopted only when the user is actually near it. With no
-  // geolocated cities at all, or on denial/error, fall back to the manual picker.
+  // by); the city name is adopted only when the user is actually near it. Farther
+  // away, a best-effort reverse geocode names the user's ACTUAL place so the pin
+  // reads "Delhi" rather than the bare country — display-only, never a filter.
+  // With no geolocated cities at all, or on denial/error, fall back to the picker.
   const locate = useCallback(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setPickerOpen(true);
@@ -143,22 +157,33 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
+      async (pos) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         const near = nearestCity(coords, cities);
+        if (near && near.distanceKm <= NEAR_CITY_KM) {
+          setLocating(false);
+          persist({ city: near.city.city, country: near.city.country, coords, placeLabel: null });
+          setPickerOpen(false);
+          return;
+        }
+        // Outside every served city — name where the user actually is. The
+        // spinner stays up for this one extra round-trip; on failure the pin
+        // falls back to the country (or "Set location") as before.
+        const place = await reverseGeocode(coords.lat, coords.lng);
+        setLocating(false);
         if (!near) {
           // No geolocated city to name the area after, but the position itself
           // still drives the events radius — keep it and let the user pick a
           // city label manually.
-          persist({ city: null, country: null, coords });
+          persist({ city: null, country: null, coords, placeLabel: place?.city ?? null });
           setPickerOpen(true);
           return;
         }
         persist({
-          city: near.distanceKm <= NEAR_CITY_KM ? near.city.city : null,
+          city: null,
           country: near.city.country,
           coords,
+          placeLabel: place?.city ?? null,
         });
         setPickerOpen(false);
       },
@@ -185,6 +210,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       city: sel.city,
       country: sel.country,
       coords: sel.coords ?? null,
+      placeLabel: sel.placeLabel ?? null,
       cities,
       setCity,
       openPicker,

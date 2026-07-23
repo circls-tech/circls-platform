@@ -132,6 +132,13 @@ export interface AreaSelection {
    * picking a city means "show me that whole city", not "near me".
    */
   coords?: Coords | null;
+  /**
+   * Display-only name of the user's actual place, reverse-geocoded from
+   * `coords` when they're outside every served city — so the pin can say
+   * "Delhi" instead of just the country. NEVER used for filtering: `city`
+   * stays null in that state and the radius/country logic is unchanged.
+   */
+  placeLabel?: string | null;
 }
 
 /**

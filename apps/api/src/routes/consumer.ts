@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
+import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import {
@@ -40,6 +41,12 @@ export const activityBatchBody = z.object({
   events: z.array(activityEventInput).min(1).max(200),
 });
 
+/** Reverse-geocode query — coords the consumer shared from the browser. */
+export const reverseGeocodeQuery = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+});
+
 /**
  * Consumer portal API (subproject E) for circls.app. Browse endpoints are
  * UNAUTHENTICATED (anonymous discovery); booking/purchase/history require a
@@ -66,6 +73,17 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
     });
     return { rows };
+  });
+
+  // Coords → coarse place (city/country), so the app can label the location
+  // pin with the user's actual city when they're outside every served city.
+  // Public (anonymous browse shares the pin) but under the strict public rate
+  // ceiling; the response never carries more precision than a city name.
+  app.get('/v1/consumer/geocode/reverse', { config: publicLimit }, async (req) => {
+    const parsed = reverseGeocodeQuery.safeParse(req.query);
+    if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
+    const place = await getGeocoder().reverse(parsed.data);
+    return { place };
   });
 
   // Cross-venue browse: all upcoming events / all memberships (landing rows + /events).

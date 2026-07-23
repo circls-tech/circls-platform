@@ -9,9 +9,11 @@ import { MobileMenu } from '@/components/MobileMenu';
 
 export function Header() {
   const { user, loading, signOut } = useAuth();
-  const { city, country, openPicker } = useLocation();
+  const { city, country, placeLabel, openPicker } = useLocation();
   const router = useRouter();
-  const locationLabel = city ?? country ?? 'Set location';
+  // Prefer the served city, then the user's actual (reverse-geocoded) city,
+  // and only then the bare country.
+  const locationLabel = city ?? placeLabel ?? country ?? 'Set location';
 
   return (
     <header className="sticky top-0 z-40 border-b-[2.5px] border-ink bg-surface/90 backdrop-blur">
@@ -27,7 +29,7 @@ export function Header() {
           <button
             onClick={openPicker}
             className="flex items-center gap-1 text-sm font-semibold text-ink-soft hover:text-ink"
-            aria-label={city || country ? `Location: ${locationLabel}. Change location` : 'Set your location'}
+            aria-label={city || placeLabel || country ? `Location: ${locationLabel}. Change location` : 'Set your location'}
           >
             <span aria-hidden>📍</span>
             <span className="max-w-[7rem] truncate">{locationLabel}</span>
