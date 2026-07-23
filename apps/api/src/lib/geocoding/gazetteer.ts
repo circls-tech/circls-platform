@@ -10,7 +10,7 @@
  * Coordinates are city-centre approximations (4 dp ≈ 11 m is meaningless here;
  * we only need the right city/country bucket). Keys are lowercased city names.
  */
-import type { GeoPoint } from './index.js';
+import type { GeoPoint, ReversePlace } from './index.js';
 
 /** Canonical country buckets. Values must match the partner Country dropdown. */
 export type CountryKey = 'India' | 'USA';
@@ -204,6 +204,45 @@ export function suggestCity(
     }
   }
   return best ? titleCase((best as { key: string }).key) : null;
+}
+
+const EARTH_RADIUS_KM = 6371;
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+/** Great-circle distance in km — local helper for the nearest-city reverse lookup. */
+function haversineKm(a: GeoPoint, b: GeoPoint): number {
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * A point is named after the nearest gazetteer city only within this distance
+ * of its centre — beyond it we can still bucket the country but claiming the
+ * city name would mislabel rural/in-between users.
+ */
+const REVERSE_CITY_KM = 120;
+
+/**
+ * Nearest-city reverse lookup — the stub geocoder's `reverse()`. The city name
+ * is included only within REVERSE_CITY_KM; the country comes from the nearest
+ * listed city regardless (coarse, but the gazetteer only spans served
+ * countries, so the bucket is right whenever the user is in one).
+ */
+export function reverseGazetteer(point: GeoPoint): ReversePlace | null {
+  let best: { city: string; country: CountryKey; dist: number } | null = null;
+  for (const ck of ['India', 'USA'] as CountryKey[]) {
+    for (const [city, pt] of Object.entries(CITIES[ck])) {
+      const dist = haversineKm(point, pt);
+      if (!best || dist < best.dist) best = { city: titleCase(city), country: ck, dist };
+    }
+  }
+  if (!best) return null;
+  const hit = best as { city: string; country: CountryKey; dist: number };
+  return { city: hit.dist <= REVERSE_CITY_KM ? hit.city : null, country: hit.country };
 }
 
 /**

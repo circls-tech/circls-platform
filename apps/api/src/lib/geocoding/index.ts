@@ -16,11 +16,19 @@
  */
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
-import { lookupGazetteer, normalizeCountry, searchGazetteer } from './gazetteer.js';
+import { lookupGazetteer, normalizeCountry, reverseGazetteer, searchGazetteer } from './gazetteer.js';
 
 export interface GeoPoint {
   lat: number;
   lng: number;
+}
+
+/** A coarse place for a point — what reverse geocoding returns. City-level
+ *  only: the consumer app labels the location pin with it, nothing more. */
+export interface ReversePlace {
+  city: string | null;
+  /** Canonical served country when recognisable, else the provider's raw name. */
+  country: string | null;
 }
 
 /** The address parts we geocode from. All optional; more parts = better hits. */
@@ -58,6 +66,8 @@ export interface Geocoder {
   geocode(query: GeocodeQuery): Promise<GeoPoint | null>;
   /** Type-ahead address suggestions for a partial query. */
   search(query: string, opts?: SearchOptions): Promise<AddressSuggestion[]>;
+  /** Coarse place (city/country) for a point, or null if it can't be resolved. */
+  reverse(point: GeoPoint): Promise<ReversePlace | null>;
 }
 
 /** True when a query carries enough signal to bother geocoding at all. */
@@ -89,6 +99,10 @@ class StubGeocoder implements Geocoder {
       lng: h.lng,
     }));
   }
+
+  async reverse(point: GeoPoint): Promise<ReversePlace | null> {
+    return reverseGazetteer(point);
+  }
 }
 
 /** A subset of a Photon GeoJSON feature — only the fields we consume. */
@@ -113,8 +127,8 @@ class PhotonGeocoder implements Geocoder {
     private readonly userAgent: string,
   ) {}
 
-  private async request(params: URLSearchParams): Promise<PhotonFeature[]> {
-    const url = `${this.baseUrl.replace(/\/$/, '')}/api?${params.toString()}`;
+  private async request(path: 'api' | 'reverse', params: URLSearchParams): Promise<PhotonFeature[]> {
+    const url = `${this.baseUrl.replace(/\/$/, '')}/${path}?${params.toString()}`;
     const res = await fetch(url, { headers: { 'User-Agent': this.userAgent, Accept: 'application/json' } });
     if (!res.ok) {
       logger.warn({ status: res.status }, 'geocode_photon_http_error');
@@ -129,7 +143,7 @@ class PhotonGeocoder implements Geocoder {
     if (!q) return null;
     const params = new URLSearchParams({ q, limit: '1', lang: 'en' });
     try {
-      const features = await this.request(params);
+      const features = await this.request('api', params);
       // Prefer a feature in the requested country when one was given.
       const wanted = normalizeCountry(query.country ?? null);
       const feat =
@@ -154,7 +168,7 @@ class PhotonGeocoder implements Geocoder {
     // Photon has no country param — over-fetch, then filter to served countries.
     const params = new URLSearchParams({ q: text, limit: String(limit * 3), lang: 'en' });
     try {
-      const features = await this.request(params);
+      const features = await this.request('api', params);
       const out: AddressSuggestion[] = [];
       for (const f of features) {
         const p = f.properties ?? {};
@@ -181,6 +195,27 @@ class PhotonGeocoder implements Geocoder {
     } catch (err) {
       logger.warn({ err }, 'geocode_photon_search_failed');
       return [];
+    }
+  }
+
+  async reverse(point: GeoPoint): Promise<ReversePlace | null> {
+    const params = new URLSearchParams({
+      lat: String(point.lat),
+      lon: String(point.lng),
+      limit: '1',
+      lang: 'en',
+    });
+    try {
+      const [feat] = await this.request('reverse', params);
+      const p = feat?.properties;
+      if (!p) return null;
+      const city = p.city ?? p.name ?? null;
+      const country = normalizeCountry(p.countrycode ?? p.country ?? null) ?? p.country ?? null;
+      if (!city && !country) return null;
+      return { city, country };
+    } catch (err) {
+      logger.warn({ err }, 'geocode_photon_reverse_failed');
+      return null;
     }
   }
 }

@@ -117,6 +117,27 @@ export function useMembership(membershipId: string) {
   });
 }
 
+/**
+ * Coarse place (city/country) for device coords — labels the navbar pin when
+ * the user is outside every served city. Best-effort: null on any failure,
+ * callers fall back to the country label. Plain function (not a hook) because
+ * it's called imperatively from the geolocation callback.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+): Promise<{ city: string | null; country: string | null } | null> {
+  try {
+    const qs = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+    const res = await apiFetch<{ place: { city: string | null; country: string | null } | null }>(
+      `/v1/consumer/geocode/reverse?${qs.toString()}`,
+    );
+    return res.place;
+  } catch {
+    return null;
+  }
+}
+
 /** Open slots for an arena in the [fromISO, toISO) window. `enabled` lets the
  * caller defer the query until a date is selected. */
 export function useArenaSlots(arenaId: string, fromISO: string, toISO: string, enabled = true) {

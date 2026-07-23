@@ -148,4 +148,19 @@ describe('getGeocoder (stub default)', () => {
     expect(typeof out[0]!.lat).toBe('number');
     expect(out[0]!.label).toContain('Mumbai');
   });
+
+  it('reverse() names the nearest gazetteer city when the point is close', async () => {
+    const place = await getGeocoder().reverse({ lat: 28.61, lng: 77.2 }); // central Delhi
+    expect(place).toEqual({ city: 'Delhi', country: 'India' });
+  });
+
+  it('reverse() title-cases multi-word cities', async () => {
+    const place = await getGeocoder().reverse({ lat: 40.71, lng: -74.0 });
+    expect(place).toEqual({ city: 'New York', country: 'USA' });
+  });
+
+  it('reverse() drops the city but keeps the country far from every listed city', async () => {
+    const place = await getGeocoder().reverse({ lat: 34.15, lng: 77.57 }); // Leh, ~380 km from Chandigarh
+    expect(place).toEqual({ city: null, country: 'India' });
+  });
 });
