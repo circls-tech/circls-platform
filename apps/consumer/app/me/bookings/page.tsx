@@ -28,7 +28,7 @@ export default function MyBookingsPage() {
     return (
       <div className="min-h-screen">
         <Header />
-        <main className="mx-auto max-w-3xl px-4 py-8">
+        <main className="mx-auto max-w-4xl px-4 py-8">
           <p className="text-sm text-text-secondary">Loading…</p>
         </main>
       </div>
@@ -38,7 +38,7 @@ export default function MyBookingsPage() {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-4xl px-4 py-8">
         <h1 className="mb-6 font-display text-4xl font-extrabold text-ink">My bookings</h1>
 
         {bookings.isLoading ? (

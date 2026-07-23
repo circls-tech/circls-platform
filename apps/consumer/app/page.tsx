@@ -64,7 +64,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden border-b-[2.5px] border-ink bg-surface text-ink">
         <div className="pointer-events-none absolute inset-0 opacity-[0.06]" style={MOTIF} />
-        <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-20">
+        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:py-20">
           <p className="mb-3 font-accent text-2xl font-bold text-coral-deep">your people are out there ✦</p>
           <h1 className="max-w-2xl font-display text-5xl font-extrabold leading-[1.02] sm:text-6xl">
             Find your circle. <span className="text-coral-deep">Book your spot.</span>
@@ -81,7 +81,7 @@ export default function LandingPage() {
 
       <main className="py-6">
         {nothingNearby && (
-          <p className="mx-auto max-w-6xl px-4 py-10 text-center text-sm text-text-secondary">
+          <p className="mx-auto max-w-7xl px-4 py-10 text-center text-sm text-text-secondary">
             Nothing in <span className="font-semibold text-ink">{nothingLabel}</span> yet — check
             back soon.{' '}
             <button

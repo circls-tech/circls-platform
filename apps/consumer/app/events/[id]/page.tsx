@@ -79,7 +79,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
+      <main className="mx-auto max-w-4xl px-4 pt-8 pb-28">
         <BackBar />
         {eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
@@ -240,7 +240,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       {ev && totalSelected > 0 && (
         <StickyActionBar
-          maxWidthClass="max-w-3xl"
+          maxWidthClass="max-w-4xl"
           summary={
             <>
               <span className="font-display font-extrabold text-ink">

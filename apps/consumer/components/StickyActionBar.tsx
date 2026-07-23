@@ -8,7 +8,7 @@ export interface StickyActionBarProps {
   action: ReactNode;
   /**
    * Tailwind max-width class used to centre the bar's content to the page's
-   * own max-width on desktop (full-bleed on mobile). Defaults to max-w-5xl.
+   * own max-width on desktop (full-bleed on mobile). Defaults to max-w-6xl.
    */
   maxWidthClass?: string;
 }
@@ -19,7 +19,7 @@ export interface StickyActionBarProps {
  * safe-area aware. Pair with bottom padding (e.g. pb-28) on the page so it never
  * covers the last content.
  */
-export function StickyActionBar({ summary, action, maxWidthClass = 'max-w-5xl' }: StickyActionBarProps) {
+export function StickyActionBar({ summary, action, maxWidthClass = 'max-w-6xl' }: StickyActionBarProps) {
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-40 border-t-[2.5px] border-ink bg-white shadow-[0_-5px_0_0_rgba(23,21,29,0.08)]"

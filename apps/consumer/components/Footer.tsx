@@ -14,7 +14,7 @@ const LINKS = [
 export function Footer() {
   return (
     <footer className="bg-ink-deep text-white/70">
-      <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2 font-display text-xl text-white">
             <BrandMark className="h-7 w-7" />

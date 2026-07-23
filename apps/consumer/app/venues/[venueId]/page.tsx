@@ -77,7 +77,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className={`mx-auto max-w-5xl px-4 pt-8${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
+      <main className={`mx-auto max-w-6xl px-4 pt-8${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
         <BackBar />
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
@@ -451,7 +451,7 @@ function CartBar({
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t-[2px] border-ink bg-white shadow-offset-sm [padding-bottom:env(safe-area-inset-bottom)]">
-      <div className="mx-auto max-w-5xl px-4">
+      <div className="mx-auto max-w-6xl px-4">
         {expanded && (
           <div className="max-h-64 overflow-y-auto border-b-[1.5px] border-dashed border-ink/20 py-3">
             <div className="mb-2 flex items-center justify-between">
