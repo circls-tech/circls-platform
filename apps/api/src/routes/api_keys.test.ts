@@ -42,7 +42,7 @@ describe.skipIf(!runIntegration)('api-key management authz (H3)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'API Key Acme', slug },
+      payload: { name: 'API Key Acme', slug, country: 'India', acceptTerms: true },
     });
     expect(created.statusCode).toBe(200);
     tenantId = (created.json() as { id: string }).id;

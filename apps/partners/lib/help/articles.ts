@@ -31,6 +31,14 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 1,
   },
   {
+    slug: 'terms-and-conditions',
+    title: 'Partner Terms & Conditions: what you accept and when',
+    category: 'Setup',
+    summary:
+      'The regional (India / US) Partner Terms every organisation accepts — at onboarding for new organisations, and via the acceptance screen for existing ones before creating new venues, events or memberships.',
+    order: 14,
+  },
+  {
     slug: 'venues',
     title: 'Managing venues and arenas',
     category: 'Venues',

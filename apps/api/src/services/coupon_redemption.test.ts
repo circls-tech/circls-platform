@@ -62,7 +62,7 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'RedeemRoutes', slug: `redeemroutes-${SUFFIX}` },
+      payload: { name: 'RedeemRoutes', slug: `redeemroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
 

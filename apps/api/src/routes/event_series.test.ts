@@ -69,7 +69,7 @@ describe.skipIf(!runIntegration)('recurring event series', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'SeriesOrg', slug: `seriesorg-${SUFFIX}` },
+      payload: { name: 'SeriesOrg', slug: `seriesorg-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
   });

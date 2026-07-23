@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 
 /**
@@ -54,6 +54,15 @@ export const tenants = pgTable('tenants', {
   /** Belt-and-suspenders next to the reserved slug. The Circls internal
    *  tenant sets this true; authz reads this, not the slug. */
   isPlatform: boolean('is_platform').notNull().default(false),
+  // ── Partner Terms & Conditions acceptance ───────────────────────────────────
+  // One acceptance covers the whole org. `termsRegion` records which regional
+  // document ('US' | 'IN') was accepted; `termsVersion` which revision. A null
+  // `termsAcceptedAt` (or a stale version) blocks creating venues/events/
+  // memberships until an owner/manager re-accepts.
+  termsVersion: text('terms_version'),
+  termsRegion: text('terms_region').$type<'US' | 'IN'>(),
+  termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
+  termsAcceptedByUserId: uuid('terms_accepted_by_user_id'),
   /** Per-tenant commission Circls keeps, in basis points (100 bps = 1%).
    *  Applied at payout time: net = gross − refunds − commission. */
   commissionBps: integer('commission_bps').notNull().default(0),

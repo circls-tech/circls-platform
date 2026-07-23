@@ -36,7 +36,7 @@ describe.skipIf(!runIntegration)('venue images', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('imgOwner'),
-      payload: { name: 'Image Co', slug: `imgco-${Date.now()}` },
+      payload: { name: 'Image Co', slug: `imgco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     const tenantId = t.json().id;
     const v = await app.inject({

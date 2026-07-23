@@ -35,7 +35,7 @@ describe.skipIf(!runIntegration)('arenas + schedule', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Arena Co', slug: `aco-${Date.now()}` },
+      payload: { name: 'Arena Co', slug: `aco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
     const v = await app.inject({
@@ -148,7 +148,7 @@ describe.skipIf(!runIntegration)('GET /v1/arenas/:arenaId', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('arOwner'),
-      payload: { name: 'Arena Read Co', slug: `arco-${Date.now()}` },
+      payload: { name: 'Arena Read Co', slug: `arco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     const tenantId: string = t.json().id;
 

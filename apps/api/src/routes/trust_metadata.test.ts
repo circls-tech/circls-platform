@@ -39,7 +39,7 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Trust Co', slug },
+      payload: { name: 'Trust Co', slug, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
     const v = await app.inject({

@@ -170,7 +170,7 @@ describe.skipIf(!runIntegration)('questions threads', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: TENANT_NAME, slug: `qt-sports-${SUFFIX}` },
+      payload: { name: TENANT_NAME, slug: `qt-sports-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
     tenantId = (t.json() as { id: string }).id;

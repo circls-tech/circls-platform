@@ -10,9 +10,11 @@ Your **organisation** is the top-level account that owns all of your venues, eve
 
 1. Enter an **Organisation name** (for example, *Greenfield Sports Club*).
 2. A **URL slug** is suggested automatically from the name. You can edit it — it may contain only lowercase letters, numbers and hyphens, and must be unique. If it's taken, you'll see *"That URL slug is already taken — try another."*
-3. Click **Create & continue**.
+3. Pick **where your organisation is based** (India or United States). This selects the [Partner Terms & Conditions](/help/terms-and-conditions) that apply to your organisation and the currency your customers pay in (₹ via Razorpay in India, $ via Stripe in the US).
+4. Read the Terms shown for your region and tick **"I am authorised to act for this organisation and accept the Partner Terms & Conditions on its behalf"** — you can't create the organisation without accepting.
+5. Click **Create & continue**.
 
-Your organisation is created immediately and you become its **owner**. This is the only step you can't skip — everything else can be added later.
+Your organisation is created immediately and you become its **owner**, and your acceptance of the Terms (version, time and accepting user) is recorded against the organisation. This is the only step you can't skip — everything else can be added later.
 
 ## Step 2 — Add your first venue
 

@@ -4,6 +4,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { benefitsSchema, coerceBenefits } from '../lib/membership_benefits.js';
 import {
@@ -121,6 +122,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'memberships.write');
+    assertTermsAccepted(ctx);
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequest('Invalid membership payload', 'bad_request', {

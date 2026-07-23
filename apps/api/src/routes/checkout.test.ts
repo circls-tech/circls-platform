@@ -40,7 +40,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'ChkRoutes', slug: `chkroutes-${SUFFIX}` },
+      payload: { name: 'ChkRoutes', slug: `chkroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
 
@@ -163,7 +163,7 @@ describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', (
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}` },
+      payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
 

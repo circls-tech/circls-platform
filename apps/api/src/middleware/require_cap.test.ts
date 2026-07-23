@@ -9,6 +9,8 @@ function ctx(overrides: Partial<TenantContext> = {}): TenantContext {
     userId: '00000000-0000-0000-0000-000000000001',
     role: 'owner',
     isPlatform: false,
+    termsVersion: null,
+    termsAcceptedAt: null,
     ...overrides,
   };
 }

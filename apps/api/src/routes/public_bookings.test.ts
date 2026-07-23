@@ -41,7 +41,7 @@ describe.skipIf(!runIntegration)('public bookings — API-key role enforcement (
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Public Co', slug: `pbco-${Date.now()}` },
+      payload: { name: 'Public Co', slug: `pbco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
 

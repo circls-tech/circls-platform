@@ -34,7 +34,7 @@ describe.skipIf(!runIntegration)('coupon CRUD routes', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'CpnRoutes', slug: `cpnroutes-${SUFFIX}` },
+      payload: { name: 'CpnRoutes', slug: `cpnroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
   });

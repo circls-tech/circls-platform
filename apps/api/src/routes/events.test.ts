@@ -34,7 +34,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'EvtRoutes', slug: `evtroutes-${SUFFIX}` },
+      payload: { name: 'EvtRoutes', slug: `evtroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
   });

@@ -35,7 +35,7 @@ describe.skipIf(!runIntegration)('event images', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('eviOwner'),
-      payload: { name: 'Event Image Co', slug: `evico-${Date.now()}` },
+      payload: { name: 'Event Image Co', slug: `evico-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     const tenantId = t.json().id;
     const v = await app.inject({

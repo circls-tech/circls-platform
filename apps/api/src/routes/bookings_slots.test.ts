@@ -39,7 +39,7 @@ describe.skipIf(!runIntegration)('slots + multi-slot bookings', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Slots Co', slug: `sco-${Date.now()}` },
+      payload: { name: 'Slots Co', slug: `sco-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantId = t.json().id;
 
@@ -270,7 +270,7 @@ describe.skipIf(!runIntegration)('cross-tenant booking guard', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: 'Cross-Tenant A', slug: `cta-${Date.now()}` },
+      payload: { name: 'Cross-Tenant A', slug: `cta-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantAId = tA.json().id;
 
@@ -319,7 +319,7 @@ describe.skipIf(!runIntegration)('cross-tenant booking guard', () => {
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('ownerB'),
-      payload: { name: 'Cross-Tenant B', slug: `ctb-${Date.now()}` },
+      payload: { name: 'Cross-Tenant B', slug: `ctb-${Date.now()}`, country: 'India', acceptTerms: true },
     });
     tenantBId = tB.json().id;
 
