@@ -112,7 +112,7 @@ function MessageBubble({
         className={[
           'mt-1 max-w-[85%] whitespace-pre-wrap rounded-[var(--radius)] px-3.5 py-2.5 text-sm sm:max-w-[70%]',
           fromOrgSide
-            ? 'bg-brand-600 text-slate-900'
+            ? 'bg-brand-600 text-white'
             : 'border border-[#e5e7eb] bg-slate-50 text-slate-800',
           hidden ? 'opacity-50' : '',
         ].join(' ')}

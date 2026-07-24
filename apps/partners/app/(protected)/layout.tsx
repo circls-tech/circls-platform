@@ -14,17 +14,16 @@ import { Button, BrandMark } from '@/lib/ui';
 
 const ORG_SELECTED_KEY = 'circls.orgSelected';
 
-// Each entry carries its own petal pastel for the active highlight.
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Dashboard', petal: '#FFB0A3' },
-  { href: '/activity', label: 'Activity', petal: '#FCE38A' },
-  { href: '/venues', label: 'Venues', petal: '#BCE3A0' },
-  { href: '/events', label: 'Events', petal: '#9CE0D4' },
-  { href: '/memberships', label: 'Memberships', petal: '#F9B4D4' },
-  { href: '/check-in', label: 'Check-in', petal: '#CDBBF7' },
-  { href: '/questions', label: 'Questions', petal: '#A9C9F2' },
-  { href: '/coupons', label: 'Coupons', petal: '#FFD2A1' },
-  { href: '/settings', label: 'Settings', petal: '#FFB0A3' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/activity', label: 'Activity' },
+  { href: '/venues', label: 'Venues' },
+  { href: '/events', label: 'Events' },
+  { href: '/memberships', label: 'Memberships' },
+  { href: '/check-in', label: 'Check-in' },
+  { href: '/questions', label: 'Questions' },
+  { href: '/coupons', label: 'Coupons' },
+  { href: '/settings', label: 'Settings' },
 ] as const;
 
 function HamburgerIcon() {
@@ -55,7 +54,7 @@ function OpenQuestionsBadge() {
   const openCount = data?.openCount ?? 0;
   if (openCount === 0) return null;
   return (
-    <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-900">
+    <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
       {openCount > 99 ? '99+' : openCount}
     </span>
   );
@@ -83,31 +82,31 @@ function Sidebar({
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r border-slate-900/10 bg-[#FAF3E8] transition-transform duration-200',
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col bg-[#0f172a] transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
         style={{ zIndex: 50 }}
       >
-        {/* Brand — the petal C mark alone, centred (same treatment as login). */}
-        <div className="flex h-24 items-center justify-center px-4 text-slate-900">
-          <BrandMark className="h-16 w-16" />
+        {/* Wordmark */}
+        <div className="flex h-14 items-center gap-2 px-6">
+          <BrandMark className="h-7 w-7" />
+          <span className="text-lg font-bold tracking-tight text-white">circls</span>
         </div>
 
         {/* Nav */}
         <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-2">
-          {NAV_LINKS.map(({ href, label, petal }) => {
+          {NAV_LINKS.map(({ href, label }) => {
             const isActive = pathname === href || pathname.startsWith(href + '/');
             return (
               <Link
                 key={href}
                 href={href}
                 onClick={onClose}
-                style={isActive ? { backgroundColor: petal } : undefined}
                 className={[
                   'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   isActive
-                    ? 'border border-slate-900 text-slate-900 shadow-[2px_2px_0_#0f172a]'
-                    : 'border border-transparent text-slate-700 hover:bg-white/60 hover:text-slate-900',
+                    ? 'bg-white/10 text-white'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white',
                 ].join(' ')}
               >
                 {label}
@@ -118,15 +117,15 @@ function Sidebar({
         </nav>
 
         {/* Help link at the bottom */}
-        <div className="mt-2 border-t border-slate-900/10 px-3 pb-4 pt-2">
+        <div className="mt-2 border-t border-white/10 px-3 pb-4 pt-2">
           <Link
             href="/help"
             onClick={onClose}
             className={[
               'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               pathname === '/help'
-                ? 'border border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0_#0f172a]'
-                : 'border border-transparent text-slate-700 hover:bg-white/60 hover:text-slate-900',
+                ? 'bg-white/10 text-white'
+                : 'text-slate-400 hover:bg-white/5 hover:text-white',
             ].join(' ')}
           >
             <svg

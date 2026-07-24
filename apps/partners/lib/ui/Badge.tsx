@@ -20,7 +20,7 @@ const toneClasses: Record<BadgeTone, string> = {
   open:    'bg-slate-100 text-slate-600',
   held:    'bg-amber-100 text-amber-800',
   blocked: 'bg-zinc-100 text-zinc-600 line-through',
-  booked:  'bg-brand-100 text-brand-800',
+  booked:  'bg-blue-100 text-blue-800',
   neutral: 'bg-slate-100 text-slate-500',
   success: 'bg-green-100 text-green-800',
   warning: 'bg-yellow-100 text-yellow-800',
