@@ -120,13 +120,14 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return m;
   });
 
-  // Public org/brand profile (PR #108). Only active orgs are returned; inactive
-  // or missing → 404. Never carries private/billing fields.
+  // Public organisers directory — active, non-platform orgs only, A→Z.
   app.get('/v1/consumer/orgs', { config: publicLimit }, async () => {
     const rows = await listPublicOrgs();
     return { rows };
   });
 
+  // Public org/brand profile (PR #108). Only active orgs are returned; inactive
+  // or missing → 404. Never carries private/billing fields.
   app.get('/v1/consumer/orgs/:slug', { config: publicLimit }, async (req) => {
     const { slug } = req.params as { slug: string };
     const org = await getPublicOrgBySlug(slug);

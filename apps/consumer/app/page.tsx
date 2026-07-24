@@ -29,7 +29,9 @@ export default function LandingPage() {
   // radius. The rail simply hides when nothing survives.
   const nearYou = Boolean(coords) && !city;
   // Organisers carry only a city/country (no coords): city HARD-filters like
-  // venues; otherwise the country is the boundary.
+  // venues; otherwise the country is the boundary. Unlike the venues rail there
+  // is no radius cut in coords-only mode — every in-country org qualifies, and
+  // the rail title stays the generic "Organisers".
   const nearbyOrgs = (orgs.data ?? [])
     .filter((o) => {
       if (country && o.country && o.country !== country) return false;

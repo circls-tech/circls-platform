@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { type Tenant, type TenantSocials, tenantMembers, tenants } from '../db/schema/index.js';
@@ -280,11 +280,11 @@ export interface PublicOrgSummary {
 
 /** All active, non-platform orgs A→Z — the public organisers directory. */
 export async function listPublicOrgs(): Promise<PublicOrgSummary[]> {
-  const rows = await db.query.tenants.findMany({ where: eq(tenants.status, 'active') });
-  return rows
-    .filter((row) => !row.isPlatform)
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((row) => ({
+  const rows = await db.query.tenants.findMany({
+    where: and(eq(tenants.status, 'active'), eq(tenants.isPlatform, false)),
+    orderBy: asc(tenants.name),
+  });
+  return rows.map((row) => ({
       id: row.id,
       slug: row.slug,
       name: row.name,

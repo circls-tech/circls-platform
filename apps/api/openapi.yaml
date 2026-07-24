@@ -53,6 +53,22 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/terms/current:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{id}/terms/accept:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/me/tenants:
     get:
       responses:
@@ -134,6 +150,11 @@ paths:
         '200':
           description: Default Response
   /v1/venues/geocode/search:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/geocode/suggest-city:
     get:
       responses:
         '200':
@@ -541,6 +562,54 @@ paths:
             type: string
           in: path
           name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/event-series/{seriesId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: seriesId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/event-series/{seriesId}/publish:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: seriesId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/event-series/{seriesId}/cancel:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: seriesId
           required: true
       responses:
         '200':
@@ -1144,6 +1213,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/geocode/reverse:
+    get:
+      responses:
+        '200':
+          description: Default Response
   /v1/consumer/events:
     get:
       responses:
@@ -1173,6 +1247,11 @@ paths:
           in: path
           name: membershipId
           required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/orgs:
+    get:
       responses:
         '200':
           description: Default Response
@@ -1417,6 +1496,346 @@ paths:
             type: string
           in: path
           name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/activity:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/activity/daily:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/activity/membership-windows:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/questions:
+    get:
+      responses:
+        '200':
+          description: Default Response
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/questions/mine:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/questions/{threadId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/questions/{threadId}/messages:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/summary:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/context:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/messages:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/messages/{messageId}/hide:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: messageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/messages/{messageId}/unhide:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: messageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/archive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/questions/{threadId}/unarchive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/context:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/messages:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/messages/{messageId}/hide:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: messageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/messages/{messageId}/unhide:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: messageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/archive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/questions/{threadId}/unarchive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
           required: true
       responses:
         '200':

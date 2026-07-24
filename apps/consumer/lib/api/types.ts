@@ -31,10 +31,6 @@ export interface Brand {
  *  array = closed; times are venue-local "HH:MM". */
 export type OpeningHours = Record<string, { open: string; close: string }[]>;
 
-/**
- * Full public org/brand profile (PR #108), from GET /v1/consumer/orgs/:slug.
- * Never includes billing/internal fields.
- */
 /** Compact row in the public organisers directory (GET /v1/consumer/orgs). */
 export interface PublicOrgSummary {
   id: string;
@@ -46,6 +42,10 @@ export interface PublicOrgSummary {
   country: string | null;
 }
 
+/**
+ * Full public org/brand profile (PR #108), from GET /v1/consumer/orgs/:slug.
+ * Never includes billing/internal fields.
+ */
 export interface PublicOrg {
   id: string;
   slug: string;

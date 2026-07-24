@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyProfile } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { Button } from '@/lib/ui';
+import { HelpPanel } from '@/components/HelpWidget';
 
 const ITEMS: { href: string; label: string; dot: string }[] = [
   { href: '/me/bookings', label: 'My bookings', dot: 'var(--color-pastel-salmon)' },
@@ -19,8 +20,9 @@ const ITEMS: { href: string; label: string; dot: string }[] = [
  * Account navigation for the consumer web app. Renders the "Profile" chip at
  * the right edge of the header; clicking it slides in a right-side sidebar
  * with the account destinations (colored petal dots, current page
- * highlighted), Help & support, and Sign out. Signed-out visitors get the
- * Sign in button instead. Closes on Escape, click-outside, and navigation.
+ * highlighted), Chat with us (the #115 help chatbot), Help & support, and
+ * Sign out. Signed-out visitors get the Sign in button instead. Closes on
+ * Escape, click-outside, and navigation.
  */
 export function ProfileSidebar() {
   const { user, loading, signOut } = useAuth();
@@ -29,6 +31,7 @@ export function ProfileSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   // Sidebar top offset — the sticky header's height, so the panel slides in
   // under the header rule (per the design mock) instead of covering the brand.
@@ -164,6 +167,24 @@ export function ProfileSidebar() {
 
             <div className="mx-4 border-t border-ink/15" />
             <div className="flex flex-col gap-1 px-3 pb-5 pt-3">
+              {/* Help chatbot entry point (#115) — opens the guided-flow panel. */}
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setOpen(false);
+                  setHelpOpen(true);
+                }}
+                className="flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-left text-base font-bold text-ink hover:bg-surface-2"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-sm font-bold text-white"
+                >
+                  💬
+                </span>
+                Chat with us
+              </button>
               <Link
                 href="/help"
                 onClick={() => setOpen(false)}
@@ -184,8 +205,24 @@ export function ProfileSidebar() {
                   await signOut();
                   router.replace('/');
                 }}
-                className="rounded-[var(--radius)] px-3 py-2.5 text-left text-base font-semibold text-ink-soft hover:bg-surface-2 hover:text-ink"
+                className="flex items-center gap-3 rounded-[var(--radius)] border-[2.5px] border-ink bg-petal-red px-3 py-2.5 text-left text-base font-bold text-white hover:bg-petal-maroon"
               >
+                <span aria-hidden className="flex h-7 w-7 items-center justify-center">
+                  {/* Standard log-out glyph: door bracket + outward arrow. */}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5"
+                  >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </span>
                 Sign out
               </button>
             </div>
@@ -193,6 +230,10 @@ export function ProfileSidebar() {
         </div>,
         document.body,
       )}
+
+      {/* Sibling of the sidebar portal so it stays mounted (and open) after
+          the sidebar itself closes. */}
+      <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
     </>
   );
 }
