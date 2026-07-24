@@ -44,7 +44,7 @@ function StepperHeader({ current }: { current: number }) {
                 className={[
                   'flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors',
                   done
-                    ? 'border-brand-600 bg-brand-600 text-white'
+                    ? 'border-brand-600 bg-brand-600 text-slate-900'
                     : active
                       ? 'border-brand-600 bg-white text-brand-600'
                       : 'border-slate-300 bg-white text-slate-400',

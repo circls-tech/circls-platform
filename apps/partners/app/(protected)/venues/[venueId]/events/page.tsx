@@ -50,7 +50,7 @@ export default function VenueEventsPage() {
         <h1 className="text-xl font-semibold text-[#0f172a]">Events</h1>
         <Link
           href={`/venues/${venueId}/events/new${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-brand-700"
         >
           + New event
         </Link>

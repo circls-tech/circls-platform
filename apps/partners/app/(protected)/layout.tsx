@@ -54,7 +54,7 @@ function OpenQuestionsBadge() {
   const openCount = data?.openCount ?? 0;
   if (openCount === 0) return null;
   return (
-    <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+    <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-900">
       {openCount > 99 ? '99+' : openCount}
     </span>
   );

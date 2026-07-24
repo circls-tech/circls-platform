@@ -51,7 +51,7 @@ export default function LoginPage() {
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
       {/* Stacked lockup — the petal C on top, the product name beneath it. */}
       <div className="flex flex-col items-center gap-3 text-center">
-        <BrandMark className="h-14 w-14" />
+        <BrandMark className="h-20 w-20" />
         <h1 className="text-2xl font-bold tracking-tight">Partner Portal</h1>
       </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -78,7 +78,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>

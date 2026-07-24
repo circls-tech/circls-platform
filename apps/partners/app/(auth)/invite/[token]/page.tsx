@@ -244,7 +244,7 @@ export default function AcceptInvitePage() {
         )}
         <Link
           href="/dashboard"
-          className="rounded bg-brand-600 px-4 py-2 text-center text-white"
+          className="rounded bg-brand-600 px-4 py-2 text-center text-slate-900"
         >
           Go to dashboard
         </Link>
@@ -283,7 +283,7 @@ export default function AcceptInvitePage() {
         <button
           onClick={handleSwitchAccount}
           disabled={busy}
-          className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {busy ? 'Switching…' : `Switch to ${meta.email}`}
         </button>
@@ -304,7 +304,7 @@ export default function AcceptInvitePage() {
         <button
           onClick={handleLoggedInAccept}
           disabled={busy}
-          className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {busy ? 'Accepting…' : 'Accept invitation'}
         </button>
@@ -347,7 +347,7 @@ export default function AcceptInvitePage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {busy ? 'Accepting…' : isLogin ? 'Log in & accept' : 'Accept invitation'}
         </button>

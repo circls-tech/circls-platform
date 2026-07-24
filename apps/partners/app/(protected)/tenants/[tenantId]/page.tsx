@@ -64,7 +64,7 @@ export default function TenantPage() {
         <button
           type="submit"
           disabled={createVenue.isPending}
-          className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {createVenue.isPending ? 'Adding…' : 'Add venue'}
         </button>

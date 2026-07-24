@@ -2,17 +2,17 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  /* Brand pink scale — built around the logo's petal pink (#f9b4d4 = 300) */
-  --color-brand-50:  #fef4f9;
-  --color-brand-100: #fde9f3;
-  --color-brand-200: #fbd6e7;
-  --color-brand-300: #f9b4d4;
-  --color-brand-400: #f18ab9;
-  --color-brand-500: #e5629c;
-  --color-brand-600: #cf3f7f;
-  --color-brand-700: #ab2d64;
-  --color-brand-800: #87234e;
-  --color-brand-900: #6d1d40;
+  /* Brand pink scale — the logo's petal pink (#f9b4d4) IS the primary (600) */
+  --color-brand-50:  #fef6fa;
+  --color-brand-100: #fdecf5;
+  --color-brand-200: #fce0ed;
+  --color-brand-300: #fbd3e5;
+  --color-brand-400: #fac4dd;
+  --color-brand-500: #f9bcd8;
+  --color-brand-600: #f9b4d4;
+  --color-brand-700: #ef97c0;
+  --color-brand-800: #d76da2;
+  --color-brand-900: #b04f81;
 
   /* Neutrals — slate */
   --color-surface:        #f8fafc;
