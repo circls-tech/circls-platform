@@ -88,11 +88,9 @@ function Sidebar({
         ].join(' ')}
         style={{ zIndex: 50 }}
       >
-        {/* Wordmark — the petal C-mark is the "c", the text completes "ircls".
-            Sized up and centred so it fills the rail instead of hugging a corner. */}
-        <div className="flex h-20 items-center justify-center gap-1.5 px-4 text-slate-900">
-          <BrandMark className="h-11 w-11" />
-          <span className="text-3xl font-bold tracking-tight">ircls</span>
+        {/* Brand — the petal C mark alone, centred (same treatment as login). */}
+        <div className="flex h-24 items-center justify-center px-4 text-slate-900">
+          <BrandMark className="h-16 w-16" />
         </div>
 
         {/* Nav */}
