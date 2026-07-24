@@ -184,7 +184,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
                 onClick={() => toggleAmenity(a.value)}
                 className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                   on
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-brand-500 bg-brand-50 text-brand-700'
                     : 'border-gray-200 bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >

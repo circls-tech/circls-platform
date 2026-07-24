@@ -126,7 +126,7 @@ export default function TeamPage() {
           <button
             type="submit"
             disabled={createInvite.isPending}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
           >
             {createInvite.isPending ? 'Sending…' : 'Send invitation'}
           </button>
@@ -160,7 +160,7 @@ export default function TeamPage() {
                 <button
                   type="button"
                   onClick={() => resendInvite.mutate(inv.id)}
-                  className="text-xs text-blue-700 hover:underline"
+                  className="text-xs text-brand-700 hover:underline"
                 >
                   Resend
                 </button>
