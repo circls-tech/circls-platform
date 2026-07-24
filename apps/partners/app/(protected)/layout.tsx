@@ -82,14 +82,13 @@ function Sidebar({
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 flex w-[220px] flex-col bg-[#0f172a] transition-transform duration-200',
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r border-slate-900/10 bg-[#FFB0A3] transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
         style={{ zIndex: 50 }}
       >
-        {/* Wordmark */}
-        {/* text-white so the mark's currentColor C-ring reads on the dark rail. */}
-        <div className="flex h-14 items-center gap-2 px-6 text-white">
+        {/* Wordmark — ink text/C-ring on the salmon rail. */}
+        <div className="flex h-14 items-center gap-2 px-6 text-slate-900">
           <BrandMark className="h-7 w-7" />
           <span className="text-lg font-bold tracking-tight">circls</span>
         </div>
@@ -106,8 +105,8 @@ function Sidebar({
                 className={[
                   'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-white/10 text-white'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white',
+                    ? 'bg-white/50 text-slate-900'
+                    : 'text-slate-700 hover:bg-white/30 hover:text-slate-900',
                 ].join(' ')}
               >
                 {label}
@@ -118,15 +117,15 @@ function Sidebar({
         </nav>
 
         {/* Help link at the bottom */}
-        <div className="mt-2 border-t border-white/10 px-3 pb-4 pt-2">
+        <div className="mt-2 border-t border-slate-900/10 px-3 pb-4 pt-2">
           <Link
             href="/help"
             onClick={onClose}
             className={[
               'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               pathname === '/help'
-                ? 'bg-white/10 text-white'
-                : 'text-slate-400 hover:bg-white/5 hover:text-white',
+                ? 'bg-white/50 text-slate-900'
+                : 'text-slate-700 hover:bg-white/30 hover:text-slate-900',
             ].join(' ')}
           >
             <svg
