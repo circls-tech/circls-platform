@@ -52,7 +52,7 @@ export function CityDidYouMean({
       <button
         type="button"
         onClick={() => onPick(suggestion)}
-        className="font-medium text-brand-600 underline-offset-2 hover:underline"
+        className="font-medium text-blue-600 underline-offset-2 hover:underline"
       >
         {suggestion}
       </button>

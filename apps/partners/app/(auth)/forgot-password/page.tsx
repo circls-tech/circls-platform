@@ -54,13 +54,13 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={busy}
-            className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
+            className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
           >
             {busy ? 'Sending…' : 'Send reset link'}
           </button>
         </form>
       )}
-      <Link href="/login" className="text-center text-sm text-brand-700 hover:underline">
+      <Link href="/login" className="text-center text-sm text-blue-700 hover:underline">
         Back to sign in
       </Link>
       {error && <p className="text-sm text-red-600">{error}</p>}

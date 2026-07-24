@@ -265,67 +265,54 @@ function HelpConversation({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Help entry point + slide-over (#115). Renders a "Help" trigger; clicking it
- * opens a right-side panel running the deterministic MCQ flow, whose terminal
- * step starts a private question thread (support → threads refactor). Signed-out
- * users get a prompt to sign in, since starting a thread requires an authed user.
+ * Help chatbot slide-over (#115), controlled by the caller — opened from the
+ * "Chat with us" entry in the profile sidebar. Runs the deterministic MCQ
+ * flow, whose terminal step starts a private question thread (support →
+ * threads refactor). Signed-out users get a prompt to sign in, since starting
+ * a thread requires an authed user.
  */
-export function HelpWidget() {
+export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Portal target is only available in the browser.
   useEffect(() => setMounted(true), []);
 
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-      >
-        Support
-      </Button>
+  if (!open || !mounted) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Help">
+      <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
+      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-[2.5px] border-ink bg-surface shadow-offset">
+        <div className="flex items-center justify-between border-b-[2.5px] border-ink px-4 py-3">
+          <h2 className="font-display text-lg font-extrabold text-ink">Help</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close help"
+            className="text-xl font-bold text-ink-soft hover:text-ink"
+          >
+            ✕
+          </button>
+        </div>
 
-      {open && mounted && createPortal(
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Help">
-          <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-[2.5px] border-ink bg-surface shadow-offset">
-            <div className="flex items-center justify-between border-b-[2.5px] border-ink px-4 py-3">
-              <h2 className="font-display text-lg font-extrabold text-ink">Help</h2>
-              <button
-                onClick={() => setOpen(false)}
-                aria-label="Close help"
-                className="text-xl font-bold text-ink-soft hover:text-ink"
-              >
-                ✕
-              </button>
-            </div>
-
-            {user ? (
-              <HelpConversation onClose={() => setOpen(false)} />
-            ) : (
-              <div className="flex flex-1 flex-col items-start gap-3 px-4 py-6">
-                <p className="text-sm text-ink">
-                  Please sign in so we can connect your enquiry to your account and
-                  bookings.
-                </p>
-                <Link href="/login" onClick={() => setOpen(false)}>
-                  <Button variant="primary" size="sm">Sign in</Button>
-                </Link>
-                <p className="text-xs text-ink-soft">
-                  Answer a few guided questions and we’ll start a private conversation
-                  with the right team — you can follow replies in My questions.
-                </p>
-              </div>
-            )}
+        {user ? (
+          <HelpConversation onClose={onClose} />
+        ) : (
+          <div className="flex flex-1 flex-col items-start gap-3 px-4 py-6">
+            <p className="text-sm text-ink">
+              Please sign in so we can connect your enquiry to your account and
+              bookings.
+            </p>
+            <Link href="/login" onClick={onClose}>
+              <Button variant="primary" size="sm">Sign in</Button>
+            </Link>
+            <p className="text-xs text-ink-soft">
+              Answer a few guided questions and we’ll start a private conversation
+              with the right team — you can follow replies in My questions.
+            </p>
           </div>
-        </div>,
-        document.body,
-      )}
-    </>
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }

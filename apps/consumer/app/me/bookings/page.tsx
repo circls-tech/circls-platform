@@ -12,13 +12,15 @@ import { Card, StatusPill } from '@/lib/ui';
 const ITEM_TYPE_LABELS: Record<string, string> = {
   slot: 'Court booking',
   event: 'Event',
-  membership: 'Membership',
 };
 
 export default function MyBookingsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const bookings = useMyBookings();
+  // Membership purchases have their own page (/me/memberships) — this feed is
+  // courts + events only.
+  const rows = (bookings.data ?? []).filter((b) => b.itemType !== 'membership');
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login?redirect=/me/bookings');
@@ -47,11 +49,11 @@ export default function MyBookingsPage() {
           <p className="text-sm font-semibold text-petal-red">
             {bookings.error instanceof Error ? bookings.error.message : 'Failed to load bookings'}
           </p>
-        ) : !bookings.data || bookings.data.length === 0 ? (
-          <EmptyState title="No bookings yet" body="When you book a court, join an event, or buy a membership, it'll show up here." />
+        ) : rows.length === 0 ? (
+          <EmptyState title="No bookings yet" body="When you book a court or join an event, it'll show up here. Memberships live under My memberships." />
         ) : (
           <div className="flex flex-col gap-3">
-            {bookings.data.map((b) => (
+            {rows.map((b) => (
               <Link
                 key={b.id}
                 href={`/me/bookings/${b.id}`}

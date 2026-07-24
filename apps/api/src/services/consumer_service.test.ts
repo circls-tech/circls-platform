@@ -9,6 +9,7 @@ import { arenas, bookings, events, memberships, slots, tenants, users, venues } 
 import {
   getMyBookingDetail,
   getPublicMembershipById,
+  listMyBookings,
   getPublicVenue,
   listPublicArenas,
   listPublicEvents,
@@ -562,5 +563,43 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     await expect(getMyBookingDetail(userB, membershipBookingId)).rejects.toMatchObject({
       code: 'booking_not_found',
     });
+  });
+
+  it('listMyBookings resolves titles for venue, plan, and standalone-event bookings', async () => {
+    // Standalone event: venue_id null, so the title must come from the events
+    // join (it used to fall through to the generic 'Booking').
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        name: 'Standalone Street Run',
+        addressJson: { line1: '1 Park Ave', city: 'Pune', country: 'India' },
+        lat: 18.52,
+        lng: 73.85,
+        tzName: 'Asia/Kolkata',
+        startsAt: new Date(Date.now() + DAY),
+        endsAt: new Date(Date.now() + DAY + 2 * HOUR),
+        pricePaise: 0,
+        capacity: 10,
+        status: 'published',
+      })
+      .returning({ id: events.id });
+    await db.insert(bookings).values({
+      tenantId,
+      itemType: 'event',
+      itemData: { eventId: ev!.id },
+      channel: 'circls',
+      paymentMethod: 'free',
+      status: 'confirmed',
+      totalPaise: 0,
+      createdByUserId: userA,
+      customerUserId: userA,
+    });
+
+    const titles = (await listMyBookings(userA)).map((r) => r.venueName);
+    expect(titles).toContain(`BkD Venue ${tag}`);
+    expect(titles).toContain('Gold Plan');
+    expect(titles).toContain('Standalone Street Run');
+    expect(titles).not.toContain('Booking');
   });
 });

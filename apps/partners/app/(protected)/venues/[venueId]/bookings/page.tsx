@@ -493,7 +493,7 @@ export default function BookingsPage() {
                   className={[
                     'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
                     dateFilter === key
-                      ? 'border-brand-600 bg-brand-600 text-slate-900'
+                      ? 'border-brand-600 bg-brand-600 text-white'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
                   ].join(' ')}
                 >
