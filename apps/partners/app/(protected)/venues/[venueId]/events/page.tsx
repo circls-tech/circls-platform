@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useVenueEvents, usePublishEvent } from '@/lib/api/events';
 import { formatMoney, useCurrency } from '@/lib/currency';
+import { visibilityLabel } from '@/components/EventVisibilityField';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
@@ -110,7 +111,14 @@ export default function VenueEventsPage() {
                       {ev.capacity ?? <span className="text-slate-400">∞</span>}
                     </td>
                     <td className="py-2.5 pr-4">
-                      <StatusPill status={ev.status} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <StatusPill status={ev.status} />
+                        {ev.visibility !== 'public' && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            {visibilityLabel(ev.visibility)}
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="py-2.5">
                       {ev.status === 'draft' && (

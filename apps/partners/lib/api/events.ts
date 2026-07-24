@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { EventBooking, QrTicketConfig, VenueEvent, VenueEventSummary } from './types';
+import type {
+  EventBooking,
+  EventVisibility,
+  QrTicketConfig,
+  VenueEvent,
+  VenueEventSummary,
+} from './types';
 
 export function useVenueEvents(venueId: string) {
   return useQuery({
@@ -74,6 +80,10 @@ export interface CreateTenantEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility;
+  /** Required when visibility is 'access_code'. */
+  accessCode?: string | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -171,6 +181,10 @@ export interface CreateEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility;
+  /** Required when visibility is 'access_code'. */
+  accessCode?: string | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -207,6 +221,10 @@ export interface UpdateEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Consumer discovery — editable on drafts AND published events. */
+  visibility?: EventVisibility;
+  /** Access code for invite-only events; null clears, omit to leave unchanged. */
+  accessCode?: string | null;
   /** Published-only: raise tiers' capacity by id (null = unlimited). The API
    *  rejects decreases (`event_capacity_decrease`). */
   tierCapacities?: { tierId: string; capacity: number | null }[];

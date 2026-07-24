@@ -10,6 +10,7 @@ import {
   usePublishTenantEvent,
 } from '@/lib/api/events';
 import type { VenueEventSummary } from '@/lib/api/types';
+import { visibilityLabel } from '@/components/EventVisibilityField';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 
 /** Format an event start in a given zone. Each event's natural zone is its own
@@ -105,6 +106,9 @@ function EventList({ tenantId }: { tenantId: string }) {
               <div className="flex items-center gap-2">
                 {seriesSize > 1 && <Badge tone="neutral" label={`Recurring ×${seriesSize}`} />}
                 <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
+                {ev.visibility !== 'public' && (
+                  <Badge tone="neutral" label={visibilityLabel(ev.visibility)} />
+                )}
                 <StatusPill status={ev.status} />
                 {(ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
                   <Button

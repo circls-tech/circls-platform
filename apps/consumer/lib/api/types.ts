@@ -133,6 +133,11 @@ export interface PublicEvent {
   /** Per-customer ticket cap for the whole event (all tiers); null = no limit. */
   maxPerUser: number | null;
   status: 'published';
+  /** Consumer discovery/entry mode. `unlisted` events never appear in lists. */
+  visibility: 'public' | 'unlisted' | 'access_code';
+  /** True for an access_code event until the right code is presented — tiers
+   *  stay [] and booking is refused server-side. */
+  locked: boolean;
   /** Owning-org summary (PR #108). */
   brand: Brand;
   /** Ticket tiers; [] on list/upcoming responses, populated on the detail view. */

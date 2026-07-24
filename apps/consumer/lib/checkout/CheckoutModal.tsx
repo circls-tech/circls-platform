@@ -110,6 +110,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           ...(name ? { name } : {}),
           ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
+          ...(item.accessCode ? { accessCode: item.accessCode } : {}),
         });
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {

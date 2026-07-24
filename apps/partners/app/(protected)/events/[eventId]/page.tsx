@@ -34,6 +34,15 @@ import {
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityFromApi,
+  visibilityLabel,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
+import { EventShareLink } from '@/components/EventShareLink';
+import {
   MaxPerUserField,
   maxPerUserFromApi,
   maxPerUserToPayload,
@@ -132,6 +141,7 @@ export default function OrgEventDetailPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [visibilityDraft, setVisibilityDraft] = useState<VisibilityDraft>(emptyVisibility());
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   // '' => standalone; otherwise a venue id.
@@ -183,6 +193,7 @@ export default function OrgEventDetailPage() {
     setEndsAtLocal(isoToTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQrConfig(ev.qrTicketConfig ?? null);
+    setVisibilityDraft(visibilityFromApi(ev));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setVenueChoice(ev.venueId ?? '');
     // Prefill the standalone address from whatever the event already carries.
@@ -250,6 +261,13 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
+    if (
+      visibilityDraft.visibility === 'access_code' &&
+      visibilityDraft.accessCode.trim().length < 4
+    ) {
+      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
 
     const originalChoice = ev?.venueId ?? '';
     const scopeChanged = venueChoice !== originalChoice;
@@ -298,6 +316,7 @@ export default function OrgEventDetailPage() {
           tiers: tiersToPayload(tiers),
           maxPerUser: maxPerUserToPayload(maxPerUser),
           qrTicketConfig: qrConfig,
+          ...visibilityToPayload(visibilityDraft),
           ...scopePatch,
         },
       });
@@ -338,6 +357,9 @@ export default function OrgEventDetailPage() {
                 <Badge tone="neutral" label={`Recurring · ${series?.events.length ?? '…'} dates`} />
               )}
               <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
+              {ev.visibility !== 'public' && (
+                <Badge tone="neutral" label={visibilityLabel(ev.visibility)} />
+              )}
               <StatusPill status={ev.status} />
             </div>
           </div>
@@ -364,6 +386,25 @@ export default function OrgEventDetailPage() {
                   <dd className="mt-1 text-sm text-slate-700">
                     {ev.description ?? <span className="text-slate-400">—</span>}
                   </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                    Visibility
+                  </dt>
+                  <dd className="mt-1 text-sm text-slate-700">
+                    {visibilityLabel(ev.visibility)}
+                    {ev.visibility === 'access_code' && ev.accessCode && (
+                      <>
+                        {' · code '}
+                        <code className="select-all rounded bg-slate-50 px-1.5 py-0.5 text-xs">
+                          {ev.accessCode}
+                        </code>
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <EventShareLink eventId={ev.id} status={ev.status} visibility={ev.visibility} />
                 </div>
                 <div>
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
@@ -466,6 +507,8 @@ export default function OrgEventDetailPage() {
               key={ev.id}
               tiers={ev.tiers}
               maxPerUser={ev.maxPerUser}
+              visibility={ev.visibility}
+              accessCode={ev.accessCode}
               saving={update.isPending}
               onSave={async (input) => {
                 await update.mutateAsync({ eventId, input });
@@ -625,6 +668,8 @@ export default function OrgEventDetailPage() {
                   onChange={setTiers}
                   currency={editCurrency}
                 />
+
+                <EventVisibilityField value={visibilityDraft} onChange={setVisibilityDraft} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

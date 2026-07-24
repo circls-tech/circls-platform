@@ -12,7 +12,13 @@ interface CheckoutItemBase {
 
 export type CheckoutItem =
   | (CheckoutItemBase & { kind: 'slot'; slotIds: string[] })
-  | (CheckoutItemBase & { kind: 'event'; eventId: string; lines: CheckoutLine[] })
+  | (CheckoutItemBase & {
+      kind: 'event';
+      eventId: string;
+      lines: CheckoutLine[];
+      /** Entry code the viewer unlocked an invite-only event with. */
+      accessCode?: string;
+    })
   | (CheckoutItemBase & { kind: 'membership'; membershipId: string; membershipTierId?: string });
 
 export interface CheckoutPrefill {

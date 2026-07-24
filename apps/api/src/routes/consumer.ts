@@ -98,9 +98,14 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return { rows };
   });
 
+  // `code` unlocks an invite-only (access_code) event; without it (or with a
+  // wrong code) the event comes back `locked: true` with no tiers.
+  const eventDetailQuery = z.object({ code: z.string().trim().min(1).max(64).optional() });
   app.get('/v1/consumer/events/:id', { config: publicLimit }, async (req) => {
     const { id } = req.params as { id: string };
-    const ev = await getPublicEventById(id);
+    const parsed = eventDetailQuery.safeParse(req.query);
+    if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
+    const ev = await getPublicEventById(id, parsed.data.code);
     if (!ev) throw new NotFound('Event not found', 'event_not_found');
     return ev;
   });
@@ -183,6 +188,8 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     name: z.string().max(200).optional(),
     contact: z.string().max(200).optional(),
     couponCode: z.string().min(1).max(64).optional(),
+    /** Required for invite-only (access_code) events. */
+    accessCode: z.string().trim().min(1).max(64).optional(),
     lines: z
       .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
       .min(1),
@@ -201,6 +208,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       },
       parsed.data.lines,
       parsed.data.couponCode,
+      parsed.data.accessCode,
     );
   });
 

@@ -25,10 +25,15 @@ function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | n
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const eventQ = useEvent(id);
+  // Invite-only events: the code the viewer entered. Set on submit — the query
+  // refetches with ?code= and the server unlocks (or keeps `locked: true`).
+  const [codeInput, setCodeInput] = useState('');
+  const [submittedCode, setSubmittedCode] = useState<string | undefined>(undefined);
+  const eventQ = useEvent(id, submittedCode);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const ev = eventQ.data;
+  const codeRejected = Boolean(ev?.locked && submittedCode && !eventQ.isFetching);
   // Owning-org profile for the "Organised by" block; degrades to the compact
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
@@ -68,7 +73,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     const prefill: { name?: string; contact?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines, currency }, prefill);
+    openCheckout(
+      {
+        kind: 'event',
+        eventId: ev.id,
+        title: ev.name,
+        lines,
+        currency,
+        ...(submittedCode ? { accessCode: submittedCode } : {}),
+      },
+      prefill,
+    );
   }
 
   const mapsHref =
@@ -153,7 +168,37 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             <Card className="flex flex-col gap-4">
               {ev.description && <p className="text-sm text-text-secondary">{ev.description}</p>}
 
-              {tiers.length === 0 ? (
+              {ev.locked ? (
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (codeInput.trim()) setSubmittedCode(codeInput.trim());
+                  }}
+                >
+                  <p className="text-sm font-semibold text-ink">This event is invite-only.</p>
+                  <p className="text-sm text-text-secondary">
+                    Enter the access code from the organiser to see tickets and book.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      placeholder="Access code"
+                      aria-label="Access code"
+                      className="w-48 rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-ink placeholder:text-text-secondary"
+                    />
+                    <Button type="submit" disabled={!codeInput.trim() || eventQ.isFetching}>
+                      {eventQ.isFetching ? 'Checking…' : 'Unlock'}
+                    </Button>
+                  </div>
+                  {codeRejected && (
+                    <p className="text-sm font-semibold text-petal-red">
+                      That code didn’t work — check it with the organiser and try again.
+                    </p>
+                  )}
+                </form>
+              ) : tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>
               ) : (
                 <div className="flex flex-col gap-2">

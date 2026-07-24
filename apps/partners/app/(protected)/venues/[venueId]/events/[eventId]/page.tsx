@@ -27,9 +27,18 @@ import {
   maxPerUserToPayload,
 } from '@/components/MaxPerUserField';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
+import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityFromApi,
+  visibilityLabel,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
+import { EventShareLink } from '@/components/EventShareLink';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
-import { Button, Card, Input, StatusPill } from '@/lib/ui';
+import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
 /** Display a UTC instant in the given zone (the event's own tz, or the
  *  portal-wide viewing tz when overridden). Display only. */
@@ -121,6 +130,7 @@ export default function EventDetailPage() {
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [visibilityDraft, setVisibilityDraft] = useState<VisibilityDraft>(emptyVisibility());
 
   function startEdit() {
     if (!ev) return;
@@ -130,6 +140,7 @@ export default function EventDetailPage() {
     setEndsAtLocal(isoToVenueTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
+    setVisibilityDraft(visibilityFromApi(ev));
     setErrorMsg(null);
     setEditing(true);
   }
@@ -163,6 +174,13 @@ export default function EventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
+    if (
+      visibilityDraft.visibility === 'access_code' &&
+      visibilityDraft.accessCode.trim().length < 4
+    ) {
+      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
     try {
       await update.mutateAsync({
         eventId,
@@ -173,6 +191,7 @@ export default function EventDetailPage() {
           endsAt: localToVenueTzIso(endsAtLocal, tz),
           tiers: tiersToPayload(tiers),
           maxPerUser: maxPerUserToPayload(maxPerUser),
+          ...visibilityToPayload(visibilityDraft),
         },
       });
       setEditing(false);
@@ -210,7 +229,12 @@ export default function EventDetailPage() {
         <>
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-semibold text-[#0f172a]">{ev.name}</h1>
-            <StatusPill status={ev.status} />
+            <div className="flex items-center gap-2">
+              {ev.visibility !== 'public' && (
+                <Badge tone="neutral" label={visibilityLabel(ev.visibility)} />
+              )}
+              <StatusPill status={ev.status} />
+            </div>
           </div>
 
           {!editing && (
@@ -231,6 +255,25 @@ export default function EventDetailPage() {
                   <dd className="mt-1 text-sm text-slate-700">
                     {fmt(ev.startsAt, displayTz)} → {fmt(ev.endsAt, displayTz)}
                   </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                    Visibility
+                  </dt>
+                  <dd className="mt-1 text-sm text-slate-700">
+                    {visibilityLabel(ev.visibility)}
+                    {ev.visibility === 'access_code' && ev.accessCode && (
+                      <>
+                        {' · code '}
+                        <code className="select-all rounded bg-slate-50 px-1.5 py-0.5 text-xs">
+                          {ev.accessCode}
+                        </code>
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <EventShareLink eventId={ev.id} status={ev.status} visibility={ev.visibility} />
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
@@ -317,6 +360,8 @@ export default function EventDetailPage() {
               key={ev.id}
               tiers={ev.tiers}
               maxPerUser={ev.maxPerUser}
+              visibility={ev.visibility}
+              accessCode={ev.accessCode}
               saving={update.isPending}
               onSave={async (input) => {
                 await update.mutateAsync({ eventId, input });
@@ -367,6 +412,8 @@ export default function EventDetailPage() {
                 </div>
 
                 <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+                <EventVisibilityField value={visibilityDraft} onChange={setVisibilityDraft} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

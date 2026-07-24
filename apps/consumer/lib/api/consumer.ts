@@ -84,11 +84,18 @@ export function useUpcomingEvents(limit = 50) {
   });
 }
 
-/** A single public event (venue or standalone) by id. */
-export function useEvent(eventId: string) {
+/**
+ * A single public event (venue or standalone) by id. `accessCode` unlocks an
+ * invite-only event — without it (or with a wrong code) the event comes back
+ * `locked: true` with no tiers.
+ */
+export function useEvent(eventId: string, accessCode?: string) {
   return useQuery({
-    queryKey: ['event', eventId],
-    queryFn: () => apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`),
+    queryKey: ['event', eventId, accessCode ?? null],
+    queryFn: () =>
+      apiFetch<PublicEventWithVenue>(
+        `/v1/consumer/events/${eventId}${accessCode ? `?code=${encodeURIComponent(accessCode)}` : ''}`,
+      ),
     enabled: Boolean(eventId),
   });
 }
@@ -185,6 +192,8 @@ export interface BookEventInput {
   name?: string;
   contact?: string;
   couponCode?: string;
+  /** Required for invite-only (access_code) events. */
+  accessCode?: string;
 }
 
 export function useBookEvent() {
