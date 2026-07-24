@@ -23,7 +23,7 @@ export function Header() {
           <span>ircls</span>
         </Link>
 
-        <nav className="flex items-center gap-3 sm:gap-6">
+        <nav className="flex items-center gap-3 lg:gap-6">
           <button
             onClick={openPicker}
             className="flex items-center gap-1.5 rounded-full border-[2.5px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"
@@ -32,14 +32,14 @@ export function Header() {
             <span aria-hidden>📍</span>
             <span className="max-w-[7rem] truncate">{locationLabel}</span>
           </button>
-          {/* Desktop nav (sm+). On mobile these collapse into the hamburger menu. */}
-          <Link href="/venues" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Venues</Link>
-          <Link href="/events" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Events</Link>
-          <Link href="/memberships" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Memberships</Link>
-          <Link href="/orgs" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Organisations</Link>
+          {/* Desktop nav (lg+). Below that these collapse into the hamburger menu. */}
+          <Link href="/venues" className="hidden text-base font-bold text-ink hover:text-coral-deep lg:inline">Venues</Link>
+          <Link href="/events" className="hidden text-base font-bold text-ink hover:text-coral-deep lg:inline">Events</Link>
+          <Link href="/memberships" className="hidden text-base font-bold text-ink hover:text-coral-deep lg:inline">Memberships</Link>
+          <Link href="/orgs" className="hidden text-base font-bold text-ink hover:text-coral-deep lg:inline">Organisations</Link>
           {/* Profile chip at the right edge → opens the account sidebar (right side). */}
           <ProfileSidebar />
-          {/* Mobile hamburger (sm:hidden internally). */}
+          {/* Hamburger (lg:hidden internally). */}
           <MobileMenu />
         </nav>
       </div>

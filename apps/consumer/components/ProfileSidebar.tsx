@@ -66,7 +66,7 @@ export function ProfileSidebar() {
 
   if (!user) {
     return (
-      <div className="hidden sm:block">
+      <div className="hidden lg:block">
         <Link href="/login">
           <Button variant="primary" size="sm">Sign in</Button>
         </Link>
@@ -83,7 +83,7 @@ export function ProfileSidebar() {
     <>
       {/* Collapsed chip — right edge of the header row. Mobile gets the
           account links via the hamburger instead. */}
-      <div className="hidden sm:block">
+      <div className="hidden lg:block">
         <button
           type="button"
           onClick={() => setOpen(true)}

@@ -23,9 +23,9 @@ const ACCOUNT_LINKS: { href: string; label: string }[] = [
 ];
 
 /**
- * Mobile-only navigation (#consumer-ux). A hamburger button visible below `sm`
+ * Compact navigation (#consumer-ux). A hamburger button visible below `lg`
  * that opens a right-side sheet with the primary nav, the location picker, and
- * the account links (the ProfileSidebar tab is desktop-only). Closes on
+ * the account links (the ProfileSidebar chip is desktop-only). Closes on
  * Escape, on click-outside, and on navigation.
  */
 export function MobileMenu() {
@@ -64,7 +64,7 @@ export function MobileMenu() {
   }
 
   return (
-    <div className="sm:hidden">
+    <div className="lg:hidden">
       <button
         ref={triggerRef}
         type="button"
