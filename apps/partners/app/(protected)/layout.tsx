@@ -88,9 +88,10 @@ function Sidebar({
         style={{ zIndex: 50 }}
       >
         {/* Wordmark */}
-        <div className="flex h-14 items-center gap-2 px-6">
+        {/* text-white so the mark's currentColor C-ring reads on the dark rail. */}
+        <div className="flex h-14 items-center gap-2 px-6 text-white">
           <BrandMark className="h-7 w-7" />
-          <span className="text-lg font-bold tracking-tight text-white">circls</span>
+          <span className="text-lg font-bold tracking-tight">circls</span>
         </div>
 
         {/* Nav */}
