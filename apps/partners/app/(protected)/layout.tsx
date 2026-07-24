@@ -24,7 +24,7 @@ const NAV_LINKS = [
   { href: '/check-in', label: 'Check-in', petal: '#CDBBF7' },
   { href: '/questions', label: 'Questions', petal: '#A9C9F2' },
   { href: '/coupons', label: 'Coupons', petal: '#FFD2A1' },
-  { href: '/settings', label: 'Settings', petal: '#FEFBC6' },
+  { href: '/settings', label: 'Settings', petal: '#FFB0A3' },
 ] as const;
 
 function HamburgerIcon() {
@@ -88,10 +88,11 @@ function Sidebar({
         ].join(' ')}
         style={{ zIndex: 50 }}
       >
-        {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
-        <div className="flex h-14 items-center gap-1 px-6 text-slate-900">
-          <BrandMark className="h-7 w-7" />
-          <span className="text-lg font-bold tracking-tight">ircls</span>
+        {/* Wordmark — the petal C-mark is the "c", the text completes "ircls".
+            Sized up and centred so it fills the rail instead of hugging a corner. */}
+        <div className="flex h-20 items-center justify-center gap-1.5 px-4 text-slate-900">
+          <BrandMark className="h-11 w-11" />
+          <span className="text-3xl font-bold tracking-tight">ircls</span>
         </div>
 
         {/* Nav */}
