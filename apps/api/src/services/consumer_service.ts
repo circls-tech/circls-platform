@@ -22,7 +22,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { venues, type Venue } from '../db/schema/venues.js';
-import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { BadRequest, Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
@@ -221,9 +221,24 @@ export async function listPublicArenaSlots(
  * first. Recurring series collapse to their next upcoming occurrence, with
  * `seriesCount` = how many upcoming dates the venue has for that series.
  */
+/** An event row minus the access code (which must never leave the API). */
+export type PublicEventRow = Omit<Event, 'accessCode'>;
+
+function stripAccessCode<T extends { accessCode: string | null }>(e: T): Omit<T, 'accessCode'> {
+  const { accessCode: _accessCode, ...rest } = e;
+  return rest;
+}
+
+/** Case-insensitive, whitespace-tolerant access-code comparison. */
+function accessCodeMatches(ev: Pick<Event, 'visibility' | 'accessCode'>, code: string | undefined): boolean {
+  if (ev.visibility !== 'access_code') return true;
+  if (!ev.accessCode || !code) return false;
+  return ev.accessCode.trim().toLowerCase() === code.trim().toLowerCase();
+}
+
 export async function listPublicEvents(
   venueId: string,
-): Promise<Array<Event & { seriesCount: number }>> {
+): Promise<Array<PublicEventRow & { seriesCount: number }>> {
   await assertVenueVisible(venueId);
   const rows = await db
     .select()
@@ -232,12 +247,14 @@ export async function listPublicEvents(
       and(
         eq(events.venueId, venueId),
         eq(events.status, 'published'),
+        // Unlisted events never appear in listings — direct link only.
+        sql`${events.visibility} <> 'unlisted'`,
         // Hide events that have already ended (§12.2).
         sql`${events.endsAt} >= now()`,
       ),
     )
     .orderBy(sql`${events.startsAt} asc`);
-  return groupBySeries(rows, (e) => e);
+  return groupBySeries(rows, (e) => e).map((e) => stripAccessCode(e));
 }
 
 /**
@@ -268,10 +285,16 @@ function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { ser
  * its location from the venue; a standalone (venue-less) event uses its own
  * columns and the tenant/org name. `loc*` fields are what the UI renders.
  */
-export interface PublicEventWithVenue extends Event {
+export interface PublicEventWithVenue extends PublicEventRow {
   venueName: string | null;
   venueTags: string[];
   isStandalone: boolean;
+  /**
+   * True for an access_code event until the caller presents the right code:
+   * tiers stay empty and booking is refused server-side. Always false for
+   * public/unlisted events.
+   */
+  locked: boolean;
   locationName: string;
   locLat: number | null;
   locLng: number | null;
@@ -335,10 +358,15 @@ interface EventJoinRow {
   brand: { id: string; slug: string; name: string; logoStorageKey: string | null };
 }
 
-function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
+function toPublicEvent(
+  r: EventJoinRow,
+  images: PublicImageRef[] = [],
+  opts: { unlocked?: boolean } = {},
+): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
   return {
-    ...r.e,
+    ...stripAccessCode(r.e),
+    locked: r.e.visibility === 'access_code' && !opts.unlocked,
     venueName: r.venueName,
     venueTags: r.venueTags ?? [],
     isStandalone,
@@ -383,6 +411,8 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
       and(
         eq(events.status, 'published'),
         eq(tenants.status, 'active'),
+        // Unlisted events never appear in listings — direct link only.
+        sql`${events.visibility} <> 'unlisted'`,
         sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
@@ -411,8 +441,16 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
   }));
 }
 
-/** A single published, upcoming event (venue or standalone) by id, or null. */
-export async function getPublicEventById(id: string): Promise<PublicEventWithVenue | null> {
+/**
+ * A single published, upcoming event (venue or standalone) by id, or null.
+ * Unlisted events resolve here too — a direct link is exactly how they're
+ * shared. For access_code events the payload comes back `locked` (no tiers)
+ * unless `accessCode` matches the event's code.
+ */
+export async function getPublicEventById(
+  id: string,
+  accessCode?: string,
+): Promise<PublicEventWithVenue | null> {
   const [row] = await db
     .select(PUBLIC_EVENT_COLUMNS)
     .from(events)
@@ -430,9 +468,12 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
     .limit(1);
   if (!row) return null;
   const joinRow = row as EventJoinRow;
+  const unlocked = accessCodeMatches(joinRow.e, accessCode);
   const imagesByEvent = await imagesForEvents([joinRow.e.id]);
   let images = imagesByEvent.get(joinRow.e.id) ?? [];
-  const tiers = (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier);
+  // A locked (access_code, no/wrong code) event keeps its tiers hidden — the
+  // consumer sees the teaser (name/when/where/photos) but can't see prices or book.
+  const tiers = unlocked ? (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier) : [];
 
   // Recurring event: expose every upcoming published date of the series for the
   // date picker, and borrow the series gallery when this occurrence has none.
@@ -471,7 +512,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   }
 
   return {
-    ...toPublicEvent(joinRow, images),
+    ...toPublicEvent(joinRow, images, { unlocked }),
     tiers,
     ...(seriesOccurrences
       ? { seriesOccurrences, seriesCount: seriesOccurrences.length }
@@ -760,9 +801,15 @@ export async function consumerBookEvent(
   customer: { userId: string; name?: string | null; contact?: string | null },
   lines: EventLine[],
   couponCode?: string,
+  accessCode?: string,
 ): Promise<BookEventResult> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!ev || ev.status !== 'published') throw new NotFound('Event not found', 'event_not_found');
+  // Invite-only events: the gate is enforced here too, not just on the read —
+  // knowing tier ids is not enough to book without the code.
+  if (!accessCodeMatches(ev, accessCode)) {
+    throw new Forbidden('This event needs an access code', 'event_access_code_invalid');
+  }
   // Venue-scoped events gate on venue visibility; org-scoped events have no
   // venue, so gate on the owning tenant being live (mirrors membership purchase).
   if (ev.venueId != null) {

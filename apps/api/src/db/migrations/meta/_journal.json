@@ -267,6 +267,13 @@
       "when": 1782170000000,
       "tag": "0038_tenant_terms_acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1782250000000,
+      "tag": "0039_event_visibility",
+      "breakpoints": true
     }
   ]
 }

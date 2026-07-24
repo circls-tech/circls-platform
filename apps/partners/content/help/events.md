@@ -11,6 +11,7 @@ Events are one-off or recurring happenings — tournaments, classes, socials, sc
    - **Description** (optional).
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
    - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
+   - **Visibility** — who can find and enter the event on circls.app: **Public**, **Private link**, or **Access code** (see **Private and invite-only events** below). Defaults to Public.
    - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover.
 4. Click **Create event**.
 
@@ -40,6 +41,20 @@ Open **Advanced settings** under the weekly options to fine-tune individual date
 Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts) or cancelled on their own pages.
 
 Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery.
+
+## Private and invite-only events
+
+Every event has a **Visibility** setting that controls who can find and enter it on circls.app once it's published:
+
+- **Public** (default) — anyone can find the event by browsing circls.app and book it.
+- **Private link** — the event is **hidden from every circls.app listing** (the events feed and your venue's page). It's only reachable through its direct link, which you'll find on the event's detail page under **Event link** — copy it and send it to your invitees. Anyone with the link can book.
+- **Access code** — the event **appears in listings with an "Invite only" badge**, but ticket tiers and booking stay locked until the customer enters your **access code** on the event page. Set the code yourself (4–64 characters, not case-sensitive) or click **Generate** for one. The code is shown on the event's detail page — share it with your invitees along with the event link. The code is checked again at booking time, so it can't be bypassed.
+
+Notes:
+
+- All three visibilities go through the normal review flow — a private-link or access-code event still needs circls approval before its link works.
+- For a recurring event, the visibility (and access code) you pick applies to **every date of the series**.
+- Unlike most fields, **visibility and the access code stay editable after the event is published** (see **Live settings** below) — so you can take a public event private, change a leaked code, or open an invite-only event up to everyone without going through review again.
 
 ## Ticket tiers
 
@@ -71,10 +86,11 @@ Ticket tiers can only be added or edited while the event is a **draft**. Once yo
 
 ### Live settings (editable after publish)
 
-Once the event is **published**, its detail page shows a **Live settings** card with the only two things that can still change:
+Once the event is **published**, its detail page shows a **Live settings** card with the only things that can still change:
 
 - **Tier capacity — increases only.** A capped tier can go higher, or be set blank for unlimited, when demand outgrows the room you planned. It can never go *down* (and an unlimited tier can't become capped), so tickets already sold are never invalidated.
 - **Max tickets per customer** — raise, lower, set, or clear it freely; it only applies to future purchases.
+- **Visibility and access code** — switch between Public, Private link and Access code, or change the code, at any time. This only gates discovery and entry — tickets people already hold are unaffected.
 
 Everything else (name, times, prices, tier names, QR rules) stays locked, since that's what the circls team reviewed and approved.
 
@@ -113,7 +129,7 @@ passes customers already hold are never changed.
 | --- | --- |
 | **draft** | Created but not yet submitted. Fully editable, including ticket tiers. Only you can see it. |
 | **pending_review** | Submitted and awaiting the circls team's approval. |
-| **published** | Approved and live — visible to consumers, who can register. |
+| **published** | Approved and live — consumers can register. How they find it depends on the event's **visibility** (public, private link, or access code). |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Not approved. Read-only. |
 
@@ -123,7 +139,7 @@ Open an event to see its detail page. What you can do depends on its status:
 
 - **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review** to send it to circls, or **Cancel** to drop it.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
-- **Published** — locked for editing except the **Live settings** card (tier capacity increases and the per-customer ticket limit — see above). You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
+- **Published** — locked for editing except the **Live settings** card (tier capacity increases, the per-customer ticket limit, and visibility/access code — see above). You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
 - **Cancelled** or **rejected** — read-only.
 
 The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way.

@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { events, type Event, type NewEvent } from '../db/schema/events.js';
+import { events, type Event, type EventVisibility, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
@@ -153,6 +153,16 @@ export interface CreateEventInput {
   tiers: TierInput[];
   /** QR entry-ticket rules (null/omitted = disabled). */
   qrTicketConfig?: QrTicketConfig | null | undefined;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility | undefined;
+  /** Required when visibility='access_code'; stored trimmed. */
+  accessCode?: string | null | undefined;
+}
+
+/** Trim the code; blank collapses to null so the required-check catches it. */
+function normalizeAccessCode(code: string | null | undefined): string | null {
+  const trimmed = code?.trim();
+  return trimmed ? trimmed : null;
 }
 
 /**
@@ -238,6 +248,12 @@ function validateCreateEventInput(input: CreateEventInput): void {
       throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
     }
   }
+  if (input.visibility === 'access_code' && !normalizeAccessCode(input.accessCode)) {
+    throw new BadRequest(
+      'Invite-only events need an access code',
+      'event_access_code_required',
+    );
+  }
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -267,6 +283,8 @@ async function insertEventTx(
       maxPerUser: input.maxPerUser ?? null,
       qrTicketConfig: input.qrTicketConfig ?? null,
       seriesId,
+      visibility: input.visibility ?? 'public',
+      accessCode: normalizeAccessCode(input.accessCode),
       status: 'draft',
     })
     .returning();
@@ -279,6 +297,7 @@ async function insertEventTx(
     isStandalone,
     name: row.name,
     pricePaise: row.pricePaise,
+    visibility: row.visibility,
     ...(seriesId ? { seriesId } : {}),
   });
 
@@ -448,6 +467,11 @@ export interface UpdateEventPatch {
   qrTicketConfig?: QrTicketConfig | null;
   /** Per-customer ticket cap for the whole event; null clears, omitted = unchanged. */
   maxPerUser?: number | null;
+  /** Consumer discovery; editable on drafts AND live events (it only gates
+   *  discovery/entry, not the approved content). */
+  visibility?: EventVisibility;
+  /** Access code for invite-only events; null clears, omitted = unchanged. */
+  accessCode?: string | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
   /**
@@ -460,7 +484,27 @@ export interface UpdateEventPatch {
 }
 
 /** The only patch fields a PUBLISHED event may change; everything else is frozen. */
-const LIVE_EDITABLE_KEYS = new Set(['maxPerUser', 'tierCapacities']);
+const LIVE_EDITABLE_KEYS = new Set(['maxPerUser', 'tierCapacities', 'visibility', 'accessCode']);
+
+/**
+ * Resolve + validate the visibility/access-code portion of a patch against the
+ * event's current values. Returns the columns to set ({} = nothing to change).
+ * Throws when the resulting state would be access_code with no code.
+ */
+function resolveVisibilityPatch(
+  existing: Event,
+  patch: Pick<UpdateEventPatch, 'visibility' | 'accessCode'>,
+): Partial<NewEvent> {
+  const set: Partial<NewEvent> = {};
+  if (patch.visibility !== undefined) set.visibility = patch.visibility;
+  if (patch.accessCode !== undefined) set.accessCode = normalizeAccessCode(patch.accessCode);
+  const visibility = set.visibility ?? existing.visibility;
+  const accessCode = 'accessCode' in set ? set.accessCode : existing.accessCode;
+  if (visibility === 'access_code' && !accessCode) {
+    throw new BadRequest('Invite-only events need an access code', 'event_access_code_required');
+  }
+  return set;
+}
 
 /**
  * Constrained update for a published event: the per-customer ticket cap (any
@@ -512,8 +556,10 @@ async function applyLiveSettings(
     }
   }
 
-  if (patch.maxPerUser !== undefined) {
-    await tx.update(events).set({ maxPerUser: patch.maxPerUser }).where(eq(events.id, existing.id));
+  const liveSet: Partial<NewEvent> = resolveVisibilityPatch(existing, patch);
+  if (patch.maxPerUser !== undefined) liveSet.maxPerUser = patch.maxPerUser;
+  if (Object.keys(liveSet).length > 0) {
+    await tx.update(events).set(liveSet).where(eq(events.id, existing.id));
   }
 
   const [updated] = await tx.select().from(events).where(eq(events.id, existing.id)).limit(1);
@@ -524,10 +570,17 @@ async function applyLiveSettings(
     'event.live_settings_updated',
     'event',
     existing.id,
-    { maxPerUser: existing.maxPerUser, capacities: capacityBefore },
+    {
+      maxPerUser: existing.maxPerUser,
+      capacities: capacityBefore,
+      visibility: existing.visibility,
+    },
     {
       ...(patch.maxPerUser !== undefined ? { maxPerUser: patch.maxPerUser } : {}),
       ...(patch.tierCapacities !== undefined ? { tierCapacities: patch.tierCapacities } : {}),
+      ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
+      // The code itself never lands in the audit log — only that it changed.
+      ...(patch.accessCode !== undefined ? { accessCodeChanged: true } : {}),
     },
   );
 
@@ -591,6 +644,7 @@ export async function updateEvent(
     if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
     if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
     if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
+    Object.assign(set, resolveVisibilityPatch(existing, patch));
 
     // Resolve the post-update scope: a venue id in the patch wins, otherwise the
     // event keeps whatever scope it already has.

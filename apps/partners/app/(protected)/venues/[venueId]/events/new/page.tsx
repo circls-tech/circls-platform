@@ -8,6 +8,12 @@ import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
+import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
   RecurrenceEditor,
@@ -62,6 +68,7 @@ export default function NewEventPage() {
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<VisibilityDraft>(emptyVisibility());
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [err, setErr] = useState<string | null>(null);
@@ -84,6 +91,10 @@ export default function NewEventPage() {
     }
     if (tiers.some((t) => !t.name.trim())) {
       setErr('Give every ticket tier a name.');
+      return;
+    }
+    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < 4) {
+      setErr('Enter an access code of at least 4 characters (or generate one).');
       return;
     }
 
@@ -124,6 +135,7 @@ export default function NewEventPage() {
             }),
         tiers: tiersToPayload(tiers),
         maxPerUser: maxPerUserToPayload(maxPerUser),
+        ...visibilityToPayload(visibility),
       });
       // For a series, photos land on the first date — the other dates (and the
       // consumer pages) borrow that gallery.
@@ -214,6 +226,8 @@ export default function NewEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <EventVisibilityField value={visibility} onChange={setVisibility} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

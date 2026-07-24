@@ -1,26 +1,40 @@
 'use client';
 
 import { useState } from 'react';
-import type { EventTier } from '@/lib/api/types';
+import type { EventTier, EventVisibility } from '@/lib/api/types';
 import type { UpdateEventInput } from '@/lib/api/events';
 import { Button, Card, Input } from '@/lib/ui';
 import { MaxPerUserField, maxPerUserFromApi, maxPerUserToPayload } from './MaxPerUserField';
+import {
+  EventVisibilityField,
+  visibilityFromApi,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from './EventVisibilityField';
 
 /**
  * The settings a PUBLISHED event may still change: tier capacity (increase
  * only — higher, or blank for unlimited; the API rejects decreases so tickets
- * already sold are never invalidated) and the per-customer ticket limit (any
- * change; it only gates future purchases). Sends only the fields that changed.
+ * already sold are never invalidated), the per-customer ticket limit (any
+ * change; it only gates future purchases), and visibility/access code (they
+ * gate discovery and entry, not the approved content). Sends only the fields
+ * that changed.
  */
 export function LiveEventSettings({
   tiers,
   maxPerUser,
+  visibility,
+  accessCode,
   onSave,
   saving,
 }: {
   tiers: EventTier[];
   maxPerUser: number | null;
-  onSave: (input: Pick<UpdateEventInput, 'maxPerUser' | 'tierCapacities'>) => Promise<void>;
+  visibility: EventVisibility;
+  accessCode: string | null;
+  onSave: (
+    input: Pick<UpdateEventInput, 'maxPerUser' | 'tierCapacities' | 'visibility' | 'accessCode'>,
+  ) => Promise<void>;
   saving: boolean;
 }) {
   // Capacity drafts keyed by tier id ('' = unlimited); seeded from the live values.
@@ -28,6 +42,9 @@ export function LiveEventSettings({
     Object.fromEntries(tiers.map((t) => [t.id, t.capacity == null ? '' : String(t.capacity)])),
   );
   const [limit, setLimit] = useState<string | null>(() => maxPerUserFromApi(maxPerUser));
+  const [visDraft, setVisDraft] = useState<VisibilityDraft>(() =>
+    visibilityFromApi({ visibility, accessCode }),
+  );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -40,15 +57,23 @@ export function LiveEventSettings({
     .filter((t) => draftCapacity(t.id) !== t.capacity)
     .map((t) => ({ tierId: t.id, capacity: draftCapacity(t.id) }));
   const limitChanged = maxPerUserToPayload(limit) !== maxPerUser;
-  const dirty = capacityChanges.length > 0 || limitChanged;
+  const visPayload = visibilityToPayload(visDraft);
+  const visChanged =
+    visPayload.visibility !== visibility || visPayload.accessCode !== accessCode;
+  const dirty = capacityChanges.length > 0 || limitChanged || visChanged;
 
   async function save() {
     setError(null);
     setSaved(false);
+    if (visDraft.visibility === 'access_code' && visDraft.accessCode.trim().length < 4) {
+      setError('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
     try {
       await onSave({
         ...(limitChanged ? { maxPerUser: maxPerUserToPayload(limit) } : {}),
         ...(capacityChanges.length > 0 ? { tierCapacities: capacityChanges } : {}),
+        ...(visChanged ? visPayload : {}),
       });
       setSaved(true);
     } catch (e) {
@@ -88,6 +113,8 @@ export function LiveEventSettings({
         ))}
 
         <MaxPerUserField value={limit} onChange={setLimit} />
+
+        <EventVisibilityField value={visDraft} onChange={setVisDraft} />
 
         {error && (
           <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">

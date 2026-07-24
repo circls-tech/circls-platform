@@ -29,11 +29,18 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
           <div className="font-display text-lg font-extrabold text-ink">{day}</div>
           <div className="text-[9px] font-bold uppercase tracking-widest text-coral-deep">{month}</div>
         </div>
-        {(event.seriesCount ?? 1) > 1 && (
-          <div className="absolute right-2.5 top-2.5 z-10 rounded-lg border-[2px] border-ink bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink shadow-offset-sm">
-            {event.seriesCount} dates
-          </div>
-        )}
+        <div className="absolute right-2.5 top-2.5 z-10 flex flex-col items-end gap-1">
+          {(event.seriesCount ?? 1) > 1 && (
+            <div className="rounded-lg border-[2px] border-ink bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink shadow-offset-sm">
+              {event.seriesCount} dates
+            </div>
+          )}
+          {event.visibility === 'access_code' && (
+            <div className="rounded-lg border-[2px] border-ink bg-ink px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-offset-sm">
+              Invite only
+            </div>
+          )}
+        </div>
       </div>
       <div className="p-4">
         <h3 className="font-display text-[18px] font-extrabold text-ink">{event.name}</h3>

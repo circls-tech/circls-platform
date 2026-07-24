@@ -26,6 +26,12 @@ import {
   type RecurrenceValue,
 } from '@/components/RecurrenceEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { Button, Card, Input } from '@/lib/ui';
 
@@ -66,6 +72,7 @@ export default function NewTenantEventPage() {
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [visibility, setVisibility] = useState<VisibilityDraft>(emptyVisibility());
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
@@ -133,6 +140,10 @@ export default function NewTenantEventPage() {
       setErr('Give every ticket tier a name.');
       return;
     }
+    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < 4) {
+      setErr('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
 
     const isWeekly = recurrence.mode === 'weekly';
     const occurrences = isWeekly
@@ -167,6 +178,7 @@ export default function NewTenantEventPage() {
       tiers: tiersToPayload(tiers),
       maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
+      ...visibilityToPayload(visibility),
     };
 
     let input: CreateTenantEventInput;
@@ -333,6 +345,8 @@ export default function NewTenantEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <EventVisibilityField value={visibility} onChange={setVisibility} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
