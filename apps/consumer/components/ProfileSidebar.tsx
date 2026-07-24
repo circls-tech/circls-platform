@@ -9,10 +9,10 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { Button } from '@/lib/ui';
 
 const ITEMS: { href: string; label: string; dot: string }[] = [
-  { href: '/me/bookings', label: 'My bookings', dot: 'var(--color-petal-red)' },
-  { href: '/me/memberships', label: 'My memberships', dot: 'var(--color-petal-yellow)' },
-  { href: '/me/questions', label: 'My questions', dot: 'var(--color-petal-green)' },
-  { href: '/me/profile', label: 'Settings', dot: 'var(--color-lav)' },
+  { href: '/me/bookings', label: 'My bookings', dot: 'var(--color-pastel-salmon)' },
+  { href: '/me/memberships', label: 'My memberships', dot: 'var(--color-pastel-butter)' },
+  { href: '/me/questions', label: 'My questions', dot: 'var(--color-pastel-lime)' },
+  { href: '/me/profile', label: 'Settings', dot: 'var(--color-pastel-lilac)' },
 ];
 
 /**
