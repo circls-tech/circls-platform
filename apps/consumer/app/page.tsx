@@ -2,10 +2,11 @@
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { HScroll } from '@/components/HScroll';
+import { OrgCard } from '@/components/cards/OrgCard';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
-import { useVenues, useUpcomingEvents, useAllMemberships } from '@/lib/api/consumer';
+import { useVenues, useUpcomingEvents, useAllMemberships, usePublicOrgs } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { eventInRange, membershipInArea, venuesForArea } from '@/lib/location/geo';
 import { Button } from '@/lib/ui';
@@ -18,6 +19,7 @@ const MOTIF: React.CSSProperties = {
 export default function LandingPage() {
   const { city, country, coords, openPicker } = useLocation();
   // Fetch a wider set so location filtering still has cards to show, then cap to 10.
+  const orgs = usePublicOrgs();
   const venues = useVenues('', 100);
   const events = useUpcomingEvents(100);
   const memberships = useAllMemberships(100);
@@ -26,6 +28,16 @@ export default function LandingPage() {
   // shared coords without a city restrict geolocated venues to the nearby
   // radius. The rail simply hides when nothing survives.
   const nearYou = Boolean(coords) && !city;
+  // Organisers carry only a city/country (no coords): city HARD-filters like
+  // venues; otherwise the country is the boundary.
+  const nearbyOrgs = (orgs.data ?? [])
+    .filter((o) => {
+      if (country && o.country && o.country !== country) return false;
+      if (city) return (o.city ?? '').toLowerCase() === city.toLowerCase();
+      return true;
+    })
+    .slice(0, 10);
+  const orgsTitle = city ? `Organisers in ${city}` : country ? `Organisers in ${country}` : 'Organisers';
   const nearbyVenues = venuesForArea(venues.data ?? [], { city, country, coords }).slice(0, 10);
   const venuesTitle = city
     ? `Venues in ${city}`
@@ -47,11 +59,12 @@ export default function LandingPage() {
   // With a location set and every rail empty, the page would be just the hero —
   // say why instead of rendering silence. Suppressed while queries load so the
   // message never flashes before the rails appear.
-  const loading = venues.isLoading || events.isLoading || memberships.isLoading;
+  const loading = orgs.isLoading || venues.isLoading || events.isLoading || memberships.isLoading;
   const hasArea = Boolean(city || country || coords);
   const nothingNearby =
     !loading &&
     hasArea &&
+    nearbyOrgs.length === 0 &&
     nearbyVenues.length === 0 &&
     nearbyEvents.length === 0 &&
     nearbyMemberships.length === 0;
@@ -92,6 +105,12 @@ export default function LandingPage() {
             </button>
           </p>
         )}
+        {nearbyOrgs.length > 0 && (
+          <HScroll title={orgsTitle} viewAllHref="/orgs">
+            {nearbyOrgs.map((o) => <OrgCard key={o.id} org={o} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
+        )}
+
         {nearbyVenues.length > 0 && (
           <HScroll title={venuesTitle} viewAllHref="/venues">
             {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
