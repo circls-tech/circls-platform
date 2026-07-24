@@ -82,15 +82,15 @@ function Sidebar({
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r border-slate-900/10 bg-[#FFB0A3] transition-transform duration-200',
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r border-slate-900/10 bg-[#FAF3E8] transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
         style={{ zIndex: 50 }}
       >
-        {/* Wordmark — ink text/C-ring on the salmon rail. */}
-        <div className="flex h-14 items-center gap-2 px-6 text-slate-900">
+        {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
+        <div className="flex h-14 items-center gap-1 px-6 text-slate-900">
           <BrandMark className="h-7 w-7" />
-          <span className="text-lg font-bold tracking-tight">circls</span>
+          <span className="text-lg font-bold tracking-tight">ircls</span>
         </div>
 
         {/* Nav */}
@@ -105,8 +105,8 @@ function Sidebar({
                 className={[
                   'flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-white/50 text-slate-900'
-                    : 'text-slate-700 hover:bg-white/30 hover:text-slate-900',
+                    ? 'border border-slate-900/10 bg-white text-slate-900'
+                    : 'border border-transparent text-slate-700 hover:bg-white/60 hover:text-slate-900',
                 ].join(' ')}
               >
                 {label}
@@ -124,8 +124,8 @@ function Sidebar({
             className={[
               'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               pathname === '/help'
-                ? 'bg-white/50 text-slate-900'
-                : 'text-slate-700 hover:bg-white/30 hover:text-slate-900',
+                ? 'border border-slate-900/10 bg-white text-slate-900'
+                : 'border border-transparent text-slate-700 hover:bg-white/60 hover:text-slate-900',
             ].join(' ')}
           >
             <svg
