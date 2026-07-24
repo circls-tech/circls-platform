@@ -148,13 +148,13 @@ export function useExecutePayout() {
  * `status` defaults to pending_review server-side. No cursor pagination —
  * the endpoint returns up to 200 rows, so a plain useQuery is enough.
  */
-export function useAdminListings(type: AdminListingType, status?: string) {
+export function useAdminListings(type: AdminListingType | null, status?: string) {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['admin', 'listings', type, status ?? ''],
-    enabled: Boolean(user),
+    enabled: Boolean(user && type),
     queryFn: () =>
-      apiFetch<AdminListingListResponse>(`/v1/admin/listings${qs({ type, status })}`),
+      apiFetch<AdminListingListResponse>(`/v1/admin/listings${qs({ type: type!, status })}`),
   });
 }
 
@@ -403,10 +403,23 @@ export function useCreateAdminCoupon() {
   });
 }
 
+/** Mirrors the API's PATCH body — everything editable after creation. */
+export interface AdminUpdateCouponPatch {
+  description?: string | null;
+  minOrderPaise?: number | null;
+  maxDiscountPaise?: number | null;
+  visibility?: 'public' | 'private';
+  validFrom?: string | null;
+  validUntil?: string | null;
+  maxRedemptions?: number | null;
+  perUserLimit?: number | null;
+  status?: 'active' | 'paused' | 'expired';
+}
+
 export function useUpdateAdminCoupon() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: { status?: 'active' | 'paused' | 'expired'; visibility?: 'public' | 'private'; validUntil?: string | null } }) =>
+    mutationFn: (args: { id: string; patch: AdminUpdateCouponPatch }) =>
       apiFetch<Coupon>(`/v1/admin/coupons/${args.id}`, { method: 'PATCH', body: JSON.stringify(args.patch) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
   });

@@ -18,4 +18,7 @@ export type CheckoutItem =
 export interface CheckoutPrefill {
   name?: string;
   contact?: string;
+  /** A coupon code to arrive with already applied (e.g. tapped on the event
+   *  page's offers strip). Invalid codes surface the usual coupon error. */
+  couponCode?: string;
 }
