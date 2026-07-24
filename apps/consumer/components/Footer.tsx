@@ -14,7 +14,8 @@ const LINKS = [
 export function Footer() {
   return (
     <footer className="border-t-[2.5px] border-ink bg-pastel-peach text-ink">
-      <div className="mx-auto max-w-6xl px-4 py-8">
+      {/* Full-bleed like the header — content hugs the page edges. */}
+      <div className="px-3 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
           <Link href="/" className="flex items-center gap-1 font-display text-xl font-extrabold text-ink">
