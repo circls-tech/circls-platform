@@ -2,17 +2,17 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  /* Brand blue scale */
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  /* Brand pink scale — built around the logo's petal pink (#f9b4d4 = 300) */
+  --color-brand-50:  #fef4f9;
+  --color-brand-100: #fde9f3;
+  --color-brand-200: #fbd6e7;
+  --color-brand-300: #f9b4d4;
+  --color-brand-400: #f18ab9;
+  --color-brand-500: #e5629c;
+  --color-brand-600: #cf3f7f;
+  --color-brand-700: #ab2d64;
+  --color-brand-800: #87234e;
+  --color-brand-900: #6d1d40;
 
   /* Neutrals — slate */
   --color-surface:        #f8fafc;
@@ -29,8 +29,8 @@
   --color-tone-held-text:  #92400e;
   --color-tone-blocked-bg: #f4f4f5;
   --color-tone-blocked-text: #52525b;
-  --color-tone-booked-bg:  #dbeafe;
-  --color-tone-booked-text: #1e40af;
+  --color-tone-booked-bg:  #fde9f3;
+  --color-tone-booked-text: #87234e;
   --color-tone-success-bg: #dcfce7;
   --color-tone-success-text: #166534;
   --color-tone-warning-bg: #fef9c3;

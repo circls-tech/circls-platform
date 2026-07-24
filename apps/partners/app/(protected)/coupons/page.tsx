@@ -69,7 +69,7 @@ export default function CouponsPage() {
               {coupons.map((c) => (
                 <tr key={c.id}>
                   <td className="py-2.5 pr-4 font-medium">
-                    <Link href={`/coupons/${c.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">{c.code}</Link>
+                    <Link href={`/coupons/${c.id}`} className="text-brand-600 hover:text-brand-800 hover:underline">{c.code}</Link>
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">{scopeLabel(c)}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{discountLabel(c, currencyFor(couponVenueId(c)))}</td>

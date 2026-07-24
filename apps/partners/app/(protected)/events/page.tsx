@@ -93,7 +93,7 @@ function EventList({ tenantId }: { tenantId: string }) {
               <div>
                 <Link
                   href={`/events/${ev.id}`}
-                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                  className="font-medium text-brand-600 hover:text-brand-800 hover:underline"
                 >
                   {ev.name}
                 </Link>

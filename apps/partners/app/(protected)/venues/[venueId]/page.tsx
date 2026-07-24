@@ -76,7 +76,7 @@ export default function VenuePage() {
           <li key={a.id}>
             <Link
               href={`/arenas/${a.id}?tenantId=${tenantId}`}
-              className="block rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
+              className="block rounded border border-gray-200 bg-white p-3 hover:border-brand-400"
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium">{a.name}</span>
@@ -130,7 +130,7 @@ export default function VenuePage() {
         <button
           type="submit"
           disabled={createArena.isPending}
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-sm text-white disabled:opacity-50"
         >
           {createArena.isPending ? 'Adding…' : 'Add arena'}
         </button>

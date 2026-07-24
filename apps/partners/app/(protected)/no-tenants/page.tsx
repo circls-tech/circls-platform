@@ -13,7 +13,7 @@ export default function NoTenantsPage() {
       </p>
       <Link
         href="/onboarding"
-        className="mx-auto rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+        className="mx-auto rounded bg-brand-600 px-4 py-2 text-sm text-white hover:bg-brand-700"
       >
         Create your organisation
       </Link>
