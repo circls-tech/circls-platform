@@ -2,28 +2,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/firebase/auth_context';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { Button } from '@/lib/ui';
 
 const NAV_LINKS: { href: string; label: string }[] = [
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
-  { href: '/help', label: 'Help' },
+  { href: '/help', label: 'Help & support' },
 ];
 
 /**
  * Mobile-only navigation (#consumer-ux). A hamburger button visible below `sm`
- * that opens a right-side sheet with the primary nav, the location picker, and
- * the auth actions — which on mobile are moved out of the header bar so it stays
- * single-line. Closes on Escape, on click-outside, and on navigation.
+ * that opens a right-side sheet with the primary nav and the location picker.
+ * Account actions live in the ProfileMenu dropdown, which stays visible on
+ * mobile. Closes on Escape, on click-outside, and on navigation.
  */
 export function MobileMenu() {
-  const { user, loading, signOut } = useAuth();
   const { city, country, placeLabel, openPicker } = useLocation();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -113,38 +108,6 @@ export function MobileMenu() {
                   {l.label}
                 </Link>
               ))}
-
-              <div className="mt-2 border-t-[2.5px] border-dashed border-ink/20 pt-3">
-                {loading ? null : user ? (
-                  <div className="flex flex-col gap-2">
-                    <Link href="/me/bookings" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My bookings</Button>
-                    </Link>
-                    <Link href="/me/questions" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My questions</Button>
-                    </Link>
-                    <Link href="/me/profile" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My profile</Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="md"
-                      className="w-full"
-                      onClick={async () => {
-                        setOpen(false);
-                        await signOut();
-                        router.replace('/');
-                      }}
-                    >
-                      Sign out
-                    </Button>
-                  </div>
-                ) : (
-                  <Link href="/login" onClick={() => setOpen(false)}>
-                    <Button variant="primary" size="md" className="w-full">Sign in</Button>
-                  </Link>
-                )}
-              </div>
             </div>
           </div>
         </div>,
