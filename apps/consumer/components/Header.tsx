@@ -46,10 +46,11 @@ export function Header() {
             <MobileMenu />
           </nav>
         </div>
-      </header>
 
-      {/* Profile tab under the header rule → opens the account sidebar. */}
-      <ProfileSidebar />
+        {/* Profile tab floating under the header rule → opens the account
+            sidebar. Anchored to the sticky header so it stays put on scroll. */}
+        <ProfileSidebar />
+      </header>
     </>
   );
 }

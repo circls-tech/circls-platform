@@ -2,7 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/firebase/auth_context';
 import { useLocation } from '@/lib/location/LocationProvider';
+import { Button } from '@/lib/ui';
 
 const NAV_LINKS: { href: string; label: string }[] = [
   { href: '/venues', label: 'Venues' },
@@ -11,14 +14,23 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: '/help', label: 'Help & support' },
 ];
 
+const ACCOUNT_LINKS: { href: string; label: string }[] = [
+  { href: '/me/bookings', label: 'My bookings' },
+  { href: '/me/memberships', label: 'My memberships' },
+  { href: '/me/questions', label: 'My questions' },
+  { href: '/me/profile', label: 'Settings' },
+];
+
 /**
  * Mobile-only navigation (#consumer-ux). A hamburger button visible below `sm`
- * that opens a right-side sheet with the primary nav and the location picker.
- * Account actions live in the ProfileMenu dropdown, which stays visible on
- * mobile. Closes on Escape, on click-outside, and on navigation.
+ * that opens a right-side sheet with the primary nav, the location picker, and
+ * the account links (the ProfileSidebar tab is desktop-only). Closes on
+ * Escape, on click-outside, and on navigation.
  */
 export function MobileMenu() {
+  const { user, loading, signOut } = useAuth();
   const { city, country, placeLabel, openPicker } = useLocation();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -108,6 +120,38 @@ export function MobileMenu() {
                   {l.label}
                 </Link>
               ))}
+
+              <div className="mt-2 border-t-[2.5px] border-dashed border-ink/20 pt-3">
+                {loading ? null : user ? (
+                  <div className="flex flex-col gap-1">
+                    {ACCOUNT_LINKS.map((l) => (
+                      <Link
+                        key={l.href}
+                        href={l.href}
+                        onClick={() => setOpen(false)}
+                        className="rounded-[var(--radius)] px-2 py-2 text-base font-semibold text-ink hover:bg-surface-2"
+                      >
+                        {l.label}
+                      </Link>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setOpen(false);
+                        await signOut();
+                        router.replace('/');
+                      }}
+                      className="rounded-[var(--radius)] px-2 py-2 text-left text-base font-semibold text-ink-soft hover:bg-surface-2 hover:text-ink"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <Link href="/login" onClick={() => setOpen(false)}>
+                    <Button variant="primary" size="md" className="w-full">Sign in</Button>
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         </div>,

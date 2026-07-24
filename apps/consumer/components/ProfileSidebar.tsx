@@ -66,7 +66,7 @@ export function ProfileSidebar() {
 
   if (!user) {
     return (
-      <div className="px-3 pt-3">
+      <div className="absolute left-3 top-full mt-2.5 hidden sm:block">
         <Link href="/login">
           <Button variant="primary" size="sm">Sign in</Button>
         </Link>
@@ -81,8 +81,10 @@ export function ProfileSidebar() {
 
   return (
     <>
-      {/* Collapsed tab, sitting under the header rule. */}
-      <div className="px-3 pt-3">
+      {/* Collapsed tab — floats just under the header rule so the page
+          background (e.g. the home hero's dot motif) runs uninterrupted
+          behind it. Mobile gets account links via the hamburger instead. */}
+      <div className="absolute left-3 top-full mt-2.5 hidden sm:block">
         <button
           type="button"
           onClick={() => setOpen(true)}
