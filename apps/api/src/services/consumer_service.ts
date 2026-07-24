@@ -39,11 +39,11 @@ import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
 import { coerceBenefits } from '../lib/membership_benefits.js';
 import { getStorage } from '../lib/storage.js';
-import { type BrandSummary, getPublicOrgBySlug, type PublicOrg, toBrandSummary } from './tenant_service.js';
+import { type BrandSummary, getPublicOrgBySlug, listPublicOrgs, type PublicOrg, type PublicOrgSummary, toBrandSummary } from './tenant_service.js';
 import type { MembershipBenefits } from '../db/schema/memberships.js';
 
-export { getPublicOrgBySlug };
-export type { PublicOrg, BrandSummary };
+export { getPublicOrgBySlug, listPublicOrgs };
+export type { PublicOrg, PublicOrgSummary, BrandSummary };
 
 /**
  * Compact brand columns selected alongside public listings so each card can show
@@ -827,7 +827,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     select
       b.id,
       b.venue_id,
-      coalesce(v.name, mm.name, 'Booking') as title,
+      coalesce(v.name, mm.name, ev.name, 'Booking') as title,
       b.item_type,
       b.status,
       b.total_paise,
@@ -836,6 +836,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     from bookings b
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
+    left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     where b.created_by_user_id = ${userId} or b.customer_user_id = ${userId}
     order by b.created_at desc
     limit 100

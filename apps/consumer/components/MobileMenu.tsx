@@ -11,14 +11,22 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
-  { href: '/help', label: 'Help' },
+  { href: '/orgs', label: 'Organisations' },
+  { href: '/help', label: 'Help & support' },
+];
+
+const ACCOUNT_LINKS: { href: string; label: string }[] = [
+  { href: '/me/bookings', label: 'My bookings' },
+  { href: '/me/memberships', label: 'My memberships' },
+  { href: '/me/questions', label: 'My questions' },
+  { href: '/me/profile', label: 'Settings' },
 ];
 
 /**
- * Mobile-only navigation (#consumer-ux). A hamburger button visible below `sm`
+ * Compact navigation (#consumer-ux). A hamburger button visible below `lg`
  * that opens a right-side sheet with the primary nav, the location picker, and
- * the auth actions — which on mobile are moved out of the header bar so it stays
- * single-line. Closes on Escape, on click-outside, and on navigation.
+ * the account links (the ProfileSidebar chip is desktop-only). Closes on
+ * Escape, on click-outside, and on navigation.
  */
 export function MobileMenu() {
   const { user, loading, signOut } = useAuth();
@@ -56,7 +64,7 @@ export function MobileMenu() {
   }
 
   return (
-    <div className="sm:hidden">
+    <div className="lg:hidden">
       <button
         ref={triggerRef}
         type="button"
@@ -116,28 +124,28 @@ export function MobileMenu() {
 
               <div className="mt-2 border-t-[2.5px] border-dashed border-ink/20 pt-3">
                 {loading ? null : user ? (
-                  <div className="flex flex-col gap-2">
-                    <Link href="/me/bookings" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My bookings</Button>
-                    </Link>
-                    <Link href="/me/questions" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My questions</Button>
-                    </Link>
-                    <Link href="/me/profile" onClick={() => setOpen(false)}>
-                      <Button variant="secondary" size="md" className="w-full">My profile</Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="md"
-                      className="w-full"
+                  <div className="flex flex-col gap-1">
+                    {ACCOUNT_LINKS.map((l) => (
+                      <Link
+                        key={l.href}
+                        href={l.href}
+                        onClick={() => setOpen(false)}
+                        className="rounded-[var(--radius)] px-2 py-2 text-base font-semibold text-ink hover:bg-surface-2"
+                      >
+                        {l.label}
+                      </Link>
+                    ))}
+                    <button
+                      type="button"
                       onClick={async () => {
                         setOpen(false);
                         await signOut();
                         router.replace('/');
                       }}
+                      className="rounded-[var(--radius)] px-2 py-2 text-left text-base font-semibold text-ink-soft hover:bg-surface-2 hover:text-ink"
                     >
                       Sign out
-                    </Button>
+                    </button>
                   </div>
                 ) : (
                   <Link href="/login" onClick={() => setOpen(false)}>

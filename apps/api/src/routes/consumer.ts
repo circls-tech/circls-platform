@@ -16,6 +16,7 @@ import {
   getPublicOrgBySlug,
   getPublicVenueWithImages,
   listMyBookings,
+  listPublicOrgs,
   listPublicArenas,
   listPublicArenaSlots,
   listPublicEvents,
@@ -117,6 +118,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const m = await getPublicMembershipById(membershipId);
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
     return m;
+  });
+
+  // Public organisers directory — active, non-platform orgs only, A→Z.
+  app.get('/v1/consumer/orgs', { config: publicLimit }, async () => {
+    const rows = await listPublicOrgs();
+    return { rows };
   });
 
   // Public org/brand profile (PR #108). Only active orgs are returned; inactive

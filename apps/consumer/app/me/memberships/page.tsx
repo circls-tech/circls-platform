@@ -9,51 +9,49 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatPaise } from '@/lib/format';
 import { Card, StatusPill } from '@/lib/ui';
 
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  slot: 'Court booking',
-  event: 'Event',
-};
-
-export default function MyBookingsPage() {
+/**
+ * The signed-in user's membership purchases — the membership slice of the
+ * bookings feed (`itemType === 'membership'`), linked from the profile menu.
+ */
+export default function MyMembershipsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const bookings = useMyBookings();
-  // Membership purchases have their own page (/me/memberships) — this feed is
-  // courts + events only.
-  const rows = (bookings.data ?? []).filter((b) => b.itemType !== 'membership');
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login?redirect=/me/bookings');
+    if (!loading && !user) router.replace('/login?redirect=/me/memberships');
   }, [loading, user, router]);
 
   if (loading || !user) {
     return (
       <div className="min-h-screen">
         <Header />
-        <main className="mx-auto max-w-3xl px-4 py-8">
+        <main className="mx-auto max-w-4xl px-4 py-8">
           <p className="text-sm text-text-secondary">Loading…</p>
         </main>
       </div>
     );
   }
 
+  const memberships = (bookings.data ?? []).filter((b) => b.itemType === 'membership');
+
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 font-display text-4xl font-extrabold text-ink">My bookings</h1>
+      <main className="mx-auto max-w-4xl px-4 py-8">
+        <h1 className="mb-6 font-display text-4xl font-extrabold text-ink">My memberships</h1>
 
         {bookings.isLoading ? (
-          <p className="text-sm text-text-secondary">Loading your bookings…</p>
+          <p className="text-sm text-text-secondary">Loading your memberships…</p>
         ) : bookings.isError ? (
           <p className="text-sm font-semibold text-petal-red">
-            {bookings.error instanceof Error ? bookings.error.message : 'Failed to load bookings'}
+            {bookings.error instanceof Error ? bookings.error.message : 'Failed to load memberships'}
           </p>
-        ) : rows.length === 0 ? (
-          <EmptyState title="No bookings yet" body="When you book a court or join an event, it'll show up here. Memberships live under My memberships." />
+        ) : memberships.length === 0 ? (
+          <EmptyState title="No memberships yet" body="When you buy a membership, it'll show up here." />
         ) : (
           <div className="flex flex-col gap-3">
-            {rows.map((b) => (
+            {memberships.map((b) => (
               <Link
                 key={b.id}
                 href={`/me/bookings/${b.id}`}
@@ -64,7 +62,7 @@ export default function MyBookingsPage() {
                     <div>
                       <h2 className="font-display text-lg font-extrabold text-ink">{b.venueName}</h2>
                       <p className="mt-0.5 text-sm text-text-secondary">
-                        {ITEM_TYPE_LABELS[b.itemType] ?? b.itemType} · {formatDate(b.createdAt)}
+                        Membership · {formatDate(b.createdAt)}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
