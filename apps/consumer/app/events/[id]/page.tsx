@@ -79,7 +79,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
+      <main className="mx-auto max-w-3xl px-4 pt-16 pb-28">
         <BackBar />
         {eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>

@@ -46,7 +46,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-3xl px-4 pt-16 pb-8">
         <Link href="/me/bookings" className="text-sm font-semibold text-coral-deep underline">
           ← All bookings
         </Link>

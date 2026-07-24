@@ -77,7 +77,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className={`mx-auto max-w-5xl px-4 pt-8${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
+      <main className={`mx-auto max-w-5xl px-4 pt-16${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
         <BackBar />
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
