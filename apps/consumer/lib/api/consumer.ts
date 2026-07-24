@@ -11,6 +11,7 @@ import type {
   PublicEventWithVenue,
   PublicMembershipWithScope,
   PublicOrg,
+  PublicOrgSummary,
   PublicSlot,
   PublicVenue,
   PurchaseMembershipInput,
@@ -19,6 +20,15 @@ import type {
 } from './types';
 
 // ── Browse (public, no auth) ──────────────────────────────────────────────────
+
+/** All active organisers, A→Z — the public directory behind the Organisations tab. */
+export function usePublicOrgs() {
+  return useQuery({
+    queryKey: ['orgs'],
+    queryFn: () => apiFetch<{ rows: PublicOrgSummary[] }>('/v1/consumer/orgs'),
+    select: (data) => data.rows,
+  });
+}
 
 /** A public org/brand profile by slug (PR #108). 404s for inactive/missing orgs. */
 export function usePublicOrg(slug: string) {

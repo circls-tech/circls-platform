@@ -39,11 +39,11 @@ import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
 import { coerceBenefits } from '../lib/membership_benefits.js';
 import { getStorage } from '../lib/storage.js';
-import { type BrandSummary, getPublicOrgBySlug, type PublicOrg, toBrandSummary } from './tenant_service.js';
+import { type BrandSummary, getPublicOrgBySlug, listPublicOrgs, type PublicOrg, type PublicOrgSummary, toBrandSummary } from './tenant_service.js';
 import type { MembershipBenefits } from '../db/schema/memberships.js';
 
-export { getPublicOrgBySlug };
-export type { PublicOrg, BrandSummary };
+export { getPublicOrgBySlug, listPublicOrgs };
+export type { PublicOrg, PublicOrgSummary, BrandSummary };
 
 /**
  * Compact brand columns selected alongside public listings so each card can show

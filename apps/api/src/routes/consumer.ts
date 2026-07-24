@@ -16,6 +16,7 @@ import {
   getPublicOrgBySlug,
   getPublicVenueWithImages,
   listMyBookings,
+  listPublicOrgs,
   listPublicArenas,
   listPublicArenaSlots,
   listPublicEvents,
@@ -121,6 +122,11 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   // Public org/brand profile (PR #108). Only active orgs are returned; inactive
   // or missing → 404. Never carries private/billing fields.
+  app.get('/v1/consumer/orgs', { config: publicLimit }, async () => {
+    const rows = await listPublicOrgs();
+    return { rows };
+  });
+
   app.get('/v1/consumer/orgs/:slug', { config: publicLimit }, async (req) => {
     const { slug } = req.params as { slug: string };
     const org = await getPublicOrgBySlug(slug);

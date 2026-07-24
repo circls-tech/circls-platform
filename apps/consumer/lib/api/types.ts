@@ -35,6 +35,17 @@ export type OpeningHours = Record<string, { open: string; close: string }[]>;
  * Full public org/brand profile (PR #108), from GET /v1/consumer/orgs/:slug.
  * Never includes billing/internal fields.
  */
+/** Compact row in the public organisers directory (GET /v1/consumer/orgs). */
+export interface PublicOrgSummary {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  city: string | null;
+  country: string | null;
+}
+
 export interface PublicOrg {
   id: string;
   slug: string;

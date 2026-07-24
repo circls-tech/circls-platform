@@ -35,6 +35,7 @@ export function Header() {
               <span className="max-w-[7rem] truncate">{locationLabel}</span>
             </button>
             {/* Desktop nav (sm+). On mobile these collapse into the hamburger menu. */}
+            <Link href="/orgs" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Organisations</Link>
             <Link href="/venues" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Venues</Link>
             <Link href="/events" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Events</Link>
             <Link href="/memberships" className="hidden text-base font-bold text-ink hover:text-coral-deep sm:inline">Memberships</Link>

@@ -267,6 +267,34 @@ export interface PublicOrg {
   };
 }
 
+/** Compact row for the public organisers directory. */
+export interface PublicOrgSummary {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  city: string | null;
+  country: string | null;
+}
+
+/** All active, non-platform orgs A→Z — the public organisers directory. */
+export async function listPublicOrgs(): Promise<PublicOrgSummary[]> {
+  const rows = await db.query.tenants.findMany({ where: eq(tenants.status, 'active') });
+  return rows
+    .filter((row) => !row.isPlatform)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      logoUrl: row.logoStorageKey ? getStorage().publicUrl(row.logoStorageKey) : null,
+      city: row.city,
+      country: row.country,
+    }));
+}
+
 /** A single active org by slug, or null (inactive/missing → caller 404s). */
 export async function getPublicOrgBySlug(slug: string): Promise<PublicOrg | null> {
   const row = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
