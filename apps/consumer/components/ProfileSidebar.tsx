@@ -30,9 +30,22 @@ export function ProfileSidebar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  // Sidebar top offset — the sticky header's height, so the panel slides in
+  // under the header rule (per the design mock) instead of covering the brand.
+  const [topOffset, setTopOffset] = useState(0);
 
   // Portal target is only available in the browser.
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    function measure() {
+      setTopOffset(document.querySelector('header')?.getBoundingClientRect().bottom ?? 0);
+    }
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [open]);
 
   // Escape-to-close + lock body scroll while open.
   useEffect(() => {
@@ -88,7 +101,13 @@ export function ProfileSidebar() {
       </div>
 
       {open && mounted && createPortal(
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Profile">
+        <div
+          className="fixed inset-x-0 bottom-0 z-50"
+          style={{ top: topOffset }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Profile"
+        >
           <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-0 flex h-full w-full max-w-xs flex-col border-r-[2.5px] border-ink bg-surface-card">
             {/* Profile header — avatar, title, "name · city". */}
