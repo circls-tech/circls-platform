@@ -39,7 +39,7 @@ export default function OrgProfilePage() {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-6xl px-4 pt-16 pb-8">
+      <main className="mx-auto max-w-6xl px-4 py-8">
         <BackBar />
 
         {orgQ.isLoading ? (

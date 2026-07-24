@@ -8,10 +8,10 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { Button } from '@/lib/ui';
 
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: '/orgs', label: 'Organisations' },
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
+  { href: '/orgs', label: 'Organisations' },
   { href: '/help', label: 'Help & support' },
 ];
 

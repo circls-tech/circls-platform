@@ -105,12 +105,6 @@ export default function LandingPage() {
             </button>
           </p>
         )}
-        {nearbyOrgs.length > 0 && (
-          <HScroll title={orgsTitle} viewAllHref="/orgs">
-            {nearbyOrgs.map((o) => <OrgCard key={o.id} org={o} className="w-[260px] shrink-0 snap-start" />)}
-          </HScroll>
-        )}
-
         {nearbyVenues.length > 0 && (
           <HScroll title={venuesTitle} viewAllHref="/venues">
             {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
@@ -140,6 +134,12 @@ export default function LandingPage() {
             viewAllHref="/memberships"
           >
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
+        )}
+
+        {nearbyOrgs.length > 0 && (
+          <HScroll title={orgsTitle} viewAllHref="/orgs">
+            {nearbyOrgs.map((o) => <OrgCard key={o.id} org={o} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
       </main>

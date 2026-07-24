@@ -16,11 +16,11 @@ const ITEMS: { href: string; label: string; dot: string }[] = [
 ];
 
 /**
- * Account navigation for the consumer web app. Renders a "Profile" tab under
- * the header rule; clicking it slides in a left sidebar with the account
- * destinations (colored petal dots, current page highlighted), Help & support,
- * and Sign out. Signed-out visitors get the Sign in button instead. The
- * sidebar closes on Escape, on click-outside, and on navigation.
+ * Account navigation for the consumer web app. Renders the "Profile" chip at
+ * the right edge of the header; clicking it slides in a right-side sidebar
+ * with the account destinations (colored petal dots, current page
+ * highlighted), Help & support, and Sign out. Signed-out visitors get the
+ * Sign in button instead. Closes on Escape, click-outside, and navigation.
  */
 export function ProfileSidebar() {
   const { user, loading, signOut } = useAuth();
@@ -66,7 +66,7 @@ export function ProfileSidebar() {
 
   if (!user) {
     return (
-      <div className="absolute left-3 top-full mt-2.5 hidden sm:block">
+      <div className="hidden sm:block">
         <Link href="/login">
           <Button variant="primary" size="sm">Sign in</Button>
         </Link>
@@ -81,10 +81,9 @@ export function ProfileSidebar() {
 
   return (
     <>
-      {/* Collapsed tab — floats just under the header rule so the page
-          background (e.g. the home hero's dot motif) runs uninterrupted
-          behind it. Mobile gets account links via the hamburger instead. */}
-      <div className="absolute left-3 top-full mt-2.5 hidden sm:block">
+      {/* Collapsed chip — right edge of the header row. Mobile gets the
+          account links via the hamburger instead. */}
+      <div className="hidden sm:block">
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -111,7 +110,7 @@ export function ProfileSidebar() {
           aria-label="Profile"
         >
           <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 flex h-full w-full max-w-xs flex-col border-r-[2.5px] border-ink bg-surface-card">
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l-[2.5px] border-ink bg-surface-card">
             {/* Profile header — avatar, title, "name · city". */}
             <div className="flex items-center gap-3 px-4 pb-4 pt-5">
               <span

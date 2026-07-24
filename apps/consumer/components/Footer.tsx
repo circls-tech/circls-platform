@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { BrandMark } from '@/lib/ui';
 
 const LINKS = [
-  { href: '/orgs', label: 'Organisations' },
   { href: '/venues', label: 'Venues' },
   { href: '/events', label: 'Events' },
   { href: '/memberships', label: 'Memberships' },
+  { href: '/orgs', label: 'Organisations' },
   { href: '/help', label: 'Help' },
   { href: '/privacy', label: 'Privacy Policy' },
   { href: '/terms', label: 'Terms & Conditions' },

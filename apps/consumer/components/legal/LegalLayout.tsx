@@ -13,7 +13,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 pt-16 pb-10">
+      <main className="mx-auto max-w-3xl px-4 py-10">
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-coral-deep">
           <BrandMark className="h-4 w-4" />
           <span>circls · Gibbous Technologies Private Limited</span>
