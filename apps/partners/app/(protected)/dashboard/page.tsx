@@ -124,7 +124,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
         <p className="text-sm text-slate-500">No venues yet. Add your first venue to get started.</p>
         <Link
           href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           ＋ Add venue
         </Link>
@@ -139,7 +139,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
           <Link
             key={venue.id}
             href={`/venues/${venue.id}?tenantId=${tenantId}`}
-            className="block rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+            className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-5 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
           >
             <div className="flex items-start justify-between gap-2">
               <span className="font-semibold text-slate-900">{venue.name}</span>
@@ -155,7 +155,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
       <div className="pt-1">
         <Link
           href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           ＋ Add venue
         </Link>
@@ -313,7 +313,7 @@ export default function DashboardPage() {
             </p>
             <Link
               href="/onboarding"
-              className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
             >
               Set up organisation
             </Link>
