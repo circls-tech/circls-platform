@@ -181,7 +181,8 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       });
 
       expect(result.created).toBe(2);
-      expect(result.skipped).toBe(0);
+      expect(result.skippedConflict).toBe(0);
+      expect(result.removed).toBe(0);
 
       // Verify the created slots have the pricing rule price
       const createdSlots = await db
@@ -219,8 +220,9 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       });
     });
 
-    it('skips 2 overlapping slots on a second identical release', async () => {
-      // Second release with same date range and cells → all should be skipped
+    it('leaves 2 matching slots unchanged on a second identical release', async () => {
+      // Second release with same date range and cells → nothing to create,
+      // nothing to change: the plan matches the existing schedule exactly.
       const result = await releaseSlots(ctx, arenaId, {
         startDate: '2030-09-01',
         endDate: '2030-09-14',
@@ -229,7 +231,173 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       });
 
       expect(result.created).toBe(0);
-      expect(result.skipped).toBe(2);
+      expect(result.unchanged).toBe(2);
+      expect(result.repriced).toBe(0);
+      expect(result.removed).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // releaseSlots — reconciliation against an existing schedule
+  // -------------------------------------------------------------------------
+  describe('releaseSlots — reconciliation', () => {
+    // 2032-03-06 is a Saturday in IST — far-future so nothing lands in the past.
+    const DATE = '2032-03-06';
+    const range = { startDate: DATE, endDate: DATE, quantizationMin: 60 };
+    let bookedSlotId: string;
+
+    /** Load the arena's live (non-deleted) slots on DATE, ordered by start. */
+    async function slotsOnDate() {
+      const rows = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is null
+              and time_range && tstzrange(${DATE + 'T00:00:00Z'}::timestamptz, ${'2032-03-07T00:00:00Z'}::timestamptz, '[)')`,
+        )
+        .orderBy(sql`lower(time_range)`);
+      return rows;
+    }
+
+    it('sets up two slots and books the first', async () => {
+      const result = await releaseSlots(ctx, arenaId, {
+        ...range,
+        cells: [
+          { dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000 },
+          { dayOfWeek: 6, startTimeMin: 660, durationMin: 60, price: 10000 },
+        ],
+      });
+      expect(result.created).toBe(2);
+
+      const [first] = await slotsOnDate();
+      const booking = await bookSlots(ctx, venueId, {
+        slotIds: [first!.id],
+        customerName: 'Reconcile Guest',
+        customerContact: '+91-9000000200',
+      });
+      expect(booking.status).toBe('confirmed');
+      bookedSlotId = first!.id;
+    });
+
+    it('repricing updates open slots, keeps the booked one, reports priceChanges', async () => {
+      const result = await releaseSlots(ctx, arenaId, {
+        ...range,
+        cells: [
+          { dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 20000 },
+          { dayOfWeek: 6, startTimeMin: 660, durationMin: 60, price: 20000 },
+          { dayOfWeek: 6, startTimeMin: 720, durationMin: 60, price: 20000 },
+        ],
+      });
+
+      expect(result).toMatchObject({
+        created: 1, // the new 12:00 slot
+        repriced: 1, // the open 11:00 slot
+        keptBooked: 1, // the booked 10:00 slot
+        removed: 0,
+        unchanged: 0,
+        skippedConflict: 0,
+      });
+      expect(result.priceChanges).toEqual([{ fromPaise: 10000, toPaise: 20000, count: 1 }]);
+
+      const rows = await slotsOnDate();
+      expect(rows).toHaveLength(3);
+      // Booked slot keeps its original price and status.
+      const booked = rows.find((r) => r.id === bookedSlotId);
+      expect(booked?.status).toBe('booked');
+      expect(booked?.pricePaise).toBe(10000);
+    });
+
+    it('shrinking the plan blocks a slot, removes the stale one, keeps the booked one', async () => {
+      const result = await releaseSlots(ctx, arenaId, {
+        ...range,
+        cells: [{ dayOfWeek: 6, startTimeMin: 660, durationMin: 60, price: 20000, blocked: true }],
+      });
+
+      expect(result).toMatchObject({
+        created: 0,
+        blocked: 1, // 11:00 open → blocked
+        removed: 1, // 12:00 no longer in the plan
+        keptBooked: 1, // 10:00 booked, untouched even though absent from the plan
+        repriced: 0,
+      });
+
+      const rows = await slotsOnDate();
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.status).sort()).toEqual(['blocked', 'booked']);
+
+      // The stale 12:00 slot was soft-deleted, not hard-deleted.
+      const [removedRow] = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is not null
+              and lower(time_range) = '2032-03-06T06:30:00.000Z'::timestamptz`,
+        );
+      expect(removedRow).toBeDefined();
+    });
+
+    it('unblocking reports unblocked', async () => {
+      const result = await releaseSlots(ctx, arenaId, {
+        ...range,
+        cells: [{ dayOfWeek: 6, startTimeMin: 660, durationMin: 60, price: 20000 }],
+      });
+      expect(result).toMatchObject({ unblocked: 1, keptBooked: 1, created: 0, removed: 0 });
+    });
+
+    it('a plan overlapping the booked slot skips the conflicting insert', async () => {
+      // [10:30, 11:30) overlaps the kept booked [10:00, 11:00) slot; the open
+      // 11:00 slot is stale under this plan and gets removed first.
+      const result = await releaseSlots(ctx, arenaId, {
+        ...range,
+        cells: [{ dayOfWeek: 6, startTimeMin: 630, durationMin: 60, price: 20000 }],
+      });
+      expect(result).toMatchObject({
+        created: 0,
+        skippedConflict: 1,
+        removed: 1,
+        keptBooked: 1,
+      });
+
+      // Audit trail: removals were recorded.
+      const removals = await db
+        .select()
+        .from(auditLog)
+        .where(sql`tenant_id = ${tenantId} and action = 'slot.remove'`);
+      expect(removals.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('never removes a boundary-straddling slot from an adjacent business day', async () => {
+      // Friday 2032-03-12's business day (day start 03:00, persisted on the
+      // arena earlier in this file) owns an overnight slot [Sat 02:00, Sat
+      // 04:00) IST that spills past the Friday business-day end (Sat 03:00).
+      const spill = await releaseSlots(ctx, arenaId, {
+        startDate: '2032-03-12',
+        endDate: '2032-03-12',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 5, startTimeMin: 1560, durationMin: 120, price: 10000 }],
+      });
+      expect(spill.created).toBe(1);
+
+      // Releasing SATURDAY overlaps that spill slot at the window edge, but it
+      // belongs to Friday's business day — out of scope, never removed.
+      const result = await releaseSlots(ctx, arenaId, {
+        startDate: '2032-03-13',
+        endDate: '2032-03-13',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000 }],
+      });
+      expect(result).toMatchObject({ created: 1, removed: 0, skippedConflict: 0 });
+
+      // The Friday spill slot is still live.
+      const [spillRow] = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is null
+              and lower(time_range) = '2032-03-12T20:30:00.000Z'::timestamptz`,
+        );
+      expect(spillRow).toBeDefined();
+      expect(spillRow?.status).toBe('open');
     });
   });
 

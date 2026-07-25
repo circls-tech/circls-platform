@@ -37,6 +37,39 @@ export interface Occurrence {
   blocked: boolean;
 }
 
+/** One from→to price-change group in a release summary. */
+export interface PriceChange {
+  fromPaise: number;
+  toPaise: number;
+  count: number;
+}
+
+/**
+ * What a release actually did, slot by slot. A release *reconciles* the plan
+ * against the existing schedule rather than blindly inserting:
+ * - `created`   — new slots inserted.
+ * - `repriced`  — existing non-booked slots whose price changed (grouped in
+ *                 `priceChanges` as from→to buckets).
+ * - `blocked` / `unblocked` — existing non-booked slots whose status flipped.
+ * - `removed`   — existing non-booked slots inside the released business days
+ *                 that no longer appear in the plan (soft-deleted).
+ * - `unchanged` — existing slots that already matched the plan exactly.
+ * - `keptBooked` — booked/held slots left untouched, whatever the plan said.
+ * - `skippedConflict` — planned slots not created because they overlap a kept
+ *                 (booked/held) slot at a different grid position.
+ */
+export interface ReleaseSummary {
+  created: number;
+  repriced: number;
+  blocked: number;
+  unblocked: number;
+  removed: number;
+  unchanged: number;
+  keptBooked: number;
+  skippedConflict: number;
+  priceChanges: PriceChange[];
+}
+
 // ---------------------------------------------------------------------------
 // Timezone helpers
 // ---------------------------------------------------------------------------
@@ -47,6 +80,9 @@ export interface Occurrence {
 // weekday sample in `weekdayInTz` are NOT correct for DST-observing or
 // UTC+12+ zones — revisit before onboarding such venues.
 // ---------------------------------------------------------------------------
+
+/** Minutes in a business day. */
+const DAY_MIN = 1440;
 
 const WEEKDAY: Record<string, number> = {
   Sun: 0,
@@ -185,15 +221,25 @@ export function enumerateOccurrences(
   return occurrences;
 }
 
+/** An existing slot row as loaded for reconciliation. */
+interface ExistingSlotRow {
+  id: string;
+  pricePaise: number;
+  status: Slot['status'];
+  startIso: string;
+  endIso: string;
+}
+
 export async function releaseSlots(
   ctx: AuditCtx,
   arenaId: string,
   input: ReleaseInput,
-): Promise<{ created: number; skipped: number }> {
+): Promise<ReleaseSummary> {
   const arena = await getArenaById(arenaId);
   if (!arena) throw new Conflict('Arena not found', 'arena_not_found');
   const venue = await getVenueById(arena.venueId);
   const tz = venue?.tzName ?? 'Asia/Kolkata';
+  const dayStartMin = input.businessDayStartMin ?? arena.businessDayStartMin ?? 0;
 
   return db.transaction(async (tx) => {
     // Persist the day boundary + builder template on the arena so the builder
@@ -217,19 +263,206 @@ export async function releaseSlots(
       })
       .returning();
 
-    let created = 0;
-    let skipped = 0;
+    const summary: ReleaseSummary = {
+      created: 0,
+      repriced: 0,
+      blocked: 0,
+      unblocked: 0,
+      removed: 0,
+      unchanged: 0,
+      keptBooked: 0,
+      skippedConflict: 0,
+      priceChanges: [],
+    };
 
     // Pass the wall-clock now so that releasing a window starting today
     // auto-begins at the first slot boundary strictly after now.
     const nowIso = new Date().toISOString();
 
-    for (const occ of enumerateOccurrences(input.startDate, input.endDate, input.cells, tz, nowIso)) {
-      const price =
-        occ.price ??
-        (await resolvePricePaise({ arenaId, startAt: occ.startIso, channel: 'walkin' })) ??
-        0;
+    const occurrences = enumerateOccurrences(input.startDate, input.endDate, input.cells, tz, nowIso);
+    if (occurrences.length === 0) return summary;
 
+    const price = async (occ: Occurrence): Promise<number> =>
+      occ.price ??
+      (await resolvePricePaise({ arenaId, startAt: occ.startIso, channel: 'walkin' })) ??
+      0;
+
+    // ── Reconciliation window ──
+    // The release replaces the schedule for every business day in
+    // [startDate, endDate]: from startDate@dayStart to endDate@dayStart+24h
+    // (the "business window"). The SELECT window below is additionally widened
+    // to any occurrence that spills outside it, so such occurrences can still
+    // be matched against existing slots.
+    const businessStart = localMinutesToUtcIso(input.startDate, dayStartMin, tz);
+    const businessEnd = localMinutesToUtcIso(input.endDate, dayStartMin + DAY_MIN, tz);
+    let windowStart = businessStart;
+    let windowEnd = businessEnd;
+    for (const occ of occurrences) {
+      if (occ.startIso < windowStart) windowStart = occ.startIso;
+      if (occ.endIso > windowEnd) windowEnd = occ.endIso;
+    }
+
+    // Existing FUTURE slots in the window. Past slots are never touched.
+    const rawExisting = await tx.execute<Record<string, unknown>>(sql`
+      select id, price_paise, status,
+             lower(time_range) as start_at,
+             upper(time_range) as end_at
+      from slots
+      where arena_id = ${arenaId}
+        and deleted_at is null
+        and time_range && tstzrange(${windowStart}::timestamptz, ${windowEnd}::timestamptz, '[)')
+        and lower(time_range) > now()
+    `);
+    const existing: ExistingSlotRow[] = (rawExisting as unknown as Record<string, unknown>[]).map(
+      (row) => ({
+        id: row['id'] as string,
+        pricePaise: Number(row['price_paise']),
+        status: row['status'] as Slot['status'],
+        startIso: new Date(row['start_at'] as string).toISOString(),
+        endIso: new Date(row['end_at'] as string).toISOString(),
+      }),
+    );
+
+    // ── Match plan occurrences to existing slots by exact time range ──
+    const byRange = new Map<string, ExistingSlotRow>();
+    for (const row of existing) byRange.set(`${row.startIso}|${row.endIso}`, row);
+
+    const matchedIds = new Set<string>();
+    const matched: Array<{ occ: Occurrence; row: ExistingSlotRow }> = [];
+    const toInsert: Occurrence[] = [];
+    for (const occ of occurrences) {
+      const row = byRange.get(`${occ.startIso}|${occ.endIso}`);
+      if (row && !matchedIds.has(row.id)) {
+        matchedIds.add(row.id);
+        matched.push({ occ, row });
+      } else {
+        toInsert.push(occ);
+      }
+    }
+
+    // ── Remove stale slots first so their ranges are free for re-inserts ──
+    // (the slots_no_overlap exclusion constraint ignores soft-deleted rows).
+    // Only slots whose business day is inside the released range are stale
+    // candidates: a slot STARTING within [businessStart, businessEnd) belongs
+    // to a released business day. Slots merely overlapping the window edge
+    // (e.g. an overnight spill from the previous day's release) are loaded
+    // only so occurrences can match them — they are never removed.
+    // Booked/held slots are never removed; the WHERE re-checks status so a
+    // concurrent booking between our SELECT and this UPDATE survives.
+    const stale = existing.filter(
+      (row) =>
+        !matchedIds.has(row.id) && row.startIso >= businessStart && row.startIso < businessEnd,
+    );
+    const staleLocked = stale.filter((row) => row.status === 'booked' || row.status === 'held');
+    summary.keptBooked += staleLocked.length;
+
+    const removableIds = stale
+      .filter((row) => row.status !== 'booked' && row.status !== 'held')
+      .map((row) => row.id);
+    if (removableIds.length > 0) {
+      const deleted = await tx
+        .update(slots)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            inArray(slots.id, removableIds),
+            eq(slots.tenantId, ctx.tenantId),
+            notInArray(slots.status, ['booked', 'held']),
+            sql`lower(${slots.timeRange}) > now()`,
+          ),
+        )
+        .returning({ id: slots.id });
+      summary.removed = deleted.length;
+      // Any row that slipped through got booked/held concurrently — kept.
+      summary.keptBooked += removableIds.length - deleted.length;
+
+      const staleById = new Map(stale.map((row) => [row.id, row]));
+      for (const d of deleted) {
+        const before = staleById.get(d.id);
+        await writeAudit(
+          tx,
+          ctx,
+          'slot.remove',
+          'slot',
+          d.id,
+          before ? { pricePaise: before.pricePaise, status: before.status } : null,
+          { deletedAt: nowIso },
+        );
+      }
+    }
+
+    // ── Update matched slots whose price / blocked status changed ──
+    const priceChangeMap = new Map<string, PriceChange>();
+    for (const { occ, row } of matched) {
+      if (row.status === 'booked' || row.status === 'held') {
+        summary.keptBooked++;
+        continue;
+      }
+      const desiredPrice = await price(occ);
+      const desiredStatus = occ.blocked ? ('blocked' as const) : ('open' as const);
+      const priceDiff = row.pricePaise !== desiredPrice;
+      const statusDiff = row.status !== desiredStatus;
+      if (!priceDiff && !statusDiff) {
+        summary.unchanged++;
+        continue;
+      }
+
+      const set: Partial<typeof slots.$inferInsert> = {};
+      if (priceDiff) set.pricePaise = desiredPrice;
+      if (statusDiff) set.status = desiredStatus;
+
+      // TOCTOU guard: refuse to touch a slot that got booked/held (or started)
+      // between the reconciliation SELECT and this UPDATE.
+      const updated = await tx
+        .update(slots)
+        .set(set)
+        .where(
+          and(
+            eq(slots.id, row.id),
+            eq(slots.tenantId, ctx.tenantId),
+            notInArray(slots.status, ['booked', 'held']),
+            sql`lower(${slots.timeRange}) > now()`,
+          ),
+        )
+        .returning({ id: slots.id });
+      if (updated.length === 0) {
+        summary.keptBooked++;
+        continue;
+      }
+
+      if (priceDiff) {
+        summary.repriced++;
+        const key = `${row.pricePaise}->${desiredPrice}`;
+        const bucket = priceChangeMap.get(key) ?? {
+          fromPaise: row.pricePaise,
+          toPaise: desiredPrice,
+          count: 0,
+        };
+        bucket.count++;
+        priceChangeMap.set(key, bucket);
+      }
+      if (statusDiff) {
+        if (desiredStatus === 'blocked') summary.blocked++;
+        else summary.unblocked++;
+      }
+
+      const action =
+        priceDiff && statusDiff ? 'slot.update' : priceDiff ? 'slot.reprice' : 'slot.block';
+      await writeAudit(
+        tx,
+        ctx,
+        action,
+        'slot',
+        row.id,
+        { pricePaise: row.pricePaise, status: row.status },
+        set as Record<string, unknown>,
+      );
+    }
+    summary.priceChanges = [...priceChangeMap.values()].sort((a, b) => b.count - a.count);
+
+    // ── Insert plan occurrences with no existing match ──
+    for (const occ of toInsert) {
+      const insertPrice = await price(occ);
       try {
         // Use a nested transaction (savepoint) so that an exclusion violation
         // only rolls back this single insert, leaving the outer tx intact.
@@ -238,19 +471,20 @@ export async function releaseSlots(
             tenantId: ctx.tenantId,
             arenaId,
             timeRange: sql`tstzrange(${occ.startIso}::timestamptz, ${occ.endIso}::timestamptz, '[)')`,
-            pricePaise: price,
+            pricePaise: insertPrice,
             status: occ.blocked ? 'blocked' : 'open',
             releaseId: rel!.id,
           });
         });
-        created++;
+        summary.created++;
       } catch (err) {
-        if (isExclusionViolation(err)) skipped++;
+        // Overlaps a kept (booked/held) slot at a different grid position.
+        if (isExclusionViolation(err)) summary.skippedConflict++;
         else throw err;
       }
     }
 
-    return { created, skipped };
+    return summary;
   });
 }
 

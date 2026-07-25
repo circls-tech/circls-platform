@@ -9,24 +9,45 @@ export interface GridCell {
   rowIndex: number;  // row within sorted time labels
 }
 
-export function useGridSelection(slots: Slot[], weekStart: Date) {
+export function useGridSelection(slots: Slot[]) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Reset when slots or weekStart change identity.
+  // When the slot list changes, PRUNE the selection to ids that still exist
+  // rather than clearing it. Slot ids are stable across in-place edits (and
+  // across preview regenerations in the builder), so a price/block apply no
+  // longer wipes the user's selection; ids that left the grid drop out.
   useEffect(() => {
-    setSelected(new Set());
-    cellMap.current = new Map();
-  }, [slots, weekStart]);
+    const valid = new Set(slots.map((s) => s.id));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (valid.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [slots]);
 
   // Drag state — we need refs so event handlers don't stale-close over state.
   const dragStart = useRef<{ dayIndex: number; rowIndex: number } | null>(null);
   const cellMap = useRef<Map<string, { dayIndex: number; rowIndex: number; locked: boolean }>>(new Map());
 
   /**
+   * Called by the grid at the top of each render pass, before it re-registers
+   * every visible cell. Rebuilding the registry synchronously during render
+   * (instead of clearing it in an effect, which ran AFTER registration and
+   * left it empty until the next render) keeps rect/row/column selection
+   * working immediately after any slot-list change.
+   */
+  const resetCells = useCallback(() => {
+    cellMap.current = new Map();
+  }, []);
+
+  /**
    * Called by the grid to register every (slotId → cell coordinate) mapping,
-   * with a `locked` flag. Locked (past) cells are registered too, but every
-   * selection helper skips them — so re-registering with an updated flag on the
-   * 60s `now` tick keeps selection correct without rebuilding cellMap.
+   * with a `locked` flag. Locked cells are registered too, but every selection
+   * helper skips them.
    */
   const registerCell = useCallback(
     (slotId: string, dayIndex: number, rowIndex: number, locked = false) => {
@@ -140,6 +161,7 @@ export function useGridSelection(slots: Slot[], weekStart: Date) {
 
   return {
     selected,
+    resetCells,
     registerCell,
     handleCellPointerDown,
     handleCellPointerEnter,

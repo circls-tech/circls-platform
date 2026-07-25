@@ -5,7 +5,7 @@ import type { Slot } from '@/lib/api/types';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useBookingDetail } from '@/lib/api/queries';
-import { gridDayIndex, sortTimeKeys } from '@/lib/schedule/grid';
+import { fmtTimeKey, gridDayIndex, sortTimeKeys } from '@/lib/schedule/grid';
 import { useGridSelection } from './useGridSelection';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -48,15 +48,6 @@ function addDays(date: Date, n: number): Date {
 
 function fmtShortDate(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function fmtTimeKey(isoString: string, tz: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(isoString));
 }
 
 /**
@@ -356,13 +347,14 @@ export function Matrix({
 }: MatrixProps) {
   const {
     selected,
+    resetCells,
     registerCell,
     handleCellPointerDown,
     handleCellPointerEnter,
     handlePointerUp,
     selectDay,
     selectRow,
-  } = useGridSelection(slots, weekStart);
+  } = useGridSelection(slots);
 
   // Build a list of unique time-row labels, ordered by their position within
   // the business day (so a 3am start renders 03:00 → 02:00 top-to-bottom).
@@ -376,9 +368,14 @@ export function Matrix({
   const cellData = new Map<string, Slot>();
   const slotsByTimeKey = new Map<string, Slot>();
 
-  // Determine which slots are locked (reception mode only).
+  // Locked = non-editable: past slots in reception mode; booked/held slots in
+  // builder mode (real bookings shown in the preview are never editable there).
   const lockedIds = new Set<string>();
 
+  // Rebuild the selection hook's cell registry from scratch on every render so
+  // it reflects exactly the current slot list — stale ids from a previous list
+  // must never linger (they would silently join rect/row/column selections).
+  resetCells();
   slots.forEach((slot) => {
     const dayIndex = gridDayIndex(slot.startAt, tz, weekStart, dayStartMin);
     const tk = fmtTimeKey(slot.startAt, tz);
@@ -390,11 +387,11 @@ export function Matrix({
         slotsByTimeKey.set(tk, slot);
       }
 
-      const locked = mode === 'reception' && now != null && isSlotLocked(slot, now);
+      const locked =
+        mode === 'reception'
+          ? now != null && isSlotLocked(slot, now)
+          : slot.status === 'booked' || slot.status === 'held';
       if (locked) lockedIds.add(slot.id);
-      // Register every in-bounds cell with its locked flag. Selection helpers
-      // skip locked cells, so this stays correct even as slots lock on the 60s
-      // `now` tick (cellMap is not rebuilt between ticks).
       registerCell(slot.id, dayIndex, rowIndex, locked);
     }
   });

@@ -37,4 +37,12 @@ describe('gridDayIndex', () => {
     expect(gridDayIndex(iso, tz, weekStart, 0)).toBe(2); // Tuesday (calendar)
     expect(gridDayIndex(iso, tz, weekStart, 180)).toBe(1); // Monday (business day)
   });
+
+  it('does NOT wrap out-of-week slots onto the visible columns', () => {
+    // Next Sunday 2026-06-21 10:00 IST — same weekday as column 0, but a week
+    // later. Must be 7 (dropped by the grid), not 0.
+    expect(gridDayIndex('2026-06-21T04:30:00.000Z', tz, weekStart, 0)).toBe(7);
+    // Previous Saturday 2026-06-13 20:00 IST → -1, not 6.
+    expect(gridDayIndex('2026-06-13T14:30:00.000Z', tz, weekStart, 0)).toBe(-1);
+  });
 });

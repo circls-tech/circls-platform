@@ -371,13 +371,19 @@ export function useUpdateArenaQrConfig(arenaId: string) {
   });
 }
 
-export function useArenaSlots(arenaId: string, fromISO: string, toISO: string) {
+export function useArenaSlots(
+  arenaId: string,
+  fromISO: string,
+  toISO: string,
+  opts?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ['slots', arenaId, fromISO, toISO],
     queryFn: () =>
       apiFetch<Slot[]>(
         `/v1/arenas/${arenaId}/slots?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`,
       ),
+    enabled: opts?.enabled ?? true,
   });
 }
 
@@ -402,9 +408,29 @@ export interface ReleaseInput {
   template?: ScheduleTemplate;
 }
 
+/** One from→to price-change group in a release summary. */
+export interface ReleasePriceChange {
+  fromPaise: number;
+  toPaise: number;
+  count: number;
+}
+
+/**
+ * What a release actually did. Releases reconcile the plan against the
+ * existing schedule: booked/held slots are never touched, matching non-booked
+ * slots are repriced / (un)blocked, non-booked slots that no longer fit the
+ * plan are removed, and the rest are created.
+ */
 export interface ReleaseResult {
   created: number;
-  skipped: number;
+  repriced: number;
+  blocked: number;
+  unblocked: number;
+  removed: number;
+  unchanged: number;
+  keptBooked: number;
+  skippedConflict: number;
+  priceChanges: ReleasePriceChange[];
 }
 
 export function useReleaseSlots(arenaId: string) {
