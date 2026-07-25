@@ -15,18 +15,31 @@ interface StatCardProps {
   value: string;
   sublabel: string;
   loading?: boolean;
+  /** Navigator-petal pastel behind the icon chip (brand sheet). */
+  petal: string;
+  /** Small glyph rendered in the chip — e.g. ₹ for revenue. */
+  icon: string;
 }
 
-function StatCard({ label, value, sublabel, loading }: StatCardProps) {
+function StatCard({ label, value, sublabel, loading, petal, icon }: StatCardProps) {
   return (
     <Card className="flex flex-col gap-3">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <div className="flex items-center gap-2.5">
+        <span
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-base font-bold text-[#17151D]"
+          style={{ backgroundColor: petal }}
+        >
+          {icon}
+        </span>
+        <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-slate-600">{label}</p>
+      </div>
       {loading ? (
-        <div className="h-9 w-24 animate-pulse rounded-md bg-slate-100" />
+        <div className="h-10 w-24 animate-pulse rounded-md bg-slate-100" />
       ) : (
-        <p className="text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+        <p className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
       )}
-      <p className="text-xs text-slate-400">{sublabel}</p>
+      <p className="font-[family-name:var(--font-body)] text-xs text-slate-500">{sublabel}</p>
     </Card>
   );
 }
@@ -214,24 +227,32 @@ export default function DashboardPage() {
             value={String(bookingsToday)}
             sublabel="Confirmed bookings for today"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#FCE38A"
+            icon="🗓"
           />
           <StatCard
             label="Revenue today"
             value={revenueToday}
             sublabel="Revenue collected today"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#FFB0A3"
+            icon="₹"
           />
           <StatCard
             label="Revenue · 7d"
             value={revenue7d}
             sublabel="Total revenue last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#F9B4D4"
+            icon="📈"
           />
           <StatCard
             label="Occupancy · 7d"
             value={`${occupancy7dPct}%`}
             sublabel="Slot utilisation last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#A9C9F2"
+            icon="📊"
           />
         </div>
       </section>
