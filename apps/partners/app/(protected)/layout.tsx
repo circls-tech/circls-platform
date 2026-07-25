@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { useMyTenants } from '@/lib/api/queries';
+import { useMe, useMyTenants, useTeamMembers } from '@/lib/api/queries';
 import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
@@ -25,6 +25,7 @@ const NAV_LINKS = [
   { href: '/questions', label: 'Questions', petal: '#A9C9F2', icon: 'questions' },
   { href: '/coupons', label: 'Coupons', petal: '#FFD2A1', icon: 'coupons' },
   { href: '/settings', label: 'Settings', petal: '#FFB0A3', icon: 'settings' },
+  { href: '/help', label: 'Help', petal: '#FCE38A', icon: 'help' },
 ] as const;
 
 
@@ -113,6 +114,14 @@ function NavIcon({ name }: { name: string }) {
           <circle cx="12" cy="12" r="3" />
         </svg>
       );
+    case 'help':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -149,6 +158,39 @@ function OpenQuestionsBadge() {
     <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-900">
       {openCount > 99 ? '99+' : openCount}
     </span>
+  );
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  manager: 'Manager',
+  staff: 'Staff',
+  readonly: 'Read-only',
+};
+
+/** Avatar + name + role for the signed-in member, pinned under the nav. */
+function SidebarUserCard() {
+  const { data: me } = useMe();
+  const { activeTenantId } = useOrg();
+  const { data: members } = useTeamMembers(activeTenantId ?? '');
+  const role = members?.find((m) => m.userId === me?.id)?.role ?? null;
+  const name = me?.displayName ?? me?.email ?? '…';
+  const initial = name.trim().charAt(0).toUpperCase() || '?';
+  return (
+    <div className="mt-2 border-t border-slate-900/10 px-4 pb-5 pt-4">
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-slate-900 bg-[#CDBBF7] font-bold text-slate-900"
+        >
+          {initial}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-900">{name}</p>
+          {role && <p className="text-xs text-slate-500">{ROLE_LABELS[role] ?? role}</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -209,37 +251,8 @@ function Sidebar({
           })}
         </nav>
 
-        {/* Help link at the bottom */}
-        <div className="mt-2 border-t border-slate-900/10 px-3 pb-4 pt-2">
-          <Link
-            href="/help"
-            onClick={onClose}
-            className={[
-              'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              pathname === '/help'
-                ? 'border border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0_#0f172a]'
-                : 'border border-transparent text-slate-700 hover:bg-white/60 hover:text-slate-900',
-            ].join(' ')}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-            Help
-          </Link>
-        </div>
+        {/* Signed-in user, pinned at the bottom. */}
+        <SidebarUserCard />
       </aside>
     </>
   );
