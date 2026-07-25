@@ -315,7 +315,8 @@ export default function ActivityPage() {
       <div>
         <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Activity</h1>
         <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
-          Everything that just happened.
+          Everything happening across your organisation — bookings, event registrations and
+          membership purchases.
         </p>
       </div>
 
