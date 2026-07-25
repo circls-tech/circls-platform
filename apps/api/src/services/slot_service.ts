@@ -289,10 +289,14 @@ export async function releaseSlots(
 
     // ── Reconciliation window ──
     // The release replaces the schedule for every business day in
-    // [startDate, endDate]: from startDate@dayStart to endDate@dayStart+24h,
-    // widened to any occurrence that spills past the last business-day end.
-    let windowStart = localMinutesToUtcIso(input.startDate, dayStartMin, tz);
-    let windowEnd = localMinutesToUtcIso(input.endDate, dayStartMin + DAY_MIN, tz);
+    // [startDate, endDate]: from startDate@dayStart to endDate@dayStart+24h
+    // (the "business window"). The SELECT window below is additionally widened
+    // to any occurrence that spills outside it, so such occurrences can still
+    // be matched against existing slots.
+    const businessStart = localMinutesToUtcIso(input.startDate, dayStartMin, tz);
+    const businessEnd = localMinutesToUtcIso(input.endDate, dayStartMin + DAY_MIN, tz);
+    let windowStart = businessStart;
+    let windowEnd = businessEnd;
     for (const occ of occurrences) {
       if (occ.startIso < windowStart) windowStart = occ.startIso;
       if (occ.endIso > windowEnd) windowEnd = occ.endIso;
@@ -338,9 +342,17 @@ export async function releaseSlots(
 
     // ── Remove stale slots first so their ranges are free for re-inserts ──
     // (the slots_no_overlap exclusion constraint ignores soft-deleted rows).
+    // Only slots whose business day is inside the released range are stale
+    // candidates: a slot STARTING within [businessStart, businessEnd) belongs
+    // to a released business day. Slots merely overlapping the window edge
+    // (e.g. an overnight spill from the previous day's release) are loaded
+    // only so occurrences can match them — they are never removed.
     // Booked/held slots are never removed; the WHERE re-checks status so a
     // concurrent booking between our SELECT and this UPDATE survives.
-    const stale = existing.filter((row) => !matchedIds.has(row.id));
+    const stale = existing.filter(
+      (row) =>
+        !matchedIds.has(row.id) && row.startIso >= businessStart && row.startIso < businessEnd,
+    );
     const staleLocked = stale.filter((row) => row.status === 'booked' || row.status === 'held');
     summary.keptBooked += staleLocked.length;
 

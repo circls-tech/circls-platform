@@ -365,6 +365,40 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
         .where(sql`tenant_id = ${tenantId} and action = 'slot.remove'`);
       expect(removals.length).toBeGreaterThanOrEqual(2);
     });
+
+    it('never removes a boundary-straddling slot from an adjacent business day', async () => {
+      // Friday 2032-03-12's business day (day start 03:00, persisted on the
+      // arena earlier in this file) owns an overnight slot [Sat 02:00, Sat
+      // 04:00) IST that spills past the Friday business-day end (Sat 03:00).
+      const spill = await releaseSlots(ctx, arenaId, {
+        startDate: '2032-03-12',
+        endDate: '2032-03-12',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 5, startTimeMin: 1560, durationMin: 120, price: 10000 }],
+      });
+      expect(spill.created).toBe(1);
+
+      // Releasing SATURDAY overlaps that spill slot at the window edge, but it
+      // belongs to Friday's business day — out of scope, never removed.
+      const result = await releaseSlots(ctx, arenaId, {
+        startDate: '2032-03-13',
+        endDate: '2032-03-13',
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000 }],
+      });
+      expect(result).toMatchObject({ created: 1, removed: 0, skippedConflict: 0 });
+
+      // The Friday spill slot is still live.
+      const [spillRow] = await db
+        .select()
+        .from(slots)
+        .where(
+          sql`arena_id = ${arenaId} and deleted_at is null
+              and lower(time_range) = '2032-03-12T20:30:00.000Z'::timestamptz`,
+        );
+      expect(spillRow).toBeDefined();
+      expect(spillRow?.status).toBe('open');
+    });
   });
 
   // -------------------------------------------------------------------------
