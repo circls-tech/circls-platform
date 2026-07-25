@@ -117,11 +117,11 @@ function VenueList({
         <li key={v.id}>
           <Link
             href={`/venues/${v.id}?tenantId=${tenantId}`}
-            className="block rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+            className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-[#0f172a]">{v.name}</p>
+                <p className="font-[family-name:var(--font-display)] text-lg font-bold text-[#17151D]">{v.name}</p>
                 <p className="mt-0.5 text-xs text-slate-400">
                   {v.tzName}
                   {v.lat != null && v.lng != null
