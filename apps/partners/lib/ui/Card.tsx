@@ -12,7 +12,7 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
   return (
     <div
       className={[
-        'rounded-[var(--radius)] border border-[#e5e7eb] bg-white shadow-sm',
+        'rounded-[var(--radius)] border border-[#17151D]/15 bg-white shadow-[4px_4px_0_rgba(23,21,29,0.1)]',
         className,
       ].join(' ')}
       {...rest}
