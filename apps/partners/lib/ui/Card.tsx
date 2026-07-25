@@ -18,9 +18,9 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
       {...rest}
     >
       {hasHeader && (
-        <div className="border-b border-[#e5e7eb] px-6 py-4">
+        <div className="border-b-2 border-[#17151D] px-6 py-4">
           {title != null && (
-            <h2 className="text-base font-semibold text-[#0f172a]">{title}</h2>
+            <h2 className="font-[family-name:var(--font-display)] text-base font-bold text-[#17151D]">{title}</h2>
           )}
           {subtitle != null && (
             <p className="mt-0.5 text-sm text-[#475569]">{subtitle}</p>

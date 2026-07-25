@@ -148,7 +148,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
                 'w-full rounded-t-sm transition-all',
                 day.revenuePaise === 0
                   ? 'bg-brand-100'
-                  : 'bg-brand-600 hover:bg-brand-700',
+                  : 'border-2 border-b-0 border-[#17151D] bg-brand-600 hover:bg-brand-700',
               ].join(' ')}
               style={{ height: `${heightPx}px` }}
               title={tooltipText}
@@ -267,7 +267,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-8">
       {/* ── Header ── */}
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
           Good to see you{activeTenant ? `, ${activeTenant.name}` : ''}
         </h1>
         {identity && (
