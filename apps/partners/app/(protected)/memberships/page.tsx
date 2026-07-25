@@ -38,7 +38,8 @@ function fmtPrice(pricePaise: number, currency: CurrencyCode) {
 }
 
 export default function MembershipsPage() {
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
+  const activeTenant = tenants.find((t) => t.id === activeTenantId) ?? null;
   const tenantId = activeTenantId ?? '';
   const { user } = useAuth();
   const authed = Boolean(user);
@@ -125,15 +126,18 @@ export default function MembershipsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-col gap-4">
+      <div>
         <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Memberships</h1>
+        {activeTenant && (
+          <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>
+        )}
       </div>
 
       <Card title="Plans" subtitle="Time-bound passes your customers can buy.">
-        {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading…</p>}
+        {isLoading && <p className="py-2 text-sm text-slate-400">Loading…</p>}
         {!isLoading && memberships?.length === 0 && (
-          <p className="py-6 text-center text-sm text-slate-400">
+          <p className="py-2 text-sm text-slate-500">
             No memberships yet. Create one below.
           </p>
         )}
