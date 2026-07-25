@@ -156,7 +156,7 @@ export default function EventsPage() {
         <Button
           size="sm"
           className="border-2 border-[#17151D] text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-          style={{ backgroundColor: '#9CE0D4' }}
+          style={{ backgroundColor: '#9CE0D4', borderColor: '#17151D' }}
           onClick={() => router.push('/events/new')}
         >
           Create event
