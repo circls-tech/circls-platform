@@ -126,7 +126,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
   }
 
   return (
-    <div className="flex items-end gap-2 h-32 pt-2">
+    <div className="flex items-end gap-2 h-32 border-l-2 border-b-2 border-[#17151D] pl-2 pt-2">
       {trend.map((day) => {
         const heightPx =
           day.revenuePaise === 0
@@ -153,7 +153,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
               style={{ height: `${heightPx}px` }}
               title={tooltipText}
             />
-            <span className="text-[10px] text-slate-400 leading-none">
+            <span className="text-[10px] font-semibold text-[#17151D] leading-none">
               {dayLabel(day.date)}
             </span>
           </div>
