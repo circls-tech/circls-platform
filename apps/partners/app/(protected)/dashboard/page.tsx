@@ -147,8 +147,8 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
               className={[
                 'w-full rounded-t-sm transition-all',
                 day.revenuePaise === 0
-                  ? 'bg-slate-100'
-                  : 'bg-slate-700 hover:bg-slate-600',
+                  ? 'bg-brand-100'
+                  : 'bg-brand-600 hover:bg-brand-700',
               ].join(' ')}
               style={{ height: `${heightPx}px` }}
               title={tooltipText}
