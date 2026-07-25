@@ -85,19 +85,19 @@ function StatCard({ label, value, sublabel, loading, petal, icon }: StatCardProp
         <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-[#17151D]"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-[#17151D]"
             style={{ backgroundColor: petal }}
           >
-            <StatIcon name={icon} currency={currency} size={15} />
+            <StatIcon name={icon} currency={currency} size={13} />
           </span>
           <p className="font-[family-name:var(--font-body)] text-xs font-semibold text-slate-600">{label}</p>
         </div>
         {loading ? (
-          <div className="h-8 w-20 animate-pulse rounded-md bg-slate-100" />
+          <div className="h-7 w-16 animate-pulse rounded-md bg-slate-100" />
         ) : (
-          <p className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
+          <p className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
         )}
-        <p className="font-[family-name:var(--font-body)] text-xs text-slate-500">{sublabel}</p>
+        <p className="font-[family-name:var(--font-body)] text-[11px] text-slate-500">{sublabel}</p>
       </div>
     </Card>
   );
