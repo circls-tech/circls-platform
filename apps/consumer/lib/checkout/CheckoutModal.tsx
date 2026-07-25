@@ -44,8 +44,11 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
   const [phase, setPhase] = useState<Phase>({ kind: 'quoting' });
   const [breakdown, setBreakdown] = useState<QuoteResponse | null>(null);
-  const [codeInput, setCodeInput] = useState('');
-  const [appliedCode, setAppliedCode] = useState<string | undefined>();
+  // A code handed in by the opener (offers strip on the event page) starts
+  // applied; the initial quote validates it like any typed code.
+  const initialCode = prefill.couponCode?.trim().toUpperCase() || undefined;
+  const [codeInput, setCodeInput] = useState(initialCode ?? '');
+  const [appliedCode, setAppliedCode] = useState<string | undefined>(initialCode);
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
 
   const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
