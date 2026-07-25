@@ -87,13 +87,13 @@ function EventList({ tenantId }: { tenantId: string }) {
         {rows.map(({ ev, seriesSize, seriesHasDraft }) => (
           <li
             key={ev.seriesId ?? ev.id}
-            className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-4 shadow-sm"
+            className="rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <Link
                   href={`/events/${ev.id}`}
-                  className="font-medium text-brand-600 hover:text-brand-800 hover:underline"
+                  className="font-[family-name:var(--font-display)] text-lg font-bold text-[#17151D] hover:underline"
                 >
                   {ev.name}
                 </Link>
@@ -153,7 +153,13 @@ export default function EventsPage() {
           <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
           {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button onClick={() => router.push('/events/new')}>Create event</Button>
+        <Button
+          className="border-2 border-[#17151D] text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+          style={{ backgroundColor: '#9CE0D4' }}
+          onClick={() => router.push('/events/new')}
+        >
+          Create event
+        </Button>
       </div>
       <EventList tenantId={activeTenantId} />
     </div>
