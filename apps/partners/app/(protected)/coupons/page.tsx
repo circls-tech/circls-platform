@@ -39,13 +39,20 @@ export default function CouponsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
           {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button onClick={() => router.push('/coupons/new')}>Create coupon</Button>
+        <Button
+          size="sm"
+          className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+          style={{ backgroundColor: '#FFD2A1', borderColor: '#17151D' }}
+          onClick={() => router.push('/coupons/new')}
+        >
+          Create coupon
+        </Button>
       </div>
 
       {isLoading && <p className="text-sm text-slate-500">Loading coupons…</p>}
@@ -69,7 +76,7 @@ export default function CouponsPage() {
               {coupons.map((c) => (
                 <tr key={c.id}>
                   <td className="py-2.5 pr-4 font-medium">
-                    <Link href={`/coupons/${c.id}`} className="text-brand-600 hover:text-brand-800 hover:underline">{c.code}</Link>
+                    <Link href={`/coupons/${c.id}`} className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline">{c.code}</Link>
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">{scopeLabel(c)}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{discountLabel(c, currencyFor(couponVenueId(c)))}</td>
