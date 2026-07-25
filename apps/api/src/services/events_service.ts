@@ -27,10 +27,22 @@ import {
 } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
+import {
+  listQuestions,
+  replaceQuestions,
+  type RegistrationQuestionInput,
+} from './event_registration_questions_service.js';
 
 export interface EventBookingTicketLine {
   tierName: string;
   quantity: number;
+}
+
+export interface EventBookingAnswerLine {
+  questionId: string;
+  /** Question label as it read at booking time. */
+  label: string;
+  answer: string;
 }
 
 export interface EventBookingRow {
@@ -44,6 +56,8 @@ export interface EventBookingRow {
   createdAt: string;
   /** Ticket lines (tier name + quantity), in tier sort order. */
   tickets: EventBookingTicketLine[];
+  /** Registration-question answers, in question sort order. */
+  answers: EventBookingAnswerLine[];
 }
 
 /**
@@ -63,7 +77,8 @@ export async function listEventBookings(
   const raw = await db.execute<Record<string, unknown>>(sql`
     select b.id, b.customer_name, b.customer_contact, b.status, b.total_paise, b.created_at,
            u.display_name as user_display_name, u.email as user_email, u.phone_e164 as user_phone,
-           coalesce(t.tickets, '[]'::json)::text as tickets
+           coalesce(t.tickets, '[]'::json)::text as tickets,
+           coalesce(ans.answers, '[]'::json)::text as answers
     from bookings b
     left join users u on u.id = b.customer_user_id
     left join (
@@ -74,6 +89,15 @@ export async function listEventBookings(
       join event_ticket_tiers tt on tt.id = ebt.tier_id
       group by ebt.booking_id
     ) t on t.booking_id = b.id
+    left join (
+      select era.booking_id,
+             json_agg(json_build_object('questionId', era.question_id, 'label', era.question_label,
+                                        'answer', era.answer)
+                      order by q.sort_order, era.created_at) as answers
+      from event_registration_answers era
+      left join event_registration_questions q on q.id = era.question_id
+      group by era.booking_id
+    ) ans on ans.booking_id = b.id
     where b.tenant_id = ${tenantId}
       and b.item_type = 'event'
       and b.item_data->>'eventId' = ${eventId}
@@ -95,6 +119,7 @@ export async function listEventBookings(
       totalPaise: Number(r['total_paise']),
       createdAt: new Date(r['created_at'] as string).toISOString(),
       tickets: JSON.parse(r['tickets'] as string) as EventBookingTicketLine[],
+      answers: JSON.parse(r['answers'] as string) as EventBookingAnswerLine[],
     };
   });
 }
@@ -115,7 +140,13 @@ export async function listEventsForTenant(tenantId: string): Promise<Event[]> {
 export async function getEvent(
   eventId: string,
   tenantId: string,
-): Promise<(Event & { tiers: Awaited<ReturnType<typeof listTiersWithRemaining>> }) | null> {
+): Promise<
+  | (Event & {
+      tiers: Awaited<ReturnType<typeof listTiersWithRemaining>>;
+      questions: Awaited<ReturnType<typeof listQuestions>>;
+    })
+  | null
+> {
   const [row] = await db
     .select()
     .from(events)
@@ -123,7 +154,8 @@ export async function getEvent(
     .limit(1);
   if (!row) return null;
   const tiers = await listTiersWithRemaining(db, eventId);
-  return { ...row, tiers };
+  const questions = await listQuestions(db, eventId);
+  return { ...row, tiers, questions };
 }
 
 /** Unscoped lookup — callers must then assert tenant membership on event.tenantId. */
@@ -151,6 +183,8 @@ export interface CreateEventInput {
   /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
   maxPerUser?: number | null | undefined;
   tiers: TierInput[];
+  /** Custom registration questions consumers answer at booking; [] / omitted = none. */
+  questions?: RegistrationQuestionInput[] | undefined;
   /** QR entry-ticket rules (null/omitted = disabled). */
   qrTicketConfig?: QrTicketConfig | null | undefined;
 }
@@ -273,6 +307,7 @@ async function insertEventTx(
   if (!row) throw new Error('event insert returned no row');
 
   await replaceTiers(tx, row.id, input.tenantId, input.tiers);
+  await replaceQuestions(tx, row.id, input.tenantId, input.questions ?? []);
 
   await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
     venueId: row.venueId,
@@ -450,6 +485,8 @@ export interface UpdateEventPatch {
   maxPerUser?: number | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
+  /** When provided, replaces all registration questions (draft-only; [] clears). */
+  questions?: RegistrationQuestionInput[];
   /**
    * Published-only: raise individual tiers' capacity by id. A capped tier can
    * go higher or become unlimited (null); never lower, and an unlimited tier
@@ -631,6 +668,10 @@ export async function updateEvent(
 
     if (patch.tiers !== undefined) {
       await replaceTiers(tx, eventId, ctx.tenantId, patch.tiers);
+    }
+
+    if (patch.questions !== undefined) {
+      await replaceQuestions(tx, eventId, ctx.tenantId, patch.questions);
     }
 
     const [updated] = await tx

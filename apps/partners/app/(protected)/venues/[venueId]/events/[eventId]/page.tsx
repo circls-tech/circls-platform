@@ -22,6 +22,12 @@ import {
   type TierDraft,
 } from '@/components/TiersEditor';
 import {
+  EventQuestionsEditor,
+  questionDraftFromApi,
+  questionsToPayload,
+  type QuestionDraft,
+} from '@/components/EventQuestionsEditor';
+import {
   MaxPerUserField,
   maxPerUserFromApi,
   maxPerUserToPayload,
@@ -119,6 +125,7 @@ export default function EventDetailPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
 
@@ -129,6 +136,7 @@ export default function EventDetailPage() {
     setStartsAtLocal(isoToVenueTzLocal(ev.startsAt, tz));
     setEndsAtLocal(isoToVenueTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
+    setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setErrorMsg(null);
     setEditing(true);
@@ -163,6 +171,17 @@ export default function EventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
+    if (
+      questions.some(
+        (q) =>
+          q.label.trim() &&
+          q.type === 'select' &&
+          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
+      )
+    ) {
+      setErrorMsg('Give every multiple-choice question at least 2 options.');
+      return;
+    }
     try {
       await update.mutateAsync({
         eventId,
@@ -172,6 +191,7 @@ export default function EventDetailPage() {
           startsAt: localToVenueTzIso(startsAtLocal, tz),
           endsAt: localToVenueTzIso(endsAtLocal, tz),
           tiers: tiersToPayload(tiers),
+          questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
         },
       });
@@ -367,6 +387,8 @@ export default function EventDetailPage() {
                 </div>
 
                 <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+                <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

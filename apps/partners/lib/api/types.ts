@@ -424,14 +424,17 @@ export interface VenueEvent {
   seriesId: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
+  /** Registration questions consumers answer at booking. Present on the detail endpoint. */
+  questions: EventQuestion[];
 }
 
 /**
  * Event as returned by the LIST endpoints (venue/tenant). Same shape as
- * {@link VenueEvent} but without the per-event `tiers` array, which only the
- * detail endpoint hydrates. `pricePaise` is kept in sync as the min tier price.
+ * {@link VenueEvent} but without the per-event `tiers`/`questions` arrays,
+ * which only the detail endpoint hydrates. `pricePaise` is kept in sync as the
+ * min tier price.
  */
-export type VenueEventSummary = Omit<VenueEvent, 'tiers'>;
+export type VenueEventSummary = Omit<VenueEvent, 'tiers' | 'questions'>;
 
 /** A ticket tier on an event, with live sold/remaining counts. */
 export interface EventTier {
@@ -446,10 +449,29 @@ export interface EventTier {
   remaining: number | null;
 }
 
+/** A custom registration question on an event (draft-editable, like tiers). */
+export interface EventQuestion {
+  id: string;
+  label: string;
+  /** 'text' = free text; 'select' = one of `options`. */
+  type: 'text' | 'select';
+  required: boolean;
+  /** Choices for 'select' questions; null for free-text. */
+  options: string[] | null;
+  sortOrder: number;
+}
+
 /** A consumer registration for an event (partner-facing). */
 export interface EventBookingTicketLine {
   tierName: string;
   quantity: number;
+}
+
+/** One registration-question answer on a booking (label snapshotted at booking). */
+export interface EventBookingAnswerLine {
+  questionId: string;
+  label: string;
+  answer: string;
 }
 
 export interface EventBooking {
@@ -466,6 +488,8 @@ export interface EventBooking {
   createdAt: string;
   /** Ticket lines (tier name + quantity), in tier sort order. */
   tickets: EventBookingTicketLine[];
+  /** Registration-question answers, in question sort order. */
+  answers: EventBookingAnswerLine[];
 }
 
 // ── Memberships (Phase 15) ───────────────────────────────────────────────────

@@ -31,6 +31,12 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import {
+  EventQuestionsEditor,
+  questionDraftFromApi,
+  questionsToPayload,
+  type QuestionDraft,
+} from '@/components/EventQuestionsEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import {
@@ -131,6 +137,7 @@ export default function OrgEventDetailPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
@@ -182,6 +189,7 @@ export default function OrgEventDetailPage() {
     setStartsAtLocal(isoToTzLocal(ev.startsAt, tz));
     setEndsAtLocal(isoToTzLocal(ev.endsAt, tz));
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
+    setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setQrConfig(ev.qrTicketConfig ?? null);
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setVenueChoice(ev.venueId ?? '');
@@ -250,6 +258,17 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
+    if (
+      questions.some(
+        (q) =>
+          q.label.trim() &&
+          q.type === 'select' &&
+          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
+      )
+    ) {
+      setErrorMsg('Give every multiple-choice question at least 2 options.');
+      return;
+    }
 
     const originalChoice = ev?.venueId ?? '';
     const scopeChanged = venueChoice !== originalChoice;
@@ -296,6 +315,7 @@ export default function OrgEventDetailPage() {
           startsAt: localToTzIso(startsAtLocal, editTz),
           endsAt: localToTzIso(endsAtLocal, editTz),
           tiers: tiersToPayload(tiers),
+          questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
           qrTicketConfig: qrConfig,
           ...scopePatch,
@@ -406,6 +426,26 @@ export default function OrgEventDetailPage() {
                     ))}
                   </dd>
                 </div>
+                {ev.questions.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                      Registration questions
+                    </dt>
+                    <dd className="mt-1 flex flex-col gap-1 text-sm text-slate-700">
+                      {ev.questions.map((q) => (
+                        <div key={q.id} className="flex flex-wrap items-baseline gap-2">
+                          <span>{q.label}</span>
+                          <span className="text-xs text-slate-400">
+                            {q.type === 'select'
+                              ? `Choice of ${(q.options ?? []).join(' / ')}`
+                              : 'Free text'}
+                            {q.required ? ' · required' : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </dd>
+                  </div>
+                )}
               </dl>
 
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
@@ -625,6 +665,8 @@ export default function OrgEventDetailPage() {
                   onChange={setTiers}
                   currency={editCurrency}
                 />
+
+                <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

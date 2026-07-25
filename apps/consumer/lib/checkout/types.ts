@@ -1,4 +1,5 @@
 import type { CurrencyCode } from '@/lib/format';
+import type { PublicEventQuestion } from '@/lib/api/types';
 
 export type CheckoutLine = { tierId: string; tierName: string; quantity: number; unitPricePaise: number };
 
@@ -12,7 +13,14 @@ interface CheckoutItemBase {
 
 export type CheckoutItem =
   | (CheckoutItemBase & { kind: 'slot'; slotIds: string[] })
-  | (CheckoutItemBase & { kind: 'event'; eventId: string; lines: CheckoutLine[] })
+  | (CheckoutItemBase & {
+      kind: 'event';
+      eventId: string;
+      lines: CheckoutLine[];
+      /** The event's registration questions — when present, the modal collects
+       *  answers before payment. */
+      questions?: PublicEventQuestion[];
+    })
   | (CheckoutItemBase & { kind: 'membership'; membershipId: string; membershipTierId?: string });
 
 export interface CheckoutPrefill {

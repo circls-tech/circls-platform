@@ -27,6 +27,8 @@ import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './bo
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
+import { listQuestions, type RegistrationAnswerInput } from './event_registration_questions_service.js';
+import type { EventRegistrationQuestion } from '../db/schema/event_registration_questions.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
 import { qrTicketDataUrl } from './qr_ticket_service.js';
@@ -283,6 +285,8 @@ export interface PublicEventWithVenue extends Event {
   images: PublicImageRef[];
   /** Purchasable ticket tiers (public projection); [] on list rows (single-event read only). */
   tiers: PublicTier[];
+  /** Registration questions answered at booking; [] on list rows (single-event read only). */
+  questions: PublicRegistrationQuestion[];
   /** Upcoming published dates in this event's series (1 for one-off events). */
   seriesCount?: number;
   /** Every upcoming date of the series, soonest first (single-event read only). */
@@ -323,6 +327,29 @@ function toPublicTier(t: TierWithRemaining): PublicTier {
   };
 }
 
+/**
+ * Public-facing registration question — the consumer-safe slice of a question
+ * row (no tenantId/eventId/sortOrder/timestamps).
+ */
+export interface PublicRegistrationQuestion {
+  id: string;
+  label: string;
+  type: 'text' | 'select';
+  required: boolean;
+  /** Choices for 'select' questions; null for free-text. */
+  options: string[] | null;
+}
+
+function toPublicQuestion(q: EventRegistrationQuestion): PublicRegistrationQuestion {
+  return {
+    id: q.id,
+    label: q.label,
+    type: q.type,
+    required: q.required,
+    options: q.options,
+  };
+}
+
 interface EventJoinRow {
   e: Event;
   venueName: string | null;
@@ -350,6 +377,7 @@ function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEv
     brand: toBrandSummary(r.brand),
     images,
     tiers: [],
+    questions: [],
   };
 }
 
@@ -433,6 +461,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   const imagesByEvent = await imagesForEvents([joinRow.e.id]);
   let images = imagesByEvent.get(joinRow.e.id) ?? [];
   const tiers = (await listTiersWithRemaining(db, joinRow.e.id)).map(toPublicTier);
+  const questions = (await listQuestions(db, joinRow.e.id)).map(toPublicQuestion);
 
   // Recurring event: expose every upcoming published date of the series for the
   // date picker, and borrow the series gallery when this occurrence has none.
@@ -473,6 +502,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   return {
     ...toPublicEvent(joinRow, images),
     tiers,
+    questions,
     ...(seriesOccurrences
       ? { seriesOccurrences, seriesCount: seriesOccurrences.length }
       : { seriesCount: 1 }),
@@ -760,6 +790,7 @@ export async function consumerBookEvent(
   customer: { userId: string; name?: string | null; contact?: string | null },
   lines: EventLine[],
   couponCode?: string,
+  answers: RegistrationAnswerInput[] = [],
 ): Promise<BookEventResult> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!ev || ev.status !== 'published') throw new NotFound('Event not found', 'event_not_found');
@@ -778,7 +809,7 @@ export async function consumerBookEvent(
   const pricing = couponCode
     ? await resolvePricing({ itemType: 'event', eventId, lines }, customer.userId, couponCode)
     : null;
-  return bookEvent(eventId, customer, pricing, lines);
+  return bookEvent(eventId, customer, pricing, lines, answers);
 }
 
 /** Purchase a membership as a consumer (must be active + tenant visible). */
@@ -894,6 +925,8 @@ export interface MyBookingDetail {
     startsAt: string;
     endsAt: string;
     description: string | null;
+    /** The user's registration-question answers, in the order asked. */
+    answers: { label: string; answer: string }[];
   } | null;
   /** Membership purchases: the plan details (null otherwise). */
   membership: {
@@ -996,16 +1029,27 @@ export async function getMyBookingDetail(
     }));
   }
 
-  const event =
-    itemType === 'event' && r['event_id'] != null
-      ? {
-          id: r['event_id'] as string,
-          name: r['event_name'] as string,
-          startsAt: new Date(r['event_starts_at'] as string).toISOString(),
-          endsAt: new Date(r['event_ends_at'] as string).toISOString(),
-          description: (r['event_description'] as string | null) ?? null,
-        }
-      : null;
+  let event: MyBookingDetail['event'] = null;
+  if (itemType === 'event' && r['event_id'] != null) {
+    const answerRows = await db.execute<Record<string, unknown>>(sql`
+      select era.question_label, era.answer
+      from event_registration_answers era
+      left join event_registration_questions q on q.id = era.question_id
+      where era.booking_id = ${bookingId}
+      order by q.sort_order, era.created_at
+    `);
+    event = {
+      id: r['event_id'] as string,
+      name: r['event_name'] as string,
+      startsAt: new Date(r['event_starts_at'] as string).toISOString(),
+      endsAt: new Date(r['event_ends_at'] as string).toISOString(),
+      description: (r['event_description'] as string | null) ?? null,
+      answers: (answerRows as unknown as Record<string, unknown>[]).map((a) => ({
+        label: a['question_label'] as string,
+        answer: a['answer'] as string,
+      })),
+    };
+  }
 
   // Issued QR tickets for this booking. Membership tickets are keyed on the
   // user_membership (the plain-free path has no booking), so match either way.

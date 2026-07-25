@@ -7,6 +7,11 @@ import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
 import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import {
+  EventQuestionsEditor,
+  questionsToPayload,
+  type QuestionDraft,
+} from '@/components/EventQuestionsEditor';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -60,6 +65,7 @@ export default function NewEventPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
@@ -84,6 +90,17 @@ export default function NewEventPage() {
     }
     if (tiers.some((t) => !t.name.trim())) {
       setErr('Give every ticket tier a name.');
+      return;
+    }
+    if (
+      questions.some(
+        (q) =>
+          q.label.trim() &&
+          q.type === 'select' &&
+          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
+      )
+    ) {
+      setErr('Give every multiple-choice question at least 2 options.');
       return;
     }
 
@@ -123,6 +140,7 @@ export default function NewEventPage() {
               endsAt: localToVenueTzIso(endsAtLocal, tz),
             }),
         tiers: tiersToPayload(tiers),
+        questions: questionsToPayload(questions),
         maxPerUser: maxPerUserToPayload(maxPerUser),
       });
       // For a series, photos land on the first date — the other dates (and the
@@ -214,6 +232,8 @@ export default function NewEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

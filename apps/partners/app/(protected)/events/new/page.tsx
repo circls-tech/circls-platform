@@ -17,6 +17,11 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import {
+  EventQuestionsEditor,
+  questionsToPayload,
+  type QuestionDraft,
+} from '@/components/EventQuestionsEditor';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -65,6 +70,7 @@ export default function NewTenantEventPage() {
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
@@ -133,6 +139,17 @@ export default function NewTenantEventPage() {
       setErr('Give every ticket tier a name.');
       return;
     }
+    if (
+      questions.some(
+        (q) =>
+          q.label.trim() &&
+          q.type === 'select' &&
+          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
+      )
+    ) {
+      setErr('Give every multiple-choice question at least 2 options.');
+      return;
+    }
 
     const isWeekly = recurrence.mode === 'weekly';
     const occurrences = isWeekly
@@ -165,6 +182,7 @@ export default function NewTenantEventPage() {
             endsAt: localToTzIso(endsAtLocal, effectiveTz),
           }),
       tiers: tiersToPayload(tiers),
+      questions: questionsToPayload(questions),
       maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
     };
@@ -333,6 +351,8 @@ export default function NewTenantEventPage() {
           />
 
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
+
+          <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

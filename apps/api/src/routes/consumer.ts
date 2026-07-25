@@ -193,6 +193,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     lines: z
       .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
       .min(1),
+    // Answers to the event's registration questions (validated in the service
+    // against the live question set — required questions must be answered).
+    answers: z
+      .array(z.object({ questionId: z.string().uuid(), answer: z.string().max(2000) }))
+      .max(20)
+      .optional(),
   });
   app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
@@ -208,6 +214,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       },
       parsed.data.lines,
       parsed.data.couponCode,
+      parsed.data.answers ?? [],
     );
   });
 

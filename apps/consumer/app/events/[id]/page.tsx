@@ -86,7 +86,10 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
     if (offerCode) prefill.couponCode = offerCode;
-    openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines, currency }, prefill);
+    openCheckout(
+      { kind: 'event', eventId: ev.id, title: ev.name, lines, currency, questions: ev.questions },
+      prefill,
+    );
   }
 
   const mapsHref =

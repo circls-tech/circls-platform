@@ -9,6 +9,7 @@ import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from 
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { ContactDetailsForm } from './ContactDetailsForm';
+import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
 
 type Phase =
@@ -44,6 +45,10 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
   const [phase, setPhase] = useState<Phase>({ kind: 'quoting' });
   const [breakdown, setBreakdown] = useState<QuoteResponse | null>(null);
+  // Registration-question answers, keyed by question id. null = the questions
+  // step hasn't been completed yet (the gate below shows the form).
+  const [answers, setAnswers] = useState<Record<string, string> | null>(null);
+  const eventQuestions = item.kind === 'event' ? (item.questions ?? []) : [];
   // A code handed in by the opener (offers strip on the event page) starts
   // applied; the initial quote validates it like any typed code.
   const initialCode = prefill.couponCode?.trim().toUpperCase() || undefined;
@@ -107,12 +112,16 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       } else if (item.kind === 'event') {
         const name = prefill.name ?? profile.data?.displayName;
         const contact = prefill.contact ?? user?.phoneNumber ?? profile.data?.email;
+        const answerPayload = eventQuestions
+          .map((q) => ({ questionId: q.id, answer: (answers?.[q.id] ?? '').trim() }))
+          .filter((a) => a.answer.length > 0);
         const r = await bookEvent.mutateAsync({
           eventId: item.eventId,
           lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })),
           ...(name ? { name } : {}),
           ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
+          ...(answerPayload.length > 0 ? { answers: answerPayload } : {}),
         });
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
@@ -164,6 +173,11 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     profile.isSuccess &&
     (!(profile.data.displayName ?? '').trim() || !(profile.data.email ?? '').trim());
 
+  // Events with registration questions collect the answers before the payment
+  // view (after the one-time contact gate). Completing the form stores the
+  // answers and drops straight through to payment.
+  const needsAnswers = eventQuestions.length > 0 && answers === null;
+
   return (
     <Modal open onClose={onClose} title="Checkout">
       <p className="mb-4 text-sm text-[var(--color-text-secondary)]">{item.title}</p>
@@ -172,6 +186,8 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           initialName={(profile.data?.displayName ?? prefill.name ?? user?.displayName ?? '').trim()}
           initialEmail={(profile.data?.email ?? user?.email ?? '').trim()}
         />
+      ) : !done && needsAnswers ? (
+        <RegistrationQuestionsForm questions={eventQuestions} onSubmit={setAnswers} />
       ) : done ? (
         <div className="flex flex-col gap-4">
           <div className={[
