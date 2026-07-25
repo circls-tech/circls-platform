@@ -30,6 +30,14 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** datetime-local inputs hold local wall time — seed them from the ISO string
+ *  via local getters, not a UTC substring, or each save shifts by the offset. */
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -68,8 +76,8 @@ export default function AdminCouponDetailPage() {
     setVisibility(coupon.visibility);
     setMaxDiscountRupees(coupon.maxDiscountPaise != null ? String(coupon.maxDiscountPaise / 100) : '');
     setMinOrderRupees(coupon.minOrderPaise != null ? String(coupon.minOrderPaise / 100) : '');
-    setValidFromLocal(coupon.validFrom ? coupon.validFrom.substring(0, 16) : '');
-    setValidUntilLocal(coupon.validUntil ? coupon.validUntil.substring(0, 16) : '');
+    setValidFromLocal(coupon.validFrom ? isoToLocalInput(coupon.validFrom) : '');
+    setValidUntilLocal(coupon.validUntil ? isoToLocalInput(coupon.validUntil) : '');
     setMaxRedemptions(coupon.maxRedemptions != null ? String(coupon.maxRedemptions) : '');
     setPerUserLimit(coupon.perUserLimit != null ? String(coupon.perUserLimit) : '');
     setErrorMsg(null);
@@ -79,15 +87,21 @@ export default function AdminCouponDetailPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
+    // Zero/empty/garbage in a money or limit field means "no constraint" → null
+    // (the API rejects non-positive numbers).
+    const maxDiscountNum = parseFloat(maxDiscountRupees);
+    const minOrderNum = parseFloat(minOrderRupees);
+    const maxRedemptionsNum = parseInt(maxRedemptions, 10);
+    const perUserLimitNum = parseInt(perUserLimit, 10);
     const patch: AdminUpdateCouponPatch = {
       description: description || null,
       visibility,
-      maxDiscountPaise: maxDiscountRupees ? Math.round(parseFloat(maxDiscountRupees) * 100) : null,
-      minOrderPaise: minOrderRupees ? Math.round(parseFloat(minOrderRupees) * 100) : null,
+      maxDiscountPaise: maxDiscountNum > 0 ? Math.round(maxDiscountNum * 100) : null,
+      minOrderPaise: minOrderNum > 0 ? Math.round(minOrderNum * 100) : null,
       validFrom: validFromLocal ? new Date(validFromLocal).toISOString() : null,
       validUntil: validUntilLocal ? new Date(validUntilLocal).toISOString() : null,
-      maxRedemptions: maxRedemptions ? parseInt(maxRedemptions, 10) : null,
-      perUserLimit: perUserLimit ? parseInt(perUserLimit, 10) : null,
+      maxRedemptions: maxRedemptionsNum > 0 ? maxRedemptionsNum : null,
+      perUserLimit: perUserLimitNum > 0 ? perUserLimitNum : null,
     };
     try {
       await update.mutateAsync({ id: couponId, patch });

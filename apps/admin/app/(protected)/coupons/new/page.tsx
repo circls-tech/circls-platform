@@ -59,6 +59,12 @@ export default function NewAdminCouponPage() {
     const targetId = (manualScopeId.trim() || scopeId).trim();
     if (scopeType !== 'org' && !targetId) return setErr('Pick the target for this scope.');
 
+    // Zero/empty/garbage in an optional money or limit field means "no
+    // constraint" → omit (the API rejects non-positive numbers).
+    const maxDiscountNum = parseFloat(maxDiscountRupees);
+    const minOrderNum = parseFloat(minOrderRupees);
+    const maxRedemptionsNum = parseInt(maxRedemptions, 10);
+    const perUserLimitNum = parseInt(perUserLimit, 10);
     const body: AdminCreateCouponBody = {
       code: code.trim().toUpperCase(),
       scopeType,
@@ -67,12 +73,12 @@ export default function NewAdminCouponPage() {
       visibility,
       ...(description ? { description } : {}),
       ...(scopeType !== 'org' ? { scopeId: targetId } : {}),
-      ...(discountType === 'percent' && maxDiscountRupees ? { maxDiscountPaise: Math.round(parseFloat(maxDiscountRupees) * 100) } : {}),
-      ...(minOrderRupees ? { minOrderPaise: Math.round(parseFloat(minOrderRupees) * 100) } : {}),
+      ...(discountType === 'percent' && maxDiscountNum > 0 ? { maxDiscountPaise: Math.round(maxDiscountNum * 100) } : {}),
+      ...(minOrderNum > 0 ? { minOrderPaise: Math.round(minOrderNum * 100) } : {}),
       ...(validFromLocal ? { validFrom: new Date(validFromLocal).toISOString() } : {}),
       ...(validUntilLocal ? { validUntil: new Date(validUntilLocal).toISOString() } : {}),
-      ...(maxRedemptions ? { maxRedemptions: parseInt(maxRedemptions, 10) } : {}),
-      ...(perUserLimit ? { perUserLimit: parseInt(perUserLimit, 10) } : {}),
+      ...(maxRedemptionsNum > 0 ? { maxRedemptions: maxRedemptionsNum } : {}),
+      ...(perUserLimitNum > 0 ? { perUserLimit: perUserLimitNum } : {}),
     };
     try {
       await create.mutateAsync(body);
