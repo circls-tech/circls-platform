@@ -285,7 +285,7 @@ export default function MembershipsPage() {
       </Card>
 
       <Card title="Create a plan">
-        <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-3">
+        <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-2.5">
           <Input
             label="Name"
             value={name}
@@ -294,25 +294,25 @@ export default function MembershipsPage() {
             placeholder="Monthly Unlimited"
           />
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+            <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
               Description
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
               placeholder="Optional summary shown above the tiers."
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+            <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
               Venue scope
             </label>
             <select
               value={venueId}
               onChange={(e) => setVenueId(e.target.value)}
-              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] hover:border-slate-300"
             >
               <option value="">All venues (org-wide)</option>
               {venues?.map((v) => (
@@ -333,7 +333,7 @@ export default function MembershipsPage() {
             enabledHint="Default for every tier — buyers get a scannable QR pass your staff validate on the Check-in page. Each tier above can override these rules or turn passes off."
           />
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+            <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
               Terms &amp; conditions
             </label>
             <textarea
@@ -341,7 +341,7 @@ export default function MembershipsPage() {
               onChange={(e) => setTerms(e.target.value)}
               rows={2}
               maxLength={5000}
-              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
               placeholder="Optional plan terms (refunds, validity, transferability…)."
             />
           </div>
@@ -361,6 +361,7 @@ export default function MembershipsPage() {
           <div className="flex justify-end">
             <Button
               type="submit"
+              size="sm"
               loading={createMembership.isPending || uploadCover.isPending}
               disabled={!tenantId || !authed}
             >
@@ -432,25 +433,25 @@ function EditMembershipForm({
     >
       <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
           Description
         </label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
           placeholder="Optional"
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
           Venue scope
         </label>
         <select
           value={venueId}
           onChange={(e) => setVenueId(e.target.value)}
-          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] hover:border-slate-300"
         >
           <option value="">All venues (org-wide)</option>
           {venues.map((v) => (
@@ -468,7 +469,7 @@ function EditMembershipForm({
         enabledHint="Default for every tier — buyers get a scannable QR pass your staff validate on the Check-in page. Each tier above can override these rules or turn passes off."
       />
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
           Terms &amp; conditions
         </label>
         <textarea
@@ -476,7 +477,7 @@ function EditMembershipForm({
           onChange={(e) => setTerms(e.target.value)}
           rows={2}
           maxLength={5000}
-          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
           placeholder="Optional"
         />
       </div>

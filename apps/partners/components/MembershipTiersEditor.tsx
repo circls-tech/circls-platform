@@ -96,7 +96,7 @@ export function MembershipTiersEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+      <label className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
         Plan tiers
       </label>
       {value.map((t, i) => (

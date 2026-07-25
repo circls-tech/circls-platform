@@ -18,7 +18,7 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
       {...rest}
     >
       {hasHeader && (
-        <div className="border-b-2 border-[#17151D] px-6 py-4">
+        <div className="border-b-2 border-[#17151D] px-5 py-3">
           {title != null && (
             <h2 className="font-[family-name:var(--font-display)] text-base font-bold text-[#17151D]">{title}</h2>
           )}
@@ -27,7 +27,7 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
           )}
         </div>
       )}
-      <div className="p-6">{children}</div>
+      <div className="p-5">{children}</div>
     </div>
   );
 }
