@@ -30,6 +30,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           'w-full rounded-[var(--radius)] border px-3 py-1.5 text-sm',
           'text-[#0f172a] placeholder:text-[#94a3b8]',
           'transition-colors duration-150',
+          'focus:outline-none focus:border-[#CDBBF7] focus:ring-2 focus:ring-[#CDBBF7]/60',
           error
             ? 'border-red-400 bg-red-50'
             : 'border-[#e5e7eb] bg-white hover:border-slate-300',

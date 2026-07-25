@@ -124,7 +124,12 @@ function CheckInInner() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
-      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Check-in</h1>
+      <div>
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Check-in</h1>
+        <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
+          Validate passes at the door.
+        </p>
+      </div>
 
       {!result && (
         <Card
@@ -150,7 +155,14 @@ function CheckInInner() {
               >
                 Peek (don&apos;t consume)
               </Button>
-              <Button type="submit" loading={validate.isPending} disabled={!code.trim()}>
+              <Button
+                type="submit"
+                size="sm"
+                className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+                style={{ backgroundColor: '#CDBBF7', borderColor: '#17151D' }}
+                loading={validate.isPending}
+                disabled={!code.trim()}
+              >
                 Check in
               </Button>
             </div>
@@ -228,7 +240,14 @@ function CheckInInner() {
                   Check in (consume)
                 </Button>
               )}
-              <Button onClick={reset}>Scan again</Button>
+              <Button
+                size="sm"
+                className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+                style={{ backgroundColor: '#CDBBF7', borderColor: '#17151D' }}
+                onClick={reset}
+              >
+                Scan again
+              </Button>
             </div>
           </div>
         </Card>
