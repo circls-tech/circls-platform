@@ -172,7 +172,12 @@ export default function VenuesPage() {
             <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>
           )}
         </div>
-        <Button variant="primary" size="sm" onClick={() => setShowAddVenue(true)}>
+        <Button
+          variant="primary"
+          size="sm"
+          className="border-2 border-[#17151D] bg-[#BCE3A0] text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5 hover:bg-[#BCE3A0]"
+          onClick={() => setShowAddVenue(true)}
+        >
           + Add venue
         </Button>
       </div>
