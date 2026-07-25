@@ -10,7 +10,7 @@ import { ContextBar } from '@/components/ContextBar';
 import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
-import { Button, BrandMark } from '@/lib/ui';
+import { BrandMark } from '@/lib/ui';
 
 const ORG_SELECTED_KEY = 'circls.orgSelected';
 
@@ -170,6 +170,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 /** Avatar + name + role for the signed-in member, pinned under the nav. */
 function SidebarUserCard() {
+  const { signOut } = useAuth();
   const { data: me } = useMe();
   const { activeTenantId } = useOrg();
   const { data: members } = useTeamMembers(activeTenantId ?? '');
@@ -190,6 +191,30 @@ function SidebarUserCard() {
           {role && <p className="text-xs text-slate-500">{ROLE_LABELS[role] ?? role}</p>}
         </div>
       </div>
+      {/* Sign out — salmon petal pill with the comic border, per the mock. */}
+      <button
+        type="button"
+        onClick={() => void signOut()}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-slate-900 bg-[#FFB0A3] px-3 py-2 text-sm font-bold text-slate-900 shadow-[2px_2px_0_#0f172a] transition-transform hover:-translate-y-0.5"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+        Sign out
+      </button>
     </div>
   );
 }
@@ -276,7 +301,6 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
   const [showOrgSelector, setShowOrgSelector] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { data: tenants } = useMyTenants();
-  const { signOut } = useAuth();
 
   // Close sidebar whenever the route changes
   useEffect(() => {
@@ -315,15 +339,8 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
               </button>
               <ContextBar />
             </div>
-            <div className="flex shrink-0 items-center gap-4">
+            <div className="flex shrink-0 items-center">
               <TimezoneSelect />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void signOut()}
-              >
-                Sign out
-              </Button>
             </div>
           </header>
 
