@@ -153,12 +153,7 @@ export default function EventsPage() {
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
           {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button
-          size="sm"
-          className="border-2 border-[#17151D] text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-          style={{ backgroundColor: '#9CE0D4', borderColor: '#17151D' }}
-          onClick={() => router.push('/events/new')}
-        >
+        <Button size="sm" petal="#9CE0D4" onClick={() => router.push('/events/new')}>
           Create event
         </Button>
       </div>

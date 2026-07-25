@@ -158,8 +158,7 @@ function CheckInInner() {
               <Button
                 type="submit"
                 size="sm"
-                className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-                style={{ backgroundColor: '#CDBBF7', borderColor: '#17151D' }}
+                petal="#CDBBF7"
                 loading={validate.isPending}
                 disabled={!code.trim()}
               >
@@ -240,12 +239,7 @@ function CheckInInner() {
                   Check in (consume)
                 </Button>
               )}
-              <Button
-                size="sm"
-                className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-                style={{ backgroundColor: '#CDBBF7', borderColor: '#17151D' }}
-                onClick={reset}
-              >
+              <Button size="sm" petal="#CDBBF7" onClick={reset}>
                 Scan again
               </Button>
             </div>

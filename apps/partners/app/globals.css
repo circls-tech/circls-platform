@@ -14,8 +14,6 @@
   --color-brand-800: #6390cc;
   --color-brand-900: #47709f;
 
-  /* Accent font (injected by next/font in layout.tsx) */
-  --font-accent: var(--font-accent), cursive;
 
   /* Neutrals — slate */
   --color-surface:        #FAF3E8;
@@ -33,7 +31,7 @@
   --color-tone-blocked-bg: #f4f4f5;
   --color-tone-blocked-text: #52525b;
   --color-tone-booked-bg:  #ecf3fc;
-  --color-tone-booked-text: #47709f;
+  --color-tone-booked-text: #3b5e86;
   --color-tone-success-bg: #dcfce7;
   --color-tone-success-text: #166534;
   --color-tone-warning-bg: #fef9c3;

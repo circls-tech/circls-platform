@@ -46,7 +46,7 @@ function StepperHeader({ current }: { current: number }) {
                   done
                     ? 'border-brand-600 bg-brand-600 text-slate-900'
                     : active
-                      ? 'border-brand-600 bg-white text-brand-600'
+                      ? 'border-[#17151D] bg-white text-[#17151D]'
                       : 'border-slate-300 bg-white text-slate-400',
                 ].join(' ')}
               >

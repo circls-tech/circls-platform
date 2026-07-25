@@ -38,7 +38,7 @@ export default async function HelpArticlePage({
 
       {/* Header */}
       <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-600">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-900">
           {meta.category}
         </span>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{meta.title}</h1>

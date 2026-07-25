@@ -362,8 +362,7 @@ export default function MembershipsPage() {
             <Button
               type="submit"
               size="sm"
-              className="border-2 border-[#17151D] text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-              style={{ backgroundColor: '#F9B4D4', borderColor: '#17151D' }}
+              petal="#F9B4D4"
               loading={createMembership.isPending || uploadCover.isPending}
               disabled={!tenantId || !authed}
             >

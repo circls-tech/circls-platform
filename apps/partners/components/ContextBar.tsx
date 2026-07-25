@@ -38,7 +38,7 @@ function CheckIcon() {
       strokeWidth="2.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-brand-600 shrink-0"
+      className="text-brand-900 shrink-0"
     >
       <polyline points="20 6 9 17 4 12" />
     </svg>
@@ -135,7 +135,7 @@ function Segment({ label, loading, items, currentId, onSelect, addNewHref, addNe
             <Link
               href={addNewHref}
               onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-brand-600 hover:bg-slate-50"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-medium text-brand-900 hover:bg-slate-50"
             >
               <span className="text-base leading-none">＋</span>
               {addNewLabel ?? 'Add new'}
@@ -177,6 +177,8 @@ function OrgSwitcher({
   onSelect: (id: string) => void;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  // A stale/unknown currentId falls back to the first org so the trigger never
+  // renders empty; selection state in the menu still keys off currentId itself.
   const currentIdx = Math.max(0, tenants.findIndex((t) => t.id === currentId));
   const current = tenants[currentIdx];
   const petalFor = (i: number) => ORG_PETALS[i % ORG_PETALS.length];

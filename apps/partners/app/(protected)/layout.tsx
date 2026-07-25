@@ -29,8 +29,10 @@ const NAV_LINKS = [
 ] as const;
 
 
+type NavIconName = (typeof NAV_LINKS)[number]['icon'];
+
 /** Small lucide-style stroke icons for the sidebar nav. */
-function NavIcon({ name }: { name: string }) {
+function NavIcon({ name }: { name: NavIconName }) {
   const common = {
     xmlns: 'http://www.w3.org/2000/svg',
     width: 18,

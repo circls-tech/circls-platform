@@ -7,6 +7,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Petal pastel fill (hex). Renders the comic ink-border/offset-shadow look;
+   *  applied via inline style because variant classes would win the cascade. */
+  petal?: string;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -34,6 +37,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     children,
     className = '',
     type = 'button',
+    petal,
+    style,
     ...rest
   },
   ref,
@@ -50,8 +55,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         'disabled:cursor-not-allowed disabled:opacity-50',
         variantClasses[variant],
         sizeClasses[size],
+        petal
+          ? 'border-2 font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5'
+          : '',
         className,
       ].join(' ')}
+      style={petal ? { backgroundColor: petal, borderColor: '#17151D', ...style } : style}
       {...rest}
     >
       {loading && (

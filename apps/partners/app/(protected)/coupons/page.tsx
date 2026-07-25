@@ -45,12 +45,7 @@ export default function CouponsPage() {
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
           {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button
-          size="sm"
-          className="border-2 text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-          style={{ backgroundColor: '#FFD2A1', borderColor: '#17151D' }}
-          onClick={() => router.push('/coupons/new')}
-        >
+        <Button size="sm" petal="#FFD2A1" onClick={() => router.push('/coupons/new')}>
           Create coupon
         </Button>
       </div>

@@ -91,7 +91,7 @@ export default function VenueEventsPage() {
                     <td className="py-2.5 pr-4 font-medium">
                       <Link
                         href={`/venues/${venueId}/events/${ev.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
-                        className="text-brand-600 hover:text-brand-800 hover:underline"
+                        className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline"
                       >
                         {ev.name}
                       </Link>
