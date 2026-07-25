@@ -104,7 +104,7 @@ export default function HelpPage() {
     <div className="flex flex-col gap-4">
       {/* Header */}
       <div>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Help Centre</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Help Centre</h1>
         <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
           Guides, articles, and support for the circls Partner Portal.
         </p>

@@ -30,7 +30,7 @@ export default function CouponsPage() {
   if (!activeTenantId) {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
         <Card subtitle="Select or create an organisation first to manage its coupons.">
           <p className="text-sm text-slate-500">No active organisation.</p>
         </Card>
@@ -42,7 +42,7 @@ export default function CouponsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
           {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
         <Button

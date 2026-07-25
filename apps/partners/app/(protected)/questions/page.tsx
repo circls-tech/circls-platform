@@ -207,7 +207,7 @@ export default function QuestionsPage() {
   if (!activeTenantId) {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
         <Card subtitle="Select or create an organization first to view its questions.">
           <p className="text-sm text-slate-500">
             No active organization. Use the switcher in the top bar to pick one.
@@ -220,7 +220,7 @@ export default function QuestionsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
         <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
           {activeTenant
             ? `Customer questions and support requests on ${activeTenant.name}'s events, arenas and memberships.`

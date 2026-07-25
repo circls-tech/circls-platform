@@ -181,7 +181,7 @@ export default function ArenaReceptionPage() {
             <span>/</span>
             <span className="font-medium text-slate-700">Reception</span>
           </div>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
+          <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
         </div>
 
         <Link

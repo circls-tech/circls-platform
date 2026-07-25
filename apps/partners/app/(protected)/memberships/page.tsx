@@ -128,7 +128,7 @@ export default function MembershipsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Memberships</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Memberships</h1>
         {activeTenant && (
           <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>
         )}

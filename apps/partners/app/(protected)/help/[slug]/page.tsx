@@ -41,7 +41,7 @@ export default async function HelpArticlePage({
         <span className="text-[10px] font-semibold uppercase tracking-widest text-brand-600">
           {meta.category}
         </span>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">{meta.title}</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{meta.title}</h1>
         <p className="text-sm text-slate-500">{meta.summary}</p>
       </div>
 

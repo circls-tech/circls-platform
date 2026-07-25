@@ -322,7 +322,7 @@ export default function ScheduleBuilderPage() {
         <span className="text-slate-700 font-medium">Schedule Builder</span>
       </div>
 
-      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Schedule Builder</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Schedule Builder</h1>
 
       {/* Config form */}
       <Card title="Configure schedule">

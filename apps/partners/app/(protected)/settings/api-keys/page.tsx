@@ -90,7 +90,7 @@ export default function ApiKeysPage() {
         >
           &larr; Settings
         </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
       </div>
 
       {/* One-shot reveal panel — visible until the user navigates away. */}

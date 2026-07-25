@@ -47,7 +47,7 @@ export default function VenueEventsPage() {
         &larr; Back to venue
       </Link>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
         <Link
           href={`/venues/${venueId}/events/new${tenantId ? `?tenantId=${tenantId}` : ''}`}
           className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-brand-700"

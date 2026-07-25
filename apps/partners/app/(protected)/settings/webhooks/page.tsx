@@ -96,7 +96,7 @@ export default function WebhooksPage() {
         >
           &larr; Settings
         </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
       </div>
 
       {newSub && (
