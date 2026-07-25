@@ -54,7 +54,7 @@ export default function VenuePage() {
       {venue && <VenueDetailsForm venue={venue} />}
       <VenueImages venueId={venueId} />
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Arenas</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Arenas</h1>
         <div className="flex gap-2">
           <Link
             href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}

@@ -127,7 +127,7 @@ export default function MembershipsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-semibold text-[#0f172a]">Memberships</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Memberships</h1>
       </div>
 
       <Card title="Plans" subtitle="Time-bound passes your customers can buy.">

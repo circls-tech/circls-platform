@@ -124,7 +124,7 @@ function CheckInInner() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
-      <h1 className="text-xl font-semibold text-[#0f172a]">Check-in</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Check-in</h1>
 
       {!result && (
         <Card

@@ -65,7 +65,7 @@ export default function TeamPage() {
   return (
     <div className="flex flex-col gap-8 p-2">
       <section>
-        <h1 className="text-xl font-semibold">Team</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Team</h1>
         <p className="mt-1 text-sm text-slate-500">
           Invite teammates, change roles, or remove members. Each role grants a fixed
           set of rights, described below.

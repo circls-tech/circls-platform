@@ -34,7 +34,7 @@ export default function OrganizationSettingsPage() {
         <Link href="/settings" className="text-sm text-slate-500">
           ← Settings
         </Link>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Organisation profile</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Organisation profile</h1>
       </div>
       <p className="max-w-2xl text-sm text-slate-500">
         This is how your organisation appears to customers across Circls. Add a logo, a short

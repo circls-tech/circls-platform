@@ -5,7 +5,7 @@ import { Card } from '@/lib/ui';
 export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-[#0f172a]">Settings</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Settings</h1>
       <Card
         title="Organisation profile"
         subtitle="Your logo, description, contact details, links and address — how customers see you on Circls."

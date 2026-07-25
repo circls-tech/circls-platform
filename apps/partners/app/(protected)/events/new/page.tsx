@@ -227,7 +227,7 @@ export default function NewTenantEventPage() {
       <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
         &larr; Events
       </Link>
-      <h1 className="text-xl font-semibold text-[#0f172a]">New event</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
 
       <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">

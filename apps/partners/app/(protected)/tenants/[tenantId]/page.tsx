@@ -31,7 +31,7 @@ export default function TenantPage() {
       <Link href="/dashboard" className="text-sm text-gray-500">
         ← Dashboard
       </Link>
-      <h1 className="text-xl font-semibold">Venues</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Venues</h1>
       {isLoading && <p className="text-gray-500">Loading…</p>}
       <ul className="flex flex-col gap-2">
         {venues?.map((v) => (

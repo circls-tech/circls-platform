@@ -332,7 +332,7 @@ export default function OrgEventDetailPage() {
       {ev && (
         <>
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-[#0f172a]">{ev.name}</h1>
+            <h1 className="font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">{ev.name}</h1>
             <div className="flex items-center gap-2">
               {ev.seriesId && (
                 <Badge tone="neutral" label={`Recurring · ${series?.events.length ?? '…'} dates`} />

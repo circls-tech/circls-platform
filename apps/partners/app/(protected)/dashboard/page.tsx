@@ -276,7 +276,7 @@ export default function DashboardPage() {
           Good to see you{activeTenant ? `, ${activeTenant.name}` : ''}
         </h1>
         {identity && (
-          <p className="text-sm text-slate-500">Signed in as {identity}</p>
+          <p className="font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">Signed in as {identity}</p>
         )}
       </div>
 

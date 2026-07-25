@@ -102,7 +102,7 @@ export default function CancelBookingPage() {
           <span>/</span>
           <span className="font-medium text-slate-700">Cancel</span>
         </div>
-        <h1 className="mt-1 text-xl font-semibold text-slate-800">Cancel booking</h1>
+        <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-extrabold tracking-tight text-[#17151D]">Cancel booking</h1>
       </div>
 
       {isLoading && (
