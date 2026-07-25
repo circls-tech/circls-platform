@@ -189,7 +189,7 @@ function OrgSwitcher({
   return (
     <details ref={detailsRef} className="relative">
       <summary
-        className="flex cursor-pointer list-none items-center gap-2.5 rounded-xl border-2 border-slate-900 bg-[#FFD2A1]/40 py-1.5 pl-2 pr-3 shadow-[3px_3px_0_#0f172a] select-none"
+        className="flex cursor-pointer list-none items-center gap-2.5 rounded-xl py-1.5 pl-1 pr-2 select-none hover:bg-white/60"
         style={{ outline: 'none' }}
       >
         <OrgInitial name={current?.name ?? '?'} color={petalFor(currentIdx)} className="h-8 w-8 text-sm" />
