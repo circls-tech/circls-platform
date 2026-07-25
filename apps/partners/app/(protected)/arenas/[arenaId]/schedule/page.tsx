@@ -2,11 +2,18 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { Button, Card, Input } from '@/lib/ui';
-import { useArena, useReleaseSlots, useVenues, type ReleaseCell } from '@/lib/api/queries';
-import { currencySymbol, useCurrency } from '@/lib/currency';
+import {
+  useArena,
+  useArenaSlots,
+  useReleaseSlots,
+  useVenues,
+  type ReleaseCell,
+  type ReleaseResult,
+} from '@/lib/api/queries';
+import { type CurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { fmtTzOffset } from '@/lib/time';
@@ -17,6 +24,8 @@ import {
   parseTimeToMin,
   validateBands,
 } from '@/lib/schedule/bands';
+import { diffPlannedCells, type PlannedChanges } from '@/lib/schedule/diff';
+import { fmtTimeKey, gridDayIndex } from '@/lib/schedule/grid';
 import type { ScheduleTemplate, Slot } from '@/lib/api/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -97,21 +106,39 @@ function buildPreviewSlots(cells: ReleaseCell[], weekStart: Date, arenaId: strin
   });
 }
 
-/** Read release cells back from the (possibly edited) preview slots. */
-function previewSlotsToCells(previewSlots: PreviewSlot[]): ReleaseCell[] {
-  const cells: ReleaseCell[] = [];
-  for (const s of previewSlots) {
-    const meta = parseCellId(s.id);
-    if (!meta) continue;
-    cells.push({
-      dayOfWeek: meta.dayOfWeek,
-      startTimeMin: meta.startTimeMin,
-      durationMin: meta.durationMin,
-      price: s.pricePaise,
-      blocked: s.status === 'blocked',
-    });
+/** Shared shape between the client-side planned diff and the API's release summary. */
+type ChangeSummaryLike = Omit<PlannedChanges, 'created'> & {
+  created: number;
+  skippedConflict?: number;
+};
+
+/** Bullet list of what a plan will change / a release did change. */
+function ChangeSummary({ s, currency }: { s: ChangeSummaryLike; currency: CurrencyCode }) {
+  const plural = (n: number) => (n === 1 ? 'slot' : 'slots');
+  const lines: string[] = [];
+  if (s.created > 0) lines.push(`${s.created} new ${plural(s.created)} created`);
+  for (const pc of s.priceChanges) {
+    lines.push(
+      `Price ${formatMoney(pc.fromPaise, currency)} → ${formatMoney(pc.toPaise, currency)} for ${pc.count} ${plural(pc.count)}`,
+    );
   }
-  return cells;
+  if (s.blocked > 0) lines.push(`${s.blocked} ${plural(s.blocked)} blocked`);
+  if (s.unblocked > 0) lines.push(`${s.unblocked} ${plural(s.unblocked)} unblocked`);
+  if (s.removed > 0) lines.push(`${s.removed} ${plural(s.removed)} removed (no longer in the schedule)`);
+  if (s.keptBooked > 0) lines.push(`${s.keptBooked} booked ${plural(s.keptBooked)} kept exactly as they are`);
+  if ((s.skippedConflict ?? 0) > 0)
+    lines.push(`${s.skippedConflict} new ${plural(s.skippedConflict!)} skipped (overlap a booked slot)`);
+  if (s.unchanged > 0) lines.push(`${s.unchanged} ${plural(s.unchanged)} already match — untouched`);
+  if (lines.length === 0) lines.push('No changes.');
+  return (
+    <ul className="mt-1 flex flex-col gap-0.5">
+      {lines.map((line, i) => (
+        <li key={i} className="text-sm">
+          {line}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -151,11 +178,14 @@ export default function ScheduleBuilderPage() {
   const [bands, setBands] = useState<BandRow[]>(DEFAULT_BANDS);
 
   // ── Preview / release state ──
-  const [previewSlots, setPreviewSlots] = useState<PreviewSlot[] | null>(null);
+  // The EDITABLE source of truth is the weekly cell plan; the preview grid is
+  // derived from it (re-anchored to whichever week is being viewed) so
+  // inspector edits and week paging can never drift apart.
+  const [cells, setCells] = useState<ReleaseCell[] | null>(null);
   const [weekStart, setWeekStart] = useState<Date>(sundayOnOrBefore(today));
   const [validationError, setValidationError] = useState<string | null>(null);
   const releaseSlots = useReleaseSlots(arenaId);
-  const [releaseResult, setReleaseResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [releaseResult, setReleaseResult] = useState<ReleaseResult | null>(null);
 
   // ── Prefill from the arena's saved template (once it first loads) ──
   const prefilledRef = useRef(false);
@@ -179,7 +209,7 @@ export default function ScheduleBuilderPage() {
 
   // ── Band-editor helpers ──
   function clearDerived() {
-    setPreviewSlots(null);
+    setCells(null);
     setReleaseResult(null);
     setValidationError(null);
   }
@@ -228,31 +258,97 @@ export default function ScheduleBuilderPage() {
       return;
     }
 
-    const cells = expandBandsToCells({ bands: bandModel, dayStartMin, quantizationMin });
-    const ws = sundayOnOrBefore(startDate);
-    setWeekStart(ws);
-    setPreviewSlots(buildPreviewSlots(cells, ws, arenaId));
+    setWeekStart(sundayOnOrBefore(startDate));
+    setCells(expandBandsToCells({ bands: bandModel, dayStartMin, quantizationMin }));
   }
 
-  // ── Matrix callbacks (edit local preview) ──
+  // ── Existing schedule for the selected range ──
+  // Loaded once a preview exists, so the grid can show real booked slots and
+  // the plan can be diffed against what is already released.
+  const fetchRange = useMemo(() => {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
+      Number.isNaN(dayStartMin)
+    ) {
+      return null;
+    }
+    // The released window covers the business days of [startDate, endDate]:
+    // startDate@dayStart through endDate@dayStart+24h.
+    const from = new Date(`${startDate}T00:00:00`);
+    from.setMinutes(from.getMinutes() + dayStartMin);
+    const to = new Date(`${endDate}T00:00:00`);
+    to.setMinutes(to.getMinutes() + dayStartMin + 24 * 60);
+    return { fromISO: from.toISOString(), toISO: to.toISOString() };
+  }, [startDate, endDate, dayStartMin]);
+
+  const existingQuery = useArenaSlots(arenaId, fetchRange?.fromISO ?? '', fetchRange?.toISO ?? '', {
+    enabled: cells !== null && fetchRange !== null,
+  });
+
+  // Only future slots can be touched by a release; past ones are immutable.
+  const futureExisting = useMemo(() => {
+    const nowMs = Date.now();
+    return (existingQuery.data ?? []).filter((s) => new Date(s.startAt).getTime() > nowMs);
+  }, [existingQuery.data]);
+
+  // ── Derived preview grid ──
+  // Synthetic slots for the visible week from the cell plan, with the week's
+  // real booked/held slots overlaid as locked cells (they replace the plan
+  // cell at the same position — a release will never modify them).
+  const previewSlots = useMemo<PreviewSlot[] | null>(() => {
+    if (!cells) return null;
+    const synthetic = buildPreviewSlots(cells, weekStart, arenaId);
+    const wkFromMs = weekStart.getTime() + (Number.isNaN(dayStartMin) ? 0 : dayStartMin) * 60_000;
+    const wkToMs = wkFromMs + 7 * 24 * 60 * 60_000;
+    const lockedReal = futureExisting.filter((s) => {
+      if (s.status !== 'booked' && s.status !== 'held') return false;
+      const t = new Date(s.startAt).getTime();
+      return t >= wkFromMs && t < wkToMs;
+    });
+    if (lockedReal.length === 0) return synthetic;
+    const posKey = (iso: string) =>
+      `${gridDayIndex(iso, effectiveTz, weekStart, dayStartMin)}:${fmtTimeKey(iso, effectiveTz)}`;
+    const occupied = new Set(lockedReal.map((s) => posKey(s.startAt)));
+    return [...synthetic.filter((s) => !occupied.has(posKey(s.startAt))), ...lockedReal];
+  }, [cells, weekStart, arenaId, futureExisting, effectiveTz, dayStartMin]);
+
+  // ── Planned-changes summary (client-side estimate; release returns exact) ──
+  const plannedChanges = useMemo(() => {
+    if (!cells || !existingQuery.data || Number.isNaN(dayStartMin)) return null;
+    return diffPlannedCells(cells, futureExisting, {
+      tz,
+      dayStartMin,
+      startDate,
+      endDate,
+      todayDate: today,
+    });
+  }, [cells, existingQuery.data, futureExisting, tz, dayStartMin, startDate, endDate]);
+
+  // ── Matrix callbacks (edit the cell plan) ──
   const handleBulk = useCallback((slotIds: string[], patch: { price?: number; blocked?: boolean }) => {
     if (patch.price !== undefined && (Number.isNaN(patch.price) || patch.price < 0)) {
       setValidationError('Per-cell price must be a valid non-negative number.');
       return;
     }
     setValidationError(null);
-    setPreviewSlots((prev) =>
+    const keys = new Set<string>();
+    for (const id of slotIds) {
+      const meta = parseCellId(id);
+      if (meta) keys.add(`${meta.dayOfWeek}-${meta.startTimeMin}-${meta.durationMin}`);
+    }
+    if (keys.size === 0) return;
+    setCells((prev) =>
       prev
-        ? prev.map((s) => {
-            if (!slotIds.includes(s.id)) return s;
-            return {
-              ...s,
-              ...(patch.price !== undefined ? { pricePaise: patch.price } : {}),
-              ...(patch.blocked !== undefined
-                ? { status: patch.blocked ? ('blocked' as const) : ('open' as const) }
-                : {}),
-            };
-          })
+        ? prev.map((c) =>
+            keys.has(`${c.dayOfWeek}-${c.startTimeMin}-${c.durationMin}`)
+              ? {
+                  ...c,
+                  ...(patch.price !== undefined ? { price: patch.price } : {}),
+                  ...(patch.blocked !== undefined ? { blocked: patch.blocked } : {}),
+                }
+              : c,
+          )
         : prev,
     );
   }, []);
@@ -275,7 +371,7 @@ export default function ScheduleBuilderPage() {
 
   // ── Release schedule ──
   async function handleRelease() {
-    if (!previewSlots || previewSlots.length === 0) return;
+    if (!cells || cells.length === 0) return;
     setReleaseResult(null);
 
     const template: ScheduleTemplate = {
@@ -293,7 +389,7 @@ export default function ScheduleBuilderPage() {
         startDate,
         endDate,
         quantizationMin,
-        cells: previewSlotsToCells(previewSlots),
+        cells,
         businessDayStartMin: dayStartMin,
         template,
       });
@@ -401,7 +497,7 @@ export default function ScheduleBuilderPage() {
         <>
           <Card
             title="Preview grid"
-            subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel."
+            subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel. Slots that are already booked show dimmed and can't be edited — a release never changes them."
           >
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
               <span className="font-medium">Times shown in</span>
@@ -423,16 +519,32 @@ export default function ScheduleBuilderPage() {
               onPrevWeek={handlePrevWeek}
               onNextWeek={handleNextWeek}
             />
+
+            {/* Planned changes vs the schedule that is already released */}
+            {plannedChanges && (
+              <div className="mt-4 rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3 text-slate-700">
+                <p className="text-sm font-semibold">Changes vs the current schedule</p>
+                <p className="text-xs text-slate-400">
+                  Booked slots are never modified. Exact numbers are confirmed when you release.
+                </p>
+                <ChangeSummary s={plannedChanges} currency={currency} />
+              </div>
+            )}
+            {!plannedChanges && existingQuery.isLoading && (
+              <p className="mt-4 text-sm text-slate-400">Loading the current schedule…</p>
+            )}
           </Card>
 
           {/* Release action */}
           <Card title="Release schedule">
             <div className="flex flex-col gap-4">
               <p className="text-sm text-slate-500">
-                This will create {quantizationMin}-min slots from{' '}
+                This will apply the {quantizationMin}-min schedule above from{' '}
                 <span className="font-medium text-slate-700">{startDate}</span> to{' '}
-                <span className="font-medium text-slate-700">{endDate}</span> using the {bands.length} pricing band
-                {bands.length === 1 ? '' : 's'} above. Your bands are saved for next time.
+                <span className="font-medium text-slate-700">{endDate}</span>: new slots are created, existing
+                unbooked slots are repriced / blocked / unblocked to match, and unbooked slots that no longer fit
+                the schedule are removed. <span className="font-medium text-slate-700">Booked slots are never
+                changed.</span> Your bands are saved for next time.
               </p>
 
               {releaseSlots.error && (
@@ -442,10 +554,7 @@ export default function ScheduleBuilderPage() {
               {releaseResult && (
                 <div className="rounded bg-green-50 px-4 py-3 text-sm text-green-800">
                   <p className="font-semibold">Schedule released.</p>
-                  <p>
-                    Created: <span className="font-mono">{releaseResult.created}</span> &nbsp;|&nbsp; Skipped (already
-                    existed): <span className="font-mono">{releaseResult.skipped}</span>
-                  </p>
+                  <ChangeSummary s={releaseResult} currency={currency} />
                   <Link
                     href={`/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
                     className="mt-2 inline-block font-medium text-green-700 hover:underline"

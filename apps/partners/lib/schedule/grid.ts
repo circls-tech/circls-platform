@@ -8,13 +8,38 @@
 
 import { businessOffset, parseTimeToMin } from './bands';
 
-const WEEKDAY_ABBRS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+/** "YYYY-MM-DD" calendar date of an instant in `tz`. */
+function dateStrInTz(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** "HH:mm" wall-clock label of an instant in `tz` (shared time-row key). */
+export function fmtTimeKey(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
+}
 
 /**
- * Day-of-week column index (0..6, relative to `weekStart`) that a slot instant
- * belongs to. With `dayStartMin > 0` the instant is shifted back by that many
- * minutes before its weekday is read, so a post-midnight slot buckets into the
- * business day that owns it (e.g. a 2am slot → the previous day's column).
+ * Day column index, as the REAL day difference between the slot's calendar
+ * date (in `tz`) and `weekStart`'s local calendar date. With `dayStartMin > 0`
+ * the instant is shifted back by that many minutes before its date is read, so
+ * a post-midnight slot buckets into the business day that owns it (e.g. a 2am
+ * slot → the previous day's column).
+ *
+ * The result is NOT wrapped mod 7: a slot outside the visible week returns a
+ * negative index or one > 6 and must be dropped by the caller. (Bucketing by
+ * weekday alone folded the reception view's ±1-day fetch padding onto the
+ * visible columns — hidden other-week slots got selected and edited along with
+ * the visible ones.)
  *
  * Relies on the venue tz being non-DST (the same assumption already documented
  * in the backend slot service).
@@ -26,14 +51,12 @@ export function gridDayIndex(
   dayStartMin = 0,
 ): number {
   const shifted = new Date(new Date(iso).getTime() - dayStartMin * 60_000);
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).formatToParts(
-    shifted,
+  const slotDate = dateStrInTz(shifted, tz);
+  const wsDate = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+  // Whole-day difference via UTC-noon anchors (immune to DST/offset wobble).
+  return Math.round(
+    (Date.parse(`${slotDate}T12:00:00Z`) - Date.parse(`${wsDate}T12:00:00Z`)) / 86_400_000,
   );
-  const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
-  const slotDow = WEEKDAY_ABBRS.indexOf(wd as (typeof WEEKDAY_ABBRS)[number]);
-  if (slotDow < 0) return -1;
-  const weekStartDow = weekStart.getDay();
-  return (slotDow - weekStartDow + 7) % 7;
 }
 
 /**

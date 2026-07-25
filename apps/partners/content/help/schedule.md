@@ -37,19 +37,27 @@ You can change the zone times are *displayed* in from the **timezone selector in
   - **Set a price** for the selected slots and **Apply** it.
   - **Block** the selected slots so they aren't bookable (use this for maintenance windows, leagues, or block-out days), or **Unblock** them again.
 - Blocked cells appear greyed out; open cells show their price.
+- If the date range already has released slots, any **booked** slots appear dimmed in the preview at their real position. They can't be selected or edited — releasing never changes a booked slot.
 
 The template repeats every week across your chosen date range, so you only shape one week.
 
+Below the grid, a **"Changes vs the current schedule"** panel compares your plan with what is already released — how many slots would be created, repriced (grouped as *from → to* with a count, e.g. *Price ₹100 → ₹200 for 40 slots*), blocked, unblocked, or removed, and how many booked slots stay exactly as they are. These numbers are an estimate; the release itself reports the exact ones.
+
 ## 3. Release the slots
 
-When the grid looks right, use the **Release schedule** card. It summarises what will be created — for example *"This will create 60-min slots from 2025-01-01 to 2025-03-31 using the 3 pricing bands above."*
+When the grid looks right, use the **Release schedule** card and click **Release schedule**.
 
-Click **Release schedule**. circls then creates the slots and reports:
+Releasing **applies your plan to the selected dates** — it doesn't just add slots, it also updates the schedule that's already there:
 
-- **Created** — how many new slots were added.
-- **Skipped (already existed)** — slots that were already present and left untouched.
+- **New slots are created** where the plan has a slot and nothing exists yet.
+- **Existing unbooked slots are updated in place** — repriced, blocked or unblocked to match the plan.
+- **Existing unbooked slots that no longer fit the plan are removed** (for example after you change band times or shrink the hours).
+- **Booked and held slots are never touched** — they keep their time, price and status, whatever the plan says. A new plan slot that would overlap a booked slot is skipped.
+- **Slots in the past are never touched.**
 
-Releasing is **idempotent**: if you release the same range twice, existing slots are skipped rather than duplicated. You can safely extend a schedule by releasing a later date range later on.
+After the release you get an exact summary of everything that happened: created, price changes (*from → to* with counts), blocked / unblocked, removed, booked slots kept, and slots skipped because they overlap a booking.
+
+Releasing the same range twice with the same plan changes nothing ("already match — untouched"). You can safely extend a schedule by releasing a later date range later on.
 
 After a successful release, follow **Go to reception view →** to see and manage your live slots.
 
