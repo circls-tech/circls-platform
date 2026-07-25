@@ -229,17 +229,17 @@ export default function QuestionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b-2 border-[#17151D]">
+      <div className="flex gap-1 border-b-2 border-[#17151D] pb-2">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
             className={[
-              'rounded-t-md px-4 py-2 text-sm font-semibold transition-colors',
+              'rounded-md px-4 py-2 text-sm font-semibold transition-colors',
               activeTab === tab.key
-                ? 'border-2 border-b-0 border-[#17151D] bg-[#A9C9F2] text-[#17151D]'
-                : 'text-slate-500 hover:text-slate-700',
+                ? 'border-2 border-[#17151D] bg-[#A9C9F2] text-[#17151D]'
+                : 'border-2 border-transparent text-slate-500 hover:text-slate-700',
             ].join(' ')}
           >
             {tab.label}
