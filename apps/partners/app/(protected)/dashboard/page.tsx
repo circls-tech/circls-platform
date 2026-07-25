@@ -126,7 +126,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
   }
 
   return (
-    <div className="flex items-end gap-2 h-32 border-l-2 border-b-2 border-[#17151D] pl-2 pt-2">
+    <div className="flex items-end gap-3 h-36 pt-2">
       {trend.map((day) => {
         const heightPx =
           day.revenuePaise === 0
@@ -141,14 +141,19 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
         return (
           <div
             key={day.date}
-            className="flex flex-1 flex-col items-center gap-1"
+            className="flex flex-1 flex-col items-center gap-1.5"
           >
+            {day.revenuePaise > 0 && (
+              <span className="font-[family-name:var(--font-display)] text-[11px] font-bold leading-none text-[#17151D]">
+                {formatMoney(day.revenuePaise, currency)}
+              </span>
+            )}
             <div
               className={[
-                'w-full rounded-t-sm transition-all',
+                'w-full transition-all',
                 day.revenuePaise === 0
-                  ? 'bg-brand-100'
-                  : 'border-2 border-b-0 border-[#17151D] bg-brand-600 hover:bg-brand-700',
+                  ? 'rounded-full bg-brand-100'
+                  : 'rounded-t-md border-2 border-[#17151D] bg-brand-600 hover:bg-brand-700',
               ].join(' ')}
               style={{ height: `${heightPx}px` }}
               title={tooltipText}
