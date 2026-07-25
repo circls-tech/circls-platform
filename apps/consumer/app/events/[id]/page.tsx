@@ -9,7 +9,6 @@ import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { useEvent, usePublicOrg } from '@/lib/api/consumer';
-import { usePublicCoupons, type PublicCoupon } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
@@ -24,17 +23,6 @@ function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | n
   return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
 }
 
-function offerLabel(o: PublicCoupon, currency: ReturnType<typeof currencyForCountry>): string {
-  return o.discountType === 'percent'
-    ? `${o.discountValue / 100}% off`
-    : `${formatPaiseExact(o.discountValue, currency)} off`;
-}
-
-function selectedOfferDescription(offers: PublicCoupon[], code: string): string {
-  const d = offers.find((o) => o.code === code)?.description;
-  return d ? ` ${d}` : '';
-}
-
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const eventQ = useEvent(id);
@@ -45,11 +33,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
   const [qty, setQty] = useState<Record<string, number>>({});
-  // Public offers for this event (partner- and Circls-funded alike); tapping
-  // one carries it into checkout pre-applied.
-  const offersQ = usePublicCoupons(ev ? { itemType: 'event', itemId: ev.id } : null);
-  const offers = offersQ.data?.rows ?? [];
-  const [offerCode, setOfferCode] = useState<string | null>(null);
   // Prices are denominated by the event's resolved location country.
   const currency = currencyForCountry(countryOfAddress(ev?.locAddressJson));
 
@@ -82,10 +65,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   function book() {
     if (!ev || totalSelected === 0) return;
-    const prefill: { name?: string; contact?: string; couponCode?: string } = {};
+    const prefill: { name?: string; contact?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
-    if (offerCode) prefill.couponCode = offerCode;
     openCheckout({ kind: 'event', eventId: ev.id, title: ev.name, lines, currency }, prefill);
   }
 
@@ -239,43 +221,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               )}
             </Card>
-
-            {offers.length > 0 && (
-              <section className="mt-6">
-                <Card>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
-                    Offers for this event
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {offers.map((o) => {
-                      const selected = o.code === offerCode;
-                      return (
-                        <button
-                          key={o.code}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => setOfferCode(selected ? null : o.code)}
-                          className={[
-                            'rounded-[var(--radius)] border-[2px] border-dashed border-ink px-3 py-1.5 text-sm font-semibold',
-                            selected ? 'bg-ink text-white' : 'bg-white text-ink hover:bg-ink/5',
-                          ].join(' ')}
-                        >
-                          {o.code}
-                          <span className={selected ? 'font-normal opacity-80' : 'font-normal text-text-secondary'}>
-                            {' '}· {offerLabel(o, currency)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-2 text-xs text-text-secondary">
-                    {offerCode
-                      ? `${offerCode} will be applied at checkout.${selectedOfferDescription(offers, offerCode)}`
-                      : 'Tap a code to use it — it’s applied when you book.'}
-                  </p>
-                </Card>
-              </section>
-            )}
 
             {ev.brand && (
               <section className="mt-6">

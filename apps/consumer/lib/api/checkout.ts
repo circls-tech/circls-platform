@@ -36,11 +36,19 @@ export function useCheckoutQuote() {
   });
 }
 
-export function usePublicCoupons(item: { itemType: 'event' | 'membership'; itemId: string } | null) {
+export type PublicCouponsItem =
+  | { itemType: 'event' | 'membership'; itemId: string }
+  | { itemType: 'slot'; slotIds: string[] };
+
+export function usePublicCoupons(item: PublicCouponsItem | null) {
+  const qs = !item
+    ? ''
+    : item.itemType === 'slot'
+      ? `itemType=slot&slotIds=${item.slotIds.join(',')}`
+      : `itemType=${item.itemType}&itemId=${item.itemId}`;
   return useQuery({
-    queryKey: ['public-coupons', item?.itemType, item?.itemId],
+    queryKey: ['public-coupons', qs],
     enabled: Boolean(item),
-    queryFn: () =>
-      apiFetch<{ rows: PublicCoupon[] }>(`/v1/consumer/coupons?itemType=${item!.itemType}&itemId=${item!.itemId}`),
+    queryFn: () => apiFetch<{ rows: PublicCoupon[] }>(`/v1/consumer/coupons?${qs}`),
   });
 }

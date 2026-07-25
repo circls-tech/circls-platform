@@ -78,13 +78,26 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       .union([
         z.object({ itemType: z.literal('event'), itemId: z.string().uuid() }),
         z.object({ itemType: z.literal('membership'), itemId: z.string().uuid() }),
+        // Slot carts (venue court bookings): comma-separated slot ids.
+        z.object({ itemType: z.literal('slot'), slotIds: z.string().min(1) }),
       ])
       .safeParse(req.query);
     if (!q.success) throw new BadRequest('Invalid query', 'bad_request', { issues: q.error.issues });
-    const priced =
-      q.data.itemType === 'event'
-        ? await priceItem({ itemType: 'event', eventId: q.data.itemId })
-        : await priceItem({ itemType: 'membership', membershipId: q.data.itemId });
+    let priced;
+    if (q.data.itemType === 'slot') {
+      const ids = z
+        .array(z.string().uuid())
+        .min(1)
+        .max(50)
+        .safeParse(q.data.slotIds.split(',').map((s) => s.trim()).filter(Boolean));
+      if (!ids.success) throw new BadRequest('Invalid slotIds', 'bad_request', { issues: ids.error.issues });
+      priced = await priceItem({ itemType: 'slot', slotIds: ids.data });
+    } else {
+      priced =
+        q.data.itemType === 'event'
+          ? await priceItem({ itemType: 'event', eventId: q.data.itemId })
+          : await priceItem({ itemType: 'membership', membershipId: q.data.itemId });
+    }
     const rows = await listPublicCouponsForItem(priced, new Date());
     return {
       rows: rows.map((c) => ({

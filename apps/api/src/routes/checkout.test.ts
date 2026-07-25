@@ -81,7 +81,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     await db.execute(sql`delete from users where firebase_uid = 'fbuid_chk_consumer'`);
     await db.execute(sql`delete from users where id = ${ownerId}`);
     await app.close();
-    // Note: closeDb() is called by the multi-tier event suite's afterAll (the
+    // Note: closeDb() is called by the slot-cart coupons suite's afterAll (the
     // last describe in this file) so the shared pool stays open across suites.
   });
 
@@ -207,7 +207,7 @@ describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', (
     // Clean up auto-created consumer user (same as first describe block)
     await db.execute(sql`delete from users where firebase_uid = 'fbuid_chk_consumer'`);
     await app.close();
-    await closeDb();
+    // closeDb() moved to the slot-cart coupons suite (now the last describe).
   });
 
   it('quote with lines → basePaise = 2×VIP + 1×GA = 120000', async () => {
@@ -228,5 +228,126 @@ describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', (
     const body = res.json();
     expect(body.basePaise).toBe(120000); // 2*50000 + 1*20000
     expect(body.coupon).toBeNull();
+  });
+});
+
+/** YYYY-MM-DD, `minDaysOut` days from now (UTC), advanced to `targetDow`
+ *  (0=Sun..6=Sat) — slot release refuses dates in the past (same helper as
+ *  bookings.test.ts). */
+function futureWeekday(minDaysOut: number, targetDow: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + minDaysOut);
+  while (d.getUTCDay() !== targetDow) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+describe.skipIf(!runIntegration)('public coupons listing for slot carts', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+  let arenaId: string;
+  let slotId: string;
+  const SUFFIX = Date.now() + 2;
+  // Wednesday + the following Thursday, at least two weeks out.
+  const wedDate = futureWeekday(14, 3);
+  const thuDate = addDays(wedDate, 1);
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+
+    await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('owner') });
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'SlotCouponCo', slug: `slotcoupon-${SUFFIX}`, country: 'India', acceptTerms: true },
+    });
+    tenantId = (t.json() as { id: string }).id;
+
+    const v = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/venues`,
+      headers: bearer('owner'),
+      payload: { name: 'Coupon Courts' },
+    });
+    const venueId = (v.json() as { id: string }).id;
+    const a = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/arenas`,
+      headers: bearer('owner'),
+      payload: { name: 'Court C' },
+    });
+    arenaId = (a.json() as { id: string }).id;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/arenas/${arenaId}/slots/release`,
+      headers: { ...bearer('owner'), 'idempotency-key': `slotcoupon-${SUFFIX}` },
+      payload: {
+        startDate: wedDate,
+        endDate: wedDate,
+        quantizationMin: 60,
+        cells: [{ dayOfWeek: 3, startTimeMin: 600, durationMin: 60, price: 50000 }],
+      },
+    });
+    const slotsRes = await app.inject({
+      method: 'GET',
+      url: `/v1/arenas/${arenaId}/slots?from=${wedDate}T00:00:00Z&to=${thuDate}T00:00:00Z`,
+      headers: bearer('owner'),
+    });
+    slotId = (slotsRes.json() as Array<{ id: string; status: string }>).find((s) => s.status === 'open')!.id;
+
+    // One public org-wide coupon (should list) + one private (must not).
+    await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/coupons`,
+      headers: bearer('owner'),
+      payload: { code: `SLOTPUB${SUFFIX}`, scopeType: 'org', discountType: 'percent', discountValue: 1000, visibility: 'public' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/coupons`,
+      headers: bearer('owner'),
+      payload: { code: `SLOTPRIV${SUFFIX}`, scopeType: 'org', discountType: 'percent', discountValue: 1000, visibility: 'private' },
+    });
+  });
+
+  afterAll(async () => {
+    // FK dependency order: slots → releases → arena → venue → tenant.
+    await db.execute(sql`delete from coupons where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from slot_releases where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from arenas where venue_id in (select id from venues where tenant_id = ${tenantId})`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    await app.close();
+    await closeDb();
+  });
+
+  it('lists public org coupons for a slot cart, hides private ones', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/coupons?itemType=slot&slotIds=${slotId}`,
+    });
+    expect(res.statusCode).toBe(200);
+    const codes = (res.json() as { rows: Array<{ code: string }> }).rows.map((r) => r.code);
+    expect(codes).toContain(`SLOTPUB${SUFFIX}`);
+    expect(codes).not.toContain(`SLOTPRIV${SUFFIX}`);
+  });
+
+  it('rejects malformed slotIds', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/consumer/coupons?itemType=slot&slotIds=not-a-uuid',
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

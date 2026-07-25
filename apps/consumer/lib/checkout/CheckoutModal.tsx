@@ -6,7 +6,7 @@ import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
 import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
-import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
+import { useCheckoutQuote, usePublicCoupons, type PublicCouponsItem, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
@@ -44,16 +44,16 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
   const [phase, setPhase] = useState<Phase>({ kind: 'quoting' });
   const [breakdown, setBreakdown] = useState<QuoteResponse | null>(null);
-  // A code handed in by the opener (offers strip on the event page) starts
-  // applied; the initial quote validates it like any typed code.
-  const initialCode = prefill.couponCode?.trim().toUpperCase() || undefined;
-  const [codeInput, setCodeInput] = useState(initialCode ?? '');
-  const [appliedCode, setAppliedCode] = useState<string | undefined>(initialCode);
+  const [codeInput, setCodeInput] = useState('');
+  const [appliedCode, setAppliedCode] = useState<string | undefined>();
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
 
-  const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
-    : item.kind === 'membership' ? { itemType: 'membership' as const, itemId: item.membershipId } : null;
-  // Load public offers eagerly (event/membership) so the picker dropdown is populated.
+  const offersItem: PublicCouponsItem =
+    item.kind === 'event' ? { itemType: 'event', itemId: item.eventId }
+    : item.kind === 'membership' ? { itemType: 'membership', itemId: item.membershipId }
+    : { itemType: 'slot', slotIds: item.slotIds };
+  // Load public offers eagerly (all item kinds) so the tappable codes under
+  // the coupon field are ready when the modal opens.
   const offers = usePublicCoupons(offersItem);
 
   useEffect(() => {
@@ -197,26 +197,32 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
           {!appliedCode ? (
             <div className="mt-2 flex flex-col gap-2">
-              {offersItem && (offers.data?.rows.length ?? 0) > 0 && (
-                <select
-                  aria-label="Available offers"
-                  className="w-full rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
-                  value=""
-                  onChange={(e) => { if (e.target.value) applyCode(e.target.value); }}
-                  disabled={busy}
-                >
-                  <option value="">Select an offer…</option>
-                  {offers.data?.rows.map((o) => (
-                    <option key={o.code} value={o.code}>
-                      {o.code} — {o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaiseExact(o.discountValue, cur)} off`}
-                    </option>
-                  ))}
-                </select>
-              )}
               <div className="flex items-end gap-2">
                 <div className="flex-1"><Input label="Coupon code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="Type a code" /></div>
                 <Button variant="secondary" size="sm" onClick={() => applyCode(codeInput)} disabled={!codeInput.trim() || busy}>Apply</Button>
               </div>
+              {(offers.data?.rows.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">Available offers</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {offers.data?.rows.map((o) => (
+                      <button
+                        key={o.code}
+                        type="button"
+                        onClick={() => applyCode(o.code)}
+                        disabled={busy}
+                        title={o.description ?? undefined}
+                        className="rounded-[var(--radius)] border-[2px] border-dashed border-ink bg-white px-3 py-1.5 text-sm font-semibold text-[var(--color-ink)] hover:bg-ink/5 disabled:opacity-50"
+                      >
+                        {o.code}
+                        <span className="font-normal text-[var(--color-text-secondary)]">
+                          {' '}· {o.discountType === 'percent' ? `${o.discountValue / 100}% off` : `${formatPaiseExact(o.discountValue, cur)} off`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <button type="button" onClick={clearCode} className="mt-1 self-start text-xs font-medium text-[var(--color-text-secondary)] underline">Remove coupon</button>
