@@ -83,7 +83,7 @@ function Sidebar({
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r border-slate-900/10 bg-[#FAF3E8] transition-transform duration-200',
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r-[2.5px] border-slate-900 bg-[#FAF3E8] transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
         style={{ zIndex: 50 }}
