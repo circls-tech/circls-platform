@@ -58,9 +58,13 @@ body {
   font-family: var(--font-body), "Plus Jakarta Sans", system-ui, sans-serif;
 }
 
-/* Brand sheet: Bricolage Grotesque for display & headlines everywhere. */
-h1, h2, h3 {
-  font-family: var(--font-display), "Bricolage Grotesque", sans-serif;
+/* Brand sheet: Bricolage Grotesque for display & headlines everywhere.
+   In @layer base so per-element utilities (e.g. the Caveat section labels)
+   still win over it. */
+@layer base {
+  h1, h2, h3 {
+    font-family: var(--font-display), "Bricolage Grotesque", sans-serif;
+  }
 }
 
 *:focus-visible {
