@@ -14,9 +14,6 @@
   --color-brand-800: #6390cc;
   --color-brand-900: #47709f;
 
-  /* Accent font (injected by next/font in layout.tsx) */
-  --font-accent: var(--font-accent), cursive;
-
   /* Neutrals — slate */
   --color-surface:        #FAF3E8;
   --color-surface-card:   #ffffff;
