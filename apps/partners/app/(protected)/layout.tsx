@@ -197,7 +197,8 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
         {/* Right of sidebar */}
         <div className="md:ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
-          <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-6">
+          {/* Taller bar with breathing room, closed off by a bold ink rule. */}
+          <header className="sticky top-0 z-30 flex h-24 items-center justify-between gap-4 border-b-[2.5px] border-slate-900 bg-white px-8 pt-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
