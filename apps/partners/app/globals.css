@@ -58,6 +58,11 @@ body {
   font-family: var(--font-body), "Plus Jakarta Sans", system-ui, sans-serif;
 }
 
+/* Brand sheet: Bricolage Grotesque for display & headlines everywhere. */
+h1, h2, h3 {
+  font-family: var(--font-display), "Bricolage Grotesque", sans-serif;
+}
+
 *:focus-visible {
   outline: 2px solid var(--color-brand-600);
   outline-offset: 2px;

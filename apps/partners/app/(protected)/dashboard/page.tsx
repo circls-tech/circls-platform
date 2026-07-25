@@ -201,7 +201,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
             className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-5 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="font-semibold text-slate-900">{venue.name}</span>
+              <span className="font-[family-name:var(--font-display)] font-bold text-[#17151D]">{venue.name}</span>
               <StatusPill status={venue.status} />
             </div>
             {venue.tzName && (
