@@ -17,29 +17,88 @@ interface StatCardProps {
   loading?: boolean;
   /** Navigator-petal pastel behind the icon chip (brand sheet). */
   petal: string;
-  /** Small glyph rendered in the chip — e.g. ₹ for revenue. */
-  icon: string;
+  /** Stroke icon in the chip; 'currency' renders ₹ or $ per the org currency. */
+  icon: 'calendar' | 'currency' | 'trend' | 'chart';
+}
+
+function StatIcon({ name, currency }: { name: StatCardProps['icon']; currency: CurrencyCode }) {
+  const common = {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: 20,
+    height: 20,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'calendar':
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      );
+    case 'currency':
+      return currency === 'USD' ? (
+        <svg {...common}>
+          <line x1="12" y1="2" x2="12" y2="22" />
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      ) : (
+        <svg {...common}>
+          <path d="M6 3h12" />
+          <path d="M6 8h12" />
+          <path d="m6 13 8.5 8" />
+          <path d="M6 13h3" />
+          <path d="M9 13c6.667 0 6.667-10 0-10" />
+        </svg>
+      );
+    case 'trend':
+      return (
+        <svg {...common}>
+          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+          <polyline points="16 7 22 7 22 13" />
+        </svg>
+      );
+    case 'chart':
+      return (
+        <svg {...common}>
+          <line x1="6" y1="20" x2="6" y2="16" />
+          <line x1="12" y1="20" x2="12" y2="10" />
+          <line x1="18" y1="20" x2="18" y2="4" />
+        </svg>
+      );
+  }
 }
 
 function StatCard({ label, value, sublabel, loading, petal, icon }: StatCardProps) {
+  const currency = useCurrency();
   return (
-    <Card className="flex flex-col gap-3">
-      <div className="flex items-center gap-2.5">
-        <span
-          aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-base font-bold text-[#17151D]"
-          style={{ backgroundColor: petal }}
-        >
-          {icon}
-        </span>
-        <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-slate-600">{label}</p>
+    <Card className="h-full">
+      <div className="flex h-full flex-col justify-between gap-5">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-[#17151D]"
+            style={{ backgroundColor: petal }}
+          >
+            <StatIcon name={icon} currency={currency} />
+          </span>
+          <p className="font-[family-name:var(--font-body)] text-sm font-semibold text-slate-600">{label}</p>
+        </div>
+        {loading ? (
+          <div className="h-12 w-28 animate-pulse rounded-md bg-slate-100" />
+        ) : (
+          <p className="font-[family-name:var(--font-display)] text-5xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
+        )}
+        <p className="font-[family-name:var(--font-body)] text-sm text-slate-500">{sublabel}</p>
       </div>
-      {loading ? (
-        <div className="h-10 w-24 animate-pulse rounded-md bg-slate-100" />
-      ) : (
-        <p className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
-      )}
-      <p className="font-[family-name:var(--font-body)] text-xs text-slate-500">{sublabel}</p>
     </Card>
   );
 }
@@ -228,7 +287,7 @@ export default function DashboardPage() {
             sublabel="Confirmed bookings for today"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FCE38A"
-            icon="🗓"
+            icon="calendar"
           />
           <StatCard
             label="Revenue today"
@@ -236,7 +295,7 @@ export default function DashboardPage() {
             sublabel="Revenue collected today"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FFB0A3"
-            icon="₹"
+            icon="currency"
           />
           <StatCard
             label="Revenue · 7d"
@@ -244,7 +303,7 @@ export default function DashboardPage() {
             sublabel="Total revenue last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#F9B4D4"
-            icon="📈"
+            icon="trend"
           />
           <StatCard
             label="Occupancy · 7d"
@@ -252,7 +311,7 @@ export default function DashboardPage() {
             sublabel="Slot utilisation last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#A9C9F2"
-            icon="📊"
+            icon="chart"
           />
         </div>
       </section>
