@@ -42,7 +42,7 @@ export function TimezoneSelect() {
         aria-label="Display timezone"
         value={viewingTz ?? ''}
         onChange={(e) => setViewingTz(e.target.value || null)}
-        className="max-w-[210px] rounded border border-[#e5e7eb] bg-white px-1.5 py-1 text-xs text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-300"
+        className="max-w-[210px] rounded-lg border border-slate-900/30 bg-[#FFD2A1] px-1.5 py-1 text-xs font-medium text-slate-900 hover:border-slate-900/60 focus:outline-none focus:ring-1 focus:ring-slate-900/40"
       >
         <option value="">Auto · venue / local ({fmtTzOffset(browserTz)})</option>
         <optgroup label="Common">
