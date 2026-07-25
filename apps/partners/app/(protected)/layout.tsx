@@ -223,7 +223,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
           </header>
 
           {/* Content area */}
-          <main className="flex-1 bg-[#f8fafc] p-6">
+          <main className="flex-1 bg-[#F3E9D7] p-6">
             <GatedContent pathname={pathname}>{children}</GatedContent>
           </main>
         </div>
