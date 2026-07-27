@@ -77,12 +77,14 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
       VALUES (${platformTenantId}::uuid, ${adminUserId}::uuid, 'manager')
     `);
 
-    // Partner tenant with 'owner' as its owner member.
+    // Partner tenant with 'owner' as its owner member. country/acceptTerms are
+    // required on main; the branch's schema strips the extra keys, so this
+    // payload works on both the branch and the PR merge ref CI tests.
     const created = await app.inject({
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: `Co ${slugA}`, slug: slugA },
+      payload: { name: `Co ${slugA}`, slug: slugA, country: 'India', acceptTerms: true },
     });
     expect(created.statusCode).toBe(200);
     tenantAId = (created.json() as { id: string }).id;
@@ -118,9 +120,13 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
   });
 
   afterAll(async () => {
-    await db.execute(sql`DELETE FROM login_events WHERE user_id = ${consumerUserId}::uuid`);
-    await db.execute(sql`DELETE FROM consumer_activity WHERE user_id = ${consumerUserId}::uuid`);
-    await db.execute(sql`DELETE FROM bookings WHERE customer_user_id = ${consumerUserId}::uuid`);
+    // consumerUserId is unset if beforeAll failed part-way; skip the dependent
+    // cleanup instead of cascading a second (confusing) SQL error.
+    if (consumerUserId) {
+      await db.execute(sql`DELETE FROM login_events WHERE user_id = ${consumerUserId}::uuid`);
+      await db.execute(sql`DELETE FROM consumer_activity WHERE user_id = ${consumerUserId}::uuid`);
+      await db.execute(sql`DELETE FROM bookings WHERE customer_user_id = ${consumerUserId}::uuid`);
+    }
     if (platformTenantId) {
       await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
       await db.execute(sql`DELETE FROM tenants WHERE id = ${platformTenantId}::uuid`);
