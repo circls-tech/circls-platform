@@ -39,3 +39,34 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   return body as T;
 }
+
+/**
+ * Authenticated file download: fetches `path` with the Firebase token and
+ * triggers a browser save of the response body (e.g. the admin CSV exports,
+ * which a plain <a href> can't reach because of the Bearer header).
+ */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(`${BASE}${path}`, { headers });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => ({}));
+    const e = (body as ApiErrorBody).error;
+    throw new ApiError(
+      e?.code ?? 'request_failed',
+      e?.message ?? `Request failed (${res.status})`,
+      res.status,
+    );
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -10,6 +10,8 @@ import { BrandMark } from '@/components/BrandMark';
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/tenants', label: 'Tenants' },
+  { href: '/users', label: 'Consumers' },
+  { href: '/partner-users', label: 'Partner users' },
   { href: '/payouts', label: 'Payouts' },
   { href: '/listings', label: 'Review queue' },
   { href: '/coupons', label: 'Coupons' },
