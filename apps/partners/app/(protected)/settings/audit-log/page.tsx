@@ -97,7 +97,7 @@ export default function AuditLogPage() {
         >
           &larr; Settings
         </Link>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Activity Log</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Activity Log</h1>
       </div>
 
       {/* Filters */}

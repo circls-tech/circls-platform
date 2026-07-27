@@ -105,7 +105,7 @@ export default function NewCouponPage() {
   return (
     <div className="flex flex-col gap-6">
       <Link href="/coupons" className="text-sm text-slate-500 hover:text-slate-800">&larr; Coupons</Link>
-      <h1 className="text-xl font-semibold text-[#0f172a]">New coupon</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New coupon</h1>
       <Card title="Details">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <Input label="Code" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="SUMMER10" hint="Stored uppercase. Unique within your org." />

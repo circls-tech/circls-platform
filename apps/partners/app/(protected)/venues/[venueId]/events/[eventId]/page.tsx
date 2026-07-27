@@ -209,7 +209,7 @@ export default function EventDetailPage() {
       {ev && (
         <>
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-[#0f172a]">{ev.name}</h1>
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{ev.name}</h1>
             <StatusPill status={ev.status} />
           </div>
 
@@ -266,6 +266,7 @@ export default function EventDetailPage() {
                       Edit
                     </Button>
                     <Button
+                      petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
                       disabled={!authed}

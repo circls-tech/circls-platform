@@ -31,14 +31,14 @@ export default function TenantPage() {
       <Link href="/dashboard" className="text-sm text-gray-500">
         ← Dashboard
       </Link>
-      <h1 className="text-xl font-semibold">Venues</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Venues</h1>
       {isLoading && <p className="text-gray-500">Loading…</p>}
       <ul className="flex flex-col gap-2">
         {venues?.map((v) => (
           <li key={v.id}>
             <Link
               href={`/venues/${v.id}?tenantId=${tenantId}`}
-              className="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white p-3 hover:border-blue-400"
+              className="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white p-3 hover:border-brand-400"
             >
               <span>
                 <span className="font-medium">{v.name}</span>
@@ -64,7 +64,7 @@ export default function TenantPage() {
         <button
           type="submit"
           disabled={createVenue.isPending}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
         >
           {createVenue.isPending ? 'Adding…' : 'Add venue'}
         </button>

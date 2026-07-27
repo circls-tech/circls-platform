@@ -20,7 +20,7 @@ export function TimezoneSelect() {
   }, []);
 
   return (
-    <label className="flex items-center gap-1.5 text-xs text-slate-500" title="Display timezone">
+    <label className="flex items-center gap-1.5 rounded-lg border border-slate-900/30 bg-[#FFD2A1] px-2 py-1 text-xs font-medium text-slate-900 hover:border-slate-900/60" title="Display timezone">
       <svg
         xmlns="http://www.w3.org/2000/svg"
         width="14"
@@ -32,7 +32,7 @@ export function TimezoneSelect() {
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
-        className="shrink-0 text-slate-400"
+        className="shrink-0 text-slate-900"
       >
         <circle cx="12" cy="12" r="10" />
         <path d="M2 12h20" />
@@ -42,7 +42,7 @@ export function TimezoneSelect() {
         aria-label="Display timezone"
         value={viewingTz ?? ''}
         onChange={(e) => setViewingTz(e.target.value || null)}
-        className="max-w-[210px] rounded border border-[#e5e7eb] bg-white px-1.5 py-1 text-xs text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-300"
+        className="max-w-[210px] bg-transparent text-xs font-medium text-slate-900 focus:outline-none"
       >
         <option value="">Auto · venue / local ({fmtTzOffset(browserTz)})</option>
         <optgroup label="Common">

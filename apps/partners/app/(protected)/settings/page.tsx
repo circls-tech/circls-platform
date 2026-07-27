@@ -4,15 +4,20 @@ import { Card } from '@/lib/ui';
 
 export default function SettingsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-[#0f172a]">Settings</h1>
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Settings</h1>
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
+          Your organisation, team and integrations.
+        </p>
+      </div>
       <Card
         title="Organisation profile"
         subtitle="Your logo, description, contact details, links and address — how customers see you on Circls."
       >
         <Link
           href="/settings/organization"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           Edit organisation profile &rarr;
         </Link>
@@ -23,7 +28,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/settings/team"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           Manage team &rarr;
         </Link>
@@ -34,7 +39,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/settings/audit-log"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           View activity log &rarr;
         </Link>
@@ -45,7 +50,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/settings/notifications"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           View notifications &rarr;
         </Link>
@@ -56,7 +61,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/memberships"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           Manage memberships &rarr;
         </Link>
@@ -67,7 +72,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/settings/api-keys"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           Manage API keys &rarr;
         </Link>
@@ -78,7 +83,7 @@ export default function SettingsPage() {
       >
         <Link
           href="/settings/webhooks"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           Manage webhooks &rarr;
         </Link>

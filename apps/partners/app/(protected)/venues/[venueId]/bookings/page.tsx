@@ -458,7 +458,7 @@ export default function BookingsPage() {
             <span>/</span>
             <span className="font-medium text-slate-700">Bookings</span>
           </div>
-          <h1 className="mt-1 text-xl font-semibold text-slate-800">Bookings</h1>
+          <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Bookings</h1>
         </div>
         <Button
           variant="secondary"
@@ -493,7 +493,7 @@ export default function BookingsPage() {
                   className={[
                     'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
                     dateFilter === key
-                      ? 'border-brand-600 bg-brand-600 text-white'
+                      ? 'border-brand-600 bg-brand-600 text-slate-900'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
                   ].join(' ')}
                 >

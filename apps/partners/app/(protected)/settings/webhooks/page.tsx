@@ -96,7 +96,7 @@ export default function WebhooksPage() {
         >
           &larr; Settings
         </Link>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Outbound webhooks</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
       </div>
 
       {newSub && (
@@ -157,7 +157,7 @@ export default function WebhooksPage() {
                     className={[
                       'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                       active
-                        ? 'bg-brand-600 text-white'
+                        ? 'bg-brand-600 text-slate-900'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
                     ].join(' ')}
                   >

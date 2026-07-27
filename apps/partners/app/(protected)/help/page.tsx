@@ -101,27 +101,27 @@ export default function HelpPage() {
   const quickArticles = ARTICLES.filter((a) => a.quickLink);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Help Centre</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Help Centre</h1>
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
           Guides, articles, and support for the circls Partner Portal.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[#e5e7eb]">
+      <div className="flex gap-1 overflow-x-auto border-b-2 border-[#17151D] pb-2">
         {(['articles', 'raise-issue'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
             className={[
-              'px-4 py-2 text-sm font-medium transition-colors',
+              'rounded-md px-4 py-2 text-sm font-semibold transition-colors',
               activeTab === tab
-                ? 'border-b-2 border-brand-600 text-brand-600'
-                : 'text-slate-500 hover:text-slate-700',
+                ? 'border-2 border-[#17151D] bg-[#FCE38A] text-[#17151D]'
+                : 'border-2 border-transparent text-slate-500 hover:text-slate-700',
             ].join(' ')}
           >
             {tab === 'articles' ? 'Articles' : 'Raise an issue'}
@@ -133,7 +133,7 @@ export default function HelpPage() {
         <div className="flex flex-col gap-6">
           {/* Quick access */}
           <section className="flex flex-col gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <h2 className="text-sm font-semibold text-[#EE5C2B]">
               Quick access
             </h2>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -155,7 +155,7 @@ export default function HelpPage() {
 
           {/* Search */}
           <section className="flex flex-col gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <h2 className="text-sm font-semibold text-[#EE5C2B]">
               All articles
             </h2>
             <div className="relative">

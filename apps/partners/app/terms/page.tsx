@@ -35,7 +35,7 @@ export default async function TermsPage({
             className={[
               'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
               activeRegion === 'IN'
-                ? 'bg-brand-600 text-white'
+                ? 'bg-brand-600 text-slate-900'
                 : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:text-slate-900',
             ].join(' ')}
           >
@@ -46,7 +46,7 @@ export default async function TermsPage({
             className={[
               'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
               activeRegion === 'US'
-                ? 'bg-brand-600 text-white'
+                ? 'bg-brand-600 text-slate-900'
                 : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:text-slate-900',
             ].join(' ')}
           >

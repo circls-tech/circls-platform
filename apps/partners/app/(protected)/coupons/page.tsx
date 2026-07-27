@@ -30,7 +30,7 @@ export default function CouponsPage() {
   if (!activeTenantId) {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-[#0f172a]">Coupons</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
         <Card subtitle="Select or create an organisation first to manage its coupons.">
           <p className="text-sm text-slate-500">No active organisation.</p>
         </Card>
@@ -39,13 +39,15 @@ export default function CouponsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-[#0f172a]">Coupons</h1>
-          {activeTenant && <p className="mt-0.5 text-sm text-slate-500">{activeTenant.name}</p>}
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
+          {activeTenant && <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button onClick={() => router.push('/coupons/new')}>Create coupon</Button>
+        <Button size="sm" petal="#FFD2A1" onClick={() => router.push('/coupons/new')}>
+          Create coupon
+        </Button>
       </div>
 
       {isLoading && <p className="text-sm text-slate-500">Loading coupons…</p>}
@@ -69,7 +71,7 @@ export default function CouponsPage() {
               {coupons.map((c) => (
                 <tr key={c.id}>
                   <td className="py-2.5 pr-4 font-medium">
-                    <Link href={`/coupons/${c.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">{c.code}</Link>
+                    <Link href={`/coupons/${c.id}`} className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline">{c.code}</Link>
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">{scopeLabel(c)}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{discountLabel(c, currencyFor(couponVenueId(c)))}</td>

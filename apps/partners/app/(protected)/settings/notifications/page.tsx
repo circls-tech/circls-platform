@@ -69,7 +69,7 @@ export default function NotificationsPage() {
         >
           &larr; Settings
         </Link>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Notifications</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Notifications</h1>
       </div>
 
       <Card title="Filters">

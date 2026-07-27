@@ -757,6 +757,9 @@ export function useTeamMembers(tenantId: string) {
     queryKey: ['team-members', tenantId],
     queryFn: () => apiFetch<TeamMember[]>(`/v1/tenants/${tenantId}/members`),
     enabled: Boolean(tenantId),
+    // Also consumed by the sidebar user card, where members without the
+    // team.read capability get a 4xx — don't retry-spam it.
+    retry: false,
   });
 }
 

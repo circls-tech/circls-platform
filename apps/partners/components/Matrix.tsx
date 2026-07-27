@@ -292,17 +292,17 @@ function Inspector({ selected, slots, currency, mode, onBulk, onBook, onCancel }
 
         {/* Reception: booked-slot customer info */}
         {singleBookedSlot && bookingDetail && (
-          <div className="flex flex-col gap-1.5 rounded-md bg-blue-50 px-3 py-2.5 text-xs">
-            <p className="font-semibold text-blue-800">
+          <div className="flex flex-col gap-1.5 rounded-md bg-brand-100 px-3 py-2.5 text-xs">
+            <p className="font-semibold text-[#17151D]">
               {bookingDetail.customerName ?? '—'}
             </p>
             {bookingDetail.customerContact && (
-              <p className="text-blue-700">{bookingDetail.customerContact}</p>
+              <p className="text-brand-900">{bookingDetail.customerContact}</p>
             )}
             {bookingDetail.note && (
-              <p className="italic text-blue-600">{bookingDetail.note}</p>
+              <p className="italic text-brand-900">{bookingDetail.note}</p>
             )}
-            <p className="text-blue-700">
+            <p className="text-brand-900">
               Total: {formatMoney(bookingDetail.totalPaise, currency)}
             </p>
           </div>

@@ -12,22 +12,22 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
   return (
     <div
       className={[
-        'rounded-[var(--radius)] border border-[#e5e7eb] bg-white shadow-sm',
+        'rounded-[var(--radius)] border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]',
         className,
       ].join(' ')}
       {...rest}
     >
       {hasHeader && (
-        <div className="border-b border-[#e5e7eb] px-6 py-4">
+        <div className="border-b-2 border-[#17151D] px-5 py-3">
           {title != null && (
-            <h2 className="text-base font-semibold text-[#0f172a]">{title}</h2>
+            <h2 className="font-[family-name:var(--font-display)] text-base font-bold text-[#17151D]">{title}</h2>
           )}
           {subtitle != null && (
             <p className="mt-0.5 text-sm text-[#475569]">{subtitle}</p>
           )}
         </div>
       )}
-      <div className="p-6">{children}</div>
+      <div className="p-5">{children}</div>
     </div>
   );
 }

@@ -22,7 +22,7 @@ const WORLD_ZOOM = 2;
 /** Inline SVG pin so we never depend on Leaflet's bundler-hostile image assets. */
 const PIN_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="42" viewBox="0 0 30 42">' +
-  '<path d="M15 0C6.7 0 0 6.7 0 15c0 11 15 27 15 27s15-16 15-27C30 6.7 23.3 0 15 0z" fill="#2563eb"/>' +
+  '<path d="M15 0C6.7 0 0 6.7 0 15c0 11 15 27 15 27s15-16 15-27C30 6.7 23.3 0 15 0z" fill="#6390cc"/>' +
   '<circle cx="15" cy="15" r="6" fill="#fff"/></svg>';
 
 /**

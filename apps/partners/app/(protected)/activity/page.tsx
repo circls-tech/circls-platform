@@ -119,7 +119,7 @@ function BookingsCalendar({
         <Button variant="ghost" size="sm" onClick={() => onMonthChange(shiftMonth(month, -1))} aria-label="Previous month">
           &larr;
         </Button>
-        <span className="text-sm font-semibold text-[#0f172a]">
+        <span className="font-[family-name:var(--font-display)] text-base font-bold text-[#17151D]">
           {MONTH_LABEL.format(new Date(Date.UTC(y, m - 1, 1)))}
         </span>
         <Button variant="ghost" size="sm" onClick={() => onMonthChange(shiftMonth(month, 1))} aria-label="Next month">
@@ -129,7 +129,7 @@ function BookingsCalendar({
 
       <div className="grid grid-cols-7 gap-1">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="pb-1 text-center text-[11px] font-medium text-slate-400">
+          <div key={d} className="pb-1 text-center text-[11px] font-semibold text-[#17151D]/60">
             {d}
           </div>
         ))}
@@ -147,16 +147,17 @@ function BookingsCalendar({
               title={`${count} booking${count === 1 ? '' : 's'}`}
               className={[
                 'flex h-14 flex-col items-center justify-center rounded-md border text-sm transition-colors',
-                count > 0
-                  ? 'border-green-200 bg-green-50 text-green-900 hover:bg-green-100'
-                  : 'border-transparent text-slate-600 hover:bg-slate-50',
-                isSelected ? 'ring-2 ring-brand-500' : '',
+                isSelected
+                  ? 'border-2 border-[#17151D] bg-[#FCE38A] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                  : count > 0
+                    ? 'border-[#BCE3A0] bg-[#BCE3A0]/40 text-[#17151D] hover:bg-[#BCE3A0]/70'
+                    : 'border-transparent text-slate-600 hover:bg-[#FAF3E8]',
               ].join(' ')}
             >
               <span className={['leading-none', isToday ? 'flex h-5 w-5 items-center justify-center rounded-full bg-[#0f172a] text-[11px] font-semibold text-white' : ''].join(' ')}>
                 {day}
               </span>
-              <span className={['mt-1 text-[11px] leading-none', count > 0 ? 'font-semibold text-green-700' : 'text-transparent'].join(' ')}>
+              <span className={['mt-1 text-[11px] leading-none', count > 0 ? 'font-semibold text-[#17151D]' : 'text-transparent'].join(' ')}>
                 {count > 0 ? count : '·'}
               </span>
             </button>
@@ -164,7 +165,7 @@ function BookingsCalendar({
         })}
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        Days with confirmed sessions are green; the number is that day&rsquo;s booking count. Click a
+        Days with confirmed sessions are shaded in petal green; the number is that day&rsquo;s booking count. Click a
         day to see its bookings below.
       </p>
     </div>
@@ -313,8 +314,8 @@ export default function ActivityPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Activity</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Activity</h1>
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
           Everything happening across your organisation — bookings, event registrations and
           membership purchases.
         </p>

@@ -63,8 +63,8 @@ export function TierQrModeControl({
             disabled={disabled}
             onClick={() => onChange(m)}
             className={[
-              'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-              mode === m ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+              'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+              mode === m ? 'bg-[#F9B4D4] text-[#17151D]' : 'text-slate-600 hover:text-slate-900',
             ].join(' ')}
           >
             {labels[m]}
@@ -103,9 +103,9 @@ export function QrTicketRulesFields({
               type="button"
               onClick={() => onPatch({ multiUse: multi, ...(multi ? {} : { maxScans: null }) })}
               className={[
-                'rounded px-3 py-1.5 text-sm font-medium transition-colors',
+                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
                 cfg.multiUse === multi
-                  ? 'bg-slate-900 text-white'
+                  ? 'bg-[#F9B4D4] text-[#17151D]'
                   : 'text-slate-600 hover:text-slate-900',
               ].join(' ')}
             >
@@ -199,8 +199,8 @@ export function QrTicketConfigEditor({
               type="button"
               onClick={() => onChange(on ? { ...cfg, enabled: true } : null)}
               className={[
-                'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-                enabled === on ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                enabled === on ? 'bg-[#F9B4D4] text-[#17151D]' : 'text-slate-600 hover:text-slate-900',
               ].join(' ')}
             >
               {on ? 'Enabled' : 'Off'}

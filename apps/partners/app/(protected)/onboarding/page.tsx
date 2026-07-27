@@ -44,9 +44,9 @@ function StepperHeader({ current }: { current: number }) {
                 className={[
                   'flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors',
                   done
-                    ? 'border-brand-600 bg-brand-600 text-white'
+                    ? 'border-brand-600 bg-brand-600 text-slate-900'
                     : active
-                      ? 'border-brand-600 bg-white text-brand-600'
+                      ? 'border-[#17151D] bg-white text-[#17151D]'
                       : 'border-slate-300 bg-white text-slate-400',
                 ].join(' ')}
               >
@@ -481,7 +481,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to circls</h1>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Welcome to circls</h1>
           <p className="mt-1 text-sm text-slate-500">
             Let&apos;s get your account set up in a few quick steps.
           </p>

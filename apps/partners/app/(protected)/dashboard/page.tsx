@@ -15,18 +15,90 @@ interface StatCardProps {
   value: string;
   sublabel: string;
   loading?: boolean;
+  /** Navigator-petal pastel behind the icon chip (brand sheet). */
+  petal: string;
+  /** Stroke icon in the chip; 'currency' renders ₹ or $ per the org currency. */
+  icon: 'calendar' | 'currency' | 'trend' | 'chart';
 }
 
-function StatCard({ label, value, sublabel, loading }: StatCardProps) {
-  return (
-    <Card className="flex flex-col gap-3">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      {loading ? (
-        <div className="h-9 w-24 animate-pulse rounded-md bg-slate-100" />
+function StatIcon({ name, currency, size = 20 }: { name: StatCardProps['icon']; currency: CurrencyCode; size?: number }) {
+  const common = {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'calendar':
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      );
+    case 'currency':
+      return currency === 'USD' ? (
+        <svg {...common}>
+          <line x1="12" y1="2" x2="12" y2="22" />
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
       ) : (
-        <p className="text-3xl font-bold tracking-tight text-slate-900">{value}</p>
-      )}
-      <p className="text-xs text-slate-400">{sublabel}</p>
+        <svg {...common}>
+          <path d="M6 3h12" />
+          <path d="M6 8h12" />
+          <path d="m6 13 8.5 8" />
+          <path d="M6 13h3" />
+          <path d="M9 13c6.667 0 6.667-10 0-10" />
+        </svg>
+      );
+    case 'trend':
+      return (
+        <svg {...common}>
+          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+          <polyline points="16 7 22 7 22 13" />
+        </svg>
+      );
+    case 'chart':
+      return (
+        <svg {...common}>
+          <line x1="6" y1="20" x2="6" y2="16" />
+          <line x1="12" y1="20" x2="12" y2="10" />
+          <line x1="18" y1="20" x2="18" y2="4" />
+        </svg>
+      );
+  }
+}
+
+function StatCard({ label, value, sublabel, loading, petal, icon }: StatCardProps) {
+  const currency = useCurrency();
+  return (
+    <Card className="h-full">
+      <div className="flex h-full flex-col justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#17151D] text-[#17151D]"
+            style={{ backgroundColor: petal }}
+          >
+            <StatIcon name={icon} currency={currency} size={13} />
+          </span>
+          <p className="font-[family-name:var(--font-body)] text-xs font-semibold text-slate-600">{label}</p>
+        </div>
+        {loading ? (
+          <div className="h-7 w-16 animate-pulse rounded-md bg-slate-100" />
+        ) : (
+          <p className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{value}</p>
+        )}
+        <p className="font-[family-name:var(--font-body)] text-[11px] text-slate-500">{sublabel}</p>
+      </div>
     </Card>
   );
 }
@@ -54,7 +126,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
   }
 
   return (
-    <div className="flex items-end gap-2 h-32 pt-2">
+    <div className="flex items-end gap-3 h-36 pt-2">
       {trend.map((day) => {
         const heightPx =
           day.revenuePaise === 0
@@ -69,19 +141,24 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
         return (
           <div
             key={day.date}
-            className="flex flex-1 flex-col items-center gap-1"
+            className="flex flex-1 flex-col items-center gap-1.5"
           >
+            {day.revenuePaise > 0 && (
+              <span className="font-[family-name:var(--font-display)] text-[11px] font-bold leading-none text-[#17151D]">
+                {formatMoney(day.revenuePaise, currency)}
+              </span>
+            )}
             <div
               className={[
-                'w-full rounded-t-sm transition-all',
+                'w-full transition-all',
                 day.revenuePaise === 0
-                  ? 'bg-slate-100'
-                  : 'bg-slate-700 hover:bg-slate-600',
+                  ? 'rounded-full bg-brand-100'
+                  : 'rounded-t-md border-2 border-[#17151D] bg-brand-600 hover:bg-brand-700',
               ].join(' ')}
               style={{ height: `${heightPx}px` }}
               title={tooltipText}
             />
-            <span className="text-[10px] text-slate-400 leading-none">
+            <span className="text-[10px] font-semibold text-[#17151D] leading-none">
               {dayLabel(day.date)}
             </span>
           </div>
@@ -111,7 +188,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
         <p className="text-sm text-slate-500">No venues yet. Add your first venue to get started.</p>
         <Link
           href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           ＋ Add venue
         </Link>
@@ -126,10 +203,10 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
           <Link
             key={venue.id}
             href={`/venues/${venue.id}?tenantId=${tenantId}`}
-            className="block rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+            className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-5 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="font-semibold text-slate-900">{venue.name}</span>
+              <span className="font-[family-name:var(--font-display)] font-bold text-[#17151D]">{venue.name}</span>
               <StatusPill status={venue.status} />
             </div>
             {venue.tzName && (
@@ -142,7 +219,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
       <div className="pt-1">
         <Link
           href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
           ＋ Add venue
         </Link>
@@ -195,17 +272,17 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-8">
       {/* ── Header ── */}
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
           Good to see you{activeTenant ? `, ${activeTenant.name}` : ''}
         </h1>
         {identity && (
-          <p className="text-sm text-slate-500">Signed in as {identity}</p>
+          <p className="text-sm font-semibold text-[#EE5C2B]">Signed in as {identity}</p>
         )}
       </div>
 
       {/* ── Stat Cards ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+        <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Overview
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -214,24 +291,32 @@ export default function DashboardPage() {
             value={String(bookingsToday)}
             sublabel="Confirmed bookings for today"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#FCE38A"
+            icon="calendar"
           />
           <StatCard
             label="Revenue today"
             value={revenueToday}
             sublabel="Revenue collected today"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#FFB0A3"
+            icon="currency"
           />
           <StatCard
             label="Revenue · 7d"
             value={revenue7d}
             sublabel="Total revenue last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#F9B4D4"
+            icon="trend"
           />
           <StatCard
             label="Occupancy · 7d"
             value={`${occupancy7dPct}%`}
             sublabel="Slot utilisation last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
+            petal="#A9C9F2"
+            icon="chart"
           />
         </div>
       </section>
@@ -239,7 +324,7 @@ export default function DashboardPage() {
       {/* ── 7-day trend chart ── */}
       {activeTenantId && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+          <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
             Last 7 days
           </h2>
           <Card title="Revenue trend">
@@ -281,7 +366,7 @@ export default function DashboardPage() {
 
       {/* ── Venues ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+        <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Your Venues
         </h2>
 
@@ -292,7 +377,7 @@ export default function DashboardPage() {
             </p>
             <Link
               href="/onboarding"
-              className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
             >
               Set up organisation
             </Link>

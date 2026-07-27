@@ -32,13 +32,43 @@ const membershipWindowsQuerySchema = z.object({
   withinDays: z.coerce.number().int().min(1).max(90).default(30),
 });
 
-/** Reject tz names Postgres would choke on with a 400 instead of a 500. */
-function assertValidTimezone(tz: string): void {
+/**
+ * Canonical IANA names for legacy aliases Intl leaves untouched: CLDR pins
+ * these old IDs for stability (Chrome reports 'Asia/Calcutta'), but Postgres
+ * builds without tzdata-legacy reject them.
+ */
+const LEGACY_TZ_ALIASES: Record<string, string> = {
+  'Africa/Asmera': 'Africa/Asmara',
+  'America/Godthab': 'America/Nuuk',
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Dacca': 'Asia/Dhaka',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Macao': 'Asia/Macau',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Asia/Thimbu': 'Asia/Thimphu',
+  'Asia/Ulan_Bator': 'Asia/Ulaanbaatar',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Pacific/Enderbury': 'Pacific/Kanton',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'Pacific/Truk': 'Pacific/Chuuk',
+};
+
+/**
+ * Resolve a tz name to the canonical IANA id Postgres accepts, or 400 on
+ * names Intl rejects (instead of a 500 from Postgres). Intl canonicalizes
+ * most aliases ('US/Eastern' → 'America/New_York'); LEGACY_TZ_ALIASES covers
+ * the ones it returns unchanged.
+ */
+function canonicalizeTimezone(tz: string): string {
+  let resolved: string;
   try {
-    new Intl.DateTimeFormat('en', { timeZone: tz });
+    resolved = new Intl.DateTimeFormat('en', { timeZone: tz }).resolvedOptions().timeZone;
   } catch {
     throw new BadRequest('Invalid timezone', 'invalid_timezone');
   }
+  return LEGACY_TZ_ALIASES[resolved] ?? resolved;
 }
 
 /**
@@ -57,8 +87,8 @@ export const activityRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid activity query', 'bad_request', { issues: parsed.error.issues });
     }
-    const { type, venueId, from, to, q, sessionDate, tz, cursor, limit } = parsed.data;
-    if (tz !== undefined) assertValidTimezone(tz);
+    const { type, venueId, from, to, q, sessionDate, cursor, limit } = parsed.data;
+    const tz = parsed.data.tz === undefined ? undefined : canonicalizeTimezone(parsed.data.tz);
     return listActivity(tenantId, {
       ...(type !== undefined && { type }),
       ...(venueId !== undefined && { venueId }),
@@ -83,8 +113,8 @@ export const activityRoutes: FastifyPluginAsync = async (app) => {
         issues: parsed.error.issues,
       });
     }
-    const { month, tz, venueId } = parsed.data;
-    assertValidTimezone(tz);
+    const { month, venueId } = parsed.data;
+    const tz = canonicalizeTimezone(parsed.data.tz);
     return getActivityDailyCounts(tenantId, {
       month,
       tz,

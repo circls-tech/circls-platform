@@ -87,13 +87,13 @@ function EventList({ tenantId }: { tenantId: string }) {
         {rows.map(({ ev, seriesSize, seriesHasDraft }) => (
           <li
             key={ev.seriesId ?? ev.id}
-            className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-4 shadow-sm"
+            className="rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <Link
                   href={`/events/${ev.id}`}
-                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                  className="font-[family-name:var(--font-display)] text-lg font-bold text-[#17151D] hover:underline"
                 >
                   {ev.name}
                 </Link>
@@ -108,7 +108,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 <StatusPill status={ev.status} />
                 {(ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
                   <Button
-                    variant="secondary"
+                    petal="#A7E3BF"
                     size="sm"
                     loading={publish.isPending || publishSeries.isPending}
                     onClick={() => handlePublish({ ev, seriesSize, seriesHasDraft })}
@@ -136,7 +136,7 @@ export default function EventsPage() {
   if (!activeTenantId) {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-[#0f172a]">Events</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
         <Card subtitle="Select or create an organization first to view its events.">
           <p className="text-sm text-slate-500">
             No active organization. Use the switcher in the top bar to pick one.
@@ -150,10 +150,12 @@ export default function EventsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-[#0f172a]">Events</h1>
-          {activeTenant && <p className="mt-0.5 text-sm text-slate-500">{activeTenant.name}</p>}
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
+          {activeTenant && <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button onClick={() => router.push('/events/new')}>Create event</Button>
+        <Button size="sm" petal="#9CE0D4" onClick={() => router.push('/events/new')}>
+          Create event
+        </Button>
       </div>
       <EventList tenantId={activeTenantId} />
     </div>

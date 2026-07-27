@@ -47,10 +47,10 @@ export default function VenueEventsPage() {
         &larr; Back to venue
       </Link>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-[#0f172a]">Events</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
         <Link
           href={`/venues/${venueId}/events/new${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-brand-700"
         >
           + New event
         </Link>
@@ -91,7 +91,7 @@ export default function VenueEventsPage() {
                     <td className="py-2.5 pr-4 font-medium">
                       <Link
                         href={`/venues/${venueId}/events/${ev.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
-                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                        className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline"
                       >
                         {ev.name}
                       </Link>
@@ -115,7 +115,7 @@ export default function VenueEventsPage() {
                     <td className="py-2.5">
                       {ev.status === 'draft' && (
                         <Button
-                          variant="secondary"
+                          petal="#A7E3BF"
                           size="sm"
                           loading={publish.isPending}
                           onClick={() => handlePublish(ev.id)}

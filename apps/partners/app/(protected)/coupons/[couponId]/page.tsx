@@ -106,7 +106,7 @@ export default function CouponDetailPage() {
       {coupon && (
         <>
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-[#0f172a]">{coupon.code}</h1>
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{coupon.code}</h1>
             <StatusPill status={coupon.status} />
           </div>
 

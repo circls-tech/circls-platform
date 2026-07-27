@@ -129,7 +129,7 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
         )}
       </div>
 
-      {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading&hellip;</p>}
+      {isLoading && <p className="py-2 text-sm text-slate-400">Loading&hellip;</p>}
       {isError && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
           Failed to load questions{error instanceof Error ? `: ${error.message}` : '.'}
@@ -137,7 +137,7 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
       )}
       {!isLoading && !isError && rows.length === 0 && (
         <Card>
-          <p className="py-4 text-center text-sm text-slate-400">
+          <p className="py-2 text-sm text-slate-500">
             No {tab} questions
             {visibilityFilter || subjectFilter || originFilter ? ' match these filters' : ''}.
           </p>
@@ -150,7 +150,7 @@ function ThreadList({ tenantId, tab }: { tenantId: string; tab: TabKey }) {
             <li key={row.id}>
               <Link
                 href={`/questions/${row.id}`}
-                className="block rounded-[var(--radius)] border border-[#e5e7eb] bg-white p-4 shadow-sm transition-colors hover:border-brand-300 hover:bg-slate-50"
+                className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-slate-900">
@@ -207,7 +207,7 @@ export default function QuestionsPage() {
   if (!activeTenantId) {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-[#0f172a]">Questions</h1>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
         <Card subtitle="Select or create an organization first to view its questions.">
           <p className="text-sm text-slate-500">
             No active organization. Use the switcher in the top bar to pick one.
@@ -218,10 +218,10 @@ export default function QuestionsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-[#0f172a]">Questions</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
           {activeTenant
             ? `Customer questions and support requests on ${activeTenant.name}'s events, arenas and memberships.`
             : 'Customer questions and support requests on your events, arenas and memberships.'}
@@ -229,17 +229,17 @@ export default function QuestionsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[#e5e7eb]">
+      <div className="flex gap-1 overflow-x-auto border-b-2 border-[#17151D] pb-2">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
             className={[
-              'px-4 py-2 text-sm font-medium transition-colors',
+              'rounded-md px-4 py-2 text-sm font-semibold transition-colors',
               activeTab === tab.key
-                ? 'border-b-2 border-brand-600 text-brand-600'
-                : 'text-slate-500 hover:text-slate-700',
+                ? 'border-2 border-[#17151D] bg-[#A9C9F2] text-[#17151D]'
+                : 'border-2 border-transparent text-slate-500 hover:text-slate-700',
             ].join(' ')}
           >
             {tab.label}
