@@ -111,7 +111,7 @@ export default function HelpPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b-2 border-[#17151D] pb-2">
+      <div className="flex gap-1 overflow-x-auto border-b-2 border-[#17151D] pb-2">
         {(['articles', 'raise-issue'] as const).map((tab) => (
           <button
             key={tab}
