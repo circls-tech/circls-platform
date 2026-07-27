@@ -32,11 +32,20 @@ function answersOf(b: EventBooking) {
   return b.answers ?? [];
 }
 
-/** Unique registration-question labels across the rows, in asked order. */
-function answerColumns(rows: EventBooking[]): string[] {
-  const cols: string[] = [];
+/**
+ * One column per distinct question across the rows, in asked order. Keyed by
+ * question id (labels aren't unique — two questions may read the same).
+ */
+function answerColumns(rows: EventBooking[]): { questionId: string; label: string }[] {
+  const cols: { questionId: string; label: string }[] = [];
+  const seen = new Set<string>();
   for (const b of rows) {
-    for (const a of answersOf(b)) if (!cols.includes(a.label)) cols.push(a.label);
+    for (const a of answersOf(b)) {
+      if (!seen.has(a.questionId)) {
+        seen.add(a.questionId);
+        cols.push({ questionId: a.questionId, label: a.label });
+      }
+    }
   }
   return cols;
 }
@@ -53,7 +62,7 @@ function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode)
       'Status',
       `Amount (${currencySymbol(currency)})`,
       'Registered At',
-      ...answerCols,
+      ...answerCols.map((c) => c.label),
     ],
     rows.map((b) => [
       b.id,
@@ -64,7 +73,9 @@ function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode)
       b.status,
       (b.totalPaise / 100).toFixed(2),
       fmt(b.createdAt, tz),
-      ...answerCols.map((label) => answersOf(b).find((a) => a.label === label)?.answer ?? ''),
+      ...answerCols.map(
+        (c) => answersOf(b).find((a) => a.questionId === c.questionId)?.answer ?? '',
+      ),
     ]),
   );
 }

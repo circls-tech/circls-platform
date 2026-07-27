@@ -4,6 +4,9 @@ import { Button, Input } from '@/lib/ui';
 import type { EventQuestion } from '@/lib/api/types';
 import type { EventQuestionInput } from '@/lib/api/events';
 
+/** Cap on questions per event — keep in sync with the API's MAX_EVENT_QUESTIONS. */
+export const MAX_EVENT_QUESTIONS = 20;
+
 /** Form-draft shape: select options are edited as one comma-separated string. */
 export interface QuestionDraft {
   label: string;
@@ -174,7 +177,7 @@ export function EventQuestionsEditor({
           variant="secondary"
           size="sm"
           className="self-start"
-          disabled={value.length >= 20}
+          disabled={value.length >= MAX_EVENT_QUESTIONS}
           onClick={() => onChange([...value, emptyQuestion()])}
         >
           + Add question

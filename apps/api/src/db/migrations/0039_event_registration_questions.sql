@@ -42,6 +42,6 @@ ALTER TABLE "event_registration_answers" ADD CONSTRAINT "event_registration_answ
 --> statement-breakpoint
 CREATE INDEX "event_registration_questions_event_id_idx" ON "event_registration_questions" ("event_id");
 --> statement-breakpoint
-CREATE INDEX "event_registration_answers_booking_id_idx" ON "event_registration_answers" ("booking_id");
+CREATE UNIQUE INDEX "event_registration_answers_booking_question_uq" ON "event_registration_answers" ("booking_id", "question_id");
 --> statement-breakpoint
 CREATE INDEX "event_registration_answers_question_id_idx" ON "event_registration_answers" ("question_id");

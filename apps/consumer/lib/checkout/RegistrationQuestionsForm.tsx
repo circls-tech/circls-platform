@@ -12,12 +12,18 @@ import { Button, Input } from '@/lib/ui';
  */
 export function RegistrationQuestionsForm({
   questions,
+  initial,
+  serverError,
   onSubmit,
 }: {
   questions: PublicEventQuestion[];
+  /** Previously entered answers (coming back from the payment view). */
+  initial?: Record<string, string>;
+  /** A rejection from the booking call, shown until the form is resubmitted. */
+  serverError?: string | null;
   onSubmit: (answers: Record<string, string>) => void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(initial ?? {});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function set(questionId: string, value: string) {
@@ -41,6 +47,7 @@ export function RegistrationQuestionsForm({
       <p className="text-sm text-[var(--color-text-secondary)]">
         The organiser needs a few details for this event.
       </p>
+      {serverError && <p className="text-xs font-semibold text-petal-red">{serverError}</p>}
       {questions.map((q) =>
         q.type === 'select' ? (
           <div key={q.id} className="flex flex-col gap-1">

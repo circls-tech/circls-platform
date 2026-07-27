@@ -6,6 +6,7 @@ import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
 import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
+import { ApiError } from '@/lib/api/client';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { ContactDetailsForm } from './ContactDetailsForm';
@@ -46,8 +47,12 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   const [phase, setPhase] = useState<Phase>({ kind: 'quoting' });
   const [breakdown, setBreakdown] = useState<QuoteResponse | null>(null);
   // Registration-question answers, keyed by question id. null = the questions
-  // step hasn't been completed yet (the gate below shows the form).
+  // step hasn't been completed yet (the gate below shows the form). savedAnswers
+  // keeps the entered values so returning to the form (edit / server rejection)
+  // doesn't lose them.
   const [answers, setAnswers] = useState<Record<string, string> | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
+  const [answersError, setAnswersError] = useState<string | null>(null);
   const eventQuestions = item.kind === 'event' ? (item.questions ?? []) : [];
   // A code handed in by the opener (offers strip on the event page) starts
   // applied; the initial quote validates it like any typed code.
@@ -150,6 +155,14 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
       else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
     } catch (e) {
+      // A rejected answer is fixable — reopen the questions form (pre-filled)
+      // with the server's message instead of dead-ending on the error screen.
+      if (e instanceof ApiError && (e.code === 'answer_required' || e.code === 'invalid_answer_option')) {
+        setAnswersError(e.message);
+        setAnswers(null);
+        setPhase({ kind: 'ready' });
+        return;
+      }
       const raw = (e as Error).message;
       const message = /sold out/i.test(raw)
         ? 'A ticket tier just sold out — go back and adjust quantities.'
@@ -187,7 +200,16 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           initialEmail={(profile.data?.email ?? user?.email ?? '').trim()}
         />
       ) : !done && needsAnswers ? (
-        <RegistrationQuestionsForm questions={eventQuestions} onSubmit={setAnswers} />
+        <RegistrationQuestionsForm
+          questions={eventQuestions}
+          initial={savedAnswers}
+          serverError={answersError}
+          onSubmit={(a) => {
+            setSavedAnswers(a);
+            setAnswersError(null);
+            setAnswers(a);
+          }}
+        />
       ) : done ? (
         <div className="flex flex-col gap-4">
           <div className={[
@@ -210,6 +232,17 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise, cur)} muted />}
           <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
           <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : '—'} bold />
+
+          {eventQuestions.length > 0 && answers !== null && (
+            <button
+              type="button"
+              onClick={() => setAnswers(null)}
+              disabled={busy}
+              className="self-start text-xs font-medium text-[var(--color-text-secondary)] underline"
+            >
+              Edit your answers
+            </button>
+          )}
 
           {!appliedCode ? (
             <div className="mt-2 flex flex-col gap-2">
