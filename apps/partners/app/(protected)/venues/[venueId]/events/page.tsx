@@ -115,7 +115,7 @@ export default function VenueEventsPage() {
                     <td className="py-2.5">
                       {ev.status === 'draft' && (
                         <Button
-                          variant="secondary"
+                          petal="#A7E3BF"
                           size="sm"
                           loading={publish.isPending}
                           onClick={() => handlePublish(ev.id)}

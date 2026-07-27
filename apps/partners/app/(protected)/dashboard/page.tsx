@@ -282,7 +282,7 @@ export default function DashboardPage() {
 
       {/* ── Stat Cards ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
+        <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Overview
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -324,7 +324,7 @@ export default function DashboardPage() {
       {/* ── 7-day trend chart ── */}
       {activeTenantId && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
+          <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
             Last 7 days
           </h2>
           <Card title="Revenue trend">
@@ -366,7 +366,7 @@ export default function DashboardPage() {
 
       {/* ── Venues ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
+        <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Your Venues
         </h2>
 

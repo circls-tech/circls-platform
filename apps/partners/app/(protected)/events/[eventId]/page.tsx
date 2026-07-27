@@ -415,6 +415,7 @@ export default function OrgEventDetailPage() {
                       Edit
                     </Button>
                     <Button
+                      petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
                       disabled={!authed}

@@ -108,7 +108,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 <StatusPill status={ev.status} />
                 {(ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
                   <Button
-                    variant="secondary"
+                    petal="#A7E3BF"
                     size="sm"
                     loading={publish.isPending || publishSeries.isPending}
                     onClick={() => handlePublish({ ev, seriesSize, seriesHasDraft })}
