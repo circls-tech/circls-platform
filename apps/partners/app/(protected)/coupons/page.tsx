@@ -43,7 +43,7 @@ export default function CouponsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
-          {activeTenant && <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>}
+          {activeTenant && <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
         <Button size="sm" petal="#FFD2A1" onClick={() => router.push('/coupons/new')}>
           Create coupon

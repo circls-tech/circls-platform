@@ -276,13 +276,13 @@ export default function DashboardPage() {
           Good to see you{activeTenant ? `, ${activeTenant.name}` : ''}
         </h1>
         {identity && (
-          <p className="font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">Signed in as {identity}</p>
+          <p className="text-sm font-semibold text-[#EE5C2B]">Signed in as {identity}</p>
         )}
       </div>
 
       {/* ── Stat Cards ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="font-[family-name:var(--font-accent)] text-2xl font-bold text-[#EE5C2B]">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
           Overview
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -324,7 +324,7 @@ export default function DashboardPage() {
       {/* ── 7-day trend chart ── */}
       {activeTenantId && (
         <section className="flex flex-col gap-3">
-          <h2 className="font-[family-name:var(--font-accent)] text-2xl font-bold text-[#EE5C2B]">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
             Last 7 days
           </h2>
           <Card title="Revenue trend">
@@ -366,7 +366,7 @@ export default function DashboardPage() {
 
       {/* ── Venues ── */}
       <section className="flex flex-col gap-3">
-        <h2 className="font-[family-name:var(--font-accent)] text-2xl font-bold text-[#EE5C2B]">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-[#EE5C2B]">
           Your Venues
         </h2>
 

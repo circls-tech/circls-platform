@@ -169,7 +169,7 @@ export default function VenuesPage() {
         <div>
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Venues</h1>
           {activeTenant && (
-            <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">{activeTenant.name}</p>
+            <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>
           )}
         </div>
         <Button variant="primary" size="sm" petal="#BCE3A0" onClick={() => setShowAddVenue(true)}>

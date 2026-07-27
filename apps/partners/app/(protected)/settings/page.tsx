@@ -7,7 +7,7 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Settings</h1>
-        <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
           Your organisation, team and integrations.
         </p>
       </div>

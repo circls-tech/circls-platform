@@ -221,7 +221,7 @@ export default function QuestionsPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
-        <p className="mt-0.5 font-[family-name:var(--font-accent)] text-xl font-bold text-[#EE5C2B]">
+        <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">
           {activeTenant
             ? `Customer questions and support requests on ${activeTenant.name}'s events, arenas and memberships.`
             : 'Customer questions and support requests on your events, arenas and memberships.'}
