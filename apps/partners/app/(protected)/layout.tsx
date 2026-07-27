@@ -329,7 +329,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
         <div className="md:ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
           {/* Taller bar with breathing room. */}
-          <header className="sticky top-0 z-30 flex h-20 items-center justify-between gap-4 border-b-2 border-slate-900 bg-[#FAF3E8] px-8 pt-2">
+          <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b-2 border-slate-900 bg-[#FAF3E8] px-4 pt-1 sm:h-20 sm:px-8 sm:pt-2">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
@@ -341,13 +341,13 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
               </button>
               <ContextBar />
             </div>
-            <div className="flex shrink-0 items-center">
+            <div className="hidden shrink-0 items-center sm:flex">
               <TimezoneSelect />
             </div>
           </header>
 
           {/* Content area */}
-          <main className="flex-1 bg-[#FAF3E8] p-6">
+          <main className="flex-1 bg-[#FAF3E8] p-4 sm:p-6">
             <GatedContent pathname={pathname}>{children}</GatedContent>
           </main>
         </div>

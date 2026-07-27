@@ -196,8 +196,8 @@ function OrgSwitcher({
       >
         <OrgInitial name={current?.name ?? '?'} color={petalFor(currentIdx)} className="h-8 w-8 text-sm" />
         <span className="flex min-w-0 flex-col leading-tight">
-          <span className="max-w-[180px] truncate text-sm font-bold text-slate-900">{current?.name ?? '…'}</span>
-          {subtitle && <span className="text-xs text-slate-500">{subtitle}</span>}
+          <span className="max-w-[140px] truncate text-sm font-bold text-slate-900 sm:max-w-[180px]">{current?.name ?? '…'}</span>
+          {subtitle && <span className="hidden text-xs text-slate-500 sm:block">{subtitle}</span>}
         </span>
         <ChevronDown />
       </summary>
