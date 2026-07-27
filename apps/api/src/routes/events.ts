@@ -23,6 +23,7 @@ import {
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import type { TierInput } from '../services/event_tiers_service.js';
+import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
 import {
   qrTicketConfigSchema,
   toQrTicketConfig,
@@ -61,6 +62,20 @@ function tierToInput(t: z.infer<typeof tierSchema>): TierInput {
   };
 }
 
+// Custom registration questions the consumer answers when booking. Free-text
+// by default; 'select' questions carry the choices in `options`.
+const questionSchema = z
+  .object({
+    label: z.string().min(1).max(300),
+    type: z.enum(['text', 'select']).default('text'),
+    required: z.boolean().default(false),
+    options: z.array(z.string().min(1).max(120)).max(20).optional(),
+  })
+  .refine((q) => q.type !== 'select' || (q.options?.length ?? 0) >= 2, {
+    message: 'Choice questions need at least 2 options',
+  });
+const questionsField = z.array(questionSchema).max(MAX_EVENT_QUESTIONS);
+
 /**
  * One date of a recurring event. Omitted fields inherit the base payload;
  * `venueId: <uuid>` moves that date to another venue, `venueId: null` makes it
@@ -88,6 +103,7 @@ const createEventSchema = z
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     tiers: tiersField,
+    questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
@@ -109,6 +125,7 @@ const createTenantEventSchema = z
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     tiers: tiersField,
+    questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
@@ -144,6 +161,7 @@ const updateEventSchema = z.object({
   lng: z.number().nullable().optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
+  questions: questionsField.optional(),
   maxPerUser: maxPerUserField,
   qrTicketConfig: qrTicketConfigSchema.optional(),
   // Published-only: raise individual tiers' capacity by id (null = unlimited).
@@ -224,6 +242,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       name: parsed.data.name,
       description: parsed.data.description,
       tiers: parsed.data.tiers.map(tierToInput),
+      questions: parsed.data.questions ?? [],
       maxPerUser: parsed.data.maxPerUser ?? null,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
@@ -286,6 +305,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       name: parsed.data.name,
       description: parsed.data.description,
       tiers: parsed.data.tiers.map(tierToInput),
+      questions: parsed.data.questions ?? [],
       maxPerUser: parsed.data.maxPerUser ?? null,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
@@ -318,6 +338,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.startsAt !== undefined) patch.startsAt = new Date(parsed.data.startsAt);
     if (parsed.data.endsAt !== undefined) patch.endsAt = new Date(parsed.data.endsAt);
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
+    if (parsed.data.questions !== undefined) patch.questions = parsed.data.questions;
     if (parsed.data.maxPerUser !== undefined) patch.maxPerUser = parsed.data.maxPerUser;
     if (parsed.data.tierCapacities !== undefined) patch.tierCapacities = parsed.data.tierCapacities;
     if (parsed.data.qrTicketConfig !== undefined)

@@ -14,6 +14,10 @@ import { computeCheckout } from './checkout_pricing.js';
 import { recordRedemption } from './coupon_service.js';
 import type { Coupon } from '../db/schema/coupons.js';
 import { eventBookingTickets } from '../db/schema/event_booking_tickets.js';
+import {
+  saveRegistrationAnswers,
+  type RegistrationAnswerInput,
+} from './event_registration_questions_service.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 
 /** One ticket-tier line in an event booking: which tier and how many seats. */
@@ -476,6 +480,7 @@ export async function bookEvent(
   customer: BookEventCustomer,
   pricing: CouponPricing | null,
   lines: EventLine[],
+  answers: RegistrationAnswerInput[] = [],
 ): Promise<BookEventResult> {
   // Phase 1 — atomic seat reservation. The booking row goes into the DB inside
   // a transaction so capacity check + insert are race-safe.
@@ -626,6 +631,10 @@ export async function bookEvent(
         unitPricePaise: l.unitPricePaise,
       })),
     );
+
+    // Registration-question answers are validated against the event's live
+    // questions (required ones must be present) and stored with the booking.
+    await saveRegistrationAnswers(tx, ev.id, b.id, answers);
 
     // Record the redemption inside the same tx so a lost cap race rolls the
     // booking (and capacity claim) back together.

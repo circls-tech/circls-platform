@@ -27,9 +27,43 @@ function ticketsLabel(b: EventBooking, separator = ', '): string {
   return b.tickets.map((t) => `${t.tierName} ×${t.quantity}`).join(separator);
 }
 
+/** Answers of a booking (answers are optional — questions may not be asked). */
+function answersOf(b: EventBooking) {
+  return b.answers ?? [];
+}
+
+/**
+ * One column per distinct question across the rows, in asked order. Keyed by
+ * question id (labels aren't unique — two questions may read the same).
+ */
+function answerColumns(rows: EventBooking[]): { questionId: string; label: string }[] {
+  const cols: { questionId: string; label: string }[] = [];
+  const seen = new Set<string>();
+  for (const b of rows) {
+    for (const a of answersOf(b)) {
+      if (!seen.has(a.questionId)) {
+        seen.add(a.questionId);
+        cols.push({ questionId: a.questionId, label: a.label });
+      }
+    }
+  }
+  return cols;
+}
+
 function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode): string {
+  const answerCols = answerColumns(rows);
   return toCsv(
-    ['Booking ID', 'Name', 'Email', 'Phone', 'Tickets', 'Status', `Amount (${currencySymbol(currency)})`, 'Registered At'],
+    [
+      'Booking ID',
+      'Name',
+      'Email',
+      'Phone',
+      'Tickets',
+      'Status',
+      `Amount (${currencySymbol(currency)})`,
+      'Registered At',
+      ...answerCols.map((c) => c.label),
+    ],
     rows.map((b) => [
       b.id,
       b.customerName ?? '',
@@ -39,6 +73,9 @@ function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode)
       b.status,
       (b.totalPaise / 100).toFixed(2),
       fmt(b.createdAt, tz),
+      ...answerCols.map(
+        (c) => answersOf(b).find((a) => a.questionId === c.questionId)?.answer ?? '',
+      ),
     ]),
   );
 }
@@ -77,6 +114,7 @@ function RegistrationsTable({
   children,
 }: RegistrationsTableProps) {
   const hasRows = rows.length > 0;
+  const hasAnswers = rows.some((b) => answersOf(b).length > 0);
   return (
     <Card
       title={
@@ -107,6 +145,7 @@ function RegistrationsTable({
                 <th className="pb-2 pr-4 font-medium text-slate-500">Email</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Phone</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Tickets</th>
+                {hasAnswers && <th className="pb-2 pr-4 font-medium text-slate-500">Answers</th>}
                 {showStatus && <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>}
                 <th className="pb-2 pr-4 font-medium text-slate-500">Amount</th>
                 <th className="pb-2 font-medium text-slate-500">Registered</th>
@@ -138,6 +177,21 @@ function RegistrationsTable({
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
+                  {hasAnswers && (
+                    <td className="py-2.5 pr-4 text-slate-700">
+                      {answersOf(b).length > 0 ? (
+                        <span className="flex flex-col gap-0.5">
+                          {answersOf(b).map((a) => (
+                            <span key={a.questionId}>
+                              <span className="text-slate-400">{a.label}:</span> {a.answer}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  )}
                   {showStatus && (
                     <td className="py-2.5 pr-4">
                       <StatusPill status={b.status} />

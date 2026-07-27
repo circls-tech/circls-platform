@@ -195,6 +195,8 @@ export interface BookEventInput {
   name?: string;
   contact?: string;
   couponCode?: string;
+  /** Answers to the event's registration questions. */
+  answers?: { questionId: string; answer: string }[];
 }
 
 export function useBookEvent() {

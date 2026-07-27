@@ -115,6 +115,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {b.event.description && (
                   <p className="mt-3 text-sm text-text-secondary">{b.event.description}</p>
                 )}
+                {(b.event.answers ?? []).length > 0 && (
+                  <div className="mt-3 flex flex-col divide-y divide-ink/15">
+                    {b.event.answers.map((a) => (
+                      <DetailRow key={a.label} label={a.label} value={a.answer} />
+                    ))}
+                  </div>
+                )}
                 <Link href={`/events/${b.event.id}`} className="mt-4 inline-block text-sm font-semibold text-coral-deep underline">
                   View event
                 </Link>

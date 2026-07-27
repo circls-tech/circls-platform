@@ -6,9 +6,11 @@ import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
 import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
+import { ApiError } from '@/lib/api/client';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { ContactDetailsForm } from './ContactDetailsForm';
+import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
 
 type Phase =
@@ -44,6 +46,14 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
   const [phase, setPhase] = useState<Phase>({ kind: 'quoting' });
   const [breakdown, setBreakdown] = useState<QuoteResponse | null>(null);
+  // Registration-question answers, keyed by question id. null = the questions
+  // step hasn't been completed yet (the gate below shows the form). savedAnswers
+  // keeps the entered values so returning to the form (edit / server rejection)
+  // doesn't lose them.
+  const [answers, setAnswers] = useState<Record<string, string> | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
+  const [answersError, setAnswersError] = useState<string | null>(null);
+  const eventQuestions = item.kind === 'event' ? (item.questions ?? []) : [];
   // A code handed in by the opener (offers strip on the event page) starts
   // applied; the initial quote validates it like any typed code.
   const initialCode = prefill.couponCode?.trim().toUpperCase() || undefined;
@@ -107,12 +117,16 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       } else if (item.kind === 'event') {
         const name = prefill.name ?? profile.data?.displayName;
         const contact = prefill.contact ?? user?.phoneNumber ?? profile.data?.email;
+        const answerPayload = eventQuestions
+          .map((q) => ({ questionId: q.id, answer: (answers?.[q.id] ?? '').trim() }))
+          .filter((a) => a.answer.length > 0);
         const r = await bookEvent.mutateAsync({
           eventId: item.eventId,
           lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })),
           ...(name ? { name } : {}),
           ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
+          ...(answerPayload.length > 0 ? { answers: answerPayload } : {}),
         });
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
@@ -141,6 +155,14 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
       else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
     } catch (e) {
+      // A rejected answer is fixable — reopen the questions form (pre-filled)
+      // with the server's message instead of dead-ending on the error screen.
+      if (e instanceof ApiError && (e.code === 'answer_required' || e.code === 'invalid_answer_option')) {
+        setAnswersError(e.message);
+        setAnswers(null);
+        setPhase({ kind: 'ready' });
+        return;
+      }
       const raw = (e as Error).message;
       const message = /sold out/i.test(raw)
         ? 'A ticket tier just sold out — go back and adjust quantities.'
@@ -164,6 +186,11 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     profile.isSuccess &&
     (!(profile.data.displayName ?? '').trim() || !(profile.data.email ?? '').trim());
 
+  // Events with registration questions collect the answers before the payment
+  // view (after the one-time contact gate). Completing the form stores the
+  // answers and drops straight through to payment.
+  const needsAnswers = eventQuestions.length > 0 && answers === null;
+
   return (
     <Modal open onClose={onClose} title="Checkout">
       <p className="mb-4 text-sm text-[var(--color-text-secondary)]">{item.title}</p>
@@ -171,6 +198,17 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
         <ContactDetailsForm
           initialName={(profile.data?.displayName ?? prefill.name ?? user?.displayName ?? '').trim()}
           initialEmail={(profile.data?.email ?? user?.email ?? '').trim()}
+        />
+      ) : !done && needsAnswers ? (
+        <RegistrationQuestionsForm
+          questions={eventQuestions}
+          initial={savedAnswers}
+          serverError={answersError}
+          onSubmit={(a) => {
+            setSavedAnswers(a);
+            setAnswersError(null);
+            setAnswers(a);
+          }}
         />
       ) : done ? (
         <div className="flex flex-col gap-4">
@@ -194,6 +232,17 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise, cur)} muted />}
           <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
           <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : '—'} bold />
+
+          {eventQuestions.length > 0 && answers !== null && (
+            <button
+              type="button"
+              onClick={() => setAnswers(null)}
+              disabled={busy}
+              className="self-start text-xs font-medium text-[var(--color-text-secondary)] underline"
+            >
+              Edit your answers
+            </button>
+          )}
 
           {!appliedCode ? (
             <div className="mt-2 flex flex-col gap-2">

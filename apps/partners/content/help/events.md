@@ -1,4 +1,4 @@
-Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding photos, submitting it for review, and managing registrations.
+Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding registration questions, adding photos, submitting it for review, and managing registrations.
 
 ## Creating an event
 
@@ -82,6 +82,25 @@ Everything else (name, times, prices, tier names, QR rules) stays locked, since 
 
 Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout. When the event limits tickets per customer, the page says so ("Limited to N tickets per person for this event") and the quantity selectors stop at the limit across all tiers combined; if a customer already holds tickets from an earlier booking, a new booking that would push them over the cap is rejected at checkout.
 
+## Registration questions
+
+Need to know something extra from every attendee — T-shirt size, dietary restrictions, an emergency contact? Add **registration questions** to the event form (while the event is a **draft**) and consumers answer them when they book.
+
+For each question you set:
+
+| Field | Notes |
+| --- | --- |
+| **Question** | What you're asking, e.g. "What is your T-shirt size?". |
+| **Answer type** | **Free text** for an open answer, or **Multiple choice** to make the consumer pick one of your options. |
+| **Options** | Multiple choice only — the choices, comma-separated (at least 2, e.g. "Small, Medium, Large"). |
+| **Required** | Ticked = the consumer can't finish booking without answering. Unticked = answering is optional. |
+
+Use the arrows to reorder questions; consumers see them in this order. You can add up to 20 questions, and events don't need any — leave the section empty to skip it.
+
+Like ticket tiers, questions are **editable only while the event is a draft** and are locked once you submit it for review, so every attendee answers the same set. Answers appear with each registration (see **Managing registrations** below).
+
+Don't confuse these with **customer questions** — the public Q&A threads consumers post on your event page (see the end of this guide). Registration questions are asked *by you* and answered privately at booking.
+
 ## QR entry tickets
 
 Turn on **QR tickets** on the event form (while the event is a draft) to have
@@ -141,10 +160,10 @@ JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear
 
 The event detail page shows registrations in two separate tables:
 
-- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, the tickets they hold (tier and quantity, e.g. "General ×2, VIP ×1"), status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+- **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, the tickets they hold (tier and quantity, e.g. "General ×2, VIP ×1"), their answers to your **registration questions** (when the event asks any), status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
-Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
+Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. When the event has registration questions, the CSV gets **one extra column per question**, so answers line up ready for a spreadsheet. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
 
 Use these tables to check turnout and reconcile payments.
 

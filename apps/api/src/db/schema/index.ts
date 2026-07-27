@@ -34,3 +34,6 @@ export * from './qr_tickets.js';
 // Questions threads on events / arenas / memberships (epic #106 follow-on).
 export * from './question_threads.js';
 export * from './question_messages.js';
+// Custom per-event registration questions + consumer answers.
+export * from './event_registration_questions.js';
+export * from './event_registration_answers.js';

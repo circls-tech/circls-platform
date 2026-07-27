@@ -5,6 +5,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
 import {
   consumerBookEvent,
   consumerBookSlots,
@@ -193,6 +194,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     lines: z
       .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
       .min(1),
+    // Answers to the event's registration questions (validated in the service
+    // against the live question set — required questions must be answered).
+    answers: z
+      .array(z.object({ questionId: z.string().uuid(), answer: z.string().max(2000) }))
+      .max(MAX_EVENT_QUESTIONS)
+      .optional(),
   });
   app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
@@ -208,6 +215,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       },
       parsed.data.lines,
       parsed.data.couponCode,
+      parsed.data.answers ?? [],
     );
   });
 

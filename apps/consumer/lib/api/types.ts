@@ -129,6 +129,17 @@ export interface PublicTier {
   remaining: number | null;
 }
 
+/** A registration question the organiser asks at booking time. */
+export interface PublicEventQuestion {
+  id: string;
+  label: string;
+  /** 'text' = free text; 'select' = pick one of `options`. */
+  type: 'text' | 'select';
+  required: boolean;
+  /** Choices for 'select' questions; null for free-text. */
+  options: string[] | null;
+}
+
 export interface PublicEvent {
   id: string;
   tenantId: string;
@@ -148,6 +159,8 @@ export interface PublicEvent {
   brand: Brand;
   /** Ticket tiers; [] on list/upcoming responses, populated on the detail view. */
   tiers: PublicTier[];
+  /** Registration questions answered at booking; [] on list responses. */
+  questions: PublicEventQuestion[];
   /** Recurring events: groups the series' dates; null/absent for one-offs. */
   seriesId?: string | null;
   /** Upcoming dates in the series (list rows show the next one); 1 for one-offs. */
@@ -346,6 +359,8 @@ export interface MyBookingDetail {
     /** ISO-8601 */
     endsAt: string;
     description: string | null;
+    /** Your registration-question answers, in the order asked. */
+    answers: { label: string; answer: string }[];
   } | null;
   membership: {
     id: string;

@@ -31,6 +31,16 @@ export interface TierInput {
   qrTicketConfig?: QrTicketConfig | null;
 }
 
+/** A registration-question payload for event create/update. */
+export interface EventQuestionInput {
+  label: string;
+  /** 'text' = free text; 'select' = one of `options`. */
+  type: 'text' | 'select';
+  required: boolean;
+  /** Choices for 'select' questions (min 2); omit for free-text. */
+  options?: string[];
+}
+
 /**
  * One date of a recurring event. Omitted fields inherit the base payload;
  * `venueId` moves that date to another venue.
@@ -70,6 +80,8 @@ export interface CreateTenantEventInput {
   endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** Registration questions consumers answer at booking; omit for none. */
+  questions?: EventQuestionInput[];
   /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
@@ -167,6 +179,8 @@ export interface CreateEventInput {
   endsAt?: string;
   /** Ticket tiers (min 1). */
   tiers: TierInput[];
+  /** Registration questions consumers answer at booking; omit for none. */
+  questions?: EventQuestionInput[];
   /** Per-customer ticket cap for the whole event (all tiers); null/omitted = no limit. */
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
@@ -195,6 +209,8 @@ export interface UpdateEventInput {
   endsAt?: string;
   /** Replace-all ticket tiers (draft only). */
   tiers?: TierInput[];
+  /** Replace-all registration questions (draft only; [] clears). */
+  questions?: EventQuestionInput[];
   /** Re-scope the event: a venue id → venue-scoped; null → standalone. */
   venueId?: string | null;
   /** Standalone address — applied when the event is (or becomes) standalone.
