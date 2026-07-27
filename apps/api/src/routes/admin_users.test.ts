@@ -195,7 +195,7 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
     expect(res.headers['content-disposition']).toContain('consumer-users.csv');
     const body = res.body;
     expect(body.charCodeAt(0)).toBe(0xfeff);
-    expect(body).toContain('"User ID","Name","Username","Email"');
+    expect(body).toContain('"User ID","Name","Email"');
     expect(body).toContain('consumer_au@x.com');
     expect(body).toContain('tennis; music');
   });

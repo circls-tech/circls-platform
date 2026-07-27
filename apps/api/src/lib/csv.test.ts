@@ -19,6 +19,19 @@ describe('csvField', () => {
   it('keeps commas and newlines inside the quoted field', () => {
     expect(csvField('a,b\nc')).toBe('"a,b\nc"');
   });
+
+  it('neutralizes spreadsheet formula injection in strings', () => {
+    expect(csvField('=HYPERLINK("http://evil")')).toBe('"\'=HYPERLINK(""http://evil"")"');
+    expect(csvField('+1')).toBe('"\'+1"');
+    expect(csvField('-cmd')).toBe('"\'-cmd"');
+    expect(csvField('@sum')).toBe('"\'@sum"');
+    expect(csvField('\tx')).toBe('"\'\tx"');
+  });
+
+  it('does not mangle negative numbers or dates', () => {
+    expect(csvField(-5)).toBe('"-5"');
+    expect(csvField('2026-07-28T00:00:00.000Z')).toBe('"2026-07-28T00:00:00.000Z"');
+  });
 });
 
 describe('csvDocument', () => {

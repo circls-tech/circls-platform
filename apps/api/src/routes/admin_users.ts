@@ -39,7 +39,6 @@ const listQuerySchema = z.object({
 interface AdminConsumerUserRow {
   id: string;
   displayName: string | null;
-  username: string | null;
   email: string | null;
   phoneE164: string | null;
   interests: string[];
@@ -51,6 +50,7 @@ interface AdminConsumerUserRow {
   sessionCount: number;
   minutesInApp: number;
   lastActiveAt: string | null;
+  /** Consumer-app logins only (login_events.source = 'consumer'). */
   loginCount: number;
   lastLoginAt: string | null;
 }
@@ -111,7 +111,6 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
         const like = `%${parsed.data.q.toLowerCase()}%`;
         conditions.push(
           sql`(lower(coalesce(u.display_name, '')) like ${like}
-            or lower(coalesce(u.username, '')) like ${like}
             or lower(coalesce(u.email, '')) like ${like}
             or lower(coalesce(u.phone_e164, '')) like ${like})`,
         );
@@ -133,7 +132,6 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
         SELECT
           u.id,
           u.display_name,
-          u.username,
           u.email,
           u.phone_e164,
           u.interests,
@@ -159,8 +157,10 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
               GROUP BY ca.session_id) s)                                                  AS minutes_in_app,
           (SELECT max(ca.created_at) FROM consumer_activity ca
              WHERE ca.user_id = u.id)                                                     AS last_active_at,
-          (SELECT count(*) FROM login_events le WHERE le.user_id = u.id)                  AS login_count,
-          (SELECT max(le.created_at) FROM login_events le WHERE le.user_id = u.id)        AS last_login_at
+          (SELECT count(*) FROM login_events le
+             WHERE le.user_id = u.id AND le.source = 'consumer')                          AS login_count,
+          (SELECT max(le.created_at) FROM login_events le
+             WHERE le.user_id = u.id AND le.source = 'consumer')                          AS last_login_at
         FROM users u
         WHERE ${whereClause}
         ORDER BY u.created_at DESC, u.id DESC
@@ -174,7 +174,6 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
       const items: AdminConsumerUserRow[] = pageRows.map((r) => ({
         id: r['id'] as string,
         displayName: (r['display_name'] as string | null) ?? null,
-        username: (r['username'] as string | null) ?? null,
         email: (r['email'] as string | null) ?? null,
         phoneE164: (r['phone_e164'] as string | null) ?? null,
         interests: (r['interests'] as string[] | null) ?? [],
@@ -192,11 +191,11 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
 
       if (wantCsv) {
         const csv = csvDocument(
-          ['User ID', 'Name', 'Username', 'Email', 'Phone', 'Interests', 'Status', 'Signed up',
+          ['User ID', 'Name', 'Email', 'Phone', 'Interests', 'Status', 'Signed up',
            'Events booked', 'Total bookings', 'Events opened', 'Sessions',
            'Minutes in app', 'Last active', 'Logins', 'Last login'],
           items.map((u) => [
-            u.id, u.displayName, u.username, u.email, u.phoneE164, u.interests.join('; '),
+            u.id, u.displayName, u.email, u.phoneE164, u.interests.join('; '),
             u.status, u.createdAt, u.eventsBooked, u.totalBookings, u.eventsOpened,
             u.sessionCount, u.minutesInApp, u.lastActiveAt, u.loginCount, u.lastLoginAt,
           ]),

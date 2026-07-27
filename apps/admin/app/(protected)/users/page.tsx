@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiDownload } from '@/lib/api/client';
 import { useAdminConsumerUsers } from '@/lib/api/queries';
 import type { AdminConsumerUserRow } from '@/lib/api/types';
@@ -122,7 +121,7 @@ export default function ConsumerUsersPage() {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search name, username, email or phone…"
+            placeholder="Search name, email or phone…"
             className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none sm:w-64"
           />
           <button
@@ -135,6 +134,9 @@ export default function ConsumerUsersPage() {
           </button>
         </div>
       </div>
+      <p className="text-right text-xs text-slate-400">
+        CSV export applies the current filters and is capped to the first 10,000 rows.
+      </p>
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -181,7 +183,6 @@ export default function ConsumerUsersPage() {
               <tr key={u.id}>
                 <td className="px-4 py-2.5 font-medium text-slate-900">
                   {u.displayName ?? <span className="text-slate-400">(no name)</span>}
-                  {u.username && <div className="font-mono text-xs font-normal text-slate-400">@{u.username}</div>}
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-600">
                   <div>{u.email ?? '—'}</div>

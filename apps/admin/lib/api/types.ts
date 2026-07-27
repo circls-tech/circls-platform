@@ -184,7 +184,6 @@ export interface AdminListingDetail {
 export interface AdminConsumerUserRow {
   id: string;
   displayName: string | null;
-  username: string | null;
   email: string | null;
   phoneE164: string | null;
   interests: string[];
@@ -198,6 +197,7 @@ export interface AdminConsumerUserRow {
   /** Sum of per-session activity spans, in whole minutes. */
   minutesInApp: number;
   lastActiveAt: string | null;
+  /** Consumer-app logins only (login_events.source = 'consumer'). */
   loginCount: number;
   lastLoginAt: string | null;
 }

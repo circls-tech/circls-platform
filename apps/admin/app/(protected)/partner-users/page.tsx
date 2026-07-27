@@ -140,6 +140,9 @@ export default function PartnerUsersPage() {
           </button>
         </div>
       </div>
+      <p className="text-right text-xs text-slate-400">
+        CSV export applies the current filters and is capped to the first 10,000 rows.
+      </p>
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">

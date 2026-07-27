@@ -6,7 +6,11 @@
  */
 
 export function csvField(value: unknown): string {
-  const s = value == null ? '' : String(value);
+  let s = value == null ? '' : String(value);
+  // Neutralize spreadsheet formula injection: a user-controlled string starting
+  // with =, +, -, @ (or tab/CR) would execute as a formula when the export is
+  // opened in Excel/Sheets. Only strings need this — numbers can't carry it.
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return `"${s.replace(/"/g, '""')}"`;
 }
 
