@@ -775,6 +775,29 @@ export function useUpdateMemberRole(tenantId: string) {
   });
 }
 
+export function useUpdateMemberProfile(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userId,
+      displayName,
+      phoneE164,
+    }: {
+      userId: string;
+      displayName?: string | null;
+      phoneE164?: string | null;
+    }) =>
+      apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}/profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...(displayName !== undefined && { displayName }),
+          ...(phoneE164 !== undefined && { phoneE164 }),
+        }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+  });
+}
+
 export function useRemoveMember(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({

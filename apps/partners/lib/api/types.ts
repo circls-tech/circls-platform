@@ -639,6 +639,7 @@ export interface TeamMember {
   userId: string;
   email: string | null;
   displayName: string | null;
+  phoneE164: string | null;
   role: TenantRole;
   createdAt: string;
 }

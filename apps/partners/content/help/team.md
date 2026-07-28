@@ -40,6 +40,17 @@ Pending invites appear under **Pending invitations**. For each one you can:
 
 In the **Members** list, use the **role** dropdown next to a person and pick a new role. The change applies immediately.
 
+## Editing a member's name and phone
+
+Invitations only carry an email address, so a teammate who accepted an invite may show up without a name. Owners and managers can fill this in for them:
+
+1. In the **Members** list, click **Edit** next to the person.
+2. Set their **name** and/or **phone number** (international format, e.g. `+919876543210`) and click **Save**. Leaving a field blank clears it.
+
+Any member can edit their own entry, whatever their role.
+
+If you get a *"phone number already in use"* error, that number is already attached to a different circls account (for example, the person's own customer account on the circls app). It can't be moved onto this account from here — the person should keep using the account that owns the number, or contact support.
+
 ## Removing a member
 
 In the **Members** list, click **Remove** next to the person and confirm. Their access is revoked immediately — there's no grace period — so double-check before removing an owner or manager.

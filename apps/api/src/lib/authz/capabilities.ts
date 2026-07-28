@@ -12,6 +12,7 @@ export type Capability =
   | 'members.read'
   | 'members.invite'
   | 'members.role_change'
+  | 'members.update'
   | 'members.remove'
   // partner ops
   | 'venues.read'
@@ -53,7 +54,7 @@ export type Capability =
 /** Used by snapshot tests + by tooling that needs to walk every capability. */
 export const ALL_CAPABILITIES: readonly Capability[] = [
   'tenant.read', 'tenant.update', 'tenant.delete',
-  'members.read', 'members.invite', 'members.role_change', 'members.remove',
+  'members.read', 'members.invite', 'members.role_change', 'members.update', 'members.remove',
   'venues.read', 'venues.write',
   'arenas.read', 'arenas.write',
   'schedules.read', 'schedules.write',

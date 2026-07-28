@@ -6,11 +6,29 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { listMembers, removeMember, updateMemberRole } from '../services/team_service.js';
+import {
+  listMembers,
+  removeMember,
+  updateMemberProfile,
+  updateMemberRole,
+} from '../services/team_service.js';
 
 const roleSchema = z.object({
   role: z.enum(['owner', 'manager', 'staff', 'readonly']),
 });
+
+const profileSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(120).nullable().optional(),
+    phoneE164: z
+      .string()
+      .regex(/^\+[1-9]\d{6,14}$/, 'Must be E.164, e.g. +919876543210')
+      .nullable()
+      .optional(),
+  })
+  .refine((b) => b.displayName !== undefined || b.phoneE164 !== undefined, {
+    message: 'Provide displayName and/or phoneE164',
+  });
 
 export const teamRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/tenants/:tenantId/members', { preHandler: requireAuth }, async (req) => {
@@ -43,6 +61,34 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
         targetUserId,
         actorUserId: user.id,
         nextRole: parsed.data.role,
+      });
+    },
+  );
+
+  app.patch(
+    '/v1/tenants/:tenantId/members/:userId/profile',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, userId: targetUserId } = req.params as {
+        tenantId: string;
+        userId: string;
+      };
+      const parsed = profileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('Invalid profile payload', 'bad_request', {
+          issues: parsed.error.issues,
+        });
+      }
+      const user = await currentUser(req);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      // Editing yourself needs no cap; editing others is owner/manager only.
+      if (user.id !== targetUserId) assertCap(ctx, 'members.update');
+      return updateMemberProfile({
+        tenantId,
+        targetUserId,
+        actorUserId: user.id,
+        ...(parsed.data.displayName !== undefined && { displayName: parsed.data.displayName }),
+        ...(parsed.data.phoneE164 !== undefined && { phoneE164: parsed.data.phoneE164 }),
       });
     },
   );

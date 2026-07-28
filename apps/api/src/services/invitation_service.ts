@@ -317,29 +317,38 @@ export async function acceptInvitation(
       // on the insert below — the firebase_uid lookup above came back empty, so
       // the new uid is free.
       const [byEmail] = await tx
-        .select({ id: users.id, firebaseUid: users.firebaseUid })
+        .select({ id: users.id, firebaseUid: users.firebaseUid, emailVerified: users.emailVerified })
         .from(users)
         .where(eq(users.email, tokenEmail))
         .limit(1);
-      if (byEmail) {
-        if (byEmail.firebaseUid !== input.firebaseUid) {
-          // Re-binding an existing identity onto a new uid is account takeover
-          // unless the incoming token actually owns (verified) the email. The
-          // secret invite token is enough to JOIN as a new user, but never to
-          // hijack a pre-existing account (C1 guard).
-          if (!input.emailVerified) {
-            throw new Forbidden('Email not verified', 'email_unverified');
-          }
-          await tx
-            .update(users)
-            .set({ firebaseUid: input.firebaseUid })
-            .where(eq(users.id, byEmail.id));
+      // The uid lookup above came back empty, so byEmail (when present) always
+      // belongs to a different firebase_uid.
+      if (byEmail && byEmail.emailVerified) {
+        // Re-binding an existing identity onto a new uid is account takeover
+        // unless the incoming token actually owns (verified) the email. The
+        // secret invite token is enough to JOIN as a new user, but never to
+        // hijack a pre-existing account (C1 guard).
+        if (!input.emailVerified) {
+          throw new Forbidden('Email not verified', 'email_unverified');
         }
+        await tx
+          .update(users)
+          .set({ firebaseUid: input.firebaseUid })
+          .where(eq(users.id, byEmail.id));
         existing = { id: byEmail.id };
       } else {
+        if (byEmail) {
+          // Someone else's row holds tokenEmail unverified (self-reported via
+          // the consumer profile). The invitee proved ownership by possessing
+          // the token sent to that inbox — release the squat, never adopt the
+          // squatter's row.
+          await tx.update(users).set({ email: null }).where(eq(users.id, byEmail.id));
+        }
+        // emailVerified: the token was emailed to tokenEmail; accepting proves
+        // the invitee controls that inbox.
         const [created] = await tx
           .insert(users)
-          .values({ firebaseUid: input.firebaseUid, email: tokenEmail })
+          .values({ firebaseUid: input.firebaseUid, email: tokenEmail, emailVerified: true })
           .onConflictDoNothing({ target: users.firebaseUid })
           .returning();
         if (created) {

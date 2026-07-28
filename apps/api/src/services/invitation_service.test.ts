@@ -225,10 +225,10 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
   it('acceptInvitation adopts a stale user row sharing the invitee email (no email-unique 500)', async () => {
     const email = `adopt-${SUFFIX}@x.test`;
     // The invitee already has a row under an OLD firebase_uid (signed in via a
-    // different provider before accepting). Insert it directly.
+    // different provider before accepting — a verified email). Insert it directly.
     const [stale] = await db
       .insert(users)
-      .values({ firebaseUid: `adopt-old-fb-${SUFFIX}`, email })
+      .values({ firebaseUid: `adopt-old-fb-${SUFFIX}`, email, emailVerified: true })
       .returning();
     createdUserIds.push(stale!.id);
 
@@ -265,10 +265,10 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
 
   it('acceptInvitation refuses to adopt a pre-existing row onto an UNVERIFIED uid (C1 takeover guard)', async () => {
     const email = `takeover-${SUFFIX}@x.test`;
-    // A real, established user owns a row under their own uid.
+    // A real, established user owns a row under their own uid (verified email).
     const [victim] = await db
       .insert(users)
-      .values({ firebaseUid: `takeover-victim-fb-${SUFFIX}`, email })
+      .values({ firebaseUid: `takeover-victim-fb-${SUFFIX}`, email, emailVerified: true })
       .returning();
     createdUserIds.push(victim!.id);
 
@@ -301,6 +301,46 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       .from(tenantInvitations)
       .where(sql`id = ${r.invitation.id}`);
     expect(inv?.acceptedAt).toBeNull();
+  });
+
+  it('acceptInvitation evicts an UNVERIFIED squat of the invite email instead of adopting it', async () => {
+    const email = `squat-${SUFFIX}@x.test`;
+    // Some other account self-reported the invitee's email via the consumer
+    // profile PATCH — never proven. The invitee must not inherit that row.
+    const [squatter] = await db
+      .insert(users)
+      .values({ firebaseUid: `squat-fb-${SUFFIX}`, email, emailVerified: false })
+      .returning();
+    createdUserIds.push(squatter!.id);
+
+    const r = await createInvitation({
+      tenantId,
+      actorUserId: ownerUserId,
+      email,
+      role: 'staff',
+    });
+
+    const accepted = await acceptInvitation({
+      token: r.plaintextToken,
+      firebaseUid: `squat-invitee-fb-${SUFFIX}`,
+      email,
+      emailVerified: false,
+    });
+    createdUserIds.push(accepted.userId);
+
+    // Fresh row for the invitee, owning the email verified; squat released.
+    expect(accepted.userId).not.toBe(squatter!.id);
+    const [invitee] = await db
+      .select({ email: users.email, emailVerified: users.emailVerified })
+      .from(users)
+      .where(sql`id = ${accepted.userId}`);
+    expect(invitee?.email).toBe(email);
+    expect(invitee?.emailVerified).toBe(true);
+    const [squatAfter] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(sql`id = ${squatter!.id}`);
+    expect(squatAfter?.email).toBeNull();
   });
 
   it('acceptInvitation rejects email mismatch', async () => {

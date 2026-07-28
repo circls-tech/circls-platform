@@ -1,7 +1,8 @@
-import { sql } from 'drizzle-orm';
+import { eq, inArray, or, sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 const { db, closeDb } = await import('../db/client.js');
+const { users } = await import('../db/schema/index.js');
 const { findOrCreateByFirebaseUid } = await import('./user_service.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -16,13 +17,25 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions', () => {
   const phone = '+919999000111';
   const email = 'collide.user@example.com';
+  // Every uid the suite creates — evicted-squat rows lose their email (and may
+  // have no phone), so cleanup must also match on firebase_uid.
+  const UIDS = [
+    'fb_new_1', 'fb_old', 'fb_recreated', 'fb_old_e', 'fb_recreated_e', 'fb_v_1',
+    'fb_squatter', 'fb_owner', 'fb_bf', 'fb_squatter2', 'fb_bf2', 'fb_legit', 'fb_bf3',
+  ];
 
-  beforeEach(async () => {
-    await db.execute(sql`delete from users where phone_e164 = ${phone} or email = ${email}`);
-  });
+  async function cleanup(): Promise<void> {
+    await db
+      .delete(users)
+      .where(
+        or(eq(users.phoneE164, phone), eq(users.email, email), inArray(users.firebaseUid, UIDS)),
+      );
+  }
+
+  beforeEach(cleanup);
 
   afterAll(async () => {
-    await db.execute(sql`delete from users where phone_e164 = ${phone} or email = ${email}`);
+    await cleanup();
     await closeDb();
   });
 
@@ -49,5 +62,73 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
     const second = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_recreated_e', phoneE164: null, email });
     expect(second.id).toBe(first.id);
     expect(second.firebaseUid).toBe('fb_recreated_e');
+  });
+
+  it('creation marks a token email verified', async () => {
+    const u = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_v_1', phoneE164: null, email });
+    expect(u.emailVerified).toBe(true);
+  });
+
+  it('does NOT adopt a row holding the email unverified; evicts the squat instead', async () => {
+    // Squatter: phone user who self-reported someone else's email (profile PATCH).
+    const [squatter] = await db
+      .insert(users)
+      .values({ firebaseUid: 'fb_squatter', phoneE164: phone, email, emailVerified: false })
+      .returning();
+
+    // Rightful owner signs in with a Firebase-verified token for that email.
+    const owner = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_owner', phoneE164: null, email });
+
+    expect(owner.id).not.toBe(squatter!.id);
+    expect(owner.email).toBe(email);
+    expect(owner.emailVerified).toBe(true);
+
+    const squatterAfter = await db.query.users.findFirst({
+      where: sql`firebase_uid = 'fb_squatter'`,
+    });
+    expect(squatterAfter?.email).toBeNull();
+  });
+
+  it('backfills a verified token email onto an email-less existing row', async () => {
+    // Row created by phone-OTP (no email), then the same Firebase account
+    // returns with a verified email claim (e.g. provider linked later).
+    const first = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf', phoneE164: phone, email: null });
+    expect(first.email).toBeNull();
+
+    const second = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf', phoneE164: phone, email });
+    expect(second.id).toBe(first.id);
+    expect(second.email).toBe(email);
+    expect(second.emailVerified).toBe(true);
+  });
+
+  it('backfill evicts an unverified squat of the same email', async () => {
+    await db
+      .insert(users)
+      .values({ firebaseUid: 'fb_squatter2', email, emailVerified: false });
+    const mine = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf2', phoneE164: phone, email: null });
+
+    const after = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf2', phoneE164: phone, email });
+    expect(after.id).toBe(mine.id);
+    expect(after.email).toBe(email);
+
+    const squatterAfter = await db.query.users.findFirst({
+      where: sql`firebase_uid = 'fb_squatter2'`,
+    });
+    expect(squatterAfter?.email).toBeNull();
+  });
+
+  it('backfill never steals a VERIFIED email — login proceeds with row unchanged', async () => {
+    // Another account legitimately owns the email (verified).
+    await db
+      .insert(users)
+      .values({ firebaseUid: 'fb_legit', email, emailVerified: true });
+    const mine = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf3', phoneE164: phone, email: null });
+
+    // Same uid returns claiming that email: adoption would have matched the
+    // verified row only for a NEW uid; for an existing row the backfill must
+    // not trip the unique constraint or fail the login.
+    const after = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf3', phoneE164: phone, email });
+    expect(after.id).toBe(mine.id);
+    expect(after.email).toBeNull();
   });
 });
