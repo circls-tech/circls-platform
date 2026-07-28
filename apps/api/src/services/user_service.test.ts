@@ -22,6 +22,7 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
   const UIDS = [
     'fb_new_1', 'fb_old', 'fb_recreated', 'fb_old_e', 'fb_recreated_e', 'fb_v_1',
     'fb_squatter', 'fb_owner', 'fb_bf', 'fb_squatter2', 'fb_bf2', 'fb_legit', 'fb_bf3',
+    'fb_up',
   ];
 
   async function cleanup(): Promise<void> {
@@ -115,6 +116,18 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
       where: sql`firebase_uid = 'fb_squatter2'`,
     });
     expect(squatterAfter?.email).toBeNull();
+  });
+
+  it('promotes the row\'s own unverified email once the token proves it', async () => {
+    // Self-reported (or migration-backfilled-unverified) email on the caller's
+    // own row; a verified token claim for the SAME address flips it.
+    await db
+      .insert(users)
+      .values({ firebaseUid: 'fb_up', phoneE164: phone, email, emailVerified: false });
+
+    const after = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_up', phoneE164: phone, email });
+    expect(after.email).toBe(email);
+    expect(after.emailVerified).toBe(true);
   });
 
   it('backfill never steals a VERIFIED email — login proceeds with row unchanged', async () => {

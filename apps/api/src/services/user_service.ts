@@ -105,13 +105,29 @@ async function adoptStaleIdentity(identity: FirebaseIdentity): Promise<User | nu
 }
 
 /**
- * Write a token-verified email onto the caller's own row when the row has none
- * (e.g. the row predates the email sign-in, or an early login arrived before
- * the address was verified). Best-effort: a login must never fail because the
- * backfill lost a race, so unique-violations fall back to the unchanged row.
+ * Reconcile the caller's own row with a token-verified email claim:
+ *   - row has no email → write it (verified), evicting any unverified squat;
+ *   - row already holds the SAME email unverified (self-reported earlier, or
+ *     backfilled-unverified by migration) → promote it to verified;
+ *   - row holds a different email → leave it alone (an explicit profile
+ *     update, not a login, should change it).
+ * Best-effort: a login must never fail because the backfill lost a race, so
+ * unique-violations fall back to the unchanged row.
  */
 async function backfillVerifiedEmail(row: User, identity: FirebaseIdentity): Promise<User> {
-  if (!identity.email || row.email !== null) return row;
+  if (!identity.email) return row;
+
+  if (row.email === identity.email) {
+    if (row.emailVerified) return row;
+    const [promoted] = await db
+      .update(users)
+      .set({ emailVerified: true })
+      .where(eq(users.id, row.id))
+      .returning();
+    return promoted ?? row;
+  }
+
+  if (row.email !== null) return row;
   try {
     await releaseUnverifiedEmail(identity.email);
     const [updated] = await db
