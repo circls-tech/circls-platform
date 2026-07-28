@@ -53,25 +53,21 @@ export default function TeamPage() {
 
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
 
   function startEdit(m: TeamMember) {
     setEditingUserId(m.userId);
     setEditName(m.displayName ?? '');
-    setEditPhone(m.phoneE164 ?? '');
     setEditError(null);
   }
 
   async function saveEdit(userId: string) {
     setEditError(null);
     const name = editName.trim();
-    const phone = editPhone.trim();
     try {
       await updateProfile.mutateAsync({
         userId,
         displayName: name === '' ? null : name,
-        phoneE164: phone === '' ? null : phone,
       });
       setEditingUserId(null);
     } catch (e) {
@@ -277,18 +273,6 @@ export default function TeamPage() {
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       maxLength={120}
-                      className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-                    />
-                  </div>
-                  <div className="min-w-[180px] flex-1">
-                    <label htmlFor={`edit-phone-${m.userId}`} className="block text-xs font-medium text-slate-700">
-                      Phone
-                    </label>
-                    <input
-                      id={`edit-phone-${m.userId}`}
-                      value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      placeholder="+919876543210"
                       className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
                     />
                   </div>

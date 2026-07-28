@@ -17,18 +17,12 @@ const roleSchema = z.object({
   role: z.enum(['owner', 'manager', 'staff', 'readonly']),
 });
 
-const profileSchema = z
-  .object({
-    displayName: z.string().trim().min(1).max(120).nullable().optional(),
-    phoneE164: z
-      .string()
-      .regex(/^\+[1-9]\d{6,14}$/, 'Must be E.164, e.g. +919876543210')
-      .nullable()
-      .optional(),
-  })
-  .refine((b) => b.displayName !== undefined || b.phoneE164 !== undefined, {
-    message: 'Provide displayName and/or phoneE164',
-  });
+// Name only. Phone is deliberately NOT editable here: users.phone_e164 is an
+// identity key (adoptStaleIdentity) and its only writers are OTP-verified
+// Firebase logins — an owner-typed number would be an unproven claim.
+const profileSchema = z.object({
+  displayName: z.string().trim().min(1).max(120).nullable(),
+});
 
 export const teamRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/tenants/:tenantId/members', { preHandler: requireAuth }, async (req) => {
@@ -87,8 +81,7 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
         tenantId,
         targetUserId,
         actorUserId: user.id,
-        ...(parsed.data.displayName !== undefined && { displayName: parsed.data.displayName }),
-        ...(parsed.data.phoneE164 !== undefined && { phoneE164: parsed.data.phoneE164 }),
+        displayName: parsed.data.displayName,
       });
     },
   );
