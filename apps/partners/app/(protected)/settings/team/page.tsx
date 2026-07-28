@@ -249,7 +249,7 @@ export default function TeamPage() {
                   <button
                     type="button"
                     onClick={() => (editingUserId === m.userId ? setEditingUserId(null) : startEdit(m))}
-                    className="text-xs text-brand-700 hover:underline"
+                    className="text-xs font-medium text-slate-900 hover:underline"
                   >
                     {editingUserId === m.userId ? 'Cancel' : 'Edit'}
                   </button>
@@ -282,7 +282,7 @@ export default function TeamPage() {
                   </div>
                   <div className="min-w-[180px] flex-1">
                     <label htmlFor={`edit-phone-${m.userId}`} className="block text-xs font-medium text-slate-700">
-                      Phone (E.164, e.g. +919876543210)
+                      Phone
                     </label>
                     <input
                       id={`edit-phone-${m.userId}`}
