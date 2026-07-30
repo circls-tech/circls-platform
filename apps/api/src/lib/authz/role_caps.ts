@@ -5,7 +5,7 @@ import type { Capability } from './capabilities.js';
 export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
   owner: [
     'tenant.read', 'tenant.update', 'tenant.delete',
-    'members.read', 'members.invite', 'members.role_change', 'members.remove',
+    'members.read', 'members.invite', 'members.role_change', 'members.update', 'members.remove',
     'venues.read', 'venues.write',
     'arenas.read', 'arenas.write',
     'schedules.read', 'schedules.write',
@@ -21,7 +21,7 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
   ],
   manager: [
     'tenant.read', 'tenant.update',
-    'members.read', 'members.invite', 'members.role_change', 'members.remove',
+    'members.read', 'members.invite', 'members.role_change', 'members.update', 'members.remove',
     'venues.read', 'venues.write',
     'arenas.read', 'arenas.write',
     'schedules.read', 'schedules.write',

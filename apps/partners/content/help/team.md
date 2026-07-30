@@ -40,6 +40,17 @@ Pending invites appear under **Pending invitations**. For each one you can:
 
 In the **Members** list, use the **role** dropdown next to a person and pick a new role. The change applies immediately.
 
+## Editing a member's name
+
+Invitations only carry an email address, so a teammate who accepted an invite may show up without a name. Owners and managers can fill this in for them:
+
+1. In the **Members** list, click **Edit** next to the person.
+2. Set their **name** and click **Save**. Leaving it blank clears it.
+
+Any member can edit their own entry, whatever their role.
+
+A member's **phone number** can't be typed in here — phone numbers on circls always come from the person themselves verifying the number with an OTP (for example when they sign in to the circls consumer app). When a member has a verified number it appears alongside their name automatically.
+
 ## Removing a member
 
 In the **Members** list, click **Remove** next to the person and confirm. Their access is revoked immediately — there's no grace period — so double-check before removing an owner or manager.

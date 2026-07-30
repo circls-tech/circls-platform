@@ -775,6 +775,18 @@ export function useUpdateMemberRole(tenantId: string) {
   });
 }
 
+export function useUpdateMemberProfile(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, displayName }: { userId: string; displayName: string | null }) =>
+      apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}/profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({ displayName }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+  });
+}
+
 export function useRemoveMember(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({

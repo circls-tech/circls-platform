@@ -20,6 +20,7 @@ export interface MemberRow {
   userId: string;
   email: string | null;
   displayName: string | null;
+  phoneE164: string | null;
   role: TenantRole;
   createdAt: Date;
 }
@@ -30,6 +31,7 @@ export async function listMembers(tenantId: string): Promise<MemberRow[]> {
       userId: tenantMembers.userId,
       email: users.email,
       displayName: users.displayName,
+      phoneE164: users.phoneE164,
       role: tenantMembers.role,
       createdAt: tenantMembers.createdAt,
     })
@@ -64,6 +66,7 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
         role: tenantMembers.role,
         email: users.email,
         displayName: users.displayName,
+        phoneE164: users.phoneE164,
         createdAt: tenantMembers.createdAt,
       })
       .from(tenantMembers)
@@ -104,7 +107,69 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
       userId: input.targetUserId,
       email: current.email,
       displayName: current.displayName,
+      phoneE164: current.phoneE164,
       role: input.nextRole,
+      createdAt: current.createdAt,
+    };
+  });
+}
+
+export interface UpdateMemberProfileInput {
+  tenantId: string;
+  targetUserId: string;
+  actorUserId: string;
+  displayName: string | null;
+}
+
+/**
+ * Set a member's display name on the shared `users` row. Invitations only
+ * carry an email, so invited teammates often have no name until they (or an
+ * owner/manager, via this) set one. Name only: phone/email are identity keys
+ * whose writers must prove ownership (OTP / verified token / invite token).
+ * Scoped by membership: the target must be a member of `tenantId`, and every
+ * change is audited on that tenant.
+ */
+export async function updateMemberProfile(input: UpdateMemberProfileInput): Promise<MemberRow> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({
+        role: tenantMembers.role,
+        email: users.email,
+        displayName: users.displayName,
+        phoneE164: users.phoneE164,
+        createdAt: tenantMembers.createdAt,
+      })
+      .from(tenantMembers)
+      .innerJoin(users, eq(users.id, tenantMembers.userId))
+      .where(
+        and(eq(tenantMembers.tenantId, input.tenantId), eq(tenantMembers.userId, input.targetUserId)),
+      )
+      .limit(1);
+    if (!current) throw new NotFound('Member not found', 'member_not_found');
+
+    const [updated] = await tx
+      .update(users)
+      .set({ displayName: input.displayName })
+      .where(eq(users.id, input.targetUserId))
+      .returning();
+    if (!updated) throw new NotFound('Member not found', 'member_not_found');
+
+    await writeAudit(
+      tx,
+      { tenantId: input.tenantId, actorUserId: input.actorUserId },
+      'tenant.member_profile_updated',
+      'tenant_member',
+      input.targetUserId,
+      { displayName: current.displayName },
+      { displayName: updated.displayName },
+    );
+
+    return {
+      userId: input.targetUserId,
+      email: current.email,
+      displayName: updated.displayName,
+      phoneE164: current.phoneE164,
+      role: current.role,
       createdAt: current.createdAt,
     };
   });

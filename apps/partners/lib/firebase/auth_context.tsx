@@ -3,6 +3,7 @@ import {
   type User,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendEmailVerification,
   sendPasswordResetEmail as fbSendReset,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
@@ -52,6 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       async signUpWithEmail(email, password) {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        // Best-effort: signup works unverified, but the API only trusts (and
+        // stores) the email once Firebase verifies it — the layout banner
+        // offers a re-send until then.
+        void sendEmailVerification(cred.user).catch(() => {});
         recordLogin();
         return cred.user;
       },

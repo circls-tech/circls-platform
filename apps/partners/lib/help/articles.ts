@@ -102,7 +102,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Inviting and managing team members',
     category: 'Settings',
     summary:
-      'How to invite colleagues to your organisation, assign roles (owner, manager, staff, read-only), and revoke access.',
+      'How to invite colleagues to your organisation, assign roles (owner, manager, staff, read-only), edit member names, and revoke access.',
     order: 8,
   },
   {

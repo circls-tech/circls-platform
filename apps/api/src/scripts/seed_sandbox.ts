@@ -83,7 +83,13 @@ async function ensureUserRow(u: DemoUser): Promise<string> {
   if (existing) return existing.id;
   const [created] = await db
     .insert(users)
-    .values({ firebaseUid: u.uid, email: u.email ?? `${u.uid}@sandbox.local`, displayName: u.displayName })
+    .values({
+      firebaseUid: u.uid,
+      email: u.email ?? `${u.uid}@sandbox.local`,
+      // Demo emails behave like real verified sign-ins (adoption, invites).
+      emailVerified: true,
+      displayName: u.displayName,
+    })
     .returning({ id: users.id });
   if (!created) throw new Error(`user insert returned no row for ${u.uid}`);
   return created.id;

@@ -9,9 +9,10 @@ import {
   useRevokeInvitation,
   useTeamInvitations,
   useTeamMembers,
+  useUpdateMemberProfile,
   useUpdateMemberRole,
 } from '@/lib/api/queries';
-import type { TenantRole } from '@/lib/api/types';
+import type { TeamMember, TenantRole } from '@/lib/api/types';
 import { ROLE_INFO, ROLE_ORDER } from '@/lib/roles';
 
 export default function TeamPage() {
@@ -43,11 +44,36 @@ export default function TeamPage() {
   const resendInvite = useResendInvitation(tenantId);
   const revokeInvite = useRevokeInvitation(tenantId);
   const updateRole = useUpdateMemberRole(tenantId);
+  const updateProfile = useUpdateMemberProfile(tenantId);
   const removeMember = useRemoveMember(tenantId);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TenantRole>('manager');
   const [lastToken, setLastToken] = useState<string | null>(null);
+
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function startEdit(m: TeamMember) {
+    setEditingUserId(m.userId);
+    setEditName(m.displayName ?? '');
+    setEditError(null);
+  }
+
+  async function saveEdit(userId: string) {
+    setEditError(null);
+    const name = editName.trim();
+    try {
+      await updateProfile.mutateAsync({
+        userId,
+        displayName: name === '' ? null : name,
+      });
+      setEditingUserId(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Failed to save');
+    }
+  }
 
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
@@ -186,38 +212,81 @@ export default function TeamPage() {
         </h2>
         <ul className="divide-y divide-slate-100">
           {(members ?? []).map((m) => (
-            <li key={m.userId} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <div>
-                <div className="font-medium">{m.email ?? m.displayName ?? m.userId}</div>
-                <div className="text-xs text-slate-500">Joined {dateFmt.format(new Date(m.createdAt))}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={m.role}
-                  onChange={(e) =>
-                    updateRole.mutate({ userId: m.userId, role: e.target.value as TenantRole })
-                  }
-                  title={ROLE_INFO[m.role].description}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs"
-                >
-                  {ROLE_ORDER.map((r) => (
-                    <option key={r} value={r} title={ROLE_INFO[r].description}>
-                      {ROLE_INFO[r].label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`Remove ${m.email ?? 'this member'}?`)) {
-                      removeMember.mutate(m.userId);
+            <li key={m.userId} className="flex flex-col gap-2 py-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">
+                    {m.displayName ?? m.email ?? m.phoneE164 ?? m.userId}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {[
+                      m.displayName ? (m.email ?? m.phoneE164) : null,
+                      `Joined ${dateFmt.format(new Date(m.createdAt))}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={m.role}
+                    onChange={(e) =>
+                      updateRole.mutate({ userId: m.userId, role: e.target.value as TenantRole })
                     }
-                  }}
-                  className="text-xs text-red-700 hover:underline"
-                >
-                  Remove
-                </button>
+                    title={ROLE_INFO[m.role].description}
+                    className="rounded border border-slate-300 px-2 py-1 text-xs"
+                  >
+                    {ROLE_ORDER.map((r) => (
+                      <option key={r} value={r} title={ROLE_INFO[r].description}>
+                        {ROLE_INFO[r].label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => (editingUserId === m.userId ? setEditingUserId(null) : startEdit(m))}
+                    className="text-xs font-medium text-slate-900 hover:underline"
+                  >
+                    {editingUserId === m.userId ? 'Cancel' : 'Edit'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Remove ${m.displayName ?? m.email ?? 'this member'}?`)) {
+                        removeMember.mutate(m.userId);
+                      }
+                    }}
+                    className="text-xs text-red-700 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
+              {editingUserId === m.userId && (
+                <div className="flex flex-wrap items-end gap-3 rounded border border-slate-200 bg-slate-50 p-3">
+                  <div className="min-w-[180px] flex-1">
+                    <label htmlFor={`edit-name-${m.userId}`} className="block text-xs font-medium text-slate-700">
+                      Name
+                    </label>
+                    <input
+                      id={`edit-name-${m.userId}`}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      maxLength={120}
+                      className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveEdit(m.userId)}
+                    disabled={updateProfile.isPending}
+                    className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-slate-900 disabled:opacity-50"
+                  >
+                    {updateProfile.isPending ? 'Saving…' : 'Save'}
+                  </button>
+                  {editError && <p className="w-full text-xs text-red-600">{editError}</p>}
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -6,10 +6,22 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { listMembers, removeMember, updateMemberRole } from '../services/team_service.js';
+import {
+  listMembers,
+  removeMember,
+  updateMemberProfile,
+  updateMemberRole,
+} from '../services/team_service.js';
 
 const roleSchema = z.object({
   role: z.enum(['owner', 'manager', 'staff', 'readonly']),
+});
+
+// Name only. Phone is deliberately NOT editable here: users.phone_e164 is an
+// identity key (adoptStaleIdentity) and its only writers are OTP-verified
+// Firebase logins — an owner-typed number would be an unproven claim.
+const profileSchema = z.object({
+  displayName: z.string().trim().min(1).max(120).nullable(),
 });
 
 export const teamRoutes: FastifyPluginAsync = async (app) => {
@@ -43,6 +55,33 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
         targetUserId,
         actorUserId: user.id,
         nextRole: parsed.data.role,
+      });
+    },
+  );
+
+  app.patch(
+    '/v1/tenants/:tenantId/members/:userId/profile',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, userId: targetUserId } = req.params as {
+        tenantId: string;
+        userId: string;
+      };
+      const parsed = profileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('Invalid profile payload', 'bad_request', {
+          issues: parsed.error.issues,
+        });
+      }
+      const user = await currentUser(req);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      // Editing yourself needs no cap; editing others is owner/manager only.
+      if (user.id !== targetUserId) assertCap(ctx, 'members.update');
+      return updateMemberProfile({
+        tenantId,
+        targetUserId,
+        actorUserId: user.id,
+        displayName: parsed.data.displayName,
       });
     },
   );

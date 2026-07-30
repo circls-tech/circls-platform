@@ -274,6 +274,13 @@
       "when": 1782330000000,
       "tag": "0039_event_registration_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782410000000,
+      "tag": "0040_users_email_verified",
+      "breakpoints": true
     }
   ]
 }

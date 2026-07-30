@@ -13,6 +13,7 @@
  */
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { isUniqueViolation } from '../db/errors.js';
 import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
@@ -1148,15 +1149,38 @@ export async function updateMyProfile(
 ): Promise<MyProfile> {
   const patch: Partial<typeof users.$inferInsert> = {};
   if (input.displayName !== undefined) patch.displayName = input.displayName;
-  if (input.email !== undefined) patch.email = input.email;
+  if (input.email !== undefined) {
+    // A self-reported email is contact info, not proof of ownership: mark it
+    // unverified so it never acts as an identity key (adoptStaleIdentity).
+    // Re-submitting the current email unchanged keeps its verified status.
+    const current = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true },
+    });
+    if (current?.email !== input.email) {
+      patch.email = input.email;
+      patch.emailVerified = false;
+    }
+  }
   if (input.interests !== undefined) patch.interests = input.interests;
   if (Object.keys(patch).length === 0) return getMyProfile(userId);
 
-  const updated = await db
-    .update(users)
-    .set(patch)
-    .where(eq(users.id, userId))
-    .returning();
+  let updated;
+  try {
+    updated = await db
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, userId))
+      .returning();
+  } catch (err) {
+    // Email uniqueness is verified-only, and this PATCH always stores emails
+    // unverified, so this is defensive: surface a clean 409 instead of a 500
+    // should a unique index ever trip here.
+    if (isUniqueViolation(err)) {
+      throw new Conflict('Email already in use by another account', 'email_in_use');
+    }
+    throw err;
+  }
   const row = updated[0];
   if (!row) throw new NotFound('User not found', 'user_not_found');
   return toMyProfile(row);

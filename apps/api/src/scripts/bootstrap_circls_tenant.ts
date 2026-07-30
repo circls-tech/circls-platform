@@ -64,6 +64,7 @@ async function main(): Promise<void> {
       .values({
         firebaseUid: `bootstrap-${Date.now()}`,
         email: `bootstrap+${slug}@circls.app`,
+        emailVerified: true,
         displayName: 'Bootstrap',
       })
       .returning();

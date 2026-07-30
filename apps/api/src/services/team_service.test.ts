@@ -2,11 +2,16 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { tenants, tenantMembers, users } from '../db/schema/index.js';
-import { Conflict, NotFound } from '../lib/errors.js';
-import { listMembers, removeMember, updateMemberRole } from './team_service.js';
+import { NotFound } from '../lib/errors.js';
+import { listMembers, removeMember, updateMemberProfile, updateMemberRole } from './team_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const SUFFIX = Date.now();
+
+// One pool for both suites — close it only after the whole file.
+afterAll(async () => {
+  if (runIntegration) await closeDb();
+});
 
 describe.skipIf(!runIntegration)('team_service', () => {
   let tenantId: string;
@@ -42,7 +47,6 @@ describe.skipIf(!runIntegration)('team_service', () => {
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await db.execute(sql`delete from users where id in (${owner1}, ${owner2}, ${staff})`);
-    await closeDb();
   });
 
   it('listMembers returns all three with their roles', async () => {
@@ -124,6 +128,82 @@ describe.skipIf(!runIntegration)('team_service', () => {
         tenantId,
         targetUserId: '00000000-0000-0000-0000-000000000000',
         actorUserId: owner1,
+      }),
+    ).rejects.toBeInstanceOf(NotFound);
+  });
+});
+
+describe.skipIf(!runIntegration)('team_service — member profile', () => {
+  let tenantId: string;
+  let owner: string;
+  let invited: string;
+  let outsider: string;
+  let phonedMember: string;
+
+  beforeAll(async () => {
+    await pingDb();
+    const [u1] = await db.insert(users).values({
+      firebaseUid: `prof-o-${SUFFIX}`, email: `prof-o-${SUFFIX}@x.test`,
+    }).returning();
+    const [u2] = await db.insert(users).values({
+      firebaseUid: `prof-i-${SUFFIX}`, email: `prof-i-${SUFFIX}@x.test`,
+    }).returning();
+    const [u3] = await db.insert(users).values({
+      firebaseUid: `prof-x-${SUFFIX}`, phoneE164: `+9198${String(SUFFIX).slice(-8)}`,
+    }).returning();
+    const [u4] = await db.insert(users).values({
+      firebaseUid: `prof-p-${SUFFIX}`, phoneE164: `+9197${String(SUFFIX).slice(-8)}`,
+    }).returning();
+    owner = u1!.id; invited = u2!.id; outsider = u3!.id; phonedMember = u4!.id;
+    const [t] = await db.insert(tenants).values({
+      name: 'Profile Co', slug: `prof-${SUFFIX}`,
+    }).returning();
+    tenantId = t!.id;
+    await db.insert(tenantMembers).values([
+      { userId: owner, tenantId, role: 'owner' },
+      { userId: invited, tenantId, role: 'staff' },
+      { userId: phonedMember, tenantId, role: 'staff' },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    await db.execute(
+      sql`delete from users where id in (${owner}, ${invited}, ${outsider}, ${phonedMember})`,
+    );
+  });
+
+  it('sets a display name on an email-only member', async () => {
+    const row = await updateMemberProfile({
+      tenantId, targetUserId: invited, actorUserId: owner, displayName: 'Invited Person',
+    });
+    expect(row.displayName).toBe('Invited Person');
+    const rows = await listMembers(tenantId);
+    expect(rows.find((r) => r.userId === invited)?.displayName).toBe('Invited Person');
+  });
+
+  it('never touches phone — it is not part of the patch surface', async () => {
+    const before = await listMembers(tenantId);
+    const phone = before.find((r) => r.userId === phonedMember)?.phoneE164;
+    const row = await updateMemberProfile({
+      tenantId, targetUserId: phonedMember, actorUserId: owner, displayName: 'Phoned',
+    });
+    expect(row.phoneE164).toBe(phone);
+  });
+
+  it('clears the name when null is passed', async () => {
+    const row = await updateMemberProfile({
+      tenantId, targetUserId: invited, actorUserId: owner, displayName: null,
+    });
+    expect(row.displayName).toBeNull();
+  });
+
+  it('throws NotFound when the target is not a member of the tenant', async () => {
+    await expect(
+      updateMemberProfile({
+        tenantId, targetUserId: outsider, actorUserId: owner, displayName: 'X',
       }),
     ).rejects.toBeInstanceOf(NotFound);
   });

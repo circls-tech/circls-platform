@@ -316,30 +316,35 @@ export async function acceptInvitation(
       // Adopt that row onto the new uid rather than tripping users_email_unique
       // on the insert below — the firebase_uid lookup above came back empty, so
       // the new uid is free.
+      // Only a VERIFIED holder is an identity match; unverified copies of the
+      // address (self-reported contact info on e.g. a consumer row) are
+      // ignored and keep coexisting under the verified-only unique index.
       const [byEmail] = await tx
         .select({ id: users.id, firebaseUid: users.firebaseUid })
         .from(users)
-        .where(eq(users.email, tokenEmail))
+        .where(and(eq(users.email, tokenEmail), eq(users.emailVerified, true)))
         .limit(1);
+      // The uid lookup above came back empty, so byEmail (when present) always
+      // belongs to a different firebase_uid.
       if (byEmail) {
-        if (byEmail.firebaseUid !== input.firebaseUid) {
-          // Re-binding an existing identity onto a new uid is account takeover
-          // unless the incoming token actually owns (verified) the email. The
-          // secret invite token is enough to JOIN as a new user, but never to
-          // hijack a pre-existing account (C1 guard).
-          if (!input.emailVerified) {
-            throw new Forbidden('Email not verified', 'email_unverified');
-          }
-          await tx
-            .update(users)
-            .set({ firebaseUid: input.firebaseUid })
-            .where(eq(users.id, byEmail.id));
+        // Re-binding an existing identity onto a new uid is account takeover
+        // unless the incoming token actually owns (verified) the email. The
+        // secret invite token is enough to JOIN as a new user, but never to
+        // hijack a pre-existing account (C1 guard).
+        if (!input.emailVerified) {
+          throw new Forbidden('Email not verified', 'email_unverified');
         }
+        await tx
+          .update(users)
+          .set({ firebaseUid: input.firebaseUid })
+          .where(eq(users.id, byEmail.id));
         existing = { id: byEmail.id };
       } else {
+        // emailVerified: the token was emailed to tokenEmail; accepting proves
+        // the invitee controls that inbox.
         const [created] = await tx
           .insert(users)
-          .values({ firebaseUid: input.firebaseUid, email: tokenEmail })
+          .values({ firebaseUid: input.firebaseUid, email: tokenEmail, emailVerified: true })
           .onConflictDoNothing({ target: users.firebaseUid })
           .returning();
         if (created) {

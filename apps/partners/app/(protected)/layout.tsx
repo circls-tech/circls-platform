@@ -7,6 +7,7 @@ import { useMe, useMyTenants, useTeamMembers } from '@/lib/api/queries';
 import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
+import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
 import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
@@ -346,6 +347,8 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
             </div>
           </header>
 
+          <EmailVerificationBanner />
+
           {/* Content area */}
           <main className="flex-1 bg-[#FAF3E8] p-4 sm:p-6">
             <GatedContent pathname={pathname}>{children}</GatedContent>
@@ -398,7 +401,13 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   // Onboarding wizard: full-screen, no sidebar, but wrapped in OrgProvider —
   // Step 1 calls useOrg().setActiveTenantId after creating the org. OrgProvider
   // tolerates zero tenants (it no-ops until tenants load).
-  if (pathname === '/onboarding') return <OrgProvider>{children}</OrgProvider>;
+  if (pathname === '/onboarding')
+    return (
+      <OrgProvider>
+        <EmailVerificationBanner />
+        {children}
+      </OrgProvider>
+    );
 
   return <LayoutWithOrg pathname={pathname}>{children}</LayoutWithOrg>;
 }
