@@ -23,10 +23,10 @@ export interface FirebaseIdentity {
  * old row onto the new uid instead.
  *
  * Email trust: `identity.email` is always Firebase-verified, but `users.email`
- * may also hold a self-reported (unverified) address from the consumer profile
+ * may also hold self-reported (unverified) addresses from the consumer profile
  * PATCH. Only verified emails act as identity keys — adoption ignores
- * unverified rows, and a verified claimant silently evicts an unverified squat
- * of their address.
+ * unverified rows, and uniqueness is verified-only, so a verified claimant and
+ * any number of unverified contact copies of the same address coexist.
  */
 export async function findOrCreateByFirebaseUid(identity: FirebaseIdentity): Promise<User> {
   const existing = await db.query.users.findFirst({
@@ -34,14 +34,11 @@ export async function findOrCreateByFirebaseUid(identity: FirebaseIdentity): Pro
   });
   if (existing) return backfillVerifiedEmail(existing, identity);
 
-  // Adopt a pre-existing row keyed on this person's unique phone/email before the
-  // insert can trip users_phone_e164_unique / users_email_unique.
+  // Adopt a pre-existing row keyed on this person's unique phone/verified-email
+  // before the insert can trip users_phone_e164_unique / the verified-email
+  // unique index.
   const adopted = await adoptStaleIdentity(identity);
   if (adopted) return backfillVerifiedEmail(adopted, identity);
-
-  // The token proved ownership of identity.email; an unverified copy squatting
-  // on another row must not block the rightful owner's insert.
-  await releaseUnverifiedEmail(identity.email);
 
   const inserted = await db
     .insert(users)
@@ -106,30 +103,31 @@ async function adoptStaleIdentity(identity: FirebaseIdentity): Promise<User | nu
 
 /**
  * Reconcile the caller's own row with a token-verified email claim:
- *   - row has no email → write it (verified), evicting any unverified squat;
+ *   - row has no email → write it (verified);
  *   - row already holds the SAME email unverified (self-reported earlier, or
  *     backfilled-unverified by migration) → promote it to verified;
  *   - row holds a different email → leave it alone (an explicit profile
  *     update, not a login, should change it).
- * Best-effort: a login must never fail because the backfill lost a race, so
- * unique-violations fall back to the unchanged row.
+ * Unverified copies of the address on other rows are untouched — they're
+ * contact info and coexist under the verified-only unique index. Best-effort:
+ * a login must never fail because the write lost a race with another VERIFIED
+ * holder, so unique-violations fall back to the unchanged row.
  */
 async function backfillVerifiedEmail(row: User, identity: FirebaseIdentity): Promise<User> {
   if (!identity.email) return row;
 
-  if (row.email === identity.email) {
-    if (row.emailVerified) return row;
-    const [promoted] = await db
-      .update(users)
-      .set({ emailVerified: true })
-      .where(eq(users.id, row.id))
-      .returning();
-    return promoted ?? row;
-  }
-
-  if (row.email !== null) return row;
   try {
-    await releaseUnverifiedEmail(identity.email);
+    if (row.email === identity.email) {
+      if (row.emailVerified) return row;
+      const [promoted] = await db
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, row.id))
+        .returning();
+      return promoted ?? row;
+    }
+
+    if (row.email !== null) return row;
     const [updated] = await db
       .update(users)
       .set({ email: identity.email, emailVerified: true })
@@ -140,13 +138,4 @@ async function backfillVerifiedEmail(row: User, identity: FirebaseIdentity): Pro
     if (isUniqueViolation(err)) return row;
     throw err;
   }
-}
-
-/** Clear an unverified (self-reported) copy of `email` wherever it squats. */
-async function releaseUnverifiedEmail(email: string | null): Promise<void> {
-  if (!email) return;
-  await db
-    .update(users)
-    .set({ email: null })
-    .where(and(eq(users.email, email), eq(users.emailVerified, false)));
 }

@@ -70,9 +70,9 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
     expect(u.emailVerified).toBe(true);
   });
 
-  it('does NOT adopt a row holding the email unverified; evicts the squat instead', async () => {
-    // Squatter: phone user who self-reported someone else's email (profile PATCH).
-    const [squatter] = await db
+  it('does NOT adopt a row holding the email unverified; verified claimant coexists with it', async () => {
+    // Contact copy: phone user who self-reported the same email (profile PATCH).
+    const [contact] = await db
       .insert(users)
       .values({ firebaseUid: 'fb_squatter', phoneE164: phone, email, emailVerified: false })
       .returning();
@@ -80,14 +80,16 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
     // Rightful owner signs in with a Firebase-verified token for that email.
     const owner = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_owner', phoneE164: null, email });
 
-    expect(owner.id).not.toBe(squatter!.id);
+    expect(owner.id).not.toBe(contact!.id);
     expect(owner.email).toBe(email);
     expect(owner.emailVerified).toBe(true);
 
-    const squatterAfter = await db.query.users.findFirst({
+    // The unverified copy survives — it's contact info, not an identity claim.
+    const contactAfter = await db.query.users.findFirst({
       where: sql`firebase_uid = 'fb_squatter'`,
     });
-    expect(squatterAfter?.email).toBeNull();
+    expect(contactAfter?.email).toBe(email);
+    expect(contactAfter?.emailVerified).toBe(false);
   });
 
   it('backfills a verified token email onto an email-less existing row', async () => {
@@ -102,7 +104,7 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
     expect(second.emailVerified).toBe(true);
   });
 
-  it('backfill evicts an unverified squat of the same email', async () => {
+  it('backfill coexists with an unverified copy of the same email', async () => {
     await db
       .insert(users)
       .values({ firebaseUid: 'fb_squatter2', email, emailVerified: false });
@@ -111,11 +113,13 @@ describe.skipIf(!runIntegration)('findOrCreateByFirebaseUid identity collisions'
     const after = await findOrCreateByFirebaseUid({ firebaseUid: 'fb_bf2', phoneE164: phone, email });
     expect(after.id).toBe(mine.id);
     expect(after.email).toBe(email);
+    expect(after.emailVerified).toBe(true);
 
-    const squatterAfter = await db.query.users.findFirst({
+    const contactAfter = await db.query.users.findFirst({
       where: sql`firebase_uid = 'fb_squatter2'`,
     });
-    expect(squatterAfter?.email).toBeNull();
+    expect(contactAfter?.email).toBe(email);
+    expect(contactAfter?.emailVerified).toBe(false);
   });
 
   it('promotes the row\'s own unverified email once the token proves it', async () => {

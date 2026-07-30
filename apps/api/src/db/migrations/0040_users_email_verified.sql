@@ -13,3 +13,10 @@ ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "email_verified" boolean NOT NULL D
 -- portal ever sent verification mail, so verified-token writes are ~nonexistent.)
 UPDATE "users" SET "email_verified" = true
 WHERE "email" IS NOT NULL AND "phone_e164" IS NULL;
+-- Uniqueness becomes verified-only: a proven address is an identity key and
+-- may exist on exactly one row; unverified copies are contact info and may
+-- coexist (a consumer keeps their receipt email even though the partner
+-- credential owns the address — no eviction needed).
+ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_email_unique";
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_verified_unique"
+  ON "users" ("email") WHERE "email_verified" = true;

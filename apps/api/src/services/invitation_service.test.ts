@@ -303,15 +303,16 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
     expect(inv?.acceptedAt).toBeNull();
   });
 
-  it('acceptInvitation evicts an UNVERIFIED squat of the invite email instead of adopting it', async () => {
+  it('acceptInvitation ignores an UNVERIFIED copy of the invite email — never adopts it, never clears it', async () => {
     const email = `squat-${SUFFIX}@x.test`;
-    // Some other account self-reported the invitee's email via the consumer
-    // profile PATCH — never proven. The invitee must not inherit that row.
-    const [squatter] = await db
+    // Another account self-reported the invitee's email via the consumer
+    // profile PATCH — never proven. The invitee must not inherit that row,
+    // and the row keeps its contact copy (verified-only uniqueness).
+    const [contact] = await db
       .insert(users)
       .values({ firebaseUid: `squat-fb-${SUFFIX}`, email, emailVerified: false })
       .returning();
-    createdUserIds.push(squatter!.id);
+    createdUserIds.push(contact!.id);
 
     const r = await createInvitation({
       tenantId,
@@ -328,19 +329,21 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
     });
     createdUserIds.push(accepted.userId);
 
-    // Fresh row for the invitee, owning the email verified; squat released.
-    expect(accepted.userId).not.toBe(squatter!.id);
+    // Fresh row for the invitee, owning the email verified.
+    expect(accepted.userId).not.toBe(contact!.id);
     const [invitee] = await db
       .select({ email: users.email, emailVerified: users.emailVerified })
       .from(users)
       .where(sql`id = ${accepted.userId}`);
     expect(invitee?.email).toBe(email);
     expect(invitee?.emailVerified).toBe(true);
-    const [squatAfter] = await db
-      .select({ email: users.email })
+    // The unverified contact copy coexists untouched.
+    const [contactAfter] = await db
+      .select({ email: users.email, emailVerified: users.emailVerified })
       .from(users)
-      .where(sql`id = ${squatter!.id}`);
-    expect(squatAfter?.email).toBeNull();
+      .where(sql`id = ${contact!.id}`);
+    expect(contactAfter?.email).toBe(email);
+    expect(contactAfter?.emailVerified).toBe(false);
   });
 
   it('acceptInvitation rejects email mismatch', async () => {

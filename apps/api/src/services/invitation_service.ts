@@ -316,14 +316,17 @@ export async function acceptInvitation(
       // Adopt that row onto the new uid rather than tripping users_email_unique
       // on the insert below — the firebase_uid lookup above came back empty, so
       // the new uid is free.
+      // Only a VERIFIED holder is an identity match; unverified copies of the
+      // address (self-reported contact info on e.g. a consumer row) are
+      // ignored and keep coexisting under the verified-only unique index.
       const [byEmail] = await tx
-        .select({ id: users.id, firebaseUid: users.firebaseUid, emailVerified: users.emailVerified })
+        .select({ id: users.id, firebaseUid: users.firebaseUid })
         .from(users)
-        .where(eq(users.email, tokenEmail))
+        .where(and(eq(users.email, tokenEmail), eq(users.emailVerified, true)))
         .limit(1);
       // The uid lookup above came back empty, so byEmail (when present) always
       // belongs to a different firebase_uid.
-      if (byEmail && byEmail.emailVerified) {
+      if (byEmail) {
         // Re-binding an existing identity onto a new uid is account takeover
         // unless the incoming token actually owns (verified) the email. The
         // secret invite token is enough to JOIN as a new user, but never to
@@ -337,13 +340,6 @@ export async function acceptInvitation(
           .where(eq(users.id, byEmail.id));
         existing = { id: byEmail.id };
       } else {
-        if (byEmail) {
-          // Someone else's row holds tokenEmail unverified (self-reported via
-          // the consumer profile). The invitee proved ownership by possessing
-          // the token sent to that inbox — release the squat, never adopt the
-          // squatter's row.
-          await tx.update(users).set({ email: null }).where(eq(users.id, byEmail.id));
-        }
         // emailVerified: the token was emailed to tokenEmail; accepting proves
         // the invitee controls that inbox.
         const [created] = await tx

@@ -1173,8 +1173,9 @@ export async function updateMyProfile(
       .where(eq(users.id, userId))
       .returning();
   } catch (err) {
-    // users.email / users.phone_e164 are UNIQUE — surface a clean 409 instead
-    // of a 500 when the address already belongs to another account.
+    // Email uniqueness is verified-only, and this PATCH always stores emails
+    // unverified, so this is defensive: surface a clean 409 instead of a 500
+    // should a unique index ever trip here.
     if (isUniqueViolation(err)) {
       throw new Conflict('Email already in use by another account', 'email_in_use');
     }
