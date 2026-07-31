@@ -161,7 +161,7 @@ export function ProfileSidebar() {
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Open profile menu"
-          className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-lav text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-pastel-pink text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
         >
           {initial}
         </button>
@@ -181,7 +181,7 @@ export function ProfileSidebar() {
             <div className="flex items-center gap-3 px-4 pb-4 pt-5">
               <span
                 aria-hidden
-                className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-ink bg-lav text-base font-bold text-ink"
+                className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-ink bg-pastel-pink text-base font-bold text-ink"
               >
                 {initial}
               </span>

@@ -14,7 +14,7 @@ export function HScroll({
 }) {
   return (
     <section className="py-6">
-      <div className="mx-auto mb-3 flex max-w-6xl items-baseline justify-between px-4">
+      <div className="mx-auto mb-3 flex max-w-6xl items-baseline gap-3 px-4">
         <h2 className="font-display text-2xl font-extrabold text-ink">{title}</h2>
         {viewAllHref && (
           <Link href={viewAllHref} className="text-sm font-bold text-coral-deep hover:underline">
