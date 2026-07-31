@@ -210,15 +210,19 @@ export function ProfileSidebar() {
                     href={item.href}
                     onClick={() => setOpen(false)}
                     aria-current={active ? 'page' : undefined}
-                    style={{ backgroundColor: item.petal }}
                     className={[
-                      'flex items-center gap-2.5 rounded-[var(--radius)] border-2 border-ink px-3 py-2 text-sm font-semibold text-ink transition-transform',
-                      active
-                        ? 'shadow-[2px_2px_0_#17151D]'
-                        : 'hover:-translate-y-0.5 hover:shadow-[2px_2px_0_#17151D]',
+                      'group flex items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-sm font-semibold text-ink',
+                      active ? 'bg-surface-2' : 'hover:bg-surface-2',
                     ].join(' ')}
                   >
-                    <ItemIcon name={item.icon} />
+                    {/* The petal lives on the icon chip; rows stay quiet. */}
+                    <span
+                      aria-hidden
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-[1.5px] border-ink transition-transform group-hover:-translate-y-0.5"
+                      style={{ backgroundColor: item.petal }}
+                    >
+                      <ItemIcon name={item.icon} />
+                    </span>
                     {item.label}
                   </Link>
                 );
