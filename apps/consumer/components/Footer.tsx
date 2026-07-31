@@ -18,10 +18,10 @@ export function Footer() {
       {/* Full-bleed like the header — content hugs the page edges. */}
       <div className="px-3 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
-          <Link href="/" className="flex items-center gap-1 font-display text-xl font-extrabold text-ink">
+          {/* Lockup per the brand sheet: petals-C, then wide-tracked IRCLS. */}
+          <Link href="/" className="flex items-center gap-2 font-display text-base font-extrabold text-ink">
             <BrandMark className="h-7 w-7" />
-            <span>ircls</span>
+            <span className="tracking-[0.3em]">IRCLS</span>
           </Link>
           <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
             {LINKS.map((l) => (

@@ -15,12 +15,13 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b-[2.5px] border-ink bg-surface/90 backdrop-blur">
       <div className="flex items-center justify-between px-3 py-3">
         {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
+        {/* Lockup per the brand sheet: petals-C, then wide-tracked IRCLS. */}
         <Link
           href="/"
-          className="flex items-center gap-1 font-display text-2xl font-extrabold tracking-tight text-ink"
+          className="flex items-center gap-2 font-display text-xl font-extrabold text-ink"
         >
           <BrandMark className="h-9 w-9" />
-          <span>ircls</span>
+          <span className="tracking-[0.3em]">IRCLS</span>
         </Link>
 
         <nav className="flex items-center gap-3 lg:gap-6">
