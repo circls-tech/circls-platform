@@ -23,6 +23,7 @@ import { events } from '../db/schema/events.js';
 import { arenas } from '../db/schema/arenas.js';
 import { venueImages } from '../db/schema/venue_images.js';
 import { eventImages } from '../db/schema/event_images.js';
+import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import { memberships, type MembershipBenefits } from '../db/schema/memberships.js';
 import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { logger } from '../lib/logger.js';
@@ -272,6 +273,38 @@ async function ensureEventImages(tenantId: string, eventId: string, files: strin
   }
 }
 
+interface DemoTicketTier {
+  name: string;
+  description?: string;
+  pricePaise: number;
+  capacity?: number;
+}
+
+/** Attach ticket tiers to an event (skipped if the event already has any). */
+async function ensureEventTicketTiers(
+  tenantId: string,
+  eventId: string,
+  tiers: DemoTicketTier[],
+): Promise<void> {
+  const [existing] = await db
+    .select({ id: eventTicketTiers.id })
+    .from(eventTicketTiers)
+    .where(eq(eventTicketTiers.eventId, eventId))
+    .limit(1);
+  if (existing) return;
+  await db.insert(eventTicketTiers).values(
+    tiers.map((t, i) => ({
+      eventId,
+      tenantId,
+      name: t.name,
+      description: t.description ?? null,
+      pricePaise: t.pricePaise,
+      capacity: t.capacity ?? null,
+      sortOrder: i,
+    })),
+  );
+}
+
 /** Get-or-create an active arena by (venue, name) — venues only surface on the
  *  consumer site when they have at least one active arena. Idempotent. */
 async function ensureArena(venueId: string, name: string, sport: string): Promise<void> {
@@ -501,6 +534,26 @@ async function main(): Promise<void> {
     },
   });
   await ensureEventImages(bostonTenantId, bostonEventId, ['basketball.jpg']);
+
+  // A tiered-ticket event in the Boston market so the consumer ticket picker
+  // has something to render (mirrors the partner "comp day" pattern).
+  const compDayId = await ensureEvent(bostonTenantId, {
+    name: 'Harbor Hoops Comp Day',
+    description:
+      'Three comps. One day. We\u2019re marking a year of Harbor Yard the only way ' +
+      'that makes sense \u2014 a full day on the court, split into three formats so ' +
+      'everyone gets a shot at the podium. Prize money awarded across all three.',
+    startInDays: 14,
+    pricePaise: 0,
+    capacity: 90,
+    venueId: bostonVenueId,
+  });
+  await ensureEventImages(bostonTenantId, compDayId, ['squash.jpg']);
+  await ensureEventTicketTiers(bostonTenantId, compDayId, [
+    { name: '3-Point Shootout', description: 'Pure catch-and-shoot. Most buckets takes the crown.', pricePaise: 50_000, capacity: 30 },
+    { name: 'Amateur Bracket', description: 'Never competed before? This one\u2019s built for you.', pricePaise: 80_000, capacity: 40 },
+    { name: 'Open Finals', description: 'The strongest in the room.', pricePaise: 100_000, capacity: 20 },
+  ]);
   // Single-tier membership in the Boston market (no tier picker — the simple case).
   await ensureMembershipPlan(bostonTenantId, {
     name: 'Harbor Yard All-Access',
