@@ -1,5 +1,6 @@
 import type { Brand, PublicOrg } from '@/lib/api/types';
 import { formatAddress, socialLinks } from '@/lib/trust';
+import { petalFor } from '@/lib/petals';
 
 /** Square org logo, or a coloured initials chip when no logo is uploaded. */
 function OrgLogo({ brand, size }: { brand: Brand; size: 'sm' | 'lg' }) {
@@ -19,7 +20,8 @@ function OrgLogo({ brand, size }: { brand: Brand; size: 'sm' | 'lg' }) {
   return (
     <span
       aria-hidden
-      className={`${dim} flex shrink-0 items-center justify-center rounded-lg border-[2px] border-ink bg-lav font-display font-extrabold text-ink`}
+      style={{ backgroundColor: petalFor(brand.name) }}
+      className={`${dim} flex shrink-0 items-center justify-center rounded-lg border-[2px] border-ink font-display font-extrabold text-ink`}
     >
       {initial}
     </span>
