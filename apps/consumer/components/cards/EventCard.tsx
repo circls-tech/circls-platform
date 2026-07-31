@@ -10,7 +10,7 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
   return (
     <Link
       href={`/events/${event.id}`}
-      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-pastel-mint shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-pastel-peach shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <div className="relative">
         <ImageCarousel
