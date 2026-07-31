@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useMyProfile } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
-import { Button } from '@/lib/ui';
+
 import { HelpPanel } from '@/components/HelpWidget';
 
 const ITEMS: { href: string; label: string; dot: string }[] = [
@@ -70,8 +70,13 @@ export function ProfileSidebar() {
   if (!user) {
     return (
       <div className="hidden lg:block">
-        <Link href="/login">
-          <Button variant="primary" size="sm">Sign in</Button>
+        {/* Chip built like the location pill so the whole nav row shares one
+            size and face. */}
+        <Link
+          href="/login"
+          className="inline-flex items-center rounded-full border-[2.5px] border-ink bg-coral px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
+        >
+          Sign in
         </Link>
       </div>
     );
