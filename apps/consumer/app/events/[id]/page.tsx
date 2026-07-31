@@ -159,7 +159,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               {tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="mt-2 flex flex-col gap-2.5">
                   {maxPerUser != null && (
                     <p className="text-xs font-medium text-text-secondary">
                       Limited to {maxPerUser} ticket{maxPerUser > 1 ? 's' : ''} per person for this event.
@@ -173,7 +173,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <div
                         key={t.id}
                         className={[
-                          'flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 transition-colors',
+                          'flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-ink px-3.5 py-2.5 transition-colors',
                           current > 0 ? 'bg-pastel-butter/60' : 'bg-surface',
                         ].join(' ')}
                       >
