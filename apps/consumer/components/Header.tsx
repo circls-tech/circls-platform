@@ -23,7 +23,7 @@ export function Header() {
         <nav className="flex items-center gap-3 lg:gap-6">
           <button
             onClick={openPicker}
-            className="flex items-center gap-1.5 rounded-full border-[2.5px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"
+            className="flex items-center gap-1.5 rounded-xl border-[2.5px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"
             aria-label={city || placeLabel || country ? `Location: ${locationLabel}. Change location` : 'Set your location'}
           >
             <span aria-hidden>📍</span>

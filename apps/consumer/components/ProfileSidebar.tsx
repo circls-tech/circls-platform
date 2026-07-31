@@ -136,7 +136,7 @@ export function ProfileSidebar() {
             size and face. */}
         <Link
           href="/login"
-          className="inline-flex items-center rounded-full border-[2.5px] border-ink bg-coral px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
+          className="inline-flex items-center rounded-xl border-[2.5px] border-ink bg-coral px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
         >
           Sign in
         </Link>
@@ -210,12 +210,12 @@ export function ProfileSidebar() {
                     href={item.href}
                     onClick={() => setOpen(false)}
                     aria-current={active ? 'page' : undefined}
-                    style={active ? { backgroundColor: item.petal } : undefined}
+                    style={{ backgroundColor: item.petal }}
                     className={[
-                      'flex items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-sm font-semibold text-ink',
+                      'flex items-center gap-2.5 rounded-[var(--radius)] border-2 border-ink px-3 py-2 text-sm font-semibold text-ink transition-transform',
                       active
-                        ? 'border-2 border-ink shadow-[2px_2px_0_#17151D]'
-                        : 'border-2 border-transparent hover:bg-surface-2',
+                        ? 'shadow-[2px_2px_0_#17151D]'
+                        : 'hover:-translate-y-0.5 hover:shadow-[2px_2px_0_#17151D]',
                     ].join(' ')}
                   >
                     <ItemIcon name={item.icon} />
