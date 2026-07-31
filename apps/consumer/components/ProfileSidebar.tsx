@@ -92,20 +92,16 @@ export function ProfileSidebar() {
       {/* Collapsed chip — right edge of the header row. Mobile gets the
           account links via the hamburger instead. */}
       <div className="hidden lg:block">
+        {/* The avatar itself is the trigger — one element, like the lone C mark. */}
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className="flex items-center gap-2 rounded-xl transition-transform hover:-translate-y-0.5"
+          aria-label="Open profile menu"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-lav text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
         >
-          <span
-            aria-hidden
-            className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-ink bg-lav text-sm font-bold text-ink"
-          >
-            {initial}
-          </span>
-          <span className="text-sm font-bold text-ink">Profile</span>
+          {initial}
         </button>
       </div>
 
