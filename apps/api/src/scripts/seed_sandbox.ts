@@ -18,7 +18,7 @@ import { CURRENT_TERMS_VERSION } from '../lib/terms.js';
 import { tenants } from '../db/schema/tenants.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
-import { venues } from '../db/schema/venues.js';
+import { venues, type VenueOpeningHours } from '../db/schema/venues.js';
 import { events } from '../db/schema/events.js';
 import { arenas } from '../db/schema/arenas.js';
 import { venueImages } from '../db/schema/venue_images.js';
@@ -118,6 +118,16 @@ interface DemoVenue {
   lng: number;
   tzName: string;
   tags: string[];
+  /** "About the venue" card: blurb + opening hours + contact + structured address. */
+  description?: string;
+  openingHours?: VenueOpeningHours;
+  contactPhone?: string;
+  contactEmail?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
 }
 
 /**
@@ -130,10 +140,21 @@ async function ensureVenue(tenantId: string, v: DemoVenue): Promise<string> {
     .from(venues)
     .where(and(eq(venues.tenantId, tenantId), eq(venues.name, v.name)))
     .limit(1);
+  const about = {
+    description: v.description ?? null,
+    openingHours: v.openingHours ?? null,
+    contactPhone: v.contactPhone ?? null,
+    contactEmail: v.contactEmail ?? null,
+    addressLine1: v.addressLine1 ?? null,
+    city: v.city ?? null,
+    state: v.state ?? null,
+    postalCode: v.postalCode ?? null,
+    country: v.country ?? null,
+  };
   if (existing) {
     await db
       .update(venues)
-      .set({ addressJson: v.addressJson, lat: v.lat, lng: v.lng, tzName: v.tzName, tags: v.tags })
+      .set({ addressJson: v.addressJson, lat: v.lat, lng: v.lng, tzName: v.tzName, tags: v.tags, ...about })
       .where(eq(venues.id, existing.id));
     return existing.id;
   }
@@ -147,6 +168,7 @@ async function ensureVenue(tenantId: string, v: DemoVenue): Promise<string> {
       lng: v.lng,
       tzName: v.tzName,
       tags: v.tags,
+      ...about,
       status: 'active',
     })
     .returning({ id: venues.id });
@@ -373,6 +395,20 @@ async function main(): Promise<void> {
     lng: 77.6206,
     tzName: 'Asia/Kolkata',
     tags: ['football', 'outdoor'],
+    description:
+      'Five-a-side turf in the heart of MG Road. Floodlit for late-night games, ' +
+      'with a chill-out deck and cold drinks for the post-match debrief — because ' +
+      'the best matches don\u2019t end at the final whistle.',
+    openingHours: Object.fromEntries(
+      ['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ open: '06:00', close: '23:00' }]]),
+    ),
+    contactPhone: '+91 98450 12345',
+    contactEmail: 'play@crimsonsportshub.in',
+    addressLine1: 'MG Road',
+    city: 'Bengaluru',
+    state: 'Karnataka',
+    postalCode: '560001',
+    country: 'India',
   });
   await ensureArena(blrVenueId, 'Main Ground', 'football');
   await ensureVenueImages(demoTenantId, blrVenueId, ['football.jpg', 'running.jpg', 'gym.jpg']);
@@ -435,6 +471,19 @@ async function main(): Promise<void> {
     lng: -71.0621,
     tzName: 'America/New_York',
     tags: ['basketball', 'indoor'],
+    description:
+      'Indoor courts a block from the harbor. Pro-grade hardwood, open-gym runs ' +
+      'every evening, and a lounge upstairs to cool down after the buzzer.',
+    openingHours: Object.fromEntries(
+      ['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ open: '10:00', close: '23:00' }]]),
+    ),
+    contactPhone: '(617) 555-0142',
+    contactEmail: 'hello@harboryard.com',
+    addressLine1: '100 Legends Way',
+    city: 'Boston',
+    state: 'MA',
+    postalCode: '02114',
+    country: 'USA',
   });
   await ensureArena(bostonVenueId, 'Center Court', 'basketball');
   await ensureVenueImages(bostonTenantId, bostonVenueId, ['basketball.jpg', 'squash.jpg']);
