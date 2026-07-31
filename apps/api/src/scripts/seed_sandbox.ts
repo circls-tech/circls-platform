@@ -175,9 +175,14 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
     .from(events)
     .where(and(eq(events.tenantId, tenantId), eq(events.name, e.name)))
     .limit(1);
-  if (existing) return existing.id;
   const startsAt = new Date(Date.now() + e.startInDays * DAY_MS);
   const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+  if (existing) {
+    // Keep demo events upcoming: reseeding after the original date has passed
+    // would otherwise leave the browse rails empty.
+    await db.update(events).set({ startsAt, endsAt }).where(eq(events.id, existing.id));
+    return existing.id;
+  }
   // events_scope_chk: a venue event keeps location columns null; a standalone
   // event must carry its own address_json + tz_name (venue_id null).
   const [created] = await db
