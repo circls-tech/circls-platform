@@ -253,14 +253,14 @@ function AboutVenue({ venue }: { venue: PublicVenue }) {
         )}
 
         {hours && (
-          <div>
+          <div className="mt-2">
             <h3 className="text-sm font-semibold text-ink">Opening hours</h3>
-            <dl className="mt-2.5 space-y-1.5 text-sm">
-              {groupOpeningHours(hours).map((g) => (
-                <div key={g.days} className="flex items-baseline gap-4">
-                  <dt className="w-44 shrink-0 text-ink-soft">{g.days}</dt>
-                  <dd className={g.closed ? 'text-text-secondary' : 'font-semibold text-ink'}>
-                    {g.label}
+            <dl className="mt-2 space-y-1 text-sm">
+              {hours.map((row) => (
+                <div key={row.day} className="flex items-baseline gap-4">
+                  <dt className="w-28 shrink-0 text-ink-soft">{row.day}</dt>
+                  <dd className={row.closed ? 'text-text-secondary' : 'font-semibold text-ink'}>
+                    {row.label}
                   </dd>
                 </div>
               ))}
@@ -270,27 +270,6 @@ function AboutVenue({ venue }: { venue: PublicVenue }) {
       </Card>
     </section>
   );
-}
-
-/** Collapse consecutive days with identical hours into ranges — "Monday – Sunday
- *  10:00–23:00" instead of seven repeated rows. */
-function groupOpeningHours(
-  rows: NonNullable<ReturnType<typeof formatOpeningHours>>,
-): { days: string; label: string; closed: boolean }[] {
-  const groups: { from: string; to: string; label: string; closed: boolean }[] = [];
-  for (const row of rows) {
-    const last = groups[groups.length - 1];
-    if (last && last.label === row.label && last.closed === row.closed) {
-      last.to = row.day;
-    } else {
-      groups.push({ from: row.day, to: row.day, label: row.label, closed: row.closed });
-    }
-  }
-  return groups.map((g) => ({
-    days: g.from === g.to ? g.from : `${g.from} – ${g.to}`,
-    label: g.label,
-    closed: g.closed,
-  }));
 }
 
 /** Today's local date as YYYY-MM-DD for the date input default. */
