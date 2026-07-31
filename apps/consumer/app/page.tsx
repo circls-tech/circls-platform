@@ -77,7 +77,7 @@ export default function LandingPage() {
       <Header />
 
       {/* Hero */}
-      <section className="relative overflow-hidden border-b-[2.5px] border-ink bg-surface text-ink">
+      <section className="relative overflow-hidden border-b-[2px] border-ink bg-surface text-ink">
         <div className="pointer-events-none absolute inset-0 opacity-[0.06]" style={MOTIF} />
         <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-20">
           <p className="mb-3 font-accent text-2xl font-bold text-coral-deep">your people are out there ✦</p>

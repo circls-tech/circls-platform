@@ -39,7 +39,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           ))}
         </nav>
 
-        <div className="mt-6 rounded-card border-[2.5px] border-ink bg-white p-5 text-sm leading-relaxed text-ink/90 shadow-offset-sm">
+        <div className="mt-6 rounded-card border-[2px] border-ink bg-white p-5 text-sm leading-relaxed text-ink/90 shadow-offset-sm">
           {doc.intro}
         </div>
 
@@ -64,7 +64,7 @@ export function LegalLayout({ doc }: { doc: LegalDoc }) {
           ))}
         </div>
 
-        <div className="mt-10 rounded-card border-[2.5px] border-ink bg-coral-soft p-5 text-sm text-ink shadow-offset-sm">
+        <div className="mt-10 rounded-card border-[2px] border-ink bg-coral-soft p-5 text-sm text-ink shadow-offset-sm">
           Questions? Reach us at <a className="font-semibold underline" href="mailto:contact@gibbous.io">contact@gibbous.io</a>.
         </div>
       </main>

@@ -287,7 +287,7 @@ function LocationPickerModal({
             <li key={c.city}>
               <button
                 onClick={() => onPick(c.city)}
-                className={`flex w-full items-center justify-between rounded-[var(--radius)] border-[2.5px] px-3.5 py-2.5 text-left font-display font-bold transition-colors ${
+                className={`flex w-full items-center justify-between rounded-[var(--radius)] border-[2px] px-3.5 py-2.5 text-left font-display font-bold transition-colors ${
                   current === c.city
                     ? 'border-ink bg-coral text-ink'
                     : 'border-ink/15 bg-white text-ink hover:bg-surface-2'

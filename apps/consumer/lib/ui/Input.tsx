@@ -27,7 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ref={ref}
         id={id}
         className={[
-          'w-full rounded-[var(--radius)] border-[2.5px] px-3.5 py-2.5 text-sm',
+          'w-full rounded-[var(--radius)] border-[2px] px-3.5 py-2.5 text-sm',
           'text-ink placeholder:text-text-muted',
           'transition-colors duration-150 focus:outline-none',
           error

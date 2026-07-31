@@ -22,7 +22,7 @@ export interface StickyActionBarProps {
 export function StickyActionBar({ summary, action, maxWidthClass = 'max-w-5xl' }: StickyActionBarProps) {
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 border-t-[2.5px] border-ink bg-white shadow-[0_-5px_0_0_rgba(23,21,29,0.08)]"
+      className="fixed inset-x-0 bottom-0 z-40 border-t-[2px] border-ink bg-white shadow-[0_-5px_0_0_rgba(23,21,29,0.08)]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div

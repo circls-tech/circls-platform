@@ -72,7 +72,7 @@ export function MobileMenu() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Open menu"
-        className="flex h-9 w-9 items-center justify-center rounded-[var(--radius)] border-[2.5px] border-ink bg-white text-ink shadow-offset-sm"
+        className="flex h-9 w-9 items-center justify-center rounded-[var(--radius)] border-[2px] border-ink bg-white text-ink shadow-offset-sm"
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
           <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
@@ -84,9 +84,9 @@ export function MobileMenu() {
           <div className="absolute inset-0 bg-ink/40" onClick={close} />
           <div
             ref={panelRef}
-            className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l-[2.5px] border-ink bg-surface shadow-offset"
+            className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l-[2px] border-ink bg-surface shadow-offset"
           >
-            <div className="flex items-center justify-between border-b-[2.5px] border-ink px-4 py-3">
+            <div className="flex items-center justify-between border-b-[2px] border-ink px-4 py-3">
               <span className="font-display text-lg font-extrabold text-ink">Menu</span>
               <button
                 type="button"
@@ -122,7 +122,7 @@ export function MobileMenu() {
                 </Link>
               ))}
 
-              <div className="mt-2 border-t-[2.5px] border-dashed border-ink/20 pt-3">
+              <div className="mt-2 border-t-[2px] border-dashed border-ink/20 pt-3">
                 {loading ? null : user ? (
                   <div className="flex flex-col gap-1">
                     {ACCOUNT_LINKS.map((l) => (

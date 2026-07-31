@@ -50,7 +50,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={isDisabled}
       className={[
         'inline-flex items-center justify-center gap-2 rounded-[var(--radius)]',
-        'border-[2.5px] font-display font-bold transition-[transform,box-shadow,background-color] duration-100',
+        'border-[2px] font-display font-bold transition-[transform,box-shadow,background-color] duration-100',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:translate-x-0 disabled:translate-y-0',
         variantClasses[variant],
         interactive,

@@ -138,7 +138,7 @@ export default function HelpPage() {
             <section
               key={s.id}
               id={s.id}
-              className="scroll-mt-24 rounded-card border-[2.5px] border-ink bg-white p-5 text-sm leading-relaxed text-ink/90 shadow-offset-sm"
+              className="scroll-mt-24 rounded-card border-[2px] border-ink bg-white p-5 text-sm leading-relaxed text-ink/90 shadow-offset-sm"
             >
               <h2 className="font-display text-lg font-extrabold text-ink">{s.title}</h2>
               {s.body}
@@ -149,7 +149,7 @@ export default function HelpPage() {
         {/* Contact */}
         <section
           id="contact"
-          className="mt-8 scroll-mt-24 rounded-card border-[2.5px] border-ink bg-coral-soft p-5 text-sm text-ink shadow-offset-sm"
+          className="mt-8 scroll-mt-24 rounded-card border-[2px] border-ink bg-coral-soft p-5 text-sm text-ink shadow-offset-sm"
         >
           <h2 className="font-display text-lg font-extrabold text-ink">Still need help?</h2>
           <p className="mt-2">

@@ -39,7 +39,7 @@ export function MembershipCard({
   return (
     <Link
       href={href}
-      className={`block overflow-hidden rounded-card border-[2.5px] border-ink bg-lav text-ink shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-lav text-ink shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       {membership.artworkUrl && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -47,7 +47,7 @@ export function MembershipCard({
           src={membership.artworkUrl}
           alt={membership.name}
           loading="lazy"
-          className="h-28 w-full border-b-[2.5px] border-ink object-cover"
+          className="h-28 w-full border-b-[2px] border-ink object-cover"
         />
       )}
       <div className="p-4">

@@ -87,7 +87,7 @@ export function OrgBrandBlock({
   const phone = org?.contactPhone ?? null;
 
   return (
-    <div className={`rounded-card border-[2.5px] border-ink bg-white p-5 shadow-offset ${className}`}>
+    <div className={`rounded-card border-[2px] border-ink bg-white p-5 shadow-offset ${className}`}>
       <div className="flex items-start gap-3">
         <OrgLogo brand={brand} size="lg" />
         <div className="min-w-0">

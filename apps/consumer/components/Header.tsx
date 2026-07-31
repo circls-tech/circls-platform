@@ -12,7 +12,7 @@ export function Header() {
   const locationLabel = city ?? placeLabel ?? country ?? 'Set location';
 
   return (
-    <header className="sticky top-0 z-40 border-b-[2.5px] border-ink bg-surface/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b-[2px] border-ink bg-surface/90 backdrop-blur">
       <div className="flex items-center justify-between px-3 py-3">
         {/* Wordmark — the petal C-mark is the "c", the text completes "ircls". */}
         {/* Brand — the petals-C mark alone. */}
@@ -23,7 +23,7 @@ export function Header() {
         <nav className="flex items-center gap-3 lg:gap-6">
           <button
             onClick={openPicker}
-            className="flex items-center gap-1.5 rounded-xl border-[2.5px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"
+            className="flex items-center gap-1.5 rounded-xl border-[2px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"
             aria-label={city || placeLabel || country ? `Location: ${locationLabel}. Change location` : 'Set your location'}
           >
             <span aria-hidden>📍</span>

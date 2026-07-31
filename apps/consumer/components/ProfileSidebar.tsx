@@ -136,7 +136,7 @@ export function ProfileSidebar() {
             size and face. */}
         <Link
           href="/login"
-          className="inline-flex items-center rounded-xl border-[2.5px] border-ink bg-coral px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
+          className="inline-flex items-center rounded-xl border-[2px] border-ink bg-coral px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm transition-transform hover:-translate-y-0.5"
         >
           Sign in
         </Link>
@@ -176,7 +176,7 @@ export function ProfileSidebar() {
           aria-label="Profile"
         >
           <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l-[2.5px] border-ink bg-surface-card">
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l-[2px] border-ink bg-surface-card">
             {/* Profile header — avatar, title, "name · city". */}
             <div className="flex items-center gap-3 px-4 pb-4 pt-5">
               <span

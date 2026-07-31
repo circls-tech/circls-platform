@@ -38,7 +38,7 @@ export function QrTicketCard({ ticket }: { ticket: QrTicket }) {
   const validity = validityLabel(ticket);
 
   return (
-    <div className="flex flex-col items-center gap-3 rounded-card border-[2.5px] border-ink bg-white p-6 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-card border-[2px] border-ink bg-white p-6 text-center">
       <div className={inactive ? 'opacity-30' : undefined}>
         <QRCodeSVG value={ticket.qrData} size={192} includeMargin />
       </div>

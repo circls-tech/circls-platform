@@ -89,7 +89,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
           <p className="text-sm text-text-secondary">Venue not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
+            <div className="mb-6 overflow-hidden rounded-card border-[2px] border-ink shadow-offset">
               <ImageCarousel
                 images={venueQ.data.venue.images}
                 alt={venueQ.data.venue.name}

@@ -31,7 +31,7 @@ export function OrgCard({ org, className = '' }: { org: PublicOrgSummary; classN
   return (
     <Link
       href={`/orgs/${org.slug}`}
-      className={`block rounded-card border-[2.5px] border-ink bg-white p-4 shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className={`block rounded-card border-[2px] border-ink bg-white p-4 shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <div className="flex items-start gap-3">
         <OrgLogo name={org.name} logoUrl={org.logoUrl} />

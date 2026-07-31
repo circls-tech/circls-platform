@@ -12,7 +12,7 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
   return (
     <Link
       href={`/venues/${venue.id}`}
-      className={`block overflow-hidden rounded-card border-[2.5px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <ImageCarousel
         images={venue.images}

@@ -14,7 +14,7 @@ const LINKS = [
 
 export function Footer() {
   return (
-    <footer className="border-t-[2.5px] border-ink bg-pastel-peach text-ink">
+    <footer className="border-t-[2px] border-ink bg-pastel-peach text-ink">
       {/* Full-bleed like the header — content hugs the page edges. */}
       <div className="px-3 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">

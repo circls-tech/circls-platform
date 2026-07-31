@@ -108,7 +108,7 @@ export function AskQuestionModal({
               placeholder="What would you like to know?"
               rows={4}
               maxLength={MAX_BODY}
-              className="w-full rounded-[var(--radius)] border-[2.5px] border-ink bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-text-muted transition-colors duration-150 focus:border-coral-deep focus:outline-none"
+              className="w-full rounded-[var(--radius)] border-[2px] border-ink bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-text-muted transition-colors duration-150 focus:border-coral-deep focus:outline-none"
             />
             <p className="text-right text-xs text-text-muted">
               {body.length}/{MAX_BODY}
@@ -129,7 +129,7 @@ export function AskQuestionModal({
                   aria-checked={selected}
                   onClick={() => setVisibility(opt.value)}
                   className={[
-                    'flex w-full items-center justify-between gap-3 rounded-[var(--radius)] border-[2.5px] bg-white px-3.5 py-2.5 text-left transition-colors',
+                    'flex w-full items-center justify-between gap-3 rounded-[var(--radius)] border-[2px] bg-white px-3.5 py-2.5 text-left transition-colors',
                     selected ? 'border-coral-deep bg-coral-soft/40' : 'border-ink hover:bg-surface-2',
                   ].join(' ')}
                 >

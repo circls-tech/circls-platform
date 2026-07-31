@@ -112,7 +112,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           <p className="text-sm text-text-secondary">Event not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
+            <div className="mb-6 overflow-hidden rounded-card border-[2px] border-ink shadow-offset">
               <ImageCarousel
                 images={ev.images}
                 alt={ev.name}
