@@ -114,13 +114,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     ))}
                   </div>
                 )}
-                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1">
-                  <AddressLink
-                    addressJson={venueQ.data.venue.addressJson}
-                    lat={venueQ.data.venue.lat}
-                    lng={venueQ.data.venue.lng}
-                    className="mt-0"
-                  />
+                <div className="mt-2 flex flex-col items-start gap-1">
                   {venueQ.data.venue.contactPhone && (
                     <a
                       href={`tel:${venueQ.data.venue.contactPhone}`}
@@ -144,6 +138,12 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                       {venueQ.data.venue.contactEmail}
                     </a>
                   )}
+                  <AddressLink
+                    addressJson={venueQ.data.venue.addressJson}
+                    lat={venueQ.data.venue.lat}
+                    lng={venueQ.data.venue.lng}
+                    className="mt-0"
+                  />
                 </div>
                 {venueQ.data.venue.brand && (
                   <div className="mt-4 border-t-[1.5px] border-dashed border-ink/15 pt-4">
