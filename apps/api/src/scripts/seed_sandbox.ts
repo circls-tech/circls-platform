@@ -20,6 +20,7 @@ import { tenantMembers } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
 import { venues } from '../db/schema/venues.js';
 import { events } from '../db/schema/events.js';
+import { arenas } from '../db/schema/arenas.js';
 import { memberships, type MembershipBenefits } from '../db/schema/memberships.js';
 import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { logger } from '../lib/logger.js';
@@ -203,6 +204,18 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
   return created.id;
 }
 
+/** Get-or-create an active arena by (venue, name) — venues only surface on the
+ *  consumer site when they have at least one active arena. Idempotent. */
+async function ensureArena(venueId: string, name: string, sport: string): Promise<void> {
+  const [existing] = await db
+    .select({ id: arenas.id })
+    .from(arenas)
+    .where(and(eq(arenas.venueId, venueId), eq(arenas.name, name)))
+    .limit(1);
+  if (existing) return;
+  await db.insert(arenas).values({ venueId, name, sport, status: 'active' });
+}
+
 interface DemoMembershipTier {
   name: string;
   description: string;
@@ -304,6 +317,7 @@ async function main(): Promise<void> {
     tzName: 'Asia/Kolkata',
     tags: ['football', 'outdoor'],
   });
+  await ensureArena(blrVenueId, 'Main Ground', 'football');
   await ensureEvent(demoTenantId, {
     name: 'Sunday Football Meetup',
     description: 'Casual 5-a-side football at Crimson Sports Hub. All levels welcome.',
@@ -362,6 +376,7 @@ async function main(): Promise<void> {
     tzName: 'America/New_York',
     tags: ['basketball', 'indoor'],
   });
+  await ensureArena(bostonVenueId, 'Center Court', 'basketball');
   await ensureEvent(bostonTenantId, {
     name: 'Boston Pickup Basketball',
     description: 'Open-run pickup basketball in downtown Boston. Bring water.',
