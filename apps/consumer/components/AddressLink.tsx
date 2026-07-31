@@ -26,7 +26,7 @@ export function AddressLink({
       href={`https://www.google.com/maps/search/?api=1&query=${query}`}
       target="_blank"
       rel="noopener noreferrer"
-      className={`mt-2 inline-flex items-center gap-1.5 text-sm text-text-secondary underline decoration-ink/30 underline-offset-2 transition-colors hover:text-coral-deep hover:decoration-current ${className}`}
+      className={`inline-flex items-center gap-1.5 text-sm text-text-secondary underline decoration-ink/30 underline-offset-2 transition-colors hover:text-coral-deep hover:decoration-current ${className}`}
     >
       <svg
         viewBox="0 0 24 24"

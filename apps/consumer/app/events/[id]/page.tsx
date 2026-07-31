@@ -144,7 +144,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
-                <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} />
+                <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} className="mt-2" />
                 {!ev.isStandalone && ev.venueId && (
                   <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
                     More at {ev.venueName}

@@ -142,7 +142,6 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     addressJson={venueQ.data.venue.addressJson}
                     lat={venueQ.data.venue.lat}
                     lng={venueQ.data.venue.lng}
-                    className="mt-0"
                   />
                 </div>
                 {venueQ.data.venue.brand && (
