@@ -67,8 +67,8 @@
   --radius-card: 1.375rem;   /* cards (~22px) */
 
   /* ── Signature: hard offset shadows, no blur ──────────────────── */
-  --shadow-offset:    4px 4px 0 #17151D;  /* cards → shadow-offset */
-  --shadow-offset-sm: 3px 3px 0 #17151D;  /* buttons / small → shadow-offset-sm */
+  --shadow-offset:    3px 3px 0 #17151D;  /* cards → shadow-offset */
+  --shadow-offset-sm: 2px 2px 0 #17151D;  /* buttons / small → shadow-offset-sm */
 }
 
 html, body { height: 100%; }
