@@ -97,11 +97,11 @@ export function ProfileSidebar() {
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className="flex items-center gap-2.5 rounded-full border-[2.5px] border-ink bg-white py-1.5 pl-1.5 pr-4 shadow-offset-sm"
+          className="flex items-center gap-2 rounded-xl transition-transform hover:-translate-y-0.5"
         >
           <span
             aria-hidden
-            className="flex h-8 w-8 items-center justify-center rounded-full border-[2.5px] border-ink bg-lav font-display text-sm font-extrabold text-ink"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-ink bg-lav text-sm font-bold text-ink"
           >
             {initial}
           </span>
