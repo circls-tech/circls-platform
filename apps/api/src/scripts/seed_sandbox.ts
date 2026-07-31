@@ -20,6 +20,8 @@ import { tenantMembers } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
 import { venues } from '../db/schema/venues.js';
 import { events } from '../db/schema/events.js';
+import { memberships, type MembershipBenefits } from '../db/schema/memberships.js';
+import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { logger } from '../lib/logger.js';
 
 const PASSWORD = 'sandbox123';
@@ -201,6 +203,64 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
   return created.id;
 }
 
+interface DemoMembershipTier {
+  name: string;
+  description: string;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+}
+
+interface DemoMembership {
+  name: string;
+  description: string;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+  /** Null/omitted = tenant-wide. */
+  venueId?: string;
+  tiers?: DemoMembershipTier[];
+}
+
+/** Get-or-create an active membership plan by (tenant, name), with optional tiers. Idempotent. */
+async function ensureMembershipPlan(tenantId: string, m: DemoMembership): Promise<string> {
+  const [existing] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.name, m.name)))
+    .limit(1);
+  if (existing) return existing.id;
+  const [created] = await db
+    .insert(memberships)
+    .values({
+      tenantId,
+      venueId: m.venueId ?? null,
+      name: m.name,
+      description: m.description,
+      pricePaise: m.pricePaise,
+      durationDays: m.durationDays,
+      benefits: m.benefits,
+      status: 'active',
+    })
+    .returning({ id: memberships.id });
+  if (!created) throw new Error(`membership insert returned no row for ${m.name}`);
+  if (m.tiers) {
+    await db.insert(membershipTiers).values(
+      m.tiers.map((t, i) => ({
+        membershipId: created.id,
+        tenantId,
+        name: t.name,
+        description: t.description,
+        pricePaise: t.pricePaise,
+        durationDays: t.durationDays,
+        benefits: t.benefits,
+        sortOrder: i,
+      })),
+    );
+  }
+  return created.id;
+}
+
 async function main(): Promise<void> {
   if (!env.FIREBASE_AUTH_EMULATOR_HOST) {
     process.stderr.write('Refusing to seed: FIREBASE_AUTH_EMULATOR_HOST is not set (sandbox only).\n');
@@ -253,7 +313,55 @@ async function main(): Promise<void> {
     venueId: blrVenueId,
   });
 
+  // Tiered membership on the Bengaluru venue so the membership detail page has
+  // a tier picker to look at.
+  await ensureMembershipPlan(demoTenantId, {
+    name: 'Crimson Club Membership',
+    description: 'Priority booking and member rates at Crimson Sports Hub.',
+    pricePaise: 99_900,
+    durationDays: 30,
+    venueId: blrVenueId,
+    benefits: {
+      items: [
+        { label: 'Priority slot booking', detail: 'Book courts 48h before everyone else' },
+        { label: '10% off all bookings' },
+        { label: 'Free equipment rental' },
+      ],
+    },
+    tiers: [
+      {
+        name: 'Monthly',
+        description: 'Rolling 30-day membership.',
+        pricePaise: 99_900,
+        durationDays: 30,
+        benefits: { items: [{ label: 'Priority slot booking' }, { label: '10% off all bookings' }] },
+      },
+      {
+        name: 'Annual',
+        description: 'Twelve months, two free.',
+        pricePaise: 999_000,
+        durationDays: 365,
+        benefits: {
+          items: [
+            { label: 'Priority slot booking' },
+            { label: '15% off all bookings' },
+            { label: 'Free equipment rental' },
+            { label: '2 guest passes / month' },
+          ],
+        },
+      },
+    ],
+  });
+
   const bostonTenantId = await ensureTenant('boston-sports', 'Boston Sports Collective', false);
+  const bostonVenueId = await ensureVenue(bostonTenantId, {
+    name: 'Harbor Yard Sports Club',
+    addressJson: { line1: '100 Legends Way', city: 'Boston', country: 'USA' },
+    lat: 42.3662,
+    lng: -71.0621,
+    tzName: 'America/New_York',
+    tags: ['basketball', 'indoor'],
+  });
   await ensureEvent(bostonTenantId, {
     name: 'Boston Pickup Basketball',
     description: 'Open-run pickup basketball in downtown Boston. Bring water.',
@@ -267,6 +375,20 @@ async function main(): Promise<void> {
       tzName: 'America/New_York',
     },
   });
+  // Single-tier membership in the Boston market (no tier picker — the simple case).
+  await ensureMembershipPlan(bostonTenantId, {
+    name: 'Harbor Yard All-Access',
+    description: 'Unlimited open-gym access at Harbor Yard Sports Club.',
+    pricePaise: 49_900,
+    durationDays: 30,
+    venueId: bostonVenueId,
+    benefits: {
+      items: [
+        { label: 'Unlimited open-gym sessions' },
+        { label: 'Member-only evening runs', detail: 'Weekdays 7–10pm' },
+      ],
+    },
+  });
 
   logger.info('sandbox_seed_complete');
   process.stdout.write(
@@ -274,7 +396,7 @@ async function main(): Promise<void> {
     `  Admin console  (http://localhost:3002) — email ${DEMO.admin.email} / password ${PASSWORD}\n` +
     `  Partner portal (http://localhost:3001) — email ${DEMO.partner.email} / password ${PASSWORD}  (owner of "Demo Venue Co")\n` +
     `  Consumer web   (http://localhost:3003) — phone ${DEMO.consumer.phone}; OTP shown in the emulator UI (http://localhost:4000) / "./sandbox logs firebase-emulator"\n` +
-    '  Browse content: Bengaluru venue + event (India) and a Boston event (USA) — the consumer location filter keeps them in separate countries.\n',
+    '  Browse content: venue + event + membership in both markets (Bengaluru, India and Boston, USA) — the consumer location filter keeps them in separate countries.\n',
   );
   await closeDb();
 }
