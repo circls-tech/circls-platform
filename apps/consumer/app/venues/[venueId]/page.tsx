@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { AddressLink } from '@/components/AddressLink';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -113,7 +114,11 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     ))}
                   </div>
                 )}
-                <AddressLine addressJson={venueQ.data.venue.addressJson} />
+                <AddressLink
+                  addressJson={venueQ.data.venue.addressJson}
+                  lat={venueQ.data.venue.lat}
+                  lng={venueQ.data.venue.lng}
+                />
                 {venueQ.data.venue.brand && (
                   <div className="mt-4 border-t-[1.5px] border-dashed border-ink/15 pt-4">
                     <OrgBrandBlock brand={venueQ.data.venue.brand} org={orgQ.data} label="Hosted by" />
@@ -262,15 +267,6 @@ function AboutVenue({ venue }: { venue: PublicVenue }) {
       </Card>
     </section>
   );
-}
-
-function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
-  if (!addressJson) return null;
-  const parts = ['line1', 'line2', 'city', 'state', 'pincode']
-    .map((k) => addressJson[k])
-    .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (parts.length === 0) return null;
-  return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
 }
 
 /** Today's local date as YYYY-MM-DD for the date input default. */

@@ -33,8 +33,8 @@ export function Badge({ tone = 'neutral', label, className = '', ...rest }: Badg
   return (
     <span
       className={[
-        'inline-flex items-center rounded-full border-[1.5px] border-ink px-2.5 py-0.5',
-        'text-xs font-semibold tracking-wide',
+        'inline-flex items-center rounded-lg border-[1.5px] border-ink px-2.5 py-0.5',
+        'text-xs font-semibold uppercase tracking-wide',
         toneClasses[tone],
         className,
       ].join(' ')}

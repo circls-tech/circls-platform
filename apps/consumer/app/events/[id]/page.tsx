@@ -14,15 +14,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
-
-function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
-  if (!addressJson) return null;
-  const parts = ['line1', 'line2', 'city', 'state', 'pincode']
-    .map((k) => addressJson[k])
-    .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (parts.length === 0) return null;
-  return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
-}
+import { AddressLink } from '@/components/AddressLink';
 
 function offerLabel(o: PublicCoupon, currency: ReturnType<typeof currencyForCountry>): string {
   return o.discountType === 'percent'
@@ -92,11 +84,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     );
   }
 
-  const mapsHref =
-    ev && ev.locLat != null && ev.locLng != null
-      ? `https://www.google.com/maps/search/?api=1&query=${ev.locLat},${ev.locLng}`
-      : null;
-
   return (
     <div className="min-h-screen">
       <Header />
@@ -157,12 +144,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
-                <AddressLine addressJson={ev.locAddressJson} />
-                {mapsHref && (
-                  <a href={mapsHref} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-coral-deep underline">
-                    View on map
-                  </a>
-                )}
+                <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} />
                 {!ev.isStandalone && ev.venueId && (
                   <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
                     More at {ev.venueName}
