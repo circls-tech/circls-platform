@@ -1,14 +1,16 @@
-/** The eight brand petal pastels (see the brand sheet's navigator row). */
-export const PETALS = [
-  '#FFB0A3', // salmon
-  '#FCE38A', // butter
-  '#BCE3A0', // lime
-  '#9CE0D4', // mint
-  '#F9B4D4', // pink
-  '#CDBBF7', // lilac
-  '#A9C9F2', // sky
-  '#FFD2A1', // peach
-] as const;
+/** The eight brand petal pastels by name (see the brand sheet's navigator row). */
+export const PETAL = {
+  salmon: '#FFB0A3',
+  butter: '#FCE38A',
+  lime: '#BCE3A0',
+  mint: '#9CE0D4',
+  pink: '#F9B4D4',
+  lilac: '#CDBBF7',
+  sky: '#A9C9F2',
+  peach: '#FFD2A1',
+} as const;
+
+export const PETALS = Object.values(PETAL);
 
 /** Stable petal for a name — the same organiser gets the same colour on every
  *  card and page. */

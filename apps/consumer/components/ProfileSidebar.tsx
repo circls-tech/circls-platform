@@ -8,12 +8,13 @@ import { useMyProfile } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 
 import { HelpPanel } from '@/components/HelpWidget';
+import { PETAL } from '@/lib/petals';
 
 const ITEMS = [
-  { href: '/me/bookings', label: 'My bookings', petal: '#FFB0A3', icon: 'calendar' },
-  { href: '/me/memberships', label: 'My memberships', petal: '#FCE38A', icon: 'members' },
-  { href: '/me/questions', label: 'My questions', petal: '#BCE3A0', icon: 'chat' },
-  { href: '/me/profile', label: 'Settings', petal: '#CDBBF7', icon: 'settings' },
+  { href: '/me/bookings', label: 'My bookings', petal: PETAL.salmon, icon: 'calendar' },
+  { href: '/me/memberships', label: 'My memberships', petal: PETAL.butter, icon: 'members' },
+  { href: '/me/questions', label: 'My questions', petal: PETAL.lime, icon: 'chat' },
+  { href: '/me/profile', label: 'Settings', petal: PETAL.lilac, icon: 'settings' },
 ] as const;
 
 type ItemIconName = (typeof ITEMS)[number]['icon'] | 'chat-filled' | 'help';

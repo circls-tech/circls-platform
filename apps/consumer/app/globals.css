@@ -12,6 +12,7 @@
   --color-coral-soft:   #FBE3D6;
 
   /* ── Lavender + mint tints (soft bands, accents) ──────────────── */
+  --color-sky-soft:      #e4f1f9;  /* icy wash of the sky petal — event cards */
   --color-lav:        #CBCEF6;
   --color-lav-soft:   #E6E7FB;
   --color-mint-soft:  #E2F4EA;
@@ -32,7 +33,6 @@
   --color-pastel-pink:   #f9b4d4;
   --color-pastel-lilac:  #cdbbf7;
   --color-pastel-sky:    #a9c9f2;
-  --color-sky-soft:      #e4f1f9;  /* icy wash of the sky petal */
   --color-pastel-peach:  #ffd2a1;
   --color-pastel-butter: #fce38a;
 

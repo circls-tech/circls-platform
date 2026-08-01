@@ -238,22 +238,31 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
  * Attach gallery images to a venue/event by pointing storage keys at the
  * consumer app's self-hosted /sports/*.jpg assets. With
  * R2_PUBLIC_BASE_URL=http://localhost:3003 (sandbox api.env) the derived
- * public URLs resolve to real photos — no object storage needed. Idempotent
- * on the unique storage_key.
+ * public URLs resolve to real photos — no object storage needed.
+ *
+ * storage_key is UNIQUE table-wide, so a given file can be attached to only
+ * ONE venue (and one event) — the check below is by key alone, and a key
+ * already claimed by another row is skipped with a warning rather than
+ * silently swallowed by the unique constraint. When adding demo venues or
+ * events, give each its own files from public/sports/.
  */
 async function ensureVenueImages(tenantId: string, venueId: string, files: string[]): Promise<void> {
   for (const [i, file] of files.entries()) {
     const storageKey = `sports/${file}`;
     const [existing] = await db
-      .select({ id: venueImages.id })
+      .select({ id: venueImages.id, venueId: venueImages.venueId })
       .from(venueImages)
-      .where(and(eq(venueImages.venueId, venueId), eq(venueImages.storageKey, storageKey)))
+      .where(eq(venueImages.storageKey, storageKey))
       .limit(1);
-    if (existing) continue;
+    if (existing) {
+      if (existing.venueId !== venueId) {
+        logger.warn({ storageKey, venueId }, 'seed_venue_image_key_taken_by_other_venue');
+      }
+      continue;
+    }
     await db
       .insert(venueImages)
-      .values({ venueId, tenantId, storageKey, mimeType: 'image/jpeg', position: i })
-      .onConflictDoNothing();
+      .values({ venueId, tenantId, storageKey, mimeType: 'image/jpeg', position: i });
   }
 }
 
@@ -261,15 +270,19 @@ async function ensureEventImages(tenantId: string, eventId: string, files: strin
   for (const [i, file] of files.entries()) {
     const storageKey = `sports/${file}`;
     const [existing] = await db
-      .select({ id: eventImages.id })
+      .select({ id: eventImages.id, eventId: eventImages.eventId })
       .from(eventImages)
-      .where(and(eq(eventImages.eventId, eventId), eq(eventImages.storageKey, storageKey)))
+      .where(eq(eventImages.storageKey, storageKey))
       .limit(1);
-    if (existing) continue;
+    if (existing) {
+      if (existing.eventId !== eventId) {
+        logger.warn({ storageKey, eventId }, 'seed_event_image_key_taken_by_other_event');
+      }
+      continue;
+    }
     await db
       .insert(eventImages)
-      .values({ eventId, tenantId, storageKey, mimeType: 'image/jpeg', position: i })
-      .onConflictDoNothing();
+      .values({ eventId, tenantId, storageKey, mimeType: 'image/jpeg', position: i });
   }
 }
 
