@@ -244,7 +244,7 @@ function Sidebar({
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r-2 border-slate-900 bg-[#E3F2FA] transition-transform duration-200',
+          'fixed inset-y-0 left-0 flex w-[220px] flex-col border-r-2 border-slate-900 bg-[#FAF3E8] transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
         style={{ zIndex: 50 }}
@@ -330,7 +330,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
         <div className="md:ml-[220px] flex min-h-screen flex-col">
           {/* Top bar */}
           {/* Taller bar with breathing room. */}
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b-2 border-slate-900 bg-[#E3F2FA] px-4 pt-1 sm:h-20 sm:px-8 sm:pt-2">
+          <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b-2 border-slate-900 bg-[#FAF3E8] px-4 pt-1 sm:h-20 sm:px-8 sm:pt-2">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
