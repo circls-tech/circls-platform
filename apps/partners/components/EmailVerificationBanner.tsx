@@ -58,8 +58,8 @@ export function EmailVerificationBanner() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-200 bg-amber-50 px-6 py-2 text-sm text-amber-900">
       <span>
-        Please verify your email — we sent a link to <span className="font-medium">{user.email}</span>.
-        Until then it can&apos;t be shown to your team or used to find your account.
+        Please verify your email — we sent a link to <span className="font-medium">{user.email}</span> (check
+        your spam folder too). Until then it can&apos;t be shown to your team or used to find your account.
       </span>
       <button
         type="button"
