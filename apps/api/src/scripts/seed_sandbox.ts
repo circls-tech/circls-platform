@@ -351,35 +351,30 @@ interface DemoMembership {
   tiers?: DemoMembershipTier[];
 }
 
-/** Get-or-create an active membership plan by (tenant, name), with optional tiers. Idempotent. */
+/** Get-or-create an active membership plan by (tenant, name), with optional tiers.
+ *  Idempotent — reseeding refreshes every plan field (like ensureVenue), so demo
+ *  edits here land on existing rows too; tiers are only created, never updated. */
 async function ensureMembershipPlan(tenantId: string, m: DemoMembership): Promise<string> {
+  const plan = {
+    venueId: m.venueId ?? null,
+    description: m.description,
+    pricePaise: m.pricePaise,
+    durationDays: m.durationDays,
+    benefits: m.benefits,
+    coverStorageKey: m.coverStorageKey ?? null,
+  };
   const [existing] = await db
     .select({ id: memberships.id })
     .from(memberships)
     .where(and(eq(memberships.tenantId, tenantId), eq(memberships.name, m.name)))
     .limit(1);
   if (existing) {
-    if (m.coverStorageKey) {
-      await db
-        .update(memberships)
-        .set({ coverStorageKey: m.coverStorageKey })
-        .where(eq(memberships.id, existing.id));
-    }
+    await db.update(memberships).set(plan).where(eq(memberships.id, existing.id));
     return existing.id;
   }
   const [created] = await db
     .insert(memberships)
-    .values({
-      tenantId,
-      venueId: m.venueId ?? null,
-      name: m.name,
-      description: m.description,
-      pricePaise: m.pricePaise,
-      durationDays: m.durationDays,
-      benefits: m.benefits,
-      coverStorageKey: m.coverStorageKey ?? null,
-      status: 'active',
-    })
+    .values({ tenantId, name: m.name, ...plan, status: 'active' })
     .returning({ id: memberships.id });
   if (!created) throw new Error(`membership insert returned no row for ${m.name}`);
   if (m.tiers) {

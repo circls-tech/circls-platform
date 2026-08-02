@@ -1,7 +1,9 @@
 /**
  * Postal address rendered as a maps link — coordinates when we have them
- * (exact pin), otherwise the address text as the search query. Google Maps
- * URLs open the native app on both Android and iOS when installed.
+ * (exact pin), otherwise the address text as the search query. With
+ * coordinates but no printable address the link still renders, labelled
+ * "View on map". Google Maps URLs open the native app on both Android and
+ * iOS when installed.
  */
 export function AddressLink({
   addressJson,
@@ -14,13 +16,12 @@ export function AddressLink({
   lng?: number | null;
   className?: string;
 }) {
-  if (!addressJson) return null;
   const parts = ['line1', 'line2', 'city', 'state', 'pincode']
-    .map((k) => addressJson[k])
+    .map((k) => addressJson?.[k])
     .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (parts.length === 0) return null;
-  const query =
-    lat != null && lng != null ? `${lat},${lng}` : encodeURIComponent(parts.join(', '));
+  const hasCoords = lat != null && lng != null;
+  if (parts.length === 0 && !hasCoords) return null;
+  const query = hasCoords ? `${lat},${lng}` : encodeURIComponent(parts.join(', '));
   return (
     <a
       href={`https://www.google.com/maps/search/?api=1&query=${query}`}
@@ -41,7 +42,7 @@ export function AddressLink({
         <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
         <circle cx="12" cy="10" r="3" />
       </svg>
-      {parts.join(', ')}
+      {parts.length > 0 ? parts.join(', ') : 'View on map'}
     </a>
   );
 }

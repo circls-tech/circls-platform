@@ -27,6 +27,7 @@ import {
   formatDayMonth,
   formatPaise,
   formatSlotRange,
+  telHref,
 } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -117,7 +118,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 <div className="mt-2 flex flex-col items-start gap-1">
                   {venueQ.data.venue.contactPhone && (
                     <a
-                      href={`tel:${venueQ.data.venue.contactPhone}`}
+                      href={telHref(venueQ.data.venue.contactPhone)}
                       className="inline-flex items-center gap-1.5 text-sm text-text-secondary underline decoration-ink/30 underline-offset-2 transition-colors hover:text-coral-deep hover:decoration-current"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>

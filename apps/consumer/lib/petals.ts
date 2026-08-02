@@ -1,13 +1,15 @@
-/** The eight brand petal pastels by name (see the brand sheet's navigator row). */
+/** The eight brand petal pastels by name (see the brand sheet's navigator row).
+ *  CSS var references, not hexes — globals.css owns the actual values. Only
+ *  valid where CSS runs (inline style / stylesheets), not for canvas or email. */
 export const PETAL = {
-  salmon: '#FFB0A3',
-  butter: '#FCE38A',
-  lime: '#BCE3A0',
-  mint: '#9CE0D4',
-  pink: '#F9B4D4',
-  lilac: '#CDBBF7',
-  sky: '#A9C9F2',
-  peach: '#FFD2A1',
+  salmon: 'var(--color-pastel-salmon)',
+  butter: 'var(--color-pastel-butter)',
+  lime: 'var(--color-pastel-lime)',
+  mint: 'var(--color-pastel-mint)',
+  pink: 'var(--color-pastel-pink)',
+  lilac: 'var(--color-pastel-lilac)',
+  sky: 'var(--color-pastel-sky)',
+  peach: 'var(--color-pastel-peach)',
 } as const;
 
 export const PETALS = Object.values(PETAL);

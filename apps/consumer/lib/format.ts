@@ -150,3 +150,9 @@ const weekdayFmt = new Intl.DateTimeFormat('en-IN', {
 export function formatDayLabel(iso: string): string {
   return weekdayFmt.format(new Date(iso));
 }
+
+/** A dialable tel: URI from a display phone number — RFC 3966 allows only
+ *  digits and a leading +, so "(617) 555-0142" → "tel:6175550142". */
+export function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^+\d]/g, '')}`;
+}
