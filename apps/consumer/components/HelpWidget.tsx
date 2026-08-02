@@ -282,8 +282,8 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
   return createPortal(
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Help">
       <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
-      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-[2.5px] border-ink bg-surface shadow-offset">
-        <div className="flex items-center justify-between border-b-[2.5px] border-ink px-4 py-3">
+      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-[2px] border-ink bg-surface shadow-offset">
+        <div className="flex items-center justify-between border-b-[2px] border-ink px-4 py-3">
           <h2 className="font-display text-lg font-extrabold text-ink">Help</h2>
           <button
             onClick={onClose}

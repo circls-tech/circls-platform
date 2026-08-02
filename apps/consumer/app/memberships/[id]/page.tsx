@@ -92,13 +92,13 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
           <p className="text-sm text-text-secondary">Membership not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
+            <div className="mb-6 overflow-hidden rounded-card border-[2px] border-ink shadow-offset">
               {m.artworkUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={m.artworkUrl}
                   alt={m.name}
-                  className="h-44 w-full border-b-[2.5px] border-ink object-cover sm:h-56"
+                  className="h-44 w-full border-b-[2px] border-ink object-cover sm:h-56"
                 />
               ) : null}
               <div className="bg-lav p-6 text-ink">
@@ -137,7 +137,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                         disabled={soldOut}
                         aria-pressed={selected}
                         className={[
-                          'flex w-full items-start justify-between gap-4 rounded-card border-[2.5px] bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow,border-color] duration-150',
+                          'flex w-full items-start justify-between gap-4 rounded-card border-[2px] bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow,border-color] duration-150',
                           selected ? 'border-coral-deep' : 'border-ink',
                           soldOut
                             ? 'opacity-60'

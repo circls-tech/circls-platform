@@ -12,6 +12,7 @@
   --color-coral-soft:   #FBE3D6;
 
   /* ── Lavender + mint tints (soft bands, accents) ──────────────── */
+  --color-sky-soft:      #e4f1f9;  /* icy wash of the sky petal — event cards */
   --color-lav:        #CBCEF6;
   --color-lav-soft:   #E6E7FB;
   --color-mint-soft:  #E2F4EA;
@@ -67,8 +68,8 @@
   --radius-card: 1.375rem;   /* cards (~22px) */
 
   /* ── Signature: hard offset shadows, no blur ──────────────────── */
-  --shadow-offset:    6px 6px 0 #17151D;  /* cards → shadow-offset */
-  --shadow-offset-sm: 4px 4px 0 #17151D;  /* buttons / small → shadow-offset-sm */
+  --shadow-offset:    3px 3px 0 #17151D;  /* cards → shadow-offset */
+  --shadow-offset-sm: 2px 2px 0 #17151D;  /* buttons / small → shadow-offset-sm */
 }
 
 html, body { height: 100%; }

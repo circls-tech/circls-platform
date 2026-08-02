@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { AddressLink } from '@/components/AddressLink';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -18,7 +19,7 @@ import {
   useVenueMemberships,
 } from '@/lib/api/consumer';
 import type { PublicArena, PublicEvent, PublicVenue } from '@/lib/api/types';
-import { formatAddress, formatOpeningHours } from '@/lib/trust';
+import { formatOpeningHours } from '@/lib/trust';
 import {
   type CurrencyCode,
   currencyForCountry,
@@ -26,6 +27,7 @@ import {
   formatDayMonth,
   formatPaise,
   formatSlotRange,
+  telHref,
 } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -89,7 +91,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
           <p className="text-sm text-text-secondary">Venue not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
+            <div className="mb-6 overflow-hidden rounded-card border-[2px] border-ink shadow-offset">
               <ImageCarousel
                 images={venueQ.data.venue.images}
                 alt={venueQ.data.venue.name}
@@ -113,7 +115,36 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                     ))}
                   </div>
                 )}
-                <AddressLine addressJson={venueQ.data.venue.addressJson} />
+                <div className="mt-2 flex flex-col items-start gap-1">
+                  {venueQ.data.venue.contactPhone && (
+                    <a
+                      href={telHref(venueQ.data.venue.contactPhone)}
+                      className="inline-flex items-center gap-1.5 text-sm text-text-secondary underline decoration-ink/30 underline-offset-2 transition-colors hover:text-coral-deep hover:decoration-current"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                      </svg>
+                      {venueQ.data.venue.contactPhone}
+                    </a>
+                  )}
+                  {venueQ.data.venue.contactEmail && (
+                    <a
+                      href={`mailto:${venueQ.data.venue.contactEmail}`}
+                      className="inline-flex items-center gap-1.5 text-sm text-text-secondary underline decoration-ink/30 underline-offset-2 transition-colors hover:text-coral-deep hover:decoration-current"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <path d="m22 7-10 5L2 7" />
+                      </svg>
+                      {venueQ.data.venue.contactEmail}
+                    </a>
+                  )}
+                  <AddressLink
+                    addressJson={venueQ.data.venue.addressJson}
+                    lat={venueQ.data.venue.lat}
+                    lng={venueQ.data.venue.lng}
+                  />
+                </div>
                 {venueQ.data.venue.brand && (
                   <div className="mt-4 border-t-[1.5px] border-dashed border-ink/15 pt-4">
                     <OrgBrandBlock brand={venueQ.data.venue.brand} org={orgQ.data} label="Hosted by" />
@@ -194,18 +225,12 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   );
 }
 
-/** "About the venue" — the trust metadata (PR #109). Renders only the sections
- *  that have data, and nothing at all when the venue carries no metadata. */
+/** "About the venue" — description, amenities and opening hours. Contact and
+ *  address live in the header card next to the maps link. Renders only the
+ *  sections that have data, and nothing at all when the venue carries none. */
 function AboutVenue({ venue }: { venue: PublicVenue }) {
-  const address = formatAddress(venue.address);
   const hours = formatOpeningHours(venue.openingHours);
-  const hasContact = Boolean(venue.contactPhone || venue.contactEmail);
-  const hasContent =
-    Boolean(venue.description) ||
-    venue.amenities.length > 0 ||
-    Boolean(hours) ||
-    hasContact ||
-    Boolean(address);
+  const hasContent = Boolean(venue.description) || venue.amenities.length > 0 || Boolean(hours);
   if (!hasContent) return null;
 
   return (
@@ -228,49 +253,23 @@ function AboutVenue({ venue }: { venue: PublicVenue }) {
         )}
 
         {hours && (
-          <div>
+          <div className="mt-2">
             <h3 className="text-sm font-semibold text-ink">Opening hours</h3>
-            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            <dl className="mt-2 space-y-1 text-sm">
               {hours.map((row) => (
-                <div key={row.day} className="flex justify-between gap-3">
-                  <dt className="text-ink-soft">{row.day}</dt>
-                  <dd className={row.closed ? 'text-text-secondary' : 'text-ink'}>{row.label}</dd>
+                <div key={row.day} className="flex items-baseline gap-4">
+                  <dt className="w-28 shrink-0 text-ink-soft">{row.day}</dt>
+                  <dd className={row.closed ? 'text-text-secondary' : 'font-semibold text-ink'}>
+                    {row.label}
+                  </dd>
                 </div>
               ))}
             </dl>
           </div>
         )}
-
-        {(hasContact || address) && (
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Contact</h3>
-            <ul className="mt-2 space-y-1 text-sm">
-              {address && <li className="text-text-secondary">{address}</li>}
-              {venue.contactPhone && (
-                <li>
-                  <a href={`tel:${venue.contactPhone}`} className="text-coral-deep underline">{venue.contactPhone}</a>
-                </li>
-              )}
-              {venue.contactEmail && (
-                <li>
-                  <a href={`mailto:${venue.contactEmail}`} className="text-coral-deep underline">{venue.contactEmail}</a>
-                </li>
-              )}
-            </ul>
-          </div>
-        )}
       </Card>
     </section>
   );
-}
-
-function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
-  if (!addressJson) return null;
-  const parts = ['line1', 'line2', 'city', 'state', 'pincode']
-    .map((k) => addressJson[k])
-    .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (parts.length === 0) return null;
-  return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
 }
 
 /** Today's local date as YYYY-MM-DD for the date input default. */

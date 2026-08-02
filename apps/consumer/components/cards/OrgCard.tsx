@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { PublicOrgSummary } from '@/lib/api/types';
+import { petalFor } from '@/lib/petals';
 
 /** Square org logo, or a coloured initials chip when no logo is uploaded. */
 function OrgLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
@@ -18,7 +19,8 @@ function OrgLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
   return (
     <span
       aria-hidden
-      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border-[2px] border-ink bg-lav font-display text-lg font-extrabold text-ink"
+      style={{ backgroundColor: petalFor(name) }}
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border-[2px] border-ink font-display text-lg font-extrabold text-ink"
     >
       {initial}
     </span>
@@ -31,7 +33,7 @@ export function OrgCard({ org, className = '' }: { org: PublicOrgSummary; classN
   return (
     <Link
       href={`/orgs/${org.slug}`}
-      className={`block rounded-card border-[2.5px] border-ink bg-white p-4 shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className={`block rounded-card border-[2px] border-ink bg-white p-4 shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
       <div className="flex items-start gap-3">
         <OrgLogo name={org.name} logoUrl={org.logoUrl} />

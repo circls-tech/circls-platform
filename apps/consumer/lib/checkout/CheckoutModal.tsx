@@ -213,7 +213,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       ) : done ? (
         <div className="flex flex-col gap-4">
           <div className={[
-            'rounded-[var(--radius)] border-[2.5px] border-ink px-4 py-3 text-sm font-medium shadow-offset-sm',
+            'rounded-[var(--radius)] border-[2px] border-ink px-4 py-3 text-sm font-medium shadow-offset-sm',
             phase.kind === 'success' ? 'bg-tone-success-bg text-tone-success-text'
               : phase.kind === 'reserved' ? 'bg-tone-warning-bg text-tone-warning-text'
               : 'bg-tone-danger-bg text-tone-danger-text',

@@ -16,7 +16,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   label: string;
 }
 
-// Pill tags on a thin ink outline — brand-sheet "tag" style.
+// Soft petal chips — pastel fill, ink text, no outline.
 const toneClasses: Record<BadgeTone, string> = {
   open:    'bg-surface-2 text-ink-soft',
   held:    'bg-tone-warning-bg text-tone-warning-text',
@@ -26,15 +26,15 @@ const toneClasses: Record<BadgeTone, string> = {
   success: 'bg-tone-success-bg text-tone-success-text',
   warning: 'bg-tone-warning-bg text-tone-warning-text',
   danger:  'bg-tone-danger-bg text-tone-danger-text',
-  sport:   'bg-coral-soft text-coral-deep',
+  sport:   'bg-pastel-butter text-ink',
 };
 
 export function Badge({ tone = 'neutral', label, className = '', ...rest }: BadgeProps) {
   return (
     <span
       className={[
-        'inline-flex items-center rounded-full border-[1.5px] border-ink px-2.5 py-0.5',
-        'text-xs font-semibold tracking-wide',
+        'inline-flex items-center rounded-lg px-2.5 py-1',
+        'text-xs font-semibold uppercase tracking-wide',
         toneClasses[tone],
         className,
       ].join(' ')}

@@ -18,8 +18,14 @@ import { CURRENT_TERMS_VERSION } from '../lib/terms.js';
 import { tenants } from '../db/schema/tenants.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
-import { venues } from '../db/schema/venues.js';
+import { venues, type VenueOpeningHours } from '../db/schema/venues.js';
 import { events } from '../db/schema/events.js';
+import { arenas } from '../db/schema/arenas.js';
+import { venueImages } from '../db/schema/venue_images.js';
+import { eventImages } from '../db/schema/event_images.js';
+import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
+import { memberships, type MembershipBenefits } from '../db/schema/memberships.js';
+import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { logger } from '../lib/logger.js';
 
 const PASSWORD = 'sandbox123';
@@ -113,6 +119,16 @@ interface DemoVenue {
   lng: number;
   tzName: string;
   tags: string[];
+  /** "About the venue" card: blurb + opening hours + contact + structured address. */
+  description?: string;
+  openingHours?: VenueOpeningHours;
+  contactPhone?: string;
+  contactEmail?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
 }
 
 /**
@@ -125,10 +141,21 @@ async function ensureVenue(tenantId: string, v: DemoVenue): Promise<string> {
     .from(venues)
     .where(and(eq(venues.tenantId, tenantId), eq(venues.name, v.name)))
     .limit(1);
+  const about = {
+    description: v.description ?? null,
+    openingHours: v.openingHours ?? null,
+    contactPhone: v.contactPhone ?? null,
+    contactEmail: v.contactEmail ?? null,
+    addressLine1: v.addressLine1 ?? null,
+    city: v.city ?? null,
+    state: v.state ?? null,
+    postalCode: v.postalCode ?? null,
+    country: v.country ?? null,
+  };
   if (existing) {
     await db
       .update(venues)
-      .set({ addressJson: v.addressJson, lat: v.lat, lng: v.lng, tzName: v.tzName, tags: v.tags })
+      .set({ addressJson: v.addressJson, lat: v.lat, lng: v.lng, tzName: v.tzName, tags: v.tags, ...about })
       .where(eq(venues.id, existing.id));
     return existing.id;
   }
@@ -142,6 +169,7 @@ async function ensureVenue(tenantId: string, v: DemoVenue): Promise<string> {
       lng: v.lng,
       tzName: v.tzName,
       tags: v.tags,
+      ...about,
       status: 'active',
     })
     .returning({ id: venues.id });
@@ -170,9 +198,14 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
     .from(events)
     .where(and(eq(events.tenantId, tenantId), eq(events.name, e.name)))
     .limit(1);
-  if (existing) return existing.id;
   const startsAt = new Date(Date.now() + e.startInDays * DAY_MS);
   const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+  if (existing) {
+    // Keep demo events upcoming: reseeding after the original date has passed
+    // would otherwise leave the browse rails empty.
+    await db.update(events).set({ startsAt, endsAt }).where(eq(events.id, existing.id));
+    return existing.id;
+  }
   // events_scope_chk: a venue event keeps location columns null; a standalone
   // event must carry its own address_json + tz_name (venue_id null).
   const [created] = await db
@@ -198,6 +231,166 @@ async function ensureEvent(tenantId: string, e: DemoEvent): Promise<string> {
     })
     .returning({ id: events.id });
   if (!created) throw new Error(`event insert returned no row for ${e.name}`);
+  return created.id;
+}
+
+/**
+ * Attach gallery images to a venue/event by pointing storage keys at the
+ * consumer app's self-hosted /sports/*.jpg assets. With
+ * R2_PUBLIC_BASE_URL=http://localhost:3003 (sandbox api.env) the derived
+ * public URLs resolve to real photos — no object storage needed.
+ *
+ * storage_key is UNIQUE table-wide, so a given file can be attached to only
+ * ONE venue (and one event) — the check below is by key alone, and a key
+ * already claimed by another row is skipped with a warning rather than
+ * silently swallowed by the unique constraint. When adding demo venues or
+ * events, give each its own files from public/sports/.
+ */
+async function ensureVenueImages(tenantId: string, venueId: string, files: string[]): Promise<void> {
+  for (const [i, file] of files.entries()) {
+    const storageKey = `sports/${file}`;
+    const [existing] = await db
+      .select({ id: venueImages.id, venueId: venueImages.venueId })
+      .from(venueImages)
+      .where(eq(venueImages.storageKey, storageKey))
+      .limit(1);
+    if (existing) {
+      if (existing.venueId !== venueId) {
+        logger.warn({ storageKey, venueId }, 'seed_venue_image_key_taken_by_other_venue');
+      }
+      continue;
+    }
+    await db
+      .insert(venueImages)
+      .values({ venueId, tenantId, storageKey, mimeType: 'image/jpeg', position: i });
+  }
+}
+
+async function ensureEventImages(tenantId: string, eventId: string, files: string[]): Promise<void> {
+  for (const [i, file] of files.entries()) {
+    const storageKey = `sports/${file}`;
+    const [existing] = await db
+      .select({ id: eventImages.id, eventId: eventImages.eventId })
+      .from(eventImages)
+      .where(eq(eventImages.storageKey, storageKey))
+      .limit(1);
+    if (existing) {
+      if (existing.eventId !== eventId) {
+        logger.warn({ storageKey, eventId }, 'seed_event_image_key_taken_by_other_event');
+      }
+      continue;
+    }
+    await db
+      .insert(eventImages)
+      .values({ eventId, tenantId, storageKey, mimeType: 'image/jpeg', position: i });
+  }
+}
+
+interface DemoTicketTier {
+  name: string;
+  description?: string;
+  pricePaise: number;
+  capacity?: number;
+}
+
+/** Attach ticket tiers to an event (skipped if the event already has any). */
+async function ensureEventTicketTiers(
+  tenantId: string,
+  eventId: string,
+  tiers: DemoTicketTier[],
+): Promise<void> {
+  const [existing] = await db
+    .select({ id: eventTicketTiers.id })
+    .from(eventTicketTiers)
+    .where(eq(eventTicketTiers.eventId, eventId))
+    .limit(1);
+  if (existing) return;
+  await db.insert(eventTicketTiers).values(
+    tiers.map((t, i) => ({
+      eventId,
+      tenantId,
+      name: t.name,
+      description: t.description ?? null,
+      pricePaise: t.pricePaise,
+      capacity: t.capacity ?? null,
+      sortOrder: i,
+    })),
+  );
+}
+
+/** Get-or-create an active arena by (venue, name) — venues only surface on the
+ *  consumer site when they have at least one active arena. Idempotent. */
+async function ensureArena(venueId: string, name: string, sport: string): Promise<void> {
+  const [existing] = await db
+    .select({ id: arenas.id })
+    .from(arenas)
+    .where(and(eq(arenas.venueId, venueId), eq(arenas.name, name)))
+    .limit(1);
+  if (existing) return;
+  await db.insert(arenas).values({ venueId, name, sport, status: 'active' });
+}
+
+interface DemoMembershipTier {
+  name: string;
+  description: string;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+}
+
+interface DemoMembership {
+  name: string;
+  description: string;
+  pricePaise: number;
+  durationDays: number;
+  benefits: MembershipBenefits;
+  /** Null/omitted = tenant-wide. */
+  venueId?: string;
+  /** Storage key for the cover artwork (see ensureVenueImages note). */
+  coverStorageKey?: string;
+  tiers?: DemoMembershipTier[];
+}
+
+/** Get-or-create an active membership plan by (tenant, name), with optional tiers.
+ *  Idempotent — reseeding refreshes every plan field (like ensureVenue), so demo
+ *  edits here land on existing rows too; tiers are only created, never updated. */
+async function ensureMembershipPlan(tenantId: string, m: DemoMembership): Promise<string> {
+  const plan = {
+    venueId: m.venueId ?? null,
+    description: m.description,
+    pricePaise: m.pricePaise,
+    durationDays: m.durationDays,
+    benefits: m.benefits,
+    coverStorageKey: m.coverStorageKey ?? null,
+  };
+  const [existing] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.tenantId, tenantId), eq(memberships.name, m.name)))
+    .limit(1);
+  if (existing) {
+    await db.update(memberships).set(plan).where(eq(memberships.id, existing.id));
+    return existing.id;
+  }
+  const [created] = await db
+    .insert(memberships)
+    .values({ tenantId, name: m.name, ...plan, status: 'active' })
+    .returning({ id: memberships.id });
+  if (!created) throw new Error(`membership insert returned no row for ${m.name}`);
+  if (m.tiers) {
+    await db.insert(membershipTiers).values(
+      m.tiers.map((t, i) => ({
+        membershipId: created.id,
+        tenantId,
+        name: t.name,
+        description: t.description,
+        pricePaise: t.pricePaise,
+        durationDays: t.durationDays,
+        benefits: t.benefits,
+        sortOrder: i,
+      })),
+    );
+  }
   return created.id;
 }
 
@@ -243,8 +436,24 @@ async function main(): Promise<void> {
     lng: 77.6206,
     tzName: 'Asia/Kolkata',
     tags: ['football', 'outdoor'],
+    description:
+      'Five-a-side turf in the heart of MG Road. Floodlit for late-night games, ' +
+      'with a chill-out deck and cold drinks for the post-match debrief — because ' +
+      'the best matches don\u2019t end at the final whistle.',
+    openingHours: Object.fromEntries(
+      ['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ open: '06:00', close: '23:00' }]]),
+    ),
+    contactPhone: '+91 98450 12345',
+    contactEmail: 'play@crimsonsportshub.in',
+    addressLine1: 'MG Road',
+    city: 'Bengaluru',
+    state: 'Karnataka',
+    postalCode: '560001',
+    country: 'India',
   });
-  await ensureEvent(demoTenantId, {
+  await ensureArena(blrVenueId, 'Main Ground', 'football');
+  await ensureVenueImages(demoTenantId, blrVenueId, ['football.jpg', 'running.jpg', 'gym.jpg']);
+  const blrEventId = await ensureEvent(demoTenantId, {
     name: 'Sunday Football Meetup',
     description: 'Casual 5-a-side football at Crimson Sports Hub. All levels welcome.',
     startInDays: 7,
@@ -252,9 +461,74 @@ async function main(): Promise<void> {
     capacity: 20,
     venueId: blrVenueId,
   });
+  await ensureEventImages(demoTenantId, blrEventId, ['football.jpg']);
+
+  // Tiered membership on the Bengaluru venue so the membership detail page has
+  // a tier picker to look at.
+  await ensureMembershipPlan(demoTenantId, {
+    name: 'Crimson Club Membership',
+    description: 'Priority booking and member rates at Crimson Sports Hub.',
+    pricePaise: 99_900,
+    durationDays: 30,
+    venueId: blrVenueId,
+    coverStorageKey: 'sports/gym.jpg',
+    benefits: {
+      items: [
+        { label: 'Priority slot booking', detail: 'Book courts 48h before everyone else' },
+        { label: '10% off all bookings' },
+        { label: 'Free equipment rental' },
+      ],
+    },
+    tiers: [
+      {
+        name: 'Monthly',
+        description: 'Rolling 30-day membership.',
+        pricePaise: 99_900,
+        durationDays: 30,
+        benefits: { items: [{ label: 'Priority slot booking' }, { label: '10% off all bookings' }] },
+      },
+      {
+        name: 'Annual',
+        description: 'Twelve months, two free.',
+        pricePaise: 999_000,
+        durationDays: 365,
+        benefits: {
+          items: [
+            { label: 'Priority slot booking' },
+            { label: '15% off all bookings' },
+            { label: 'Free equipment rental' },
+            { label: '2 guest passes / month' },
+          ],
+        },
+      },
+    ],
+  });
 
   const bostonTenantId = await ensureTenant('boston-sports', 'Boston Sports Collective', false);
-  await ensureEvent(bostonTenantId, {
+  const bostonVenueId = await ensureVenue(bostonTenantId, {
+    name: 'Harbor Yard Sports Club',
+    addressJson: { line1: '100 Legends Way', city: 'Boston', country: 'USA' },
+    lat: 42.3662,
+    lng: -71.0621,
+    tzName: 'America/New_York',
+    tags: ['basketball', 'indoor'],
+    description:
+      'Indoor courts a block from the harbor. Pro-grade hardwood, open-gym runs ' +
+      'every evening, and a lounge upstairs to cool down after the buzzer.',
+    openingHours: Object.fromEntries(
+      ['0', '1', '2', '3', '4', '5', '6'].map((d) => [d, [{ open: '10:00', close: '23:00' }]]),
+    ),
+    contactPhone: '(617) 555-0142',
+    contactEmail: 'hello@harboryard.com',
+    addressLine1: '100 Legends Way',
+    city: 'Boston',
+    state: 'MA',
+    postalCode: '02114',
+    country: 'USA',
+  });
+  await ensureArena(bostonVenueId, 'Center Court', 'basketball');
+  await ensureVenueImages(bostonTenantId, bostonVenueId, ['basketball.jpg', 'squash.jpg']);
+  const bostonEventId = await ensureEvent(bostonTenantId, {
     name: 'Boston Pickup Basketball',
     description: 'Open-run pickup basketball in downtown Boston. Bring water.',
     startInDays: 7,
@@ -267,6 +541,42 @@ async function main(): Promise<void> {
       tzName: 'America/New_York',
     },
   });
+  await ensureEventImages(bostonTenantId, bostonEventId, ['basketball.jpg']);
+
+  // A tiered-ticket event in the Boston market so the consumer ticket picker
+  // has something to render (mirrors the partner "comp day" pattern).
+  const compDayId = await ensureEvent(bostonTenantId, {
+    name: 'Harbor Hoops Comp Day',
+    description:
+      'Three comps. One day. We\u2019re marking a year of Harbor Yard the only way ' +
+      'that makes sense \u2014 a full day on the court, split into three formats so ' +
+      'everyone gets a shot at the podium. Prize money awarded across all three.',
+    startInDays: 14,
+    pricePaise: 0,
+    capacity: 90,
+    venueId: bostonVenueId,
+  });
+  await ensureEventImages(bostonTenantId, compDayId, ['squash.jpg']);
+  await ensureEventTicketTiers(bostonTenantId, compDayId, [
+    { name: '3-Point Shootout', description: 'Pure catch-and-shoot. Most buckets takes the crown.', pricePaise: 50_000, capacity: 30 },
+    { name: 'Amateur Bracket', description: 'Never competed before? This one\u2019s built for you.', pricePaise: 80_000, capacity: 40 },
+    { name: 'Open Finals', description: 'The strongest in the room.', pricePaise: 100_000, capacity: 20 },
+  ]);
+  // Single-tier membership in the Boston market (no tier picker — the simple case).
+  await ensureMembershipPlan(bostonTenantId, {
+    name: 'Harbor Yard All-Access',
+    description: 'Unlimited open-gym access at Harbor Yard Sports Club.',
+    pricePaise: 49_900,
+    durationDays: 30,
+    venueId: bostonVenueId,
+    coverStorageKey: 'sports/basketball.jpg',
+    benefits: {
+      items: [
+        { label: 'Unlimited open-gym sessions' },
+        { label: 'Member-only evening runs', detail: 'Weekdays 7–10pm' },
+      ],
+    },
+  });
 
   logger.info('sandbox_seed_complete');
   process.stdout.write(
@@ -274,7 +584,7 @@ async function main(): Promise<void> {
     `  Admin console  (http://localhost:3002) — email ${DEMO.admin.email} / password ${PASSWORD}\n` +
     `  Partner portal (http://localhost:3001) — email ${DEMO.partner.email} / password ${PASSWORD}  (owner of "Demo Venue Co")\n` +
     `  Consumer web   (http://localhost:3003) — phone ${DEMO.consumer.phone}; OTP shown in the emulator UI (http://localhost:4000) / "./sandbox logs firebase-emulator"\n` +
-    '  Browse content: Bengaluru venue + event (India) and a Boston event (USA) — the consumer location filter keeps them in separate countries.\n',
+    '  Browse content: venue + event + membership in both markets (Bengaluru, India and Boston, USA) — the consumer location filter keeps them in separate countries.\n',
   );
   await closeDb();
 }

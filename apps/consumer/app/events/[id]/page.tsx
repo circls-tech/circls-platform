@@ -14,15 +14,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
-
-function AddressLine({ addressJson }: { addressJson: Record<string, unknown> | null }) {
-  if (!addressJson) return null;
-  const parts = ['line1', 'line2', 'city', 'state', 'pincode']
-    .map((k) => addressJson[k])
-    .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (parts.length === 0) return null;
-  return <p className="mt-2 text-sm text-text-secondary">{parts.join(', ')}</p>;
-}
+import { AddressLink } from '@/components/AddressLink';
 
 function offerLabel(o: PublicCoupon, currency: ReturnType<typeof currencyForCountry>): string {
   return o.discountType === 'percent'
@@ -92,11 +84,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     );
   }
 
-  const mapsHref =
-    ev && ev.locLat != null && ev.locLng != null
-      ? `https://www.google.com/maps/search/?api=1&query=${ev.locLat},${ev.locLng}`
-      : null;
-
   return (
     <div className="min-h-screen">
       <Header />
@@ -112,7 +99,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           <p className="text-sm text-text-secondary">Event not found.</p>
         ) : (
           <>
-            <div className="mb-6 overflow-hidden rounded-card border-[2.5px] border-ink shadow-offset">
+            <div className="mb-6 overflow-hidden rounded-card border-[2px] border-ink shadow-offset">
               <ImageCarousel
                 images={ev.images}
                 alt={ev.name}
@@ -157,12 +144,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
-                <AddressLine addressJson={ev.locAddressJson} />
-                {mapsHref && (
-                  <a href={mapsHref} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-coral-deep underline">
-                    View on map
-                  </a>
-                )}
+                <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} className="mt-2" />
                 {!ev.isStandalone && ev.venueId && (
                   <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
                     More at {ev.venueName}
@@ -177,7 +159,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               {tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="mt-2 flex flex-col gap-2.5">
                   {maxPerUser != null && (
                     <p className="text-xs font-medium text-text-secondary">
                       Limited to {maxPerUser} ticket{maxPerUser > 1 ? 's' : ''} per person for this event.
@@ -190,40 +172,47 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     return (
                       <div
                         key={t.id}
-                        className="flex items-center justify-between gap-3 rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2.5"
+                        className={[
+                          'flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-ink px-3.5 py-2.5 transition-colors',
+                          current > 0 ? 'bg-pastel-butter/60' : 'bg-surface',
+                        ].join(' ')}
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink">{t.name}</p>
+                          <div className="flex flex-wrap items-baseline gap-x-2.5">
+                            <p className="text-sm font-bold text-ink">{t.name}</p>
+                            <p className="font-display text-sm font-extrabold text-coral-deep">
+                              {t.pricePaise === 0 ? 'Free' : formatPaiseExact(t.pricePaise, currency)}
+                            </p>
+                          </div>
                           {t.description && (
                             <p className="mt-0.5 text-xs text-text-secondary">{t.description}</p>
                           )}
-                          <p className="mt-0.5 text-sm text-ink">
-                            {t.pricePaise === 0 ? 'Free' : formatPaiseExact(t.pricePaise, currency)}
-                          </p>
                         </div>
                         {soldOut ? (
                           <span className="shrink-0 text-xs font-medium text-text-secondary">Sold out</span>
                         ) : (
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Button
-                              variant="secondary"
-                              size="sm"
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              type="button"
                               aria-label={`Decrease ${t.name}`}
                               onClick={() => setTierQty(t.id, current - 1, t.remaining)}
                               disabled={current <= 0}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink bg-white text-sm font-bold leading-none text-ink transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-30"
                             >
                               −
-                            </Button>
-                            <span className="w-6 text-center text-sm font-medium text-ink">{current}</span>
-                            <Button
-                              variant="secondary"
-                              size="sm"
+                            </button>
+                            <span className="w-7 text-center font-display text-sm font-extrabold text-ink">
+                              {current}
+                            </span>
+                            <button
+                              type="button"
                               aria-label={`Increase ${t.name}`}
                               onClick={() => setTierQty(t.id, current + 1, t.remaining)}
                               disabled={atMax}
+                              className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink bg-white text-sm font-bold leading-none text-ink transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-30"
                             >
                               +
-                            </Button>
+                            </button>
                           </div>
                         )}
                       </div>

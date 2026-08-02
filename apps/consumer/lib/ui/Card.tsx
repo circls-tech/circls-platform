@@ -12,13 +12,13 @@ export function Card({ title, subtitle, children, className = '', ...rest }: Car
   return (
     <div
       className={[
-        'rounded-card border-[2.5px] border-ink bg-white shadow-offset',
+        'rounded-card border-[2px] border-ink bg-white shadow-offset',
         className,
       ].join(' ')}
       {...rest}
     >
       {hasHeader && (
-        <div className="border-b-[2.5px] border-dashed border-ink/25 px-6 py-4">
+        <div className="border-b-[2px] border-dashed border-ink/25 px-6 py-4">
           {title != null && (
             <h2 className="font-display text-lg font-extrabold text-ink">{title}</h2>
           )}

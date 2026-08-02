@@ -67,7 +67,7 @@ export function ThreadCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded-card border-[2.5px] border-ink bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset"
+      className="w-full rounded-card border-[2px] border-ink bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset"
     >
       {showSubject && row.subject && (
         <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-ink-soft">
