@@ -1,8 +1,9 @@
 /**
  * Registration-question service. Questions belong to an event; consumers answer
  * them at booking time (answers live in event_registration_answers, one row per
- * question per booking). Writes are replace-all and only valid while the event
- * is draft (the caller — events_service — enforces draft). Write helpers take a
+ * question per booking). Writes are replace-all, valid while the event is draft
+ * or published (a live edit soft-deletes and reinserts; existing answers keep
+ * their original question_id + snapshotted label). Write helpers take a
  * transaction handle so they compose inside the event create/update tx and the
  * booking tx.
  */
@@ -54,10 +55,11 @@ export async function listQuestions(
 }
 
 /**
- * Replace an event's registration questions (draft-only; caller enforces).
- * Soft-deletes questions no longer present and inserts the provided set fresh —
- * draft-only means there are no answers yet, so a clean soft-delete + insert is
- * safe. An empty set is valid (most events ask nothing extra).
+ * Replace an event's registration questions. Soft-deletes questions no longer
+ * present and inserts the provided set fresh. Safe on live events too: existing
+ * answers keep referencing their (soft-deleted) question with a snapshotted
+ * label, and in-flight consumers submitting a stale question id get a clear
+ * error. An empty set is valid (most events ask nothing extra).
  */
 export async function replaceQuestions(
   tx: Tx,

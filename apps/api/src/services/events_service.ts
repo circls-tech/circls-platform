@@ -26,7 +26,12 @@ import {
   type GeoPoint,
 } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
-import { replaceTiers, listTiersWithRemaining, type TierInput } from './event_tiers_service.js';
+import {
+  applyLiveTiers,
+  listTiersWithRemaining,
+  replaceTiers,
+  type TierInput,
+} from './event_tiers_service.js';
 import {
   listQuestions,
   replaceQuestions,
@@ -496,14 +501,23 @@ export interface UpdateEventPatch {
   tierCapacities?: { tierId: string; capacity: number | null }[];
 }
 
-/** The only patch fields a PUBLISHED event may change; everything else is frozen. */
-const LIVE_EDITABLE_KEYS = new Set(['maxPerUser', 'tierCapacities']);
+/** The patch fields a PUBLISHED event may change freely; name/window/location/
+ *  tiers go through the admin-approved change-request flow instead. */
+const LIVE_EDITABLE_KEYS = new Set([
+  'maxPerUser',
+  'tierCapacities',
+  'description',
+  'qrTicketConfig',
+  'questions',
+]);
 
 /**
- * Constrained update for a published event: the per-customer ticket cap (any
- * change — it only gates future purchases, never existing tickets) and
- * increase-only tier capacity. Any other field is rejected so the content the
- * circls team approved stays immutable.
+ * Unconstrained-on-approval-free fields for a published event: the
+ * per-customer ticket cap (any change — it only gates future purchases, never
+ * existing tickets), increase-only tier capacity, description, QR ticket
+ * config, and registration questions (replace-all, like drafts). Any other
+ * field is rejected — name/window/location/tiers change only via an approved
+ * change request, so the content the circls team reviewed stays controlled.
  */
 async function applyLiveSettings(
   tx: Tx,
@@ -516,7 +530,7 @@ async function applyLiveSettings(
     .map(([k]) => k);
   if (disallowed.length > 0) {
     throw new Conflict(
-      `Only the per-customer ticket limit and tier capacity increases can be changed on a live event (got: ${disallowed.join(', ')})`,
+      `These fields need an approved change request on a live event: ${disallowed.join(', ')}. Freely editable: description, QR config, questions, per-customer limit, capacity increases.`,
       'event_not_draft',
       { fields: disallowed },
     );
@@ -549,8 +563,16 @@ async function applyLiveSettings(
     }
   }
 
-  if (patch.maxPerUser !== undefined) {
-    await tx.update(events).set({ maxPerUser: patch.maxPerUser }).where(eq(events.id, existing.id));
+  const set: Partial<NewEvent> = {};
+  if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
+  if (patch.description !== undefined) set.description = patch.description;
+  if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+  if (Object.keys(set).length > 0) {
+    await tx.update(events).set(set).where(eq(events.id, existing.id));
+  }
+
+  if (patch.questions !== undefined) {
+    await replaceQuestions(tx, existing.id, ctx.tenantId, patch.questions);
   }
 
   const [updated] = await tx.select().from(events).where(eq(events.id, existing.id)).limit(1);
@@ -561,10 +583,18 @@ async function applyLiveSettings(
     'event.live_settings_updated',
     'event',
     existing.id,
-    { maxPerUser: existing.maxPerUser, capacities: capacityBefore },
+    {
+      maxPerUser: existing.maxPerUser,
+      capacities: capacityBefore,
+      ...(patch.description !== undefined ? { description: existing.description } : {}),
+      ...(patch.qrTicketConfig !== undefined ? { qrTicketConfig: existing.qrTicketConfig } : {}),
+    },
     {
       ...(patch.maxPerUser !== undefined ? { maxPerUser: patch.maxPerUser } : {}),
       ...(patch.tierCapacities !== undefined ? { tierCapacities: patch.tierCapacities } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.qrTicketConfig !== undefined ? { qrTicketConfig: patch.qrTicketConfig } : {}),
+      ...(patch.questions !== undefined ? { questions: patch.questions } : {}),
     },
   );
 
@@ -572,23 +602,16 @@ async function applyLiveSettings(
 }
 
 /**
- * Update an Event. Drafts are fully editable. Published events accept ONLY the
- * live settings (per-customer ticket limit, increase-only tier capacity) via
- * {@link applyLiveSettings}; pending_review/cancelled/rejected stay immutable.
+ * Pre-transaction patch normalization shared by draft edits and approved
+ * change requests: canonicalize the typed city to the gazetteer spelling, and
+ * re-derive the map pin from a new address when coordinates weren't hand-set
+ * (outside the tx — geocoding may go to the network). A null geocode leaves
+ * lat/lng out of the patch so existing coordinates survive.
  */
-export async function updateEvent(
-  ctx: AuditCtx,
-  eventId: string,
-  patch: UpdateEventPatch,
-): Promise<Event> {
-  // Canonicalize the typed city first so the stored address (and the geocode
-  // query below) use the gazetteer spelling.
+export async function prepareEventPatch(patch: UpdateEventPatch): Promise<UpdateEventPatch> {
   if (patch.addressJson !== undefined) {
     patch = { ...patch, addressJson: canonicalizeAddressJsonCity(patch.addressJson) };
   }
-  // A new address without hand-set coordinates re-derives the map pin from the
-  // address (before the transaction — geocoding may go to the network). A null
-  // geocode leaves lat/lng out of the patch so existing coordinates survive.
   if (patch.addressJson !== undefined && patch.lat === undefined && patch.lng === undefined) {
     const query = toGeocodeQuery(patch.addressJson);
     if (hasGeocodableAddress(query)) {
@@ -596,6 +619,122 @@ export async function updateEvent(
       if (point) patch = { ...patch, lat: point.lat, lng: point.lng };
     }
   }
+  return patch;
+}
+
+/**
+ * The full-edit body shared by draft edits and approved change requests:
+ * window validation, venue-vs-standalone scope resolution, tier + question
+ * replacement, and the audit row. `tierMode` picks the tier strategy —
+ * 'replace' (draft: regenerate rows via {@link replaceTiers}) or 'live'
+ * (published: id-preserving {@link applyLiveTiers}, so sold tickets stay
+ * attached to their tiers). Runs inside the caller's transaction; the caller
+ * has already routed on event status.
+ */
+async function applyEventPatchTx(
+  tx: Tx,
+  ctx: AuditCtx,
+  existing: Event,
+  patch: UpdateEventPatch,
+  opts: { auditAction: string; tierMode: 'replace' | 'live' },
+): Promise<Event> {
+  const eventId = existing.id;
+  const startsAt = patch.startsAt ?? existing.startsAt;
+  const endsAt = patch.endsAt ?? existing.endsAt;
+  if (startsAt >= endsAt) {
+    throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
+  }
+
+  const set: Partial<NewEvent> = {};
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.description !== undefined) set.description = patch.description;
+  if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
+  if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
+  if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+  if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
+
+  // Resolve the post-update scope: a venue id in the patch wins, otherwise the
+  // event keeps whatever scope it already has.
+  const targetVenueId =
+    patch.venueId !== undefined ? patch.venueId : existing.venueId;
+
+  if (patch.venueId !== undefined && patch.venueId) {
+    // Venue-scoped: location is read from the venue — clear standalone fields.
+    set.venueId = patch.venueId;
+    set.addressJson = null;
+    set.lat = null;
+    set.lng = null;
+    set.tzName = null;
+  } else if (!targetVenueId) {
+    // Standalone (becoming or staying). Address/tz come from the patch when
+    // provided, else from what the event already carries.
+    const addressJson = patch.addressJson ?? existing.addressJson;
+    const tzName = patch.tzName ?? existing.tzName;
+    if (!addressJson || Object.keys(addressJson).length === 0) {
+      throw new BadRequest(
+        'Standalone events require a non-empty address',
+        'event_address_required',
+      );
+    }
+    if (!tzName) {
+      throw new BadRequest('Standalone events require a timezone', 'event_tz_required');
+    }
+    if (patch.venueId !== undefined) set.venueId = null;
+    if (patch.addressJson !== undefined) set.addressJson = patch.addressJson;
+    if (patch.tzName !== undefined) set.tzName = patch.tzName;
+    if (patch.lat !== undefined) set.lat = patch.lat;
+    if (patch.lng !== undefined) set.lng = patch.lng;
+  }
+
+  if (Object.keys(set).length > 0) {
+    await tx.update(events).set(set).where(eq(events.id, eventId));
+  }
+
+  if (patch.tiers !== undefined) {
+    if (opts.tierMode === 'live') {
+      await applyLiveTiers(tx, eventId, ctx.tenantId, patch.tiers);
+    } else {
+      await replaceTiers(tx, eventId, ctx.tenantId, patch.tiers);
+    }
+  }
+
+  if (patch.questions !== undefined) {
+    await replaceQuestions(tx, eventId, ctx.tenantId, patch.questions);
+  }
+
+  const [updated] = await tx
+    .select()
+    .from(events)
+    .where(eq(events.id, eventId))
+    .limit(1);
+
+  await writeAudit(
+    tx,
+    ctx,
+    opts.auditAction,
+    'event',
+    eventId,
+    existing as unknown as Record<string, unknown>,
+    set,
+  );
+
+  return updated!;
+}
+
+/**
+ * Update an Event. Drafts are fully editable. Published events accept ONLY the
+ * live settings (per-customer ticket limit, increase-only tier capacity,
+ * description, QR config, registration questions) via {@link applyLiveSettings};
+ * pending_review/cancelled/rejected stay immutable. Published events change
+ * their approval-gated fields (name/window/location/tiers) through
+ * {@link applyApprovedChangePatch} instead, driven by the change-request flow.
+ */
+export async function updateEvent(
+  ctx: AuditCtx,
+  eventId: string,
+  patch: UpdateEventPatch,
+): Promise<Event> {
+  patch = await prepareEventPatch(patch);
   return db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -615,82 +754,28 @@ export async function updateEvent(
       throw new BadRequest('Edit a draft event’s tiers via `tiers`', 'bad_request');
     }
 
-    const startsAt = patch.startsAt ?? existing.startsAt;
-    const endsAt = patch.endsAt ?? existing.endsAt;
-    if (startsAt >= endsAt) {
-      throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
-    }
+    return applyEventPatchTx(tx, ctx, existing, patch, {
+      auditAction: 'event.updated',
+      tierMode: 'replace',
+    });
+  });
+}
 
-    const set: Partial<NewEvent> = {};
-    if (patch.name !== undefined) set.name = patch.name;
-    if (patch.description !== undefined) set.description = patch.description;
-    if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
-    if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
-    if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
-    if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
-
-    // Resolve the post-update scope: a venue id in the patch wins, otherwise the
-    // event keeps whatever scope it already has.
-    const targetVenueId =
-      patch.venueId !== undefined ? patch.venueId : existing.venueId;
-
-    if (patch.venueId !== undefined && patch.venueId) {
-      // Venue-scoped: location is read from the venue — clear standalone fields.
-      set.venueId = patch.venueId;
-      set.addressJson = null;
-      set.lat = null;
-      set.lng = null;
-      set.tzName = null;
-    } else if (!targetVenueId) {
-      // Standalone (becoming or staying). Address/tz come from the patch when
-      // provided, else from what the event already carries.
-      const addressJson = patch.addressJson ?? existing.addressJson;
-      const tzName = patch.tzName ?? existing.tzName;
-      if (!addressJson || Object.keys(addressJson).length === 0) {
-        throw new BadRequest(
-          'Standalone events require a non-empty address',
-          'event_address_required',
-        );
-      }
-      if (!tzName) {
-        throw new BadRequest('Standalone events require a timezone', 'event_tz_required');
-      }
-      if (patch.venueId !== undefined) set.venueId = null;
-      if (patch.addressJson !== undefined) set.addressJson = patch.addressJson;
-      if (patch.tzName !== undefined) set.tzName = patch.tzName;
-      if (patch.lat !== undefined) set.lat = patch.lat;
-      if (patch.lng !== undefined) set.lng = patch.lng;
-    }
-
-    if (Object.keys(set).length > 0) {
-      await tx.update(events).set(set).where(eq(events.id, eventId));
-    }
-
-    if (patch.tiers !== undefined) {
-      await replaceTiers(tx, eventId, ctx.tenantId, patch.tiers);
-    }
-
-    if (patch.questions !== undefined) {
-      await replaceQuestions(tx, eventId, ctx.tenantId, patch.questions);
-    }
-
-    const [updated] = await tx
-      .select()
-      .from(events)
-      .where(eq(events.id, eventId))
-      .limit(1);
-
-    await writeAudit(
-      tx,
-      ctx,
-      'event.updated',
-      'event',
-      eventId,
-      existing as unknown as Record<string, unknown>,
-      set,
-    );
-
-    return updated!;
+/**
+ * Apply an APPROVED change request's patch to a still-published event, inside
+ * the approver's transaction. Reuses the draft-edit validation wholesale
+ * (window, scope/address, geocoded pin already prepared by the caller via
+ * {@link prepareEventPatch}) with the id-preserving live tier strategy.
+ */
+export async function applyApprovedChangePatch(
+  tx: Tx,
+  ctx: AuditCtx,
+  existing: Event,
+  patch: UpdateEventPatch,
+): Promise<Event> {
+  return applyEventPatchTx(tx, ctx, existing, patch, {
+    auditAction: 'event.updated',
+    tierMode: 'live',
   });
 }
 

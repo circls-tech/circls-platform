@@ -14,6 +14,10 @@ import {
 /** Form-draft shape: the price input stays a string (major units — rupees or
  *  dollars per the venue currency) and converts to minor units on submit. */
 export interface TierDraft {
+  /** Live tier id — carried only by change-request drafts seeded from a
+   *  published event, so the API can update tiers in place (sold tickets stay
+   *  attached). Draft-event editing ignores it (replace-all). */
+  id?: string;
   name: string;
   description?: string;
   priceRupees: string; // form input in major units; converted to minor units on submit
@@ -52,11 +56,23 @@ export function tiersToPayload(tiers: TierDraft[]): TierInput[] {
   }));
 }
 
+/** Like {@link tiersToPayload} but keeps live-tier ids — the change-request
+ *  payload shape, where an id means "update that tier in place". */
+export function tiersToChangeRequestPayload(tiers: TierDraft[]): (TierInput & { id?: string })[] {
+  return tiers.map((t) => ({
+    ...(t.id ? { id: t.id } : {}),
+    ...tiersToPayload([t])[0]!,
+  }));
+}
+
 /** Hydrate a draft from an event's tier (as returned by GET event). */
 export function tierDraftFromApi(
-  t: Pick<EventTier, 'name' | 'description' | 'pricePaise' | 'capacity' | 'qrTicketConfig'>,
+  t: Pick<EventTier, 'name' | 'description' | 'pricePaise' | 'capacity' | 'qrTicketConfig'> & {
+    id?: string;
+  },
 ): TierDraft {
   return {
+    ...(t.id ? { id: t.id } : {}),
     name: t.name,
     description: t.description ?? '',
     priceRupees: String(t.pricePaise / 100),

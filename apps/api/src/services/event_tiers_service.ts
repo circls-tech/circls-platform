@@ -11,7 +11,7 @@ import { eventTicketTiers, type EventTicketTier } from '../db/schema/event_ticke
 import { events } from '../db/schema/events.js';
 import { bookings } from '../db/schema/bookings.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
-import { BadRequest } from '../lib/errors.js';
+import { BadRequest, Conflict } from '../lib/errors.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Database = typeof db | Tx;
@@ -102,4 +102,94 @@ export async function replaceTiers(tx: Tx, eventId: string, tenantId: string, ti
   await tx.update(events).set({ pricePaise: minPrice }).where(eq(events.id, eventId));
 
   return inserted;
+}
+
+/** A tier row in an approved change request: `id` = update that live tier in
+ *  place, no `id` = add a new tier. Live tiers absent from the set are removals. */
+export interface LiveTierInput extends TierInput {
+  id?: string;
+}
+
+/**
+ * Apply an approved tier change to a PUBLISHED event. Unlike {@link replaceTiers}
+ * this never regenerates ids — sold tickets reference tiers by id
+ * (event_booking_tickets.tier_id), so live tiers are updated in place, new ones
+ * inserted, and removals allowed only when nothing was sold. Capacity may
+ * decrease (an admin approved it) but never below the tier's sold count.
+ * Renames show up in past-registration displays too — tier names are read live.
+ */
+export async function applyLiveTiers(
+  tx: Tx,
+  eventId: string,
+  tenantId: string,
+  tiers: LiveTierInput[],
+): Promise<EventTicketTier[]> {
+  if (tiers.length === 0) {
+    throw new BadRequest('An event needs at least one ticket tier', 'event_tiers_required');
+  }
+
+  const live = await listTiers(tx, eventId);
+  const liveById = new Map(live.map((t) => [t.id, t]));
+  const sold = await soldByTier(tx, live.map((t) => t.id));
+
+  const keptIds = new Set<string>();
+  for (const [i, t] of tiers.entries()) {
+    if (t.id) {
+      const current = liveById.get(t.id);
+      if (!current) throw new BadRequest('Unknown ticket tier for this event', 'bad_request', { tierId: t.id });
+      keptIds.add(t.id);
+      const capacity = t.capacity ?? null;
+      const soldCount = sold.get(t.id) ?? 0;
+      if (capacity !== null && capacity < soldCount) {
+        throw new Conflict(
+          'Tier capacity cannot go below tickets already sold',
+          'tier_capacity_below_sold',
+          { tierId: t.id, sold: soldCount, requested: capacity },
+        );
+      }
+      await tx
+        .update(eventTicketTiers)
+        .set({
+          name: t.name,
+          description: t.description ?? null,
+          pricePaise: t.pricePaise,
+          capacity,
+          qrTicketConfig: t.qrTicketConfig ?? null,
+          sortOrder: i,
+        })
+        .where(eq(eventTicketTiers.id, t.id));
+    } else {
+      await tx.insert(eventTicketTiers).values({
+        eventId,
+        tenantId,
+        name: t.name,
+        description: t.description ?? null,
+        pricePaise: t.pricePaise,
+        capacity: t.capacity ?? null,
+        qrTicketConfig: t.qrTicketConfig ?? null,
+        sortOrder: i,
+      });
+    }
+  }
+
+  for (const t of live) {
+    if (keptIds.has(t.id)) continue;
+    const soldCount = sold.get(t.id) ?? 0;
+    if (soldCount > 0) {
+      throw new Conflict(
+        'Cannot remove a tier that already has registrations',
+        'tier_has_bookings',
+        { tierId: t.id, sold: soldCount },
+      );
+    }
+    await tx
+      .update(eventTicketTiers)
+      .set({ deletedAt: sql`now()` })
+      .where(eq(eventTicketTiers.id, t.id));
+  }
+
+  const minPrice = Math.min(...tiers.map((t) => t.pricePaise));
+  await tx.update(events).set({ pricePaise: minPrice }).where(eq(events.id, eventId));
+
+  return listTiers(tx, eventId);
 }

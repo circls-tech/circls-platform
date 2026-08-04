@@ -39,6 +39,7 @@ import {
 } from '@/components/EventQuestionsEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
+import { EventChangeRequests } from '@/components/EventChangeRequests';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -503,15 +504,21 @@ export default function OrgEventDetailPage() {
           )}
 
           {!editing && ev.status === 'published' && (
-            <LiveEventSettings
-              key={ev.id}
-              tiers={ev.tiers}
-              maxPerUser={ev.maxPerUser}
-              saving={update.isPending}
-              onSave={async (input) => {
-                await update.mutateAsync({ eventId, input });
-              }}
-            />
+            <>
+              <LiveEventSettings
+                key={ev.id}
+                tiers={ev.tiers}
+                maxPerUser={ev.maxPerUser}
+                description={ev.description}
+                qrTicketConfig={ev.qrTicketConfig}
+                questions={ev.questions}
+                saving={update.isPending}
+                onSave={async (input) => {
+                  await update.mutateAsync({ eventId, input });
+                }}
+              />
+              <EventChangeRequests tenantId={tenantId} ev={ev} />
+            </>
           )}
 
           {editing && ev.status === 'draft' && (

@@ -3,6 +3,8 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
+  AdminChangeRequestDetail,
+  AdminChangeRequestListResponse,
   AdminConsumerUsersPage,
   AdminListingDetail,
   AdminListingListResponse,
@@ -229,6 +231,55 @@ export function useRejectListing() {
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+/**
+ * Event change requests — a partner's proposed edits to a published event's
+ * protected fields, reviewed by the same team as listings.
+ */
+export function useAdminChangeRequests() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'change-requests'],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<AdminChangeRequestListResponse>('/v1/admin/change-requests'),
+  });
+}
+
+export function useAdminChangeRequestDetail(id: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'change-request', id],
+    enabled: Boolean(user && id),
+    queryFn: () => apiFetch<AdminChangeRequestDetail>(`/v1/admin/change-requests/${id!}`),
+  });
+}
+
+export function useApproveChangeRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string }) =>
+      apiFetch<{ id: string; status: string }>(`/v1/admin/change-requests/${args.id}/approve`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'change-requests'] });
+    },
+  });
+}
+
+export function useRejectChangeRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; reason?: string }) =>
+      apiFetch<{ id: string; status: string }>(`/v1/admin/change-requests/${args.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: args.reason }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'change-requests'] });
     },
   });
 }

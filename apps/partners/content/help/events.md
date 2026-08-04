@@ -67,16 +67,33 @@ Unlike most settings, this limit stays editable **after the event goes live** (s
 
 ### Tiers are frozen once submitted
 
-Ticket tiers can only be added or edited while the event is a **draft**. Once you submit the event for review, tiers are locked alongside the rest of the event details — with two exceptions covered under **Live settings** below.
+Ticket tiers can only be added or edited freely while the event is a **draft**. Once you submit the event for review, tiers are locked alongside the rest of the event details. After the event is published, tier **capacity increases** stay free (see **Live settings** below), and any other tier change — names, prices, adding or removing tiers — goes through a **change request** that the circls team approves first (see **Requesting changes to a live event**).
 
 ### Live settings (editable after publish)
 
-Once the event is **published**, its detail page shows a **Live settings** card with the only two things that can still change:
+Once the event is **published**, its detail page shows a **Live settings** card with everything you can still change freely, without review:
 
 - **Tier capacity — increases only.** A capped tier can go higher, or be set blank for unlimited, when demand outgrows the room you planned. It can never go *down* (and an unlimited tier can't become capped), so tickets already sold are never invalidated.
 - **Max tickets per customer** — raise, lower, set, or clear it freely; it only applies to future purchases.
+- **Description** — fix typos or add details any time.
+- **Registration questions** — add, edit, remove, or reorder. Answers people already gave are kept under the question's old wording, so if you edit a question mid-event, the registrations CSV shows the old and new versions as **two separate columns**.
+- **QR ticket rules** — event-level QR settings; changes only apply to future registrations, passes customers already hold are never changed.
 
-Everything else (name, times, prices, tier names, QR rules) stays locked, since that's what the circls team reviewed and approved.
+The remaining fields — **name, date & time, location, and ticket tiers** — change only through an approved change request, described next.
+
+### Requesting changes to a live event
+
+To change a live event's **name**, **date & time**, **location** (its venue, or a standalone event's address), or **ticket tiers** (names, prices, adding or removing tiers), use the **Request changes** card on the event's detail page. Your proposal is sent to the circls team for review and applies only after they approve it — consumers keep seeing the current details until then.
+
+How it works:
+
+- **One request at a time.** While a request is pending you can't submit another; **withdraw** it from the banner on the event page if you want to change your proposal.
+- **Approved** — the changes are applied to the live event immediately and the page notes your request was approved.
+- **Declined** — the event stays as it was; the reviewer's reason (if given) is shown on the event page, and you can submit a corrected request.
+- **Tier safety rules** — a tier that already has registrations can't be removed, and a tier's capacity can't be set below the number of tickets already sold. Editing a tier keeps sold tickets attached to it (renames and price changes never affect tickets people already hold — new buyers pay the new price).
+- If the event is **cancelled** while a request is pending, the request can no longer be approved.
+
+Note that tier renames also update how past registrations are displayed and exported — the registrations table shows the tier's current name.
 
 ### What consumers see
 
@@ -97,7 +114,7 @@ For each question you set:
 
 Use the arrows to reorder questions; consumers see them in this order. You can add up to 20 questions, and events don't need any — leave the section empty to skip it.
 
-Like ticket tiers, questions are **editable only while the event is a draft** and are locked once you submit it for review, so every attendee answers the same set. Answers appear with each registration (see **Managing registrations** below).
+Questions are editable while the event is a **draft**, locked during review, and editable again once the event is **published** (from the **Live settings** card). Editing a question mid-event keeps the answers people already gave under the old wording — in the registrations CSV, the old and new versions appear as two separate columns. Answers appear with each registration (see **Managing registrations** below).
 
 Don't confuse these with **customer questions** — the public Q&A threads consumers post on your event page (see the end of this guide). Registration questions are asked *by you* and answered privately at booking.
 
@@ -132,7 +149,7 @@ passes customers already hold are never changed.
 | --- | --- |
 | **draft** | Created but not yet submitted. Fully editable, including ticket tiers. Only you can see it. |
 | **pending_review** | Submitted and awaiting the circls team's approval. |
-| **published** | Approved and live — visible to consumers, who can register. |
+| **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Not approved. Read-only. |
 
@@ -142,7 +159,7 @@ Open an event to see its detail page. What you can do depends on its status:
 
 - **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review** to send it to circls, or **Cancel** to drop it.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
-- **Published** — locked for editing except the **Live settings** card (tier capacity increases and the per-customer ticket limit — see above). You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
+- **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
 - **Cancelled** or **rejected** — read-only.
 
 The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way.
