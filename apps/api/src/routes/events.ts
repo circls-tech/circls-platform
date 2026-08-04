@@ -469,14 +469,14 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     '/v1/tenants/:tenantId/events/:id/change-requests/:requestId/withdraw',
     { preHandler: requireAuth },
     async (req) => {
-      const { tenantId, requestId } = req.params as {
+      const { tenantId, id, requestId } = req.params as {
         tenantId: string;
         id: string;
         requestId: string;
       };
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
-      return withdrawChangeRequest({ tenantId, actorUserId: user.id }, requestId);
+      return withdrawChangeRequest({ tenantId, actorUserId: user.id }, id, requestId);
     },
   );
 

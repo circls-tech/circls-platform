@@ -43,6 +43,14 @@ function friendlyFields(patch: EventChangeRequestInput): string[] {
   return [...new Set(labels)];
 }
 
+/** Key-order-independent equality for flat address objects — the stored
+ *  addressJson's key order depends on who wrote it, and must not register as
+ *  a change by itself. */
+function sameAddress(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((k) => a[k] === b[k]);
+}
+
 /** Convert a `datetime-local` value (interpreted in `tzName`) to UTC ISO. */
 function localToTzIso(local: string, tzName: string): string {
   if (!local) return '';
@@ -207,8 +215,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
         return;
       }
       const addressChanged =
-        JSON.stringify(addressJson) !== JSON.stringify(ev.addressJson ?? {}) ||
-        tzForm.trim() !== (ev.tzName ?? '');
+        !sameAddress(addressJson, ev.addressJson ?? {}) || tzForm.trim() !== (ev.tzName ?? '');
       if (scopeChanged || addressChanged) {
         input.addressJson = addressJson;
         input.tzName = tzForm.trim();

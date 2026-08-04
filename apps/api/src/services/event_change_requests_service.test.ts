@@ -131,10 +131,16 @@ describe.skipIf(!runIntegration)('event_change_requests_service', () => {
       createChangeRequest(ctx(), ev.id, { name: 'Second Attempt' }),
     ).rejects.toMatchObject({ code: 'change_request_pending' });
 
+    // Withdrawing through another event's scope is a 404, not a withdraw.
+    const { ev: other } = await makePublishedEvent();
+    await expect(withdrawChangeRequest(ctx(), other.id, row.id)).rejects.toMatchObject({
+      code: 'change_request_not_found',
+    });
+
     // Withdraw frees the slot; withdrawing again conflicts.
-    const withdrawn = await withdrawChangeRequest(ctx(), row.id);
+    const withdrawn = await withdrawChangeRequest(ctx(), ev.id, row.id);
     expect(withdrawn.status).toBe('withdrawn');
-    await expect(withdrawChangeRequest(ctx(), row.id)).rejects.toMatchObject({
+    await expect(withdrawChangeRequest(ctx(), ev.id, row.id)).rejects.toMatchObject({
       code: 'change_request_not_pending',
     });
     const again = await createChangeRequest(ctx(), ev.id, { name: 'Third Attempt' });
@@ -293,7 +299,7 @@ describe.skipIf(!runIntegration)('event_change_requests_service', () => {
     expect(detail!.event.tiers[0]!.sold).toBe(0);
     expect(detail!.event.venueName).toBe('EvtCR Venue');
 
-    await withdrawChangeRequest(ctx(), row.id); // leave no pending rows behind
+    await withdrawChangeRequest(ctx(), ev.id, row.id); // leave no pending rows behind
   });
 
   it('published events still accept the free live settings directly', async () => {

@@ -238,9 +238,12 @@ export async function listChangeRequests(
     .limit(50);
 }
 
-/** Partner: withdraw a pending request, freeing the one-pending slot. */
+/** Partner: withdraw a pending request, freeing the one-pending slot. Scoped
+ *  to the event so a request can only be withdrawn through its own event's
+ *  URL, matching the route shape. */
 export async function withdrawChangeRequest(
   ctx: AuditCtx,
+  eventId: string,
   requestId: string,
 ): Promise<EventChangeRequest> {
   return db.transaction(async (tx) => {
@@ -250,6 +253,7 @@ export async function withdrawChangeRequest(
       .where(
         and(
           eq(eventChangeRequests.id, requestId),
+          eq(eventChangeRequests.eventId, eventId),
           eq(eventChangeRequests.tenantId, ctx.tenantId),
           eq(eventChangeRequests.status, 'pending'),
         ),
@@ -262,6 +266,7 @@ export async function withdrawChangeRequest(
         .where(
           and(
             eq(eventChangeRequests.id, requestId),
+            eq(eventChangeRequests.eventId, eventId),
             eq(eventChangeRequests.tenantId, ctx.tenantId),
           ),
         )
