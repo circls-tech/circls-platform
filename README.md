@@ -50,4 +50,4 @@ pnpm dev                      # Currently a stub — wired up in Phase 1
 
 ## License
 
-Private. © Gibbous Technologies Private Limited.
+MIT, © 2026 Vedant Saboo.
