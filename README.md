@@ -50,4 +50,4 @@ pnpm dev                      # Currently a stub — wired up in Phase 1
 
 ## License
 
-MIT, © 2026 Vedant Saboo.
+MIT - see [LICENSE](./LICENSE).
