@@ -161,7 +161,7 @@ export default function NewCouponPage() {
             ))}
           </div>
           <Input label={discountType === 'percent' ? 'Discount (%)' : `Discount (${sym})`} type="number" min={0}
-            step={discountType === 'percent' ? 0.1 : 1} value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} required />
+            step={0.01} value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} required />
           {discountType === 'percent' && (
             <Input label={`Max discount (${sym}, optional)`} type="number" min={0} step={1} value={maxDiscountRupees} onChange={(e) => setMaxDiscountRupees(e.target.value)} hint="Cap on a percentage discount." />
           )}

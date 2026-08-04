@@ -133,7 +133,7 @@ export default function NewAdminCouponPage() {
           </select>
         </label>
         <label className={labelCls}>{discountType === 'percent' ? 'Discount (%)' : 'Discount (₹)'}
-          <input className={inputCls} type="number" min={0} step={discountType === 'percent' ? 0.1 : 1} value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} />
+          <input className={inputCls} type="number" min={0} step={0.01} value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} />
         </label>
         {discountType === 'percent' && (
           <label className={labelCls}>Max discount (₹, optional)
