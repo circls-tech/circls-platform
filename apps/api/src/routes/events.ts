@@ -22,6 +22,12 @@ import {
   type CreateEventInput,
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
+import {
+  createChangeRequest,
+  listChangeRequests,
+  withdrawChangeRequest,
+} from '../services/event_change_requests_service.js';
+import type { EventChangeRequestPatch } from '../db/schema/event_change_requests.js';
 import type { TierInput } from '../services/event_tiers_service.js';
 import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
 import {
@@ -176,6 +182,27 @@ const updateEventSchema = z.object({
     .max(20)
     .optional(),
 });
+
+// Approval-gated fields of a PUBLISHED event, proposed as a change request and
+// applied only after circls review. Tiers carry an optional `id`: present =
+// update that live tier in place (sold tickets keep their tier), absent = add;
+// live tiers missing from the set are removals (blocked if anything sold).
+const liveTierSchema = tierSchema.extend({ id: z.string().uuid().optional() });
+const changeRequestSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    venueId: z.string().uuid().nullable().optional(),
+    addressJson: z.record(z.unknown()).optional(),
+    lat: z.number().nullable().optional(),
+    lng: z.number().nullable().optional(),
+    tzName: z.string().min(1).optional(),
+    tiers: z.array(liveTierSchema).min(1).max(20).optional(),
+  })
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
+    message: 'A change request needs at least one field',
+  });
 
 type OccurrenceInput = z.infer<typeof occurrenceSchema>;
 
@@ -379,6 +406,77 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return cancelEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  // Change requests: approval-gated edits (name/window/location/tiers) to a
+  // PUBLISHED event. Free live edits go through PATCH above; these wait for
+  // circls review. One pending request per event.
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/change-requests',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      const parsed = changeRequestSchema.safeParse(req.body);
+      if (!parsed.success)
+        throw new BadRequest('Invalid change request', 'bad_request', {
+          issues: parsed.error.issues,
+        });
+
+      const d = parsed.data;
+      const patch: EventChangeRequestPatch = {};
+      if (d.name !== undefined) patch.name = d.name;
+      if (d.startsAt !== undefined) patch.startsAt = d.startsAt;
+      if (d.endsAt !== undefined) patch.endsAt = d.endsAt;
+      if (d.venueId !== undefined) {
+        // Re-scoping to a venue: the venue must belong to this tenant.
+        if (d.venueId) {
+          const venue = await getVenueById(d.venueId);
+          if (!venue || venue.tenantId !== tenantId)
+            throw new NotFound('Venue not found', 'venue_not_found');
+        }
+        patch.venueId = d.venueId;
+      }
+      if (d.addressJson !== undefined) patch.addressJson = d.addressJson;
+      if (d.lat !== undefined) patch.lat = d.lat;
+      if (d.lng !== undefined) patch.lng = d.lng;
+      if (d.tzName !== undefined) patch.tzName = d.tzName;
+      if (d.tiers !== undefined) {
+        patch.tiers = d.tiers.map((t) => ({
+          ...tierToInput(t),
+          ...(t.id ? { id: t.id } : {}),
+        }));
+      }
+
+      return createChangeRequest({ tenantId, actorUserId: user.id }, id, patch);
+    },
+  );
+
+  app.get(
+    '/v1/tenants/:tenantId/events/:id/change-requests',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return { rows: await listChangeRequests(tenantId, id) };
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/change-requests/:requestId/withdraw',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id, requestId } = req.params as {
+        tenantId: string;
+        id: string;
+        requestId: string;
+      };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return withdrawChangeRequest({ tenantId, actorUserId: user.id }, id, requestId);
     },
   );
 

@@ -228,8 +228,10 @@ export interface UpdateEventInput {
   tierCapacities?: { tierId: string; capacity: number | null }[];
 }
 
-/** PATCH an event. Drafts: any field. Published: only `maxPerUser` +
- *  `tierCapacities` (live settings) — anything else is 409 event_not_draft. */
+/** PATCH an event. Drafts: any field. Published: only the free live settings —
+ *  `maxPerUser`, `tierCapacities`, `description`, `qrTicketConfig`, `questions`.
+ *  Anything else is 409 event_not_draft; name/window/location/tiers go through
+ *  a change request (see `useCreateEventChangeRequest`). */
 export function useUpdateEvent(tenantId: string, venueId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -329,6 +331,81 @@ export function useCancelTenantEvent(tenantId: string) {
       void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
       if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
       void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+// ── Change requests: approval-gated edits to a PUBLISHED event ───────────────
+// Name, date/time, location, and ticket tiers change only after circls review;
+// the proposal is stored as a change request (one pending per event).
+
+/** A tier row in a change request: `id` = update that live tier in place,
+ *  absent = add a new tier; live tiers missing from the set are removals. */
+export interface ChangeRequestTierInput extends TierInput {
+  id?: string;
+}
+
+/** The approval-gated fields. Dates are ISO-8601 with tz. */
+export interface EventChangeRequestInput {
+  name?: string;
+  startsAt?: string;
+  endsAt?: string;
+  venueId?: string | null;
+  addressJson?: Record<string, unknown>;
+  lat?: number | null;
+  lng?: number | null;
+  tzName?: string;
+  tiers?: ChangeRequestTierInput[];
+}
+
+export interface EventChangeRequest {
+  id: string;
+  eventId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  patch: EventChangeRequestInput;
+  /** Reviewer's reject reason (rejected requests only). */
+  reason: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+export function useEventChangeRequests(tenantId: string, eventId: string | null) {
+  return useQuery({
+    queryKey: ['event-change-requests', tenantId, eventId],
+    queryFn: () =>
+      apiFetch<{ rows: EventChangeRequest[] }>(
+        `/v1/tenants/${tenantId}/events/${eventId}/change-requests`,
+      ),
+    enabled: Boolean(tenantId && eventId),
+  });
+}
+
+/** Submit a change request. 409 change_request_pending when one is already open. */
+export function useCreateEventChangeRequest(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, input }: { eventId: string; input: EventChangeRequestInput }) =>
+      apiFetch<EventChangeRequest>(`/v1/tenants/${tenantId}/events/${eventId}/change-requests`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (row) => {
+      void qc.invalidateQueries({ queryKey: ['event-change-requests', tenantId, row.eventId] });
+    },
+  });
+}
+
+/** Withdraw a pending request, freeing the one-pending-per-event slot. */
+export function useWithdrawEventChangeRequest(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, requestId }: { eventId: string; requestId: string }) =>
+      apiFetch<EventChangeRequest>(
+        `/v1/tenants/${tenantId}/events/${eventId}/change-requests/${requestId}/withdraw`,
+        { method: 'POST' },
+      ),
+    onSuccess: (row) => {
+      void qc.invalidateQueries({ queryKey: ['event-change-requests', tenantId, row.eventId] });
     },
   });
 }

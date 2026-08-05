@@ -38,6 +38,7 @@ import { adminRefundRoutes } from './routes/admin_refunds.js';
 import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminPayoutRoutes } from './routes/admin_payouts.js';
 import { adminListingRoutes } from './routes/admin_listings.js';
+import { adminChangeRequestRoutes } from './routes/admin_change_requests.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 import { adminUserRoutes } from './routes/admin_users.js';
 // Phase 17 — aggregator-facing public API surface.
@@ -285,6 +286,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminTenantRoutes);
   await app.register(adminPayoutRoutes);
   await app.register(adminListingRoutes);
+  await app.register(adminChangeRequestRoutes);
   await app.register(adminAuditLogRoutes);
   await app.register(adminUserRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').

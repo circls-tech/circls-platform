@@ -33,6 +33,7 @@ import {
   maxPerUserToPayload,
 } from '@/components/MaxPerUserField';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
+import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -334,15 +335,21 @@ export default function EventDetailPage() {
           )}
 
           {!editing && ev.status === 'published' && (
-            <LiveEventSettings
-              key={ev.id}
-              tiers={ev.tiers}
-              maxPerUser={ev.maxPerUser}
-              saving={update.isPending}
-              onSave={async (input) => {
-                await update.mutateAsync({ eventId, input });
-              }}
-            />
+            <>
+              <LiveEventSettings
+                key={ev.id}
+                tiers={ev.tiers}
+                maxPerUser={ev.maxPerUser}
+                description={ev.description}
+                qrTicketConfig={ev.qrTicketConfig}
+                questions={ev.questions}
+                saving={update.isPending}
+                onSave={async (input) => {
+                  await update.mutateAsync({ eventId, input });
+                }}
+              />
+              <EventChangeRequests tenantId={tenantId} ev={ev} />
+            </>
           )}
 
           {editing && ev.status === 'draft' && (

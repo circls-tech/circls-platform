@@ -184,6 +184,80 @@ export interface AdminListingDetail {
   venueName?: string | null;
 }
 
+// ── Event change requests (GET /v1/admin/change-requests) ───────────────────
+
+export interface AdminChangeRequestRow {
+  id: string;
+  eventId: string;
+  tenantId: string;
+  tenantName: string;
+  eventName: string;
+  eventStartsAt: string;
+  /** Patch keys the partner wants to change (name, startsAt, tiers, …). */
+  fields: string[];
+  createdAt: string;
+}
+
+export interface AdminChangeRequestListResponse {
+  rows: AdminChangeRequestRow[];
+}
+
+/** A proposed tier: `id` = update that live tier in place, absent = add. */
+export interface AdminChangeRequestTier {
+  id?: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  capacity?: number | null;
+}
+
+export interface AdminChangeRequestPatch {
+  name?: string;
+  startsAt?: string;
+  endsAt?: string;
+  venueId?: string | null;
+  addressJson?: Record<string, unknown>;
+  lat?: number | null;
+  lng?: number | null;
+  tzName?: string;
+  tiers?: AdminChangeRequestTier[];
+}
+
+export interface AdminChangeRequestDetail {
+  id: string;
+  status: string;
+  patch: AdminChangeRequestPatch;
+  /** The event's values when the request was made (staleness reference). */
+  snapshot: AdminChangeRequestPatch & { tiers?: (AdminChangeRequestTier & { id: string })[] };
+  reason: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  tenantId: string;
+  tenantName: string;
+  /** Name of the proposed venue when the patch re-scopes to one. */
+  proposedVenueName: string | null;
+  /** The event's CURRENT values (re-read at fetch time). */
+  event: {
+    id: string;
+    name: string;
+    status: string;
+    startsAt: string;
+    endsAt: string;
+    venueId: string | null;
+    venueName: string | null;
+    addressJson: Record<string, unknown> | null;
+    tzName: string | null;
+    tiers: {
+      id: string;
+      name: string;
+      pricePaise: number;
+      capacity: number | null;
+      sold: number;
+      remaining: number | null;
+    }[];
+  };
+}
+
 // ── User reports (GET /v1/admin/users/*) ─────────────────────────────────────
 
 export interface AdminConsumerUserRow {

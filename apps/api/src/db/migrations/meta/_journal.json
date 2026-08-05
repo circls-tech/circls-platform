@@ -281,6 +281,13 @@
       "when": 1782410000000,
       "tag": "0040_users_email_verified",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782490000000,
+      "tag": "0041_event_change_requests",
+      "breakpoints": true
     }
   ]
 }
