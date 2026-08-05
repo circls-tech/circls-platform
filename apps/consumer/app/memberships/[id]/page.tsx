@@ -107,7 +107,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                   {scope.brandWide && <Badge tone="neutral" label="Brand-wide" />}
                 </div>
                 <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
-                {m.description && <p className="mt-2 text-sm text-ink-soft">{m.description}</p>}
+                {m.description && <p className="mt-2 whitespace-pre-line text-sm text-ink-soft">{m.description}</p>}
                 <div className="mt-4 font-display text-2xl font-extrabold">
                   {multiTier && <span className="font-sans text-xs font-medium text-ink-soft">from </span>}
                   {formatPaise(m.pricePaise, currency)}{' '}
