@@ -91,6 +91,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
   let tenantId: string;
   let bookingId: string;
   let userId: string;
+  const extraTenantIds: string[] = [];
 
   // Use 2026-05-29 (Friday) as "now"; priorWeek → [2026-05-18, 2026-05-25).
   const NOW = new Date('2026-05-29T09:30:00Z');
@@ -136,14 +137,57 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from payouts where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from tenants where id = ${tenantId}`);
+    for (const tid of [tenantId, ...extraTenantIds]) {
+      await db.execute(sql`delete from payouts where tenant_id = ${tid}`);
+      await db.execute(sql`delete from payments where tenant_id = ${tid}`);
+      await db.execute(sql`delete from bookings where tenant_id = ${tid}`);
+      await db.execute(sql`delete from venues where tenant_id = ${tid}`);
+      await db.execute(sql`delete from tenants where id = ${tid}`);
+    }
     await db.execute(sql`delete from users where id = ${userId}`);
     await closeDb();
   });
+
+  /**
+   * Seed an isolated tenant with, all inside the settlement window:
+   *  - a refunded platform-coupon charge (customer paid 46088, settle 50000),
+   *  - a plain captured charge (100000) so net stays positive,
+   *  - one refund row whose settle_base_paise the test controls.
+   */
+  async function seedTenantWithRefund(refundSettlePaise: number | null): Promise<string> {
+    const [t] = await db
+      .insert(tenants)
+      .values({ name: 'Payout Refund Co', slug: `payoutrfnd-${Date.now()}-${extraTenantIds.length}`, commissionBps: 0 })
+      .returning();
+    extraTenantIds.push(t!.id);
+
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId: t!.id,
+        itemType: 'slot',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 146088,
+        createdByUserId: userId,
+      })
+      .returning();
+
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        status, kind, settlement_released_at, created_at
+      ) values
+      (${b!.id}::uuid, ${t!.id}::uuid, 'stub', 46088, 50000,
+       'refunded', 'charge', ${RELEASED_IN_WINDOW}::timestamptz, ${RELEASED_IN_WINDOW}::timestamptz),
+      (${b!.id}::uuid, ${t!.id}::uuid, 'stub', 100000, null,
+       'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz, ${RELEASED_IN_WINDOW}::timestamptz),
+      (${b!.id}::uuid, ${t!.id}::uuid, 'stub', -46088, ${refundSettlePaise},
+       'captured', 'refund', null, ${RELEASED_IN_WINDOW}::timestamptz)
+    `);
+    return t!.id;
+  }
 
   it('prefers settle_base_paise over amount_paise for gross', async () => {
     // Seed a captured charge: grossed-up amount 46088, settleable base 50000.
@@ -170,5 +214,27 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
 
     // gross must reflect settle_base_paise (50000), not amount_paise (46088).
     expect(row?.grossPaise).toBe(50000);
+  });
+
+  it('deducts refunds at settle value — Circls-funded discount clawback included', async () => {
+    // Refund row carries settle −51088 (cash 46088 + platform discount 5000).
+    const tid = await seedTenantWithRefund(-51088);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.grossPaise).toBe(150000); // 50000 settle + 100000 plain
+    expect(row?.refundsPaise).toBe(51088); // NOT the 46088 customer cash
+    expect(row?.amountPaise).toBe(98912); // gross − refunds, commission 0
+  });
+
+  it('legacy refund rows (NULL settle) still deduct customer cash', async () => {
+    const tid = await seedTenantWithRefund(null);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.refundsPaise).toBe(46088);
+    expect(row?.amountPaise).toBe(103912);
   });
 });

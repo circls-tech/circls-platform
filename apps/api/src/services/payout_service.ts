@@ -100,12 +100,16 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
     )
     .groupBy(payments.tenantId, payments.currency);
 
-  // Refunds: refund rows created this week (amount is negative → negate).
+  // Refunds: refund rows created this week. Deduct at the settle value —
+  // refunded customer cash plus any Circls-funded discount clawed back
+  // (refund_service stores it negated in settle_base_paise; see
+  // computeSettleRefundPaise). Legacy rows with NULL settle_base_paise fall
+  // back to customer cash, the pre-clawback behaviour.
   const refundRows = await db
     .select({
       tenantId: payments.tenantId,
       currency: payments.currency,
-      refunds: sql<number>`coalesce(-sum(${payments.amountPaise}), 0)::bigint`,
+      refunds: sql<number>`coalesce(-sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
     })
     .from(payments)
     .where(

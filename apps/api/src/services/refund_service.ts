@@ -11,6 +11,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
 import { payments } from '../db/schema/payments.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeSystemAudit } from '../lib/audit.js';
@@ -36,6 +37,42 @@ export interface IssueRefundResult {
   paymentId: string;
   providerRefundId?: string;
   status: 'pending' | 'processed' | 'failed';
+}
+
+export interface SettleRefundInput {
+  /** Charge amount_paise (customer cash, > 0 — a positive refund passing the remaining-check implies ≥ 1). */
+  chargeAmountPaise: number;
+  /** Circls-funded discount on the sale (coupon_redemptions with funder='platform'); 0 if none. */
+  platformDiscountPaise: number;
+  /** Cumulative cash refunded against the charge, including this refund. */
+  totalRefundedPaise: number;
+  /** Settle-side deduction already recorded by earlier refunds of this charge. */
+  priorSettleDeductedPaise: number;
+}
+
+/**
+ * The settle-side payout deduction (in paise, ≥ 0) for one refund.
+ *
+ * Policy: partners bear the gateway's non-recoverable fee on refunds, and
+ * Circls claws back any discount it funded. So a fully-refunded charge must
+ * deduct D = amount_paise + platform-funded discount from the partner's payout:
+ * for plain and org-funded-coupon sales that is exactly the customer cash
+ * (today's behaviour); for platform-funded-coupon sales it equals the settle
+ * credit plus the fee, so the partner nets −fee like any other refunded sale.
+ *
+ * Partial refunds prorate D cumulatively: target = floor(totalRefunded·D/A) in
+ * BigInt (no float precision loss), and this refund's share is the delta over
+ * what earlier refunds already deducted, clamped so the running total never
+ * leaves [0, D]. A completed refund therefore deducts exactly D.
+ */
+export function computeSettleRefundPaise(input: SettleRefundInput): number {
+  const deductibleTotal = input.chargeAmountPaise + input.platformDiscountPaise;
+  const target = Number(
+    (BigInt(input.totalRefundedPaise) * BigInt(deductibleTotal)) /
+      BigInt(input.chargeAmountPaise),
+  );
+  const remaining = deductibleTotal - input.priorSettleDeductedPaise;
+  return Math.max(0, Math.min(target - input.priorSettleDeductedPaise, remaining));
 }
 
 /**
@@ -82,10 +119,13 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
   // 2. Sum any prior refunds against this charge. Refund rows have
   //    amount_paise < 0; the absolute value is the already-refunded amount.
   //    Anything that isn't 'failed' counts as still owing the money — the
-  //    provider call has either succeeded or is in flight.
+  //    provider call has either succeeded or is in flight. settleDeducted uses
+  //    the same coalesce fallback as the payout refund aggregate, so the
+  //    cumulative settle math stays consistent across legacy NULL rows.
   const [refundedAgg] = await tx
     .select({
       refundedSoFar: sql<number>`coalesce(-sum(${payments.amountPaise}), 0)::bigint`,
+      settleDeductedSoFar: sql<number>`coalesce(-sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
     })
     .from(payments)
     .where(
@@ -105,9 +145,32 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
       { remaining, requested: input.amountPaise },
     );
   }
+  const totalRefunded = alreadyRefunded + input.amountPaise;
+
+  // 2b. Circls-funded discount on this sale, if any — clawed back from the
+  //     partner's payout pro-rata with the refund (see computeSettleRefundPaise).
+  const [platformFunded] = await tx
+    .select({
+      discountPaise: sql<number>`coalesce(sum(${couponRedemptions.discountPaise}), 0)::bigint`,
+    })
+    .from(couponRedemptions)
+    .where(
+      and(
+        eq(couponRedemptions.bookingId, input.bookingId),
+        eq(couponRedemptions.funder, 'platform'),
+      ),
+    );
+
+  const settleRefundPaise = computeSettleRefundPaise({
+    chargeAmountPaise: Number(charge.amountPaise),
+    platformDiscountPaise: Number(platformFunded?.discountPaise ?? 0),
+    totalRefundedPaise: totalRefunded,
+    priorSettleDeductedPaise: Number(refundedAgg?.settleDeductedSoFar ?? 0),
+  });
 
   // 3. Insert the refund ledger row. Signed amount_paise — negative because
-  //    it flows out of the held pot back to the customer.
+  //    it flows out of the held pot back to the customer. settle_base_paise is
+  //    the (negative) payout-side deduction; NULL is reserved for legacy rows.
   const [refundRow] = await tx
     .insert(payments)
     .values({
@@ -117,6 +180,7 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
       // For external (cash) and stub, no provider id at insert time. For
       // razorpay we backfill after the API call below.
       amountPaise: -input.amountPaise,
+      settleBasePaise: -settleRefundPaise,
       currency: charge.currency,
       status: 'pending',
       kind: 'refund',
@@ -180,7 +244,6 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
     .where(eq(payments.id, refundRow.id));
 
   // 6. Update the original charge's status. Full refund vs partial.
-  const totalRefunded = alreadyRefunded + input.amountPaise;
   const newChargeStatus =
     totalRefunded >= Number(charge.amountPaise) ? 'refunded' : 'partially_refunded';
   await tx.update(payments).set({ status: newChargeStatus }).where(eq(payments.id, charge.id));

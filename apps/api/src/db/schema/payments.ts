@@ -39,6 +39,15 @@ export const payments = pgTable('payments', {
   providerOrderId: text('provider_order_id'),
   providerPaymentId: text('provider_payment_id'),
   amountPaise: bigintPaise('amount_paise').notNull(),
+  /**
+   * Signed payout-settlement value, when it differs conceptually from
+   * `amount_paise` (customer cash). Charge rows: positive settleable base —
+   * full base for platform-funded-coupon sales, discounted base otherwise;
+   * excludes the gateway-fee gross-up. Refund rows: negative payout deduction —
+   * refunded cash plus the prorated Circls-funded discount clawback (see
+   * refund_service.computeSettleRefundPaise). NULL on legacy rows: payout
+   * reconciliation falls back to `amount_paise`.
+   */
   settleBasePaise: bigintPaise('settle_base_paise'),
   currency: text('currency').notNull().default('INR'),
   status: paymentStatus('status').notNull().default('pending'),
