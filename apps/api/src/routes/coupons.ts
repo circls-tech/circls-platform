@@ -14,6 +14,11 @@ import {
   type CreateCouponInput,
   type UpdateCouponPatch,
 } from '../services/coupon_service.js';
+import {
+  getAdminCouponStats,
+  getTenantCouponStats,
+  type CouponStatsRange,
+} from '../services/coupon_stats_service.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -45,8 +50,25 @@ const updateBody = z.object({
   status: z.enum(['active', 'paused', 'expired']).optional(),
 });
 
+const statsQuery = z.object({
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+});
+
 type CreateBodyInput = z.infer<typeof createBody>;
 type UpdateBodyInput = z.infer<typeof updateBody>;
+
+function toStatsRange(query: unknown): CouponStatsRange {
+  const parsed = statsQuery.safeParse(query);
+  if (!parsed.success)
+    throw new BadRequest('Invalid query parameters', 'bad_request', {
+      issues: parsed.error.issues,
+    });
+  const range: CouponStatsRange = {};
+  if (parsed.data.from !== undefined) range.from = new Date(parsed.data.from);
+  if (parsed.data.to !== undefined) range.to = new Date(parsed.data.to);
+  return range;
+}
 
 function toCreateInput(b: CreateBodyInput): CreateCouponInput {
   const input: CreateCouponInput = {
@@ -94,6 +116,15 @@ export const couponRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'discounts.read');
     return listCoupons({ kind: 'tenant', tenantId });
+  });
+
+  // Funding stats: totals split by funder + per-coupon breakdown.
+  app.get('/v1/tenants/:tenantId/coupons/stats', { preHandler: requireAuth }, async (req) => {
+    const { tenantId } = req.params as { tenantId: string };
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'discounts.read');
+    return getTenantCouponStats(tenantId, toStatsRange(req.query));
   });
 
   app.post('/v1/tenants/:tenantId/coupons', { preHandler: requireAuth }, async (req) => {
@@ -152,6 +183,15 @@ export const couponRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, platformTenantId);
     assertCap(ctx, 'admin.coupons.read');
     return listCoupons({ kind: 'platform' });
+  });
+
+  // Platform-wide funding stats: Circls spend, partner-funded totals, monthly trend.
+  app.get('/v1/admin/coupons/stats', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.coupons.read');
+    return getAdminCouponStats(toStatsRange(req.query));
   });
 
   app.post('/v1/admin/coupons', { preHandler: requireAuth }, async (req) => {

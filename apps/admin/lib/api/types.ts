@@ -337,6 +337,31 @@ export interface Coupon {
   updatedAt: string;
 }
 
+export interface CouponFunderTotals {
+  redemptions: number;
+  discountPaise: number;
+  basePaise: number;
+}
+
+export interface CouponStatRow {
+  couponId: string;
+  code: string;
+  redemptions: number;
+  discountPaise: number;
+  basePaise: number;
+}
+
+export interface AdminCouponStats {
+  /** Circls-funded discount spend across all tenants. */
+  platformFunded: CouponFunderTotals;
+  /** Partner-funded discounts across all tenants. */
+  orgFunded: CouponFunderTotals;
+  /** Per-coupon breakdown of platform (Circls-funded) coupons. */
+  byCoupon: CouponStatRow[];
+  /** Circls-funded spend per IST month ('YYYY-MM'), oldest→newest. */
+  monthly: { month: string; redemptions: number; discountPaise: number }[];
+}
+
 // ── Support issues ────────────────────────────────────────────────────────────
 
 export type SupportIssueStatus = 'unresolved' | 'in_progress' | 'backlog' | 'resolved';
