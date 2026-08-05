@@ -98,7 +98,7 @@ export function OrgBrandBlock({
           )}
           <p className="text-lg">{name}</p>
           {org?.description && (
-            <p className="mt-1 text-sm text-text-secondary">{org.description}</p>
+            <p className="mt-1 whitespace-pre-line text-sm text-text-secondary">{org.description}</p>
           )}
         </div>
       </div>

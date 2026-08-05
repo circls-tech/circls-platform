@@ -154,7 +154,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             </div>
 
             <Card className="flex flex-col gap-4">
-              {ev.description && <p className="text-sm text-text-secondary">{ev.description}</p>}
+              {ev.description && <p className="whitespace-pre-line text-sm text-text-secondary">{ev.description}</p>}
 
               {tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>

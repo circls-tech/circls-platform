@@ -113,7 +113,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   {formatDateTime(b.event.startsAt)} – {formatTime(b.event.endsAt)}
                 </p>
                 {b.event.description && (
-                  <p className="mt-3 text-sm text-text-secondary">{b.event.description}</p>
+                  <p className="mt-3 whitespace-pre-line text-sm text-text-secondary">{b.event.description}</p>
                 )}
                 {(b.event.answers ?? []).length > 0 && (
                   <div className="mt-3 flex flex-col divide-y divide-ink/15">
@@ -136,7 +136,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   Valid for {b.membership.durationDays} days
                 </p>
                 {b.membership.description && (
-                  <p className="mt-3 text-sm text-text-secondary">{b.membership.description}</p>
+                  <p className="mt-3 whitespace-pre-line text-sm text-text-secondary">{b.membership.description}</p>
                 )}
               </Card>
             )}
