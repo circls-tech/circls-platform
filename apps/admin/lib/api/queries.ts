@@ -4,6 +4,7 @@ import { apiFetch } from './client';
 import type {
   AdminAuditLogPage,
   AdminConsumerUsersPage,
+  AdminCouponStats,
   AdminListingDetail,
   AdminListingListResponse,
   AdminListingType,
@@ -413,6 +414,15 @@ export function useAdminCoupons() {
     queryKey: ['admin', 'coupons'],
     enabled: Boolean(user),
     queryFn: () => apiFetch<Coupon[]>('/v1/admin/coupons'),
+  });
+}
+
+export function useAdminCouponStats() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'coupon-stats'],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<AdminCouponStats>('/v1/admin/coupons/stats'),
   });
 }
 

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
-import { useTenantCoupons, type Coupon } from '@/lib/api/coupons';
+import { useTenantCoupons, useTenantCouponStats, type Coupon } from '@/lib/api/coupons';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
@@ -25,7 +25,9 @@ export default function CouponsPage() {
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId);
   const { data: coupons, isLoading } = useTenantCoupons(activeTenantId ?? '');
-  const { currencyFor } = useVenueCurrencies();
+  const { data: stats } = useTenantCouponStats(activeTenantId ?? '');
+  const { currencyFor, tenantCurrency } = useVenueCurrencies();
+  const statByCoupon = new Map((stats?.byCoupon ?? []).map((s) => [s.couponId, s]));
 
   if (!activeTenantId) {
     return (
@@ -50,6 +52,26 @@ export default function CouponsPage() {
         </Button>
       </div>
 
+      {stats && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card title="Discount you've funded" subtitle="Comes off your settled revenue.">
+            <p className="font-[family-name:var(--font-display)] text-2xl font-extrabold tabular-nums text-[#17151D]">
+              {formatMoney(stats.orgFunded.discountPaise, tenantCurrency, { decimals: 2 })}
+            </p>
+          </Card>
+          <Card title="Coupon redemptions" subtitle="Times your coupons were used.">
+            <p className="font-[family-name:var(--font-display)] text-2xl font-extrabold tabular-nums text-[#17151D]">
+              {stats.orgFunded.redemptions}
+            </p>
+          </Card>
+          <Card title="Circls-funded on your sales" subtitle="Funded by Circls — does not affect your payout.">
+            <p className="font-[family-name:var(--font-display)] text-2xl font-extrabold tabular-nums text-[#17151D]">
+              {formatMoney(stats.platformFunded.discountPaise, tenantCurrency, { decimals: 2 })}
+            </p>
+          </Card>
+        </div>
+      )}
+
       {isLoading && <p className="text-sm text-slate-500">Loading coupons…</p>}
       {!isLoading && (!coupons || coupons.length === 0) && (
         <p className="text-sm text-slate-500">No coupons yet for this organisation.</p>
@@ -64,6 +86,7 @@ export default function CouponsPage() {
                 <th className="pb-2 pr-4 font-medium text-slate-500">Discount</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Visibility</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Redeemed</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Discount given</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
               </tr>
             </thead>
@@ -78,6 +101,11 @@ export default function CouponsPage() {
                   <td className="py-2.5 pr-4 capitalize text-slate-700">{c.visibility}</td>
                   <td className="py-2.5 pr-4 text-slate-700">
                     {c.maxRedemptions ? `${c.redeemedCount}/${c.maxRedemptions}` : `${c.redeemedCount}/∞`}
+                  </td>
+                  <td className="py-2.5 pr-4 tabular-nums text-slate-700">
+                    {statByCoupon.has(c.id)
+                      ? formatMoney(statByCoupon.get(c.id)!.discountPaise, currencyFor(couponVenueId(c)), { decimals: 2 })
+                      : '—'}
                   </td>
                   <td className="py-2.5 pr-4"><StatusPill status={c.status} /></td>
                 </tr>

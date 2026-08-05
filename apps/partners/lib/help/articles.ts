@@ -135,7 +135,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Creating and managing discount coupons',
     category: 'Discounts',
     summary:
-      'Create percentage or fixed-amount discount codes, scope them to your org / a venue / a specific event, arena or membership, set validity and redemption limits, and choose whether they are public or private.',
+      'Create percentage or fixed-amount discount codes, scope them to your org / a venue / a specific event, arena or membership, set validity and redemption limits, choose whether they are public or private, and see what each coupon has cost you — Circls-funded promotional codes never reduce your payout.',
     order: 10,
   },
 ];

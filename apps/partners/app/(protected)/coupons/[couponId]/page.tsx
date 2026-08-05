@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { useTenantCoupons, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
+import { useTenantCoupons, useTenantCouponStats, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
 import { type CurrencyCode, currencySymbol, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
 
@@ -22,6 +22,8 @@ export default function CouponDetailPage() {
   const tenantId = activeTenantId ?? '';
   const { data: coupons, isLoading } = useTenantCoupons(tenantId);
   const coupon = coupons?.find((c) => c.id === couponId);
+  const { data: stats } = useTenantCouponStats(tenantId);
+  const couponStats = stats?.byCoupon.find((s) => s.couponId === couponId);
   const update = useUpdateCoupon(tenantId);
   const del = useDeleteCoupon(tenantId);
 
@@ -119,6 +121,8 @@ export default function CouponDetailPage() {
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Min order</dt><dd className="mt-1 text-sm text-slate-700">{coupon.minOrderPaise != null ? formatMoney(coupon.minOrderPaise, currency, { decimals: 2 }) : '—'}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Redeemed</dt><dd className="mt-1 text-sm text-slate-700">{coupon.maxRedemptions ? `${coupon.redeemedCount}/${coupon.maxRedemptions}` : `${coupon.redeemedCount}/∞`}{coupon.perUserLimit ? ` · ${coupon.perUserLimit}/user` : ''}</dd></div>
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Valid</dt><dd className="mt-1 text-sm text-slate-700">{coupon.validFrom ? dateFmt.format(new Date(coupon.validFrom)) : 'Always'} → {coupon.validUntil ? dateFmt.format(new Date(coupon.validUntil)) : 'No expiry'}</dd></div>
+                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Discount funded</dt><dd className="mt-1 text-sm tabular-nums text-slate-700">{couponStats ? formatMoney(couponStats.discountPaise, currency, { decimals: 2 }) : 'No redemptions yet.'}</dd></div>
+                <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Sales with this coupon</dt><dd className="mt-1 text-sm tabular-nums text-slate-700">{couponStats ? formatMoney(couponStats.basePaise, currency, { decimals: 2 }) : '—'}</dd></div>
                 {coupon.description && <div className="sm:col-span-2"><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</dt><dd className="mt-1 text-sm text-slate-700">{coupon.description}</dd></div>}
               </dl>
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">

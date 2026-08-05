@@ -57,10 +57,41 @@ export interface UpdateCouponPatch {
   status?: CouponStatus;
 }
 
+export interface CouponFunderTotals {
+  redemptions: number;
+  discountPaise: number;
+  basePaise: number;
+}
+
+export interface CouponStatRow {
+  couponId: string;
+  code: string;
+  redemptions: number;
+  discountPaise: number;
+  basePaise: number;
+}
+
+export interface TenantCouponStats {
+  /** Discounts this org funded with its own coupons. */
+  orgFunded: CouponFunderTotals;
+  /** Circls-funded discounts on this org's sales — payout-neutral. */
+  platformFunded: CouponFunderTotals;
+  /** Per-coupon breakdown of the org's own coupons. */
+  byCoupon: CouponStatRow[];
+}
+
 export function useTenantCoupons(tenantId: string) {
   return useQuery({
     queryKey: ['tenant-coupons', tenantId],
     queryFn: () => apiFetch<Coupon[]>(`/v1/tenants/${tenantId}/coupons`),
+    enabled: Boolean(tenantId),
+  });
+}
+
+export function useTenantCouponStats(tenantId: string) {
+  return useQuery({
+    queryKey: ['tenant-coupon-stats', tenantId],
+    queryFn: () => apiFetch<TenantCouponStats>(`/v1/tenants/${tenantId}/coupons/stats`),
     enabled: Boolean(tenantId),
   });
 }

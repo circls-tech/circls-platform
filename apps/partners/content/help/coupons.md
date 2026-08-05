@@ -36,3 +36,11 @@ Open a coupon to see its usage (e.g. `5/100` redeemed). You can edit its descrip
 ## Who pays for the discount
 
 Coupons you create reduce your own revenue for that sale. Circls-wide promotional codes (created by the Circls team) are funded by Circls — your payout is unaffected by those.
+
+The **Coupons** page shows this split at the top:
+
+- **Discount you've funded** — the total discount your own coupons have given, which comes off your settled revenue.
+- **Coupon redemptions** — how many times your coupons have been used.
+- **Circls-funded on your sales** — discounts Circls promotional codes gave on your bookings. These are paid by Circls and never reduce your payout.
+
+The coupon list also has a **Discount given** column with each coupon's total, and opening a coupon shows **Discount funded** and **Sales with this coupon** (the base value of bookings that used it).

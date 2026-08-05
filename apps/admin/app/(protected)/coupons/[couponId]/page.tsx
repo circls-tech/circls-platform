@@ -6,6 +6,7 @@ import { type FormEvent, useState } from 'react';
 import { ApiError } from '@/lib/api/client';
 import {
   useAdminCoupons,
+  useAdminCouponStats,
   useUpdateAdminCoupon,
   useDeleteAdminCoupon,
   type AdminUpdateCouponPatch,
@@ -52,6 +53,8 @@ export default function AdminCouponDetailPage() {
   const router = useRouter();
   const { data: coupons, isLoading } = useAdminCoupons();
   const coupon = coupons?.find((c) => c.id === couponId);
+  const { data: stats } = useAdminCouponStats();
+  const couponStats = stats?.byCoupon.find((s) => s.couponId === couponId);
   const update = useUpdateAdminCoupon();
   const del = useDeleteAdminCoupon();
 
@@ -146,6 +149,7 @@ export default function AdminCouponDetailPage() {
                 <Field label="Redeemed">{coupon.maxRedemptions ? `${coupon.redeemedCount}/${coupon.maxRedemptions}` : `${coupon.redeemedCount}/∞`}{coupon.perUserLimit ? ` · ${coupon.perUserLimit}/user` : ''}</Field>
                 <Field label="Valid">{coupon.validFrom ? formatDate(coupon.validFrom) : 'Always'} → {coupon.validUntil ? formatDate(coupon.validUntil) : 'No expiry'}</Field>
                 <Field label="Created">{formatDate(coupon.createdAt)}</Field>
+                <Field label="Discount spent">{couponStats ? `${rupees(couponStats.discountPaise)} across ${couponStats.redemptions} redemption${couponStats.redemptions === 1 ? '' : 's'}` : 'No redemptions yet.'}</Field>
                 {coupon.description && <div className="sm:col-span-2"><Field label="Description">{coupon.description}</Field></div>}
               </dl>
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
