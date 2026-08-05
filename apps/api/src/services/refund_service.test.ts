@@ -16,15 +16,137 @@ import {
   arenas,
   auditLog,
   bookings,
+  couponRedemptions,
+  coupons,
   payments,
   tenants,
   users,
   venues,
 } from '../db/schema/index.js';
-import { issueRefund } from './refund_service.js';
+import { computeSettleRefundPaise, issueRefund } from './refund_service.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
+
+// ---------------------------------------------------------------------------
+// computeSettleRefundPaise — pure math, always runs.
+//
+// Fixtures mirror coupon_redemption.test.ts: base 50000, 10% coupon → discount
+// 5000, discounted base 45000, customer pays grossUp(45000) = 46088 (fee 1088).
+// Without a coupon the customer pays grossUp(50000) = 51209.
+// ---------------------------------------------------------------------------
+describe('computeSettleRefundPaise', () => {
+  it('no coupon: full refund deducts exactly the customer cash', () => {
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 51209,
+        platformDiscountPaise: 0,
+        totalRefundedPaise: 51209,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(51209);
+  });
+
+  it('no coupon: a partial refund deducts the cash amount', () => {
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 51209,
+        platformDiscountPaise: 0,
+        totalRefundedPaise: 20000,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(20000);
+  });
+
+  it('org-funded coupon: no clawback — behaves exactly like no coupon', () => {
+    // Org discounts already reduced the partner's settle credit at charge
+    // time, so the refund deduction is plain customer cash.
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 46088,
+        platformDiscountPaise: 0,
+        totalRefundedPaise: 46088,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(46088);
+  });
+
+  it('platform-funded coupon: full refund claws back cash + discount (the bug)', () => {
+    // 46088 + 5000 = 51088 = settle credit 50000 + fee 1088: the partner nets
+    // −fee like any refunded sale, and Circls recovers the discount it fronted.
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 46088,
+        platformDiscountPaise: 5000,
+        totalRefundedPaise: 46088,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(51088);
+  });
+
+  it('platform-funded coupon: partials floor, then top up to exactly D', () => {
+    // First partial 10000 of 46088 → floor(10000·51088/46088) = 11084.
+    const first = computeSettleRefundPaise({
+      chargeAmountPaise: 46088,
+      platformDiscountPaise: 5000,
+      totalRefundedPaise: 10000,
+      priorSettleDeductedPaise: 0,
+    });
+    expect(first).toBe(11084);
+    // Remainder 36088 → deduction tops the total up to exactly 51088.
+    const second = computeSettleRefundPaise({
+      chargeAmountPaise: 46088,
+      platformDiscountPaise: 5000,
+      totalRefundedPaise: 46088,
+      priorSettleDeductedPaise: first,
+    });
+    expect(first + second).toBe(51088);
+  });
+
+  it('legacy prior refunds (NULL settle → cash fallback) never over-deduct', () => {
+    // A legacy partial already deducted its full cash (20000) — more than the
+    // prorated target. The next deduction clamps at ≥ 0 and the completed
+    // refund still totals exactly D via the remaining-cap.
+    const second = computeSettleRefundPaise({
+      chargeAmountPaise: 46088,
+      platformDiscountPaise: 5000,
+      totalRefundedPaise: 46088,
+      priorSettleDeductedPaise: 20000,
+    });
+    expect(second).toBe(31088);
+    expect(20000 + second).toBe(51088);
+  });
+
+  it('property: every split sequence stays in [0, D] and completes to exactly D', () => {
+    const cases = [
+      { chargeAmountPaise: 51209, platformDiscountPaise: 0 },
+      { chargeAmountPaise: 46088, platformDiscountPaise: 0 },
+      { chargeAmountPaise: 46088, platformDiscountPaise: 5000 },
+      // Adversarial rounding: tiny charge, large discount.
+      { chargeAmountPaise: 7, platformDiscountPaise: 9999 },
+    ];
+    for (const c of cases) {
+      const D = c.chargeAmountPaise + c.platformDiscountPaise;
+      for (const firstCut of [1, 2, 3, 999, Math.floor(c.chargeAmountPaise / 3), c.chargeAmountPaise - 1]) {
+        if (firstCut < 1 || firstCut >= c.chargeAmountPaise) continue;
+        let refunded = 0;
+        let deducted = 0;
+        for (const step of [firstCut, c.chargeAmountPaise - firstCut]) {
+          refunded += step;
+          const d = computeSettleRefundPaise({
+            ...c,
+            totalRefundedPaise: refunded,
+            priorSettleDeductedPaise: deducted,
+          });
+          expect(d).toBeGreaterThanOrEqual(0);
+          deducted += d;
+          expect(deducted).toBeLessThanOrEqual(D);
+        }
+        expect(deducted).toBe(D);
+      }
+    }
+  });
+});
 
 describe.skipIf(!runIntegration)('refund_service integration', () => {
   let tenantId: string;
@@ -39,6 +161,7 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
     provider: 'razorpay' | 'stub' | 'external';
     amountPaise: number;
     providerPaymentId?: string | null;
+    settleBasePaise?: number;
   }): Promise<string> {
     const [b] = await db
       .insert(bookings)
@@ -63,11 +186,34 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
       provider: opts.provider,
       providerPaymentId: opts.providerPaymentId ?? null,
       amountPaise: opts.amountPaise,
+      settleBasePaise: opts.settleBasePaise ?? null,
       currency: 'INR',
       status: 'captured',
       kind: 'charge',
     });
     return b!.id;
+  }
+
+  /** Seed a platform coupon + redemption so the booking carries a Circls-funded discount. */
+  async function seedPlatformRedemption(bookingId: string, discountPaise: number): Promise<void> {
+    const [c] = await db
+      .insert(coupons)
+      .values({
+        ownerType: 'platform',
+        code: `RFNDSVC${Date.now()}${Math.floor(Math.random() * 1e6)}`,
+        scopeType: 'org',
+        discountType: 'percent',
+        discountValue: 1000,
+      })
+      .returning();
+    await db.insert(couponRedemptions).values({
+      couponId: c!.id,
+      bookingId,
+      tenantId,
+      basePaise: 50000,
+      discountPaise,
+      funder: 'platform',
+    });
   }
 
   beforeAll(async () => {
@@ -108,6 +254,8 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from coupon_redemptions where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from coupons where code like 'RFNDSVC%'`);
     await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from arenas where venue_id in (select id from venues where tenant_id = ${tenantId})`);
@@ -145,6 +293,9 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
     // surfaces 'processed' for adapter parity.
     expect(rows[1]!.status).toBe('captured');
     expect(Number(rows[1]!.amountPaise)).toBe(-50000);
+    // No coupon → the settle deduction is plain customer cash (never NULL on
+    // new rows; NULL is reserved for legacy data).
+    expect(Number(rows[1]!.settleBasePaise)).toBe(-50000);
     expect(rows[1]!.providerPaymentId).toBe(res.providerRefundId);
   });
 
@@ -228,6 +379,54 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
       .where(sql`booking_id = ${bookingExternalId} and kind = 'refund'`);
     expect(refundRow!.provider).toBe('external');
     expect(Number(refundRow!.amountPaise)).toBe(-20000);
+    expect(Number(refundRow!.settleBasePaise)).toBe(-20000);
+  });
+
+  // Platform-funded coupons: Circls credits the partner the full base but the
+  // customer pays the discounted (grossed-up) total. On refund the deduction
+  // must also claw back the Circls-funded discount — D = cash + discount —
+  // or the partner keeps phantom credit. Fixture: base 50000, 10% coupon,
+  // customer pays 46088 → D = 51088.
+  it('platform-coupon full refund claws back cash + Circls-funded discount', async () => {
+    const bookingId = await seedBookingWithCharge({
+      provider: 'stub',
+      amountPaise: 46088,
+      settleBasePaise: 50000,
+    });
+    await seedPlatformRedemption(bookingId, 5000);
+
+    await issueRefund({ bookingId, amountPaise: 46088, reason: 'plat full', actorUserId });
+
+    const [refundRow] = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+    expect(Number(refundRow!.amountPaise)).toBe(-46088);
+    expect(Number(refundRow!.settleBasePaise)).toBe(-51088);
+  });
+
+  it('platform-coupon partial refunds sum to exactly the clawback total', async () => {
+    const bookingId = await seedBookingWithCharge({
+      provider: 'stub',
+      amountPaise: 46088,
+      settleBasePaise: 50000,
+    });
+    await seedPlatformRedemption(bookingId, 5000);
+
+    await issueRefund({ bookingId, amountPaise: 10000, reason: 'plat part 1', actorUserId });
+    await issueRefund({ bookingId, amountPaise: 36088, reason: 'plat part 2', actorUserId });
+
+    const rows = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${bookingId} and kind = 'refund'`)
+      .orderBy(sql`created_at asc`);
+    expect(rows).toHaveLength(2);
+    // floor(10000·51088/46088) = 11084; the second tops up to exactly −51088.
+    expect(Number(rows[0]!.settleBasePaise)).toBe(-11084);
+    expect(Number(rows[1]!.settleBasePaise)).toBe(-40004);
+    const settleTotal = rows.reduce((s, r) => s + Number(r.settleBasePaise), 0);
+    expect(settleTotal).toBe(-51088);
   });
 
   it('rejects a zero or non-integer refund amount', async () => {
