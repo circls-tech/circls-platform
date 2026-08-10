@@ -295,13 +295,6 @@
       "when": 1782570000000,
       "tag": "0042_refund_settle_base_backfill",
       "breakpoints": true
-    },
-    {
-      "idx": 43,
-      "version": "7",
-      "when": 1782650000000,
-      "tag": "0043_settlement_hold_event_backfill",
-      "breakpoints": true
     }
   ]
 }
