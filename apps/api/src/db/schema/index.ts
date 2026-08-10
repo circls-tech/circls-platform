@@ -39,3 +39,5 @@ export * from './event_registration_questions.js';
 export * from './event_registration_answers.js';
 // Admin-approved edits to published events.
 export * from './event_change_requests.js';
+// Post-login consumer feedback (event ratings + event-type preference poll).
+export * from './user_feedback.js';

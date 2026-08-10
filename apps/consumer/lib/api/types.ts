@@ -558,3 +558,37 @@ export interface MyProfile {
   displayName: string | null;
   interests: string[];
 }
+
+// ── Post-login feedback ───────────────────────────────────────────────────────
+
+/** One multiple-choice question from the server's event-type preference pool. */
+export interface EventTypeQuestion {
+  key: string;
+  question: string;
+  options: string[];
+}
+
+/**
+ * What GET /v1/consumer/feedback/prompt asks this consumer right now:
+ * a "how was the event" review of an unreviewed past registration, a random
+ * event-type MCQ (users with no bookings), or null (nothing to ask).
+ */
+export type FeedbackPrompt =
+  | {
+      kind: 'event_feedback';
+      event: { id: string; name: string; endsAt: string; venueName: string | null };
+    }
+  | { kind: 'event_type_preference'; question: EventTypeQuestion };
+
+/** Body of POST /v1/consumer/feedback. Errors: 404 `feedback_event_not_eligible`,
+ *  409 `feedback_exists`, 400 `feedback_unknown_question`/`feedback_invalid_answer`. */
+export type SubmitFeedbackInput =
+  | { kind: 'event_feedback'; eventId: string; rating: number; comment?: string }
+  | { kind: 'event_type_preference'; questionKey: string; answer: string };
+
+/** Result of POST /v1/consumer/feedback. */
+export interface SubmittedFeedback {
+  id: string;
+  kind: 'event_feedback' | 'event_type_preference';
+  createdAt: string;
+}

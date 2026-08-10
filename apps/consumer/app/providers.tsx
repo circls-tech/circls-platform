@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AuthProvider } from '@/lib/firebase/auth_context';
 import { CheckoutProvider } from '@/lib/checkout/CheckoutProvider';
+import { FeedbackPromptProvider } from '@/lib/feedback/FeedbackPromptProvider';
 import { LocationProvider } from '@/lib/location/LocationProvider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -13,7 +14,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={client}>
       <AuthProvider>
         <LocationProvider>
-          <CheckoutProvider>{children}</CheckoutProvider>
+          <CheckoutProvider>
+            <FeedbackPromptProvider>{children}</FeedbackPromptProvider>
+          </CheckoutProvider>
         </LocationProvider>
       </AuthProvider>
     </QueryClientProvider>

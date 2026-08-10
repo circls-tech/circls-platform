@@ -57,6 +57,7 @@ import { checkoutRoutes } from './routes/checkout.js';
 import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
 import { questionRoutes } from './routes/questions.js';
+import { feedbackRoutes } from './routes/feedback.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -305,6 +306,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(activityRoutes);
   // Questions threads on events / arenas / memberships (consumer + org + admin).
   await app.register(questionRoutes);
+  // Post-login consumer feedback prompts (event ratings + event-type poll).
+  await app.register(feedbackRoutes);
 
   return app;
 }
