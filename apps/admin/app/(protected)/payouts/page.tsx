@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useAdminPayouts, useExecutePayout } from '@/lib/api/queries';
+import { useAdminPayouts, useExecutePayout, useReconcilePayouts } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
 import type { AdminPayoutRow } from '@/lib/api/types';
 
@@ -59,7 +59,26 @@ export default function PayoutsPage() {
   } = useAdminPayouts(filter === 'all' ? undefined : filter);
 
   const execute = useExecutePayout();
+  const reconcile = useReconcilePayouts();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reconcileResult, setReconcileResult] = useState<string | null>(null);
+
+  function onReconcile() {
+    setActionError(null);
+    setReconcileResult(null);
+    reconcile.mutate(undefined, {
+      onSuccess: (res) => {
+        setReconcileResult(
+          res.inserted > 0
+            ? `Reconciliation created ${res.inserted} new payout${res.inserted === 1 ? '' : 's'}.`
+            : 'Reconciliation ran — nothing new to settle for the last completed week.',
+        );
+      },
+      onError: (err) => {
+        setActionError(err instanceof Error ? err.message : 'Reconciliation failed.');
+      },
+    });
+  }
 
   const rows: AdminPayoutRow[] = useMemo(
     () => data?.pages.flatMap((p) => p.rows) ?? [],
@@ -104,24 +123,41 @@ export default function PayoutsPage() {
             Weekly Circls-as-merchant payouts to venues.
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={[
-                'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-                filter === f.id
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:text-slate-900',
-              ].join(' ')}
-            >
-              {f.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onReconcile}
+            disabled={reconcile.isPending}
+            title="Recompute payouts for the last completed week (safe to re-run)"
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            {reconcile.isPending ? 'Reconciling…' : 'Run reconciliation'}
+          </button>
+          <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilter(f.id)}
+                className={[
+                  'rounded px-3 py-1.5 text-sm font-medium transition-colors',
+                  filter === f.id
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:text-slate-900',
+                ].join(' ')}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {reconcileResult && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {reconcileResult}
+        </div>
+      )}
 
       {actionError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

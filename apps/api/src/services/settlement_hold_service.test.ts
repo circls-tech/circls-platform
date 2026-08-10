@@ -1,13 +1,15 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { bookings, payments, tenants, users, venues } from '../db/schema/index.js';
-import { releaseDueSettlements } from './settlement_hold_service.js';
+import { bookings, events, payments, tenants, users, venues } from '../db/schema/index.js';
+import { env } from '../config/env.js';
+import { holdForBooking, releaseDueSettlements } from './settlement_hold_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
 describe.skipIf(!runIntegration)('settlement_hold_service integration', () => {
   let tenantId: string;
+  let venueId: string;
   let bookingId: string;
   let userId: string;
 
@@ -30,6 +32,7 @@ describe.skipIf(!runIntegration)('settlement_hold_service integration', () => {
       .insert(venues)
       .values({ tenantId, name: 'V', tzName: 'Asia/Kolkata' })
       .returning();
+    venueId = v!.id;
 
     const [b] = await db
       .insert(bookings)
@@ -52,6 +55,7 @@ describe.skipIf(!runIntegration)('settlement_hold_service integration', () => {
   afterAll(async () => {
     await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
     await db.execute(
       sql`delete from venues where tenant_id = ${tenantId}`,
     );
@@ -138,5 +142,109 @@ describe.skipIf(!runIntegration)('settlement_hold_service integration', () => {
 
     const released = await releaseDueSettlements();
     expect(released).toBe(0);
+  });
+
+  it('releases charges that were refunded before their hold elapsed', async () => {
+    await db.execute(sql`delete from payments where booking_id = ${bookingId}`);
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, provider_payment_id, amount_paise,
+        status, kind, settlement_hold_until
+      ) values
+        (${bookingId}::uuid, ${tenantId}::uuid, 'stub', 'pay_refunded_1', 50000,
+         'refunded', 'charge', now() - interval '5 minutes'),
+        (${bookingId}::uuid, ${tenantId}::uuid, 'stub', 'pay_partial_1', 50000,
+         'partially_refunded', 'charge', now() - interval '5 minutes')
+    `);
+
+    const released = await releaseDueSettlements();
+    expect(released).toBe(2);
+  });
+
+  it('holdForBooking anchors event bookings on the event ends_at', async () => {
+    const endsAt = new Date(Date.now() + 3 * 86_400_000); // 3 days out
+    const [ev] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId,
+        name: 'Hold Test Event',
+        startsAt: new Date(endsAt.getTime() - 3600_000),
+        endsAt,
+        status: 'published',
+      })
+      .returning();
+
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'event',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 30000,
+        itemData: { eventId: ev!.id, eventName: ev!.name },
+        createdByUserId: userId,
+      })
+      .returning();
+
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, provider_payment_id, amount_paise, status, kind
+      ) values (
+        ${b!.id}::uuid, ${tenantId}::uuid, 'stub', 'pay_event_1', 30000, 'captured', 'charge'
+      )
+    `);
+
+    await holdForBooking(b!.id);
+
+    const [pay] = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${b!.id}`);
+    const expected = endsAt.getTime() + env.SETTLEMENT_HOLD_BUFFER_MIN * 60_000;
+    expect(pay?.settlementHoldUntil?.getTime()).toBe(expected);
+  });
+
+  it('holdForBooking falls back to now() + buffer when the booking has no end anchor', async () => {
+    // Memberships' synthetic bookings: no time_range, no eventId in item_data.
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'membership',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 100000,
+        itemData: { membershipId: '00000000-0000-0000-0000-000000000000' },
+        createdByUserId: userId,
+      })
+      .returning();
+
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, provider_payment_id, amount_paise, status, kind
+      ) values (
+        ${b!.id}::uuid, ${tenantId}::uuid, 'stub', 'pay_membership_1', 100000, 'captured', 'charge'
+      )
+    `);
+
+    const before = Date.now();
+    await holdForBooking(b!.id);
+    const after = Date.now();
+
+    const [pay] = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${b!.id}`);
+    const hold = pay?.settlementHoldUntil?.getTime();
+    const bufferMs = env.SETTLEMENT_HOLD_BUFFER_MIN * 60_000;
+    // now() is the DB clock; allow a generous skew window around the JS clock.
+    expect(hold).toBeGreaterThanOrEqual(before + bufferMs - 60_000);
+    expect(hold).toBeLessThanOrEqual(after + bufferMs + 60_000);
   });
 });

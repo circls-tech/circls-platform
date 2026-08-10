@@ -6,7 +6,7 @@ import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { executePayout, listPayouts } from '../services/payout_service.js';
+import { executePayout, listPayouts, reconcileWeeklyPayouts } from '../services/payout_service.js';
 
 /**
  * Platform-admin payouts. Circls is the merchant: the weekly worker computes
@@ -45,6 +45,21 @@ export const adminPayoutRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
       ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
     });
+  });
+
+  // ── POST /v1/admin/payouts/reconcile — run reconciliation on demand ─────────
+  // Same computation as the Monday 03:00 UTC worker (settles the most recently
+  // completed Mon→Sun week). Idempotent: the unique (tenant, period) index makes
+  // a re-run a no-op, so this is safe to hit any time — e.g. after a missed
+  // worker run or a settlement backfill.
+  app.post('/v1/admin/payouts/reconcile', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.payouts.execute');
+
+    const inserted = await reconcileWeeklyPayouts();
+    return { inserted };
   });
 
   // ── POST /v1/admin/payouts/:id/execute — mark a pending payout paid ─────────
