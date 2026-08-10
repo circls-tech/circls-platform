@@ -28,21 +28,25 @@ type Executor = Pick<typeof db, 'select' | 'update'>;
  * Set the settlement hold on the (single, latest) captured charge for this
  * booking. The hold anchor is when the purchased thing ends, plus the buffer:
  *
- *   - slot bookings:  upper(bookings.time_range)   (slot end)
- *   - event bookings: events.ends_at               (no time_range; joined via
- *                                                   item_data->>'eventId')
+ *   - slot bookings:  upper(bookings.time_range) + SETTLEMENT_HOLD_BUFFER_MIN
+ *   - event bookings: events.ends_at + SETTLEMENT_HOLD_BUFFER_MIN
+ *                     (no time_range; joined via item_data->>'eventId')
  *   - anything else (memberships' synthetic bookings, future item types):
- *     now() — no natural end, so the funds hold for just the buffer after
- *     capture. A NULL hold would never be released and the money would be
- *     invisible to payout reconciliation forever.
+ *     now() + SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN (default 1 day) — no natural
+ *     end, so the hold is a fixed cooling-off window after capture. A NULL
+ *     hold would never be released and the money would be invisible to payout
+ *     reconciliation forever.
  */
 export async function holdForBooking(bookingId: string, exec: Executor = db): Promise<void> {
   const updated = await exec
     .update(payments)
     .set({
       settlementHoldUntil: sql`(
-        select coalesce(upper(b.time_range), e.ends_at, now())
-               + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute')
+        select coalesce(
+          upper(b.time_range) + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute'),
+          e.ends_at + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute'),
+          now() + (${env.SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN}::int * interval '1 minute')
+        )
         from ${bookings} b
         left join ${events} e on e.id = (b.item_data->>'eventId')::uuid
         where b.id = ${bookingId}

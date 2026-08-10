@@ -10,18 +10,22 @@
 -- ticker run (within 5 minutes) releases the overdue ones and the next weekly
 -- reconciliation pays them out.
 --
--- Buffer: 60 minutes = the SETTLEMENT_HOLD_BUFFER_MIN default (a migration
--- cannot read the env; for rows that are already weeks overdue the exact
--- buffer is immaterial). Text join on eventId matches 0042's precedent: a
--- uuid cast would abort the whole migration on one malformed app-written
--- value.
+-- Buffers: 60 minutes = the SETTLEMENT_HOLD_BUFFER_MIN default for slot/event
+-- ends; 24 hours = the SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN default for
+-- bookings with no natural end (memberships) — a migration cannot read the
+-- env, and for rows that are already weeks overdue the exact buffer is
+-- immaterial. Text join on eventId matches 0042's precedent: a uuid cast
+-- would abort the whole migration on one malformed app-written value.
 --
 -- Status list matches payout reconciliation's gross filter — a stuck charge
 -- that was later (partially) refunded must still release, since its refund
 -- rows already deduct from the payout.
 UPDATE payments p
-SET settlement_hold_until =
-      coalesce(upper(b.time_range), e.ends_at, now()) + interval '60 minutes'
+SET settlement_hold_until = coalesce(
+      upper(b.time_range) + interval '60 minutes',
+      e.ends_at + interval '60 minutes',
+      now() + interval '24 hours'
+    )
 FROM bookings b
 LEFT JOIN events e ON e.id::text = b.item_data->>'eventId'
 WHERE b.id = p.booking_id

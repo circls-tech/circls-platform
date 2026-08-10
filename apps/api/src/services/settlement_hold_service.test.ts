@@ -242,7 +242,7 @@ describe.skipIf(!runIntegration)('settlement_hold_service integration', () => {
       .from(payments)
       .where(sql`booking_id = ${b!.id}`);
     const hold = pay?.settlementHoldUntil?.getTime();
-    const bufferMs = env.SETTLEMENT_HOLD_BUFFER_MIN * 60_000;
+    const bufferMs = env.SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN * 60_000;
     // now() is the DB clock; allow a generous skew window around the JS clock.
     expect(hold).toBeGreaterThanOrEqual(before + bufferMs - 60_000);
     expect(hold).toBeLessThanOrEqual(after + bufferMs + 60_000);
