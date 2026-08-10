@@ -8,7 +8,8 @@
  * net out-of-band (NEFT/UPI; no bank details are stored in-app) and marks the
  * row `paid` with a reference via `executePayout()`.
  *
- *   reconcileWeeklyPayouts()  → worker, Mondays: insert pending rows.
+ *   reconcileWeeklyPayouts()  → worker, Mondays (or on demand via
+ *                               POST /v1/admin/payouts/reconcile): insert pending rows.
  *   listPayouts()             → admin read (GET /v1/admin/payouts).
  *   executePayout()           → admin write (POST /v1/admin/payouts/:id/execute).
  */

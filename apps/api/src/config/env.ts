@@ -47,8 +47,12 @@ export const envSchema = z
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
-  // Settlement-hold buffer after a slot's end (minutes). Default = 60.
+  // Settlement-hold buffer after a slot's/event's end (minutes). Default = 60.
   SETTLEMENT_HOLD_BUFFER_MIN: z.coerce.number().int().min(0).default(60),
+  // Settlement-hold buffer after capture for bookings with no natural end
+  // (memberships' synthetic bookings): the refund-without-clawback window
+  // before the money becomes payable. Minutes; default = 1 day.
+  SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN: z.coerce.number().int().min(0).default(1440),
   // pending → cancelled grace period for unpaid carts (minutes).
   ABANDONED_CART_GRACE_MIN: z.coerce.number().int().min(1).default(15),
 

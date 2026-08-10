@@ -1123,6 +1123,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/payouts/reconcile:
+    post:
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/payouts/{id}/execute:
     post:
       parameters:

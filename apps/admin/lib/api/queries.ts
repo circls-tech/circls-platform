@@ -184,6 +184,18 @@ export function useExecutePayout() {
   });
 }
 
+/** Run weekly payout reconciliation on demand (idempotent server-side). */
+export function useReconcilePayouts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ inserted: number }>('/v1/admin/payouts/reconcile', { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+    },
+  });
+}
+
 /**
  * Listing review queue (subproject B). `type` is required by the backend;
  * `status` defaults to pending_review server-side. No cursor pagination —
