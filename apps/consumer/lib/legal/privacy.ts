@@ -54,6 +54,7 @@ export const PRIVACY: LegalDoc = {
       paragraphs: [
         'In accordance with India\'s Digital Personal Data Protection (DPDP) Act, you have the right to access the personal data we hold about you, and to request its correction or deletion.',
         'To request access to or deletion of your personal data, please email contact@gibbous.io with the subject line "Data Request". We will respond within 30 days.',
+        'You can also delete your account yourself at any time at circls.app/account/delete, or from Settings in the app. Deletion removes your name, phone number, email, interests, activity history and support messages, and signs you out permanently. Your booking and payment records are retained because Indian tax and accounting law requires it, and because venues need them to settle payouts; they are no longer linked to an identifiable person.',
       ],
     },
     {

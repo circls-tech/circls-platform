@@ -264,6 +264,23 @@ export function useUpdateMyProfile() {
   });
 }
 
+/**
+ * Permanently delete the signed-in account (Google Play / App Store
+ * requirement; the web surface is /account/delete). Returns 204 — the API
+ * anonymises the account and deletes the Firebase user, so the caller must
+ * sign out afterwards. Every cached query is dropped on success so no page
+ * can render the deleted person's data during the redirect.
+ */
+export function useDeleteMyAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<void>('/v1/consumer/me', { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.clear();
+    },
+  });
+}
+
 export function useMyBookings() {
   const { user } = useAuth();
   return useQuery({

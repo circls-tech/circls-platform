@@ -10,6 +10,9 @@ const LINKS = [
   { href: '/privacy', label: 'Privacy Policy' },
   { href: '/terms', label: 'Terms & Conditions' },
   { href: '/refund', label: 'Refund Policy' },
+  // Google Play / App Store require the account-deletion URL to be publicly
+  // reachable without signing in — keep it linked from every page.
+  { href: '/account/delete', label: 'Delete account' },
 ];
 
 export function Footer() {

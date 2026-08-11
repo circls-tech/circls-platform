@@ -66,3 +66,41 @@ export async function verifyIdToken(token: string): Promise<DecodedIdToken> {
 export async function markEmailVerified(uid: string): Promise<void> {
   await firebaseAuth().updateUser(uid, { emailVerified: true });
 }
+
+/** Firebase Admin errors carry a string `code` such as `auth/user-not-found`. */
+function isUserNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'auth/user-not-found'
+  );
+}
+
+/**
+ * Tear down a Firebase account.
+ *
+ * Deleting is the ONLY call, and that is deliberate. The obvious-looking
+ * `revokeRefreshTokens` first, `deleteUser` second ordering is a trap: because
+ * `verifyIdToken` runs with checkRevoked=true, a revoke that lands before a
+ * `deleteUser` failure (5xx, timeout, quota) kills the caller's token, so their
+ * retry is rejected at the auth layer and never reaches the deletion handler
+ * again. The Firebase account — and the phone/email on it — would then be
+ * stranded forever, while the API kept answering "please try again" to a request
+ * that could not possibly succeed.
+ *
+ * Deleting first has no such failure mode: a successful delete invalidates every
+ * session anyway (`verifyIdToken` then fails with auth/user-not-found), and a
+ * failed delete leaves the token intact precisely so the caller CAN retry. The
+ * surviving token is not a privilege leak — its `users` row is already a
+ * tombstone, and `findOrCreateByFirebaseUid` rejects it with 401
+ * `account_deleted` everywhere except the deletion endpoint itself.
+ *
+ * Idempotent: an already-deleted uid resolves instead of throwing.
+ */
+export async function deleteFirebaseUser(uid: string): Promise<void> {
+  try {
+    await firebaseAuth().deleteUser(uid);
+  } catch (err) {
+    if (!isUserNotFound(err)) throw err;
+  }
+}

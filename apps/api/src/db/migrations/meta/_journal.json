@@ -295,6 +295,20 @@
       "when": 1782570000000,
       "tag": "0042_refund_settle_base_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1782650000000,
+      "tag": "0043_user_deleted_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1782730000000,
+      "tag": "0044_user_deletion_tombstone_keys",
+      "breakpoints": true
     }
   ]
 }
