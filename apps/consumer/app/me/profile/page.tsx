@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
@@ -121,6 +122,13 @@ export default function MyProfilePage() {
                 <div>
                   <Button variant="secondary" onClick={startEditing}>Edit profile</Button>
                 </div>
+                {/* In-app path to account deletion (store compliance). */}
+                <Link
+                  href="/account/delete"
+                  className="text-xs font-semibold text-petal-red underline"
+                >
+                  Delete my account
+                </Link>
               </div>
             )}
           </Card>
