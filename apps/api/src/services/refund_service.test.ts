@@ -41,6 +41,7 @@ describe('computeSettleRefundPaise', () => {
       computeSettleRefundPaise({
         chargeAmountPaise: 51209,
         platformDiscountPaise: 0,
+        consumerCommissionPaise: 0,
         totalRefundedPaise: 51209,
         priorSettleDeductedPaise: 0,
       }),
@@ -52,6 +53,7 @@ describe('computeSettleRefundPaise', () => {
       computeSettleRefundPaise({
         chargeAmountPaise: 51209,
         platformDiscountPaise: 0,
+        consumerCommissionPaise: 0,
         totalRefundedPaise: 20000,
         priorSettleDeductedPaise: 0,
       }),
@@ -65,6 +67,7 @@ describe('computeSettleRefundPaise', () => {
       computeSettleRefundPaise({
         chargeAmountPaise: 46088,
         platformDiscountPaise: 0,
+        consumerCommissionPaise: 0,
         totalRefundedPaise: 46088,
         priorSettleDeductedPaise: 0,
       }),
@@ -78,6 +81,7 @@ describe('computeSettleRefundPaise', () => {
       computeSettleRefundPaise({
         chargeAmountPaise: 46088,
         platformDiscountPaise: 5000,
+        consumerCommissionPaise: 0,
         totalRefundedPaise: 46088,
         priorSettleDeductedPaise: 0,
       }),
@@ -89,6 +93,7 @@ describe('computeSettleRefundPaise', () => {
     const first = computeSettleRefundPaise({
       chargeAmountPaise: 46088,
       platformDiscountPaise: 5000,
+      consumerCommissionPaise: 0,
       totalRefundedPaise: 10000,
       priorSettleDeductedPaise: 0,
     });
@@ -97,6 +102,7 @@ describe('computeSettleRefundPaise', () => {
     const second = computeSettleRefundPaise({
       chargeAmountPaise: 46088,
       platformDiscountPaise: 5000,
+      consumerCommissionPaise: 0,
       totalRefundedPaise: 46088,
       priorSettleDeductedPaise: first,
     });
@@ -110,6 +116,7 @@ describe('computeSettleRefundPaise', () => {
     const second = computeSettleRefundPaise({
       chargeAmountPaise: 46088,
       platformDiscountPaise: 5000,
+      consumerCommissionPaise: 0,
       totalRefundedPaise: 46088,
       priorSettleDeductedPaise: 20000,
     });
@@ -117,16 +124,64 @@ describe('computeSettleRefundPaise', () => {
     expect(20000 + second).toBe(51088);
   });
 
+  it('consumer commission: full refund deducts cash minus K (Circls eats its cut)', () => {
+    // Base 50000, 2% consumer commission: K = 1000, customer pays
+    // grossUp(51000) = 52233. Full refund: customer gets 52233 back; partner
+    // is docked only 52233 − 1000 = 51233 (base + customer fee share) — the
+    // refunded K is Circls's loss, not the partner's.
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 52233,
+        platformDiscountPaise: 0,
+        consumerCommissionPaise: 1000,
+        totalRefundedPaise: 52233,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(51233);
+  });
+
+  it('consumer commission + platform coupon: full refund deducts cash + clawback − K', () => {
+    // Base 50000, 10% platform coupon → discounted 45000; 2% commission on
+    // 45000 → K = 900; customer pays grossUp(45900) = 47010.
+    // D = 47010 + 5000 − 900 = 51110.
+    expect(
+      computeSettleRefundPaise({
+        chargeAmountPaise: 47010,
+        platformDiscountPaise: 5000,
+        consumerCommissionPaise: 900,
+        totalRefundedPaise: 47010,
+        priorSettleDeductedPaise: 0,
+      }),
+    ).toBe(51110);
+  });
+
+  it('consumer commission: partials prorate and complete to exactly D', () => {
+    const c = { chargeAmountPaise: 52233, platformDiscountPaise: 0, consumerCommissionPaise: 1000 };
+    const D = 51233;
+    const first = computeSettleRefundPaise({ ...c, totalRefundedPaise: 20000, priorSettleDeductedPaise: 0 });
+    // floor(20000 × 51233 / 52233) = 19617.
+    expect(first).toBe(19617);
+    const second = computeSettleRefundPaise({
+      ...c,
+      totalRefundedPaise: 52233,
+      priorSettleDeductedPaise: first,
+    });
+    expect(first + second).toBe(D);
+  });
+
   it('property: every split sequence stays in [0, D] and completes to exactly D', () => {
     const cases = [
-      { chargeAmountPaise: 51209, platformDiscountPaise: 0 },
-      { chargeAmountPaise: 46088, platformDiscountPaise: 0 },
-      { chargeAmountPaise: 46088, platformDiscountPaise: 5000 },
+      { chargeAmountPaise: 51209, platformDiscountPaise: 0, consumerCommissionPaise: 0 },
+      { chargeAmountPaise: 46088, platformDiscountPaise: 0, consumerCommissionPaise: 0 },
+      { chargeAmountPaise: 46088, platformDiscountPaise: 5000, consumerCommissionPaise: 0 },
+      // Consumer commission alone and combined with a platform clawback.
+      { chargeAmountPaise: 52233, platformDiscountPaise: 0, consumerCommissionPaise: 1000 },
+      { chargeAmountPaise: 47010, platformDiscountPaise: 5000, consumerCommissionPaise: 900 },
       // Adversarial rounding: tiny charge, large discount.
-      { chargeAmountPaise: 7, platformDiscountPaise: 9999 },
+      { chargeAmountPaise: 7, platformDiscountPaise: 9999, consumerCommissionPaise: 0 },
     ];
     for (const c of cases) {
-      const D = c.chargeAmountPaise + c.platformDiscountPaise;
+      const D = c.chargeAmountPaise + c.platformDiscountPaise - c.consumerCommissionPaise;
       for (const firstCut of [1, 2, 3, 999, Math.floor(c.chargeAmountPaise / 3), c.chargeAmountPaise - 1]) {
         if (firstCut < 1 || firstCut >= c.chargeAmountPaise) continue;
         let refunded = 0;
