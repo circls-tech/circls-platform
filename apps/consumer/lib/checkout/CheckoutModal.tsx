@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
@@ -229,7 +229,28 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           {breakdown && breakdown.discountPaise > 0 && (
             <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise, cur)}`} accent />
           )}
-          {breakdown && <Row label="Other charges (incl taxes)" value={formatPaiseExact(breakdown.otherChargesPaise, cur)} muted />}
+          {breakdown && (
+            <Row
+              label={
+                (breakdown.platformFeePaise ?? 0) > 0 ? (
+                  <span className="inline-flex items-center gap-1">
+                    Other charges (incl taxes)
+                    <InfoTooltip
+                      label="What's included in other charges"
+                      lines={[
+                        `Payment processing: ${formatPaiseExact(breakdown.gatewayFeePaise ?? 0, cur)}`,
+                        `Platform fee: ${formatPaiseExact(breakdown.platformFeePaise ?? 0, cur)}`,
+                      ]}
+                    />
+                  </span>
+                ) : (
+                  'Other charges (incl taxes)'
+                )
+              }
+              value={formatPaiseExact(breakdown.otherChargesPaise, cur)}
+              muted
+            />
+          )}
           <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
           <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : '—'} bold />
 
@@ -283,11 +304,52 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   );
 }
 
-function Row({ label, value, muted, accent, bold }: { label: string; value: string; muted?: boolean; accent?: boolean; bold?: boolean }) {
+function Row({ label, value, muted, accent, bold }: { label: React.ReactNode; value: string; muted?: boolean; accent?: boolean; bold?: boolean }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className={muted ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-ink)]'}>{label}</span>
       <span className={[accent ? 'text-petal-green' : 'text-[var(--color-ink)]', bold ? 'font-display font-extrabold' : ''].join(' ')}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * Minimal ⓘ tooltip: hover/focus shows the panel; a tap toggles it (mobile has
+ * no hover). Absolutely positioned — the modal panel has no overflow-hidden,
+ * so it renders over the edge cleanly.
+ */
+function InfoTooltip({ label, lines }: { label: string; lines: string[] }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="flex h-4 w-4 items-center justify-center rounded-full border-[1.5px] border-ink/40 text-[10px] font-semibold leading-none text-[var(--color-text-secondary)]"
+      >
+        i
+      </button>
+      {open && (
+        <span
+          id={id}
+          role="tooltip"
+          className="absolute bottom-full left-1/2 z-20 mb-1.5 w-max max-w-[240px] -translate-x-1/2 rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-xs text-[var(--color-ink)] shadow-offset-sm"
+        >
+          {lines.map((l) => (
+            <span key={l} className="block whitespace-nowrap">
+              {l}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }

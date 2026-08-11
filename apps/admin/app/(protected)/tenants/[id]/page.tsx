@@ -5,11 +5,18 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import {
   useAdminTenantDetail,
+  useAdminTenantEvents,
   useReactivateTenant,
   useSuspendTenant,
   useTenantAuditLog,
+  useUpdateEventBilling,
+  useUpdateTenantBilling,
 } from '@/lib/api/queries';
-import type { AdminTenantDetail, TenantAuditLogItem } from '@/lib/api/types';
+import type {
+  AdminTenantDetail,
+  AdminTenantEventBillingItem,
+  TenantAuditLogItem,
+} from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
@@ -26,10 +33,11 @@ function fmtIST(iso: string | null | undefined): string {
   return IST_FMT.format(new Date(iso));
 }
 
-type Tab = 'overview' | 'members' | 'audit';
+type Tab = 'overview' | 'members' | 'billing' | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'members', label: 'Members' },
+  { id: 'billing', label: 'Billing' },
   { id: 'audit', label: 'Audit timeline' },
 ];
 
@@ -148,6 +156,7 @@ export default function TenantDetailPage() {
 
       {tab === 'overview' && <OverviewTab data={data} />}
       {tab === 'members' && <MembersTab data={data} />}
+      {tab === 'billing' && <BillingTab data={data} />}
       {tab === 'audit' && <AuditTab tenantId={t.id} />}
     </div>
   );
@@ -239,6 +248,310 @@ function MembersTab({ data }: { data: AdminTenantDetail }) {
     </div>
     <RoleLegend />
     </div>
+  );
+}
+
+// ── Billing tab ───────────────────────────────────────────────────────────────
+
+/** '2.5' ⇄ 250 bps. Empty string = no value (inherit, for event overrides). */
+function bpsToPct(bps: number | null): string {
+  return bps === null ? '' : String(bps / 100);
+}
+function pctToBps(pct: string): number | null {
+  const trimmed = pct.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100);
+}
+
+function PctInput({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  label?: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={100}
+        step={0.05}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+        className="w-20 rounded-md border border-slate-200 px-2 py-1 text-right text-sm text-slate-800 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none"
+      />
+      <span className="text-xs text-slate-400">%</span>
+    </span>
+  );
+}
+
+function BillingTab({ data }: { data: AdminTenantDetail }) {
+  const t = data.tenant;
+  const update = useUpdateTenantBilling();
+  const [commission, setCommission] = useState(bpsToPct(t.commissionBps));
+  const [consumerCommission, setConsumerCommission] = useState(bpsToPct(t.consumerCommissionBps));
+  const [customerShare, setCustomerShare] = useState(bpsToPct(t.customerFeeShareBps));
+  const [orgShare, setOrgShare] = useState(bpsToPct(t.orgFeeShareBps));
+  const [advance, setAdvance] = useState(bpsToPct(t.advancePayoutBps));
+
+  const customerBps = pctToBps(customerShare) ?? 0;
+  const orgBps = pctToBps(orgShare) ?? 0;
+  const platformSharePct = (10_000 - customerBps - orgBps) / 100;
+  const splitInvalid = customerBps + orgBps > 10_000;
+
+  const save = () => {
+    update.mutate({
+      id: t.id,
+      patch: {
+        commissionBps: pctToBps(commission) ?? 0,
+        consumerCommissionBps: pctToBps(consumerCommission) ?? 0,
+        customerFeeShareBps: customerBps,
+        orgFeeShareBps: orgBps,
+        advancePayoutBps: pctToBps(advance) ?? 0,
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card title="Commission">
+          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1.5">
+            <dt className="text-xs text-slate-500">
+              Partner commission
+              <span className="block text-[11px] text-slate-400">Deducted from weekly payouts</span>
+            </dt>
+            <dd>
+              <PctInput value={commission} onChange={setCommission} label="Partner commission %" />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-slate-500">
+              Consumer commission
+              <span className="block text-[11px] text-slate-400">
+                Charged to customers inside “Other charges”
+              </span>
+            </dt>
+            <dd>
+              <PctInput
+                value={consumerCommission}
+                onChange={setConsumerCommission}
+                label="Consumer commission %"
+              />
+            </dd>
+          </div>
+        </Card>
+
+        <Card title="Gateway fee split & advances">
+          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1.5">
+            <dt className="text-xs text-slate-500">Customer pays</dt>
+            <dd>
+              <PctInput value={customerShare} onChange={setCustomerShare} label="Customer fee share %" />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1.5">
+            <dt className="text-xs text-slate-500">
+              Org pays
+              <span className="block text-[11px] text-slate-400">Deducted from settle base</span>
+            </dt>
+            <dd>
+              <PctInput value={orgShare} onChange={setOrgShare} label="Org fee share %" />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1.5">
+            <dt className="text-xs text-slate-500">Circls absorbs</dt>
+            <dd className={`text-sm ${splitInvalid ? 'text-rose-600' : 'text-slate-800'}`}>
+              {splitInvalid ? 'Split exceeds 100%' : `${platformSharePct}% of the gateway fee`}
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-slate-500">
+              Advance payout
+              <span className="block text-[11px] text-slate-400">
+                Share of net paid the week after capture, recouped at settlement
+              </span>
+            </dt>
+            <dd>
+              <PctInput value={advance} onChange={setAdvance} label="Advance payout %" />
+            </dd>
+          </div>
+        </Card>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={update.isPending || splitInvalid}
+          className="rounded-md border border-slate-900 bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          {update.isPending ? 'Saving…' : 'Save billing settings'}
+        </button>
+        {update.isSuccess && !update.isPending && (
+          <span className="text-sm text-emerald-700">Saved.</span>
+        )}
+        {update.isError && (
+          <span className="text-sm text-rose-600">
+            {update.error instanceof Error ? update.error.message : 'Save failed'}
+          </span>
+        )}
+      </div>
+
+      <EventOverridesTable tenant={t} />
+    </div>
+  );
+}
+
+function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }) {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+    useAdminTenantEvents(tenant.id);
+  const rows: AdminTenantEventBillingItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        Per-event overrides
+      </h2>
+      <p className="text-xs text-slate-400">
+        Blank = inherit the tenant rate (shown greyed). 0 = explicitly disabled for that event.
+      </p>
+      {isLoading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-slate-400">This tenant has no events.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2 font-medium">Event</th>
+                <th className="px-4 py-2 font-medium">Starts</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 text-right font-medium">Partner comm.</th>
+                <th className="px-4 py-2 text-right font-medium">Consumer comm.</th>
+                <th className="px-4 py-2 text-right font-medium">Advance</th>
+                <th className="px-4 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((ev) => (
+                <EventOverrideRow key={ev.id} event={ev} tenant={tenant} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hasNextPage && (
+        <button
+          type="button"
+          onClick={() => void fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {isFetchingNextPage ? 'Loading…' : 'Load more events'}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function EventOverrideRow({
+  event,
+  tenant,
+}: {
+  event: AdminTenantEventBillingItem;
+  tenant: AdminTenantDetail['tenant'];
+}) {
+  const update = useUpdateEventBilling();
+  const [partner, setPartner] = useState(bpsToPct(event.partnerCommissionBps));
+  const [consumer, setConsumer] = useState(bpsToPct(event.consumerCommissionBps));
+  const [advance, setAdvance] = useState(bpsToPct(event.advancePayoutBps));
+  const hasOverride =
+    event.partnerCommissionBps !== null ||
+    event.consumerCommissionBps !== null ||
+    event.advancePayoutBps !== null;
+
+  const save = () => {
+    update.mutate({
+      eventId: event.id,
+      tenantId: tenant.id,
+      patch: {
+        partnerCommissionBps: pctToBps(partner),
+        consumerCommissionBps: pctToBps(consumer),
+        advancePayoutBps: pctToBps(advance),
+      },
+    });
+  };
+  const clear = () => {
+    setPartner('');
+    setConsumer('');
+    setAdvance('');
+    update.mutate({
+      eventId: event.id,
+      tenantId: tenant.id,
+      patch: { partnerCommissionBps: null, consumerCommissionBps: null, advancePayoutBps: null },
+    });
+  };
+
+  return (
+    <tr>
+      <td className="px-4 py-2.5 text-slate-800">{event.name}</td>
+      <td className="px-4 py-2.5 text-xs text-slate-500">{fmtIST(event.startsAt)}</td>
+      <td className="px-4 py-2.5 text-xs text-slate-500">{event.status}</td>
+      <td className="px-4 py-2.5 text-right">
+        <PctInput
+          value={partner}
+          onChange={setPartner}
+          placeholder={bpsToPct(tenant.commissionBps) || '0'}
+          label={`Partner commission override for ${event.name}`}
+        />
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <PctInput
+          value={consumer}
+          onChange={setConsumer}
+          placeholder={bpsToPct(tenant.consumerCommissionBps) || '0'}
+          label={`Consumer commission override for ${event.name}`}
+        />
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <PctInput
+          value={advance}
+          onChange={setAdvance}
+          placeholder={bpsToPct(tenant.advancePayoutBps) || '0'}
+          label={`Advance payout override for ${event.name}`}
+        />
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <span className="inline-flex gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={update.isPending}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={clear}
+            disabled={update.isPending || !hasOverride}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Clear
+          </button>
+        </span>
+      </td>
+    </tr>
   );
 }
 
