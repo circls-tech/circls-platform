@@ -268,4 +268,185 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     });
     expect(res.statusCode).toBe(200);
   });
+
+  // ── Billing knobs ──────────────────────────────────────────────────────────
+
+  it('PATCH billing — sets all five knobs + writes an audit row', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: {
+        commissionBps: 500,
+        consumerCommissionBps: 200,
+        customerFeeShareBps: 5000,
+        orgFeeShareBps: 3000,
+        advancePayoutBps: 2500,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const t = res.json() as Record<string, number>;
+    expect(t['commissionBps']).toBe(500);
+    expect(t['consumerCommissionBps']).toBe(200);
+    expect(t['customerFeeShareBps']).toBe(5000);
+    expect(t['orgFeeShareBps']).toBe(3000);
+    expect(t['advancePayoutBps']).toBe(2500);
+
+    const audit = await db.execute<Record<string, unknown>>(sql`
+      SELECT action, actor_user_id, after FROM audit_log
+       WHERE tenant_id = ${tenantAId} AND action = 'tenant.billing_updated'
+       ORDER BY created_at DESC LIMIT 1
+    `);
+    const rows = audit as unknown as Record<string, unknown>[];
+    expect(rows.length).toBe(1);
+    expect(rows[0]!['actor_user_id']).toBe(adminUserId);
+  });
+
+  it('PATCH billing — partial patch keeps the other knobs untouched', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: { consumerCommissionBps: 150 },
+    });
+    expect(res.statusCode).toBe(200);
+    const t = res.json() as Record<string, number>;
+    expect(t['consumerCommissionBps']).toBe(150);
+    expect(t['commissionBps']).toBe(500);
+    expect(t['customerFeeShareBps']).toBe(5000);
+    expect(t['orgFeeShareBps']).toBe(3000);
+    expect(t['advancePayoutBps']).toBe(2500);
+  });
+
+  it('PATCH billing — a merged split over 100% is rejected', async () => {
+    // customer share is 5000 from the earlier patch; org 5001 would overflow.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: { orgFeeShareBps: 5001 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('fee_share_split_exceeds_total');
+  });
+
+  it('PATCH billing — empty patch and out-of-range bps are rejected', async () => {
+    const empty = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: {},
+    });
+    expect(empty.statusCode).toBe(400);
+
+    const range = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: { commissionBps: 10001 },
+    });
+    expect(range.statusCode).toBe(400);
+  });
+
+  it('PATCH billing — non-admin caller gets 403', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('owner'),
+      payload: { commissionBps: 100 },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('per-event billing overrides — list, set, clear', async () => {
+    // Standalone (venue-less) event: the scope CHECK requires address + tz.
+    const evRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name)
+      VALUES (${tenantAId}::uuid, 'Billing Override Event', now() + interval '7 days',
+              now() + interval '7 days 2 hours', 'published', '{"city":"Nagpur"}'::jsonb, 'Asia/Kolkata')
+      RETURNING id
+    `);
+    const eventId = ((evRows as unknown as { id: string }[])[0]!).id;
+
+    // Listed with NULL overrides (inherit).
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantAId}/events`,
+      headers: bearer('padmin'),
+    });
+    expect(list.statusCode).toBe(200);
+    const listed = (list.json() as { rows: Array<Record<string, unknown>> }).rows;
+    const row = listed.find((r) => r['id'] === eventId);
+    expect(row).toBeDefined();
+    expect(row!['partnerCommissionBps']).toBeNull();
+
+    // Set two overrides; 0 is a real "disabled" override.
+    const set = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/events/${eventId}/billing`,
+      headers: bearer('padmin'),
+      payload: { partnerCommissionBps: 100, consumerCommissionBps: 0 },
+    });
+    expect(set.statusCode).toBe(200);
+    const setBody = set.json() as Record<string, unknown>;
+    expect(setBody['partnerCommissionBps']).toBe(100);
+    expect(setBody['consumerCommissionBps']).toBe(0);
+    expect(setBody['advancePayoutBps']).toBeNull();
+
+    const audit = await db.execute<Record<string, unknown>>(sql`
+      SELECT action FROM audit_log
+       WHERE tenant_id = ${tenantAId} AND action = 'event.billing_updated'
+       ORDER BY created_at DESC LIMIT 1
+    `);
+    expect((audit as unknown as Record<string, unknown>[]).length).toBe(1);
+
+    // Explicit null clears back to inherit.
+    const clear = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/events/${eventId}/billing`,
+      headers: bearer('padmin'),
+      payload: { partnerCommissionBps: null },
+    });
+    expect(clear.statusCode).toBe(200);
+    expect((clear.json() as Record<string, unknown>)['partnerCommissionBps']).toBeNull();
+    // The untouched override survives.
+    expect((clear.json() as Record<string, unknown>)['consumerCommissionBps']).toBe(0);
+
+    await db.execute(sql`DELETE FROM events WHERE id = ${eventId}::uuid`);
+  });
+
+  it('per-event billing — non-admin gets 403, unknown event 404', async () => {
+    const forbidden = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/events/00000000-0000-0000-0000-000000000000/billing`,
+      headers: bearer('owner'),
+      payload: { partnerCommissionBps: 100 },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const missing = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/events/00000000-0000-0000-0000-000000000000/billing`,
+      headers: bearer('padmin'),
+      payload: { partnerCommissionBps: 100 },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it('billing reset for cleanliness', async () => {
+    // Zero the knobs so later suites that reuse this DB see defaults-ish state.
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantAId}/billing`,
+      headers: bearer('padmin'),
+      payload: {
+        commissionBps: 0,
+        consumerCommissionBps: 0,
+        customerFeeShareBps: 10000,
+        orgFeeShareBps: 0,
+        advancePayoutBps: 0,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
 });
