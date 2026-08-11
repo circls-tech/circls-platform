@@ -56,6 +56,12 @@ const tenantIdParamSchema = z.object({ id: z.string().uuid() });
 
 const bps = z.number().int().min(0).max(10_000);
 
+/** Cursor pagination only — unlike the tenants list there is no `q` search. */
+const eventsListQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
 /** All-optional patch of the tenant billing knobs; must not be empty. */
 const tenantBillingBodySchema = z
   .object({
@@ -387,7 +393,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       if (!params.success) {
         throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
       }
-      const query = listQuerySchema.safeParse(req.query);
+      const query = eventsListQuerySchema.safeParse(req.query);
       if (!query.success) {
         throw new BadRequest('Invalid query', 'bad_request', { issues: query.error.issues });
       }

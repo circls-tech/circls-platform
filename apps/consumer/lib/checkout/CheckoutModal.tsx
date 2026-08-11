@@ -321,8 +321,21 @@ function Row({ label, value, muted, accent, bold }: { label: React.ReactNode; va
 function InfoTooltip({ label, lines }: { label: string; lines: string[] }) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+
+  // Touch devices open via tap and have no blur/mouseleave to rely on —
+  // dismiss on any pointer-down outside the tooltip.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
   return (
-    <span className="relative inline-flex">
+    <span ref={rootRef} className="relative inline-flex">
       <button
         type="button"
         aria-label={label}

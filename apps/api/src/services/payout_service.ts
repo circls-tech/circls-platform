@@ -192,6 +192,11 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   // charges in TWO currencies in one week can't be reconciled automatically
   // (onConflictDoNothing would silently drop the second currency's money).
   // Skip such tenants with a loud log so ops reconciles by hand.
+  //
+  // Deliberate change from the pre-advances version: the count now spans ALL
+  // activity (gross, advances, refunds), so a refund-only second currency —
+  // previously ignored silently — also trips the skip. Anomalous data now
+  // fails loud instead of half-reconciling.
   const currencyCount = new Map<string, number>();
   for (const e of byKey.values()) {
     currencyCount.set(e.tenantId, (currencyCount.get(e.tenantId) ?? 0) + 1);

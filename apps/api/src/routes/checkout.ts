@@ -27,6 +27,17 @@ const itemSchema = z.union([
 ]);
 const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().min(1).max(64).optional() }));
 
+/** The money fields a quote response exposes to consumers. */
+interface QuoteMoneyFields {
+  basePaise: number;
+  discountPaise: number;
+  discountedBasePaise: number;
+  otherChargesPaise: number;
+  totalPaise: number;
+  gatewayFeePaise: number;
+  platformFeePaise: number;
+}
+
 /**
  * Consumer-safe slice of a breakdown. Deliberately a whitelist, never a
  * spread: `orgFeeSharePaise` / `gatewayFeeEstimatePaise` are org-billing data
@@ -34,7 +45,7 @@ const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().m
  * meaning (total − discountedBase) and now equals gatewayFee + platformFee —
  * the two new fields feed the checkout tooltip's split.
  */
-function quoteFields(b: CheckoutBreakdown): Record<string, number> {
+function quoteFields(b: CheckoutBreakdown): QuoteMoneyFields {
   return {
     basePaise: b.basePaise,
     discountPaise: b.discountPaise,
