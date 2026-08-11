@@ -78,7 +78,6 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
   let publicThreadId: string;
   let supportIssueId: string;
   let notificationId: string;
-  const SUFFIX = RUN;
   const VICTIM_PHONE = `+9199${String(RUN).slice(-8)}`;
 
   const loadUser = async (id: string) =>
@@ -111,7 +110,7 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
       method: 'POST',
       url: '/v1/tenants',
       headers: bearer('owner'),
-      payload: { name: `AD Sports ${SUFFIX}`, slug: `ad-sports-${SUFFIX}`, country: 'India', acceptTerms: true },
+      payload: { name: `AD Sports ${RUN}`, slug: `ad-sports-${RUN}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
     const tenantId = (t.json() as { id: string }).id;

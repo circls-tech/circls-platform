@@ -1263,6 +1263,13 @@ const REDACTED = '[deleted account]';
  *     readable; the author renders as "Member" once `display_name` is null.
  *   - `user_memberships`, `coupon_redemptions`, `login_events` — no PII beyond
  *     the (now anonymous) user id.
+ *
+ * KNOWN GAP: a `users` row is shared by the consumer app and the partner/admin
+ * portals. Deleting from the consumer surface therefore also destroys any
+ * partner access that person had (their `tenant_members` rows survive but point
+ * at a tombstone with no Firebase account). If partner staff start using
+ * circls.app this needs a guard — reject with 409 when the caller is an active
+ * tenant member and tell them to hand over their org first.
  */
 export async function deleteMyAccount(firebaseUid: string): Promise<void> {
   const row = await db.query.users.findFirst({ where: eq(users.firebaseUid, firebaseUid) });
