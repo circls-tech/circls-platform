@@ -309,6 +309,13 @@
       "when": 1782730000000,
       "tag": "0044_user_deletion_tombstone_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1782810000000,
+      "tag": "0045_billing_knobs",
+      "breakpoints": true
     }
   ]
 }

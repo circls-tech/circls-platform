@@ -59,6 +59,11 @@ export const events = pgTable('events', {
    * series_id only ties them together. Null = one-off event.
    */
   seriesId: uuid('series_id'),
+  // ── Per-event billing overrides (admin-only). NULL = inherit the tenant's
+  // rate; 0 = explicitly disabled for this event. See tenants billing knobs.
+  partnerCommissionBps: integer('partner_commission_bps'),
+  consumerCommissionBps: integer('consumer_commission_bps'),
+  advancePayoutBps: integer('advance_payout_bps'),
   status: eventStatus('status').notNull().default('draft'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
