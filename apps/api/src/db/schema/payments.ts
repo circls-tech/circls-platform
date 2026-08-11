@@ -49,6 +49,32 @@ export const payments = pgTable('payments', {
    * reconciliation falls back to `amount_paise`.
    */
   settleBasePaise: bigintPaise('settle_base_paise'),
+  /**
+   * Consumer-side commission (K) included in this charge's `amount_paise`,
+   * snapshotted at order creation from the resolved billing config. Circls
+   * money — never part of the settle base. Refunds exclude the prorated K
+   * from the partner's deduction (Circls eats it). NULL = pre-feature row,
+   * treated as 0.
+   */
+  consumerCommissionPaise: bigintPaise('consumer_commission_paise'),
+  /**
+   * Partner-side commission snapshotted at order creation: floor(pre-fee
+   * settle base × resolved bps / 10000), clamped to the settle base. Payout
+   * reconciliation sums this; NULL legacy rows fall back to the tenant's
+   * current commission_bps applied per payment.
+   */
+  partnerCommissionPaise: bigintPaise('partner_commission_paise'),
+  /**
+   * Advance-payout tranche: floor((settle base − partner commission) ×
+   * resolved advance bps / 10000), snapshotted at order creation. Becomes
+   * payable in the weekly payout after capture (`advance_released_at`); the
+   * final tranche at settlement release nets it back out, so cross-week
+   * totals are unchanged. NULL = pre-feature row / no advance.
+   */
+  advancePaise: bigintPaise('advance_paise'),
+  /** When the advance became payable — stamped at capture. NULL = no advance
+   *  or not yet captured. Payout reconciliation windows advances on this. */
+  advanceReleasedAt: timestamp('advance_released_at', { withTimezone: true }),
   currency: text('currency').notNull().default('INR'),
   status: paymentStatus('status').notNull().default('pending'),
   kind: paymentKind('kind').notNull(),
@@ -86,10 +112,16 @@ export const payouts = pgTable(
     /** Settlement week the payout covers: [periodStart, periodEnd). */
     periodStart: timestamp('period_start', { withTimezone: true }),
     periodEnd: timestamp('period_end', { withTimezone: true }),
-    /** Breakdown in paise. net (amountPaise) = gross − refunds − commission. */
+    /** Breakdown in paise. net (amountPaise) =
+     *  gross − refunds − commission + advances − advanceRecouped. */
     grossPaise: bigintPaise('gross_paise').notNull().default(0),
     refundsPaise: bigintPaise('refunds_paise').notNull().default(0),
     commissionPaise: bigintPaise('commission_paise').notNull().default(0),
+    /** New advance tranches paid this week (charges captured in-period). */
+    advancesPaise: bigintPaise('advances_paise').notNull().default(0),
+    /** Advances netted out of this week's finals (charges whose settlement
+     *  hold released in-period and whose advance was already paid). */
+    advanceRecoupedPaise: bigintPaise('advance_recouped_paise').notNull().default(0),
     /** Net payable to the venue, in paise. */
     amountPaise: bigintPaise('amount_paise').notNull(),
     currency: text('currency').notNull().default('INR'),
