@@ -1492,7 +1492,60 @@ paths:
     post:
       responses:
         '200':
-          description: Default Response
+          description: Checkout price breakdown for an item and optional coupon
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - basePaise
+                  - discountPaise
+                  - discountedBasePaise
+                  - otherChargesPaise
+                  - totalPaise
+                  - gatewayFeePaise
+                  - platformFeePaise
+                  - currency
+                  - coupon
+                properties:
+                  basePaise:
+                    type: integer
+                    description: Item subtotal before discount, in the currency's minor unit.
+                  discountPaise:
+                    type: integer
+                  discountedBasePaise:
+                    type: integer
+                  otherChargesPaise:
+                    type: integer
+                    description: >-
+                      The "Other charges (incl taxes)" line: totalPaise −
+                      discountedBasePaise. Equals gatewayFeePaise + platformFeePaise.
+                  totalPaise:
+                    type: integer
+                    description: What the customer pays. 0 means free (gateway skipped).
+                  gatewayFeePaise:
+                    type: integer
+                    description: The customer's share of the payment-gateway charge.
+                  platformFeePaise:
+                    type: integer
+                    description: Circls platform fee (consumer-side commission), if configured.
+                  currency:
+                    type: string
+                    description: ISO 4217 (INR or USD).
+                  coupon:
+                    type: object
+                    nullable: true
+                    properties:
+                      id:
+                        type: string
+                      code:
+                        type: string
+                      description:
+                        type: string
+                        nullable: true
+                  error:
+                    type: string
+                    description: Present when a couponCode was rejected (e.g. coupon_not_found).
   /v1/consumer/coupons:
     get:
       responses:

@@ -32,7 +32,7 @@ The detail view shows the customer's information, the arena (or **Multiple court
 ### Payment methods
 
 - **external** — paid offline at the venue (cash/card on site). No online refund is processed.
-- **razorpay_route** — paid online through the venue's payment gateway: **Razorpay** for venues in India (₹), **Stripe** for venues in the USA ($). The gateway follows the venue's country, set on the venue's address. Refunds are processed back to the customer through the same gateway.
+- **razorpay_route** — paid online through the venue's payment gateway: **Razorpay** for venues in India (₹), **Stripe** for venues in the USA ($). The gateway follows the venue's country, set on the venue's address. The customer's total includes an "Other charges (incl taxes)" line covering the gateway's processing charge (and any Circls platform fee configured for your organisation); your Partner Agreement sets whether your organisation bears a share of the processing charge, which is deducted from your weekly payout. Refunds are processed back to the customer through the same gateway.
 - **free** — a free booking; nothing to refund.
 
 ## QR entry passes for arena bookings
