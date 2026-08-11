@@ -92,6 +92,14 @@ export interface CreatePaymentOrderInput {
    * Defaults to amountPaise when omitted (legacy callers / no-gross-up path).
    */
   settleBasePaise?: number;
+  /** Consumer-side commission (K) included in amountPaise; Circls money. */
+  consumerCommissionPaise?: number;
+  /** Partner-side commission snapshot deducted at payout time. */
+  partnerCommissionPaise?: number;
+  /** Advance-payout tranche paid out after capture, recouped at release. */
+  advancePaise?: number;
+  /** Billing-config forensics stored in metadata.billing (rates + org fee). */
+  billingMetadata?: Record<string, number>;
   /**
    * Gateway to charge through. Callers will resolve this from the venue's
    * country (`providerForCountry`) once Stripe ships; today everything is
@@ -133,10 +141,13 @@ export async function createPaymentOrder(
       provider,
       amountPaise: input.amountPaise,
       settleBasePaise: input.settleBasePaise ?? input.amountPaise,
+      consumerCommissionPaise: input.consumerCommissionPaise ?? null,
+      partnerCommissionPaise: input.partnerCommissionPaise ?? null,
+      advancePaise: input.advancePaise ?? null,
       currency,
       status: 'pending',
       kind: 'charge',
-      metadata: {},
+      metadata: input.billingMetadata ? { billing: input.billingMetadata } : {},
     })
     .returning();
   if (!row) throw new Error('payments insert returned no row');
@@ -447,6 +458,24 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
       .where(and(eq(bookings.id, pay.bookingId), eq(bookings.status, 'pending')))
       .returning();
 
+    // Advance payouts become payable at capture — but only for charges we
+    // keep (both holdForBooking branches). The cancelled-booking auto-refund
+    // branch skips this: paying an advance and clawing it straight back would
+    // only churn the payout ledger. Idempotent on webhook replay via the
+    // null-guard.
+    const releaseAdvance = async (): Promise<void> => {
+      await tx
+        .update(payments)
+        .set({ advanceReleasedAt: sql`now()` })
+        .where(
+          and(
+            eq(payments.id, pay.id),
+            sql`${payments.advancePaise} > 0`,
+            sql`${payments.advanceReleasedAt} is null`,
+          ),
+        );
+    };
+
     const auditCapture = async (extra: Record<string, unknown> = {}): Promise<void> => {
       // System-driven audit row: webhook handler has no human actor. Raw insert
       // since writeAudit() requires an actorUserId we don't have.
@@ -467,6 +496,7 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
       // Normal path: funds captured for a live pending booking.
       // Compute settlement_hold_until from the booking's slot end.
       await holdForBooking(pay.bookingId, tx);
+      await releaseAdvance();
       await auditCapture();
       // Mint QR tickets inside this tx (atomic with the confirm; a plain `db`
       // call would not see the uncommitted status flip). Idempotent on replay.
@@ -515,6 +545,7 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
     // Booking already confirmed/completed — capture recorded; hold the funds
     // for settlement as usual.
     await holdForBooking(pay.bookingId, tx);
+    await releaseAdvance();
     await auditCapture({ bookingStatus: bk?.status ?? null });
   });
 }
