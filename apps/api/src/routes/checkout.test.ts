@@ -98,6 +98,37 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     expect(body.discountPaise).toBe(0);
     expect(body.totalPaise).toBe(51209);
     expect(body.coupon).toBeNull();
+    // Fee-split fields feed the checkout tooltip; with default knobs the whole
+    // "other charges" line is the customer's gateway-fee share.
+    expect(body.gatewayFeePaise).toBe(1209);
+    expect(body.platformFeePaise).toBe(0);
+    expect(body.otherChargesPaise).toBe(body.gatewayFeePaise + body.platformFeePaise);
+    // Org-billing internals must never reach consumers.
+    expect(body).not.toHaveProperty('orgFeeSharePaise');
+    expect(body).not.toHaveProperty('gatewayFeeEstimatePaise');
+    expect(body).not.toHaveProperty('gatewayFeeCustomerPaise');
+    expect(body).not.toHaveProperty('consumerCommissionPaise');
+  });
+
+  it('quote reflects the tenant consumer commission inside other charges', async () => {
+    // 2% consumer commission: K = floor(50000 × 200/10000) = 1000,
+    // T = grossUp(51000) = ceil(51000/0.9764) = 52233.
+    await db.execute(sql`update tenants set consumer_commission_bps = 200 where id = ${tenantId}`);
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/checkout/quote',
+        headers: bearer('consumer'),
+        payload: { itemType: 'event', eventId, lines: [{ tierId, quantity: 1 }] },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.platformFeePaise).toBe(1000);
+      expect(body.totalPaise).toBe(52233);
+      expect(body.otherChargesPaise).toBe(body.gatewayFeePaise + body.platformFeePaise);
+    } finally {
+      await db.execute(sql`update tenants set consumer_commission_bps = 0 where id = ${tenantId}`);
+    }
   });
 
   it('quote with a 10% public coupon → discountPaise 5000, totalPaise 46088, coupon.code matches', async () => {
