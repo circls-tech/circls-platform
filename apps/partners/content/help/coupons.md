@@ -1,4 +1,4 @@
-Coupons are discount codes your customers apply at checkout to reduce the price of an event, membership, or court booking. The discount comes off your base price; Razorpay's payment-processing charge is added on top of the reduced price (shown to the customer as "Other charges (incl taxes)").
+Coupons are discount codes your customers apply at checkout to reduce the price of an event, membership, or court booking. The discount comes off your base price; on top of the reduced price the customer sees a single "Other charges (incl taxes)" line, which covers the payment-processing charge and, where configured for your organisation, a Circls platform fee.
 
 ## Creating a coupon
 
@@ -19,7 +19,7 @@ A new coupon is **active** immediately (subject to its validity window).
 
 ## How the discount is applied
 
-The discount reduces your **base price**. The customer then pays that reduced base plus the payment-gateway charge. Only one coupon can be used per checkout.
+The discount reduces your **base price**. The customer then pays that reduced base plus the "Other charges" line (the payment-gateway charge and any configured platform fee). Only one coupon can be used per checkout. By default the customer covers the full gateway charge; your Partner Agreement may instead assign a share of it to your organisation, in which case that share is deducted from your settled revenue at payout time.
 
 ## Statuses
 
