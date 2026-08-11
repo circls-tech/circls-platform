@@ -1351,6 +1351,10 @@ paths:
       responses:
         '200':
           description: Default Response
+    delete:
+      responses:
+        '204':
+          description: Default Response
   /v1/consumer/me/bookings:
     get:
       responses:

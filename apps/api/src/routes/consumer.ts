@@ -10,6 +10,7 @@ import {
   consumerBookEvent,
   consumerBookSlots,
   consumerPurchaseMembership,
+  deleteMyAccount,
   getMyBookingDetail,
   getMyProfile,
   getPublicEventById,
@@ -260,6 +261,21 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.interests !== undefined && { interests: parsed.data.interests }),
     };
     return { profile: await updateMyProfile(user.id, input) };
+  });
+
+  /**
+   * Self-service account deletion (A7) — the in-app half of the Google Play /
+   * App Store requirement; https://circls.app/account/delete is the web half.
+   *
+   * Anonymises the users row and clears the personal trail, then deletes the
+   * Firebase account. Bookings and payments are retained (financial records).
+   * Idempotent: keyed off the token's uid rather than `currentUser`, so a
+   * repeat call on a cached token is a plain 204 and never creates a row.
+   */
+  app.delete('/v1/consumer/me', { preHandler: requireAuth }, async (req, reply) => {
+    // requireAuth guarantees authUser is set, or it would have thrown.
+    await deleteMyAccount(req.authUser!.firebaseUid);
+    return reply.status(204).send();
   });
 
   app.get('/v1/consumer/me/bookings', { preHandler: requireAuth }, async (req) => {

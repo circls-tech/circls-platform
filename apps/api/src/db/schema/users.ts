@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, pgEnum, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 
 /** One row per human. Same User signs in on circls.app and partners.circls.app. */
@@ -28,6 +28,17 @@ export const users = pgTable(
     displayName: text('display_name'),
     interests: text('interests').array().notNull().default(sql`'{}'::text[]`),
     status: userStatus('status').notNull().default('active'),
+    /**
+     * Tombstone marker for a self-service account deletion (DELETE
+     * /v1/consumer/me). The row is never dropped — bookings/payments reference
+     * it and must survive for financial retention — so deletion means: clear
+     * every identity column (phone_e164/email → NULL, display_name → NULL,
+     * interests → {}), re-key firebase_uid to `deleted:<id>` (it is NOT NULL +
+     * UNIQUE, so it cannot simply be nulled), and stamp this column. With both
+     * identity keys NULL, a returning person's phone/email can never adopt this
+     * row (see user_service.adoptStaleIdentity) — re-signup mints a fresh user.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

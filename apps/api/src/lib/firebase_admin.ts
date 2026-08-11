@@ -66,3 +66,34 @@ export async function verifyIdToken(token: string): Promise<DecodedIdToken> {
 export async function markEmailVerified(uid: string): Promise<void> {
   await firebaseAuth().updateUser(uid, { emailVerified: true });
 }
+
+/** Firebase Admin errors carry a string `code` such as `auth/user-not-found`. */
+function isUserNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'auth/user-not-found'
+  );
+}
+
+/**
+ * Tear down a Firebase account: revoke every outstanding refresh token first
+ * (so any session that survives the delete call is already dead — verifyIdToken
+ * runs with checkRevoked=true), then delete the user record.
+ *
+ * Idempotent by design: an already-deleted uid resolves instead of throwing, so
+ * the account-deletion endpoint can be safely retried after a partial failure.
+ */
+export async function deleteFirebaseUser(uid: string): Promise<void> {
+  try {
+    await firebaseAuth().revokeRefreshTokens(uid);
+  } catch (err) {
+    if (!isUserNotFound(err)) throw err;
+    return; // nothing left to delete
+  }
+  try {
+    await firebaseAuth().deleteUser(uid);
+  } catch (err) {
+    if (!isUserNotFound(err)) throw err;
+  }
+}

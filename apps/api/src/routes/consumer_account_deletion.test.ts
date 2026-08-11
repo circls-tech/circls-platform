@@ -50,7 +50,7 @@ function firstRow<T>(res: unknown): T {
   return (res as unknown as T[])[0]!;
 }
 
-interface UserRow {
+type UserRow = {
   id: string;
   firebase_uid: string;
   phone_e164: string | null;
@@ -59,16 +59,16 @@ interface UserRow {
   display_name: string | null;
   interests: string[];
   deleted_at: string | null;
-}
+};
 
-interface BookingRow {
+type BookingRow = {
   id: string;
   customer_user_id: string | null;
   customer_name: string | null;
   customer_contact: string | null;
   total_paise: string | number | null;
   status: string;
-}
+};
 
 describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer/me)', () => {
   let app: FastifyInstance;
@@ -159,7 +159,7 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
       payload: { subjectType: 'event', subjectId: eventId, visibility: 'public', body: 'Is parking free?' },
     });
     expect(ask.statusCode).toBe(200);
-    publicThreadId = (ask.json() as { id: string }).id;
+    publicThreadId = (ask.json() as { thread: { id: string } }).thread.id;
 
     // A support issue carrying free-text the user typed.
     supportIssueId = firstRow<{ id: string }>(

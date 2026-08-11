@@ -22,8 +22,12 @@ import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
+import { notifications } from '../db/schema/notifications.js';
+import { supportIssues } from '../db/schema/support_issues.js';
 import { venues, type Venue } from '../db/schema/venues.js';
-import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { BadRequest, Conflict, NotFound, Upstream } from '../lib/errors.js';
+import { deleteFirebaseUser } from '../lib/firebase_admin.js';
+import { logger } from '../lib/logger.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
@@ -1223,4 +1227,92 @@ export async function logConsumerActivity(
   }));
   await db.insert(consumerActivity).values(rows);
   return rows.length;
+}
+
+// ── Account deletion (A7 — Google Play / App Store compliance) ────────────────
+
+/**
+ * `firebase_uid` is NOT NULL + UNIQUE, so a deleted account cannot simply null
+ * it. It is re-keyed to `deleted:<user id>` instead: unique by construction,
+ * obviously a tombstone, and impossible to collide with a real Firebase uid
+ * (those are `:`-free alphanumerics).
+ */
+const DELETED_UID_PREFIX = 'deleted:';
+
+/** Placeholder written over free-text/contact fields the deleted account owned. */
+const REDACTED = '[deleted account]';
+
+/**
+ * Self-service account deletion for a consumer, keyed on the caller's Firebase
+ * uid (deliberately NOT `currentUser`, which creates a row on first sight — a
+ * repeat call on a cached token must not mint a fresh user just to delete it).
+ *
+ * Anonymise, never hard-delete: `bookings` and `payments` reference `users.id`
+ * and must survive for financial/tax retention and Razorpay/Stripe
+ * reconciliation, so the users row stays and loses every identity field.
+ *
+ * Order matters. DB anonymisation commits first, Firebase teardown follows —
+ * if Firebase fails we surface a 502 with the DB already anonymised (no PII
+ * left) and the whole endpoint stays safely retryable: a second call finds no
+ * row for the uid, skips the DB work, and only redoes the Firebase side.
+ *
+ * What is NOT touched, on purpose:
+ *   - `bookings` / `payments` — retention (they keep the name/contact captured
+ *     at booking time; that is the record of a financial transaction).
+ *   - `question_threads` / `question_messages` — public thread content stays
+ *     readable; the author renders as "Member" once `display_name` is null.
+ *   - `user_memberships`, `coupon_redemptions`, `login_events` — no PII beyond
+ *     the (now anonymous) user id.
+ */
+export async function deleteMyAccount(firebaseUid: string): Promise<void> {
+  const row = await db.query.users.findFirst({ where: eq(users.firebaseUid, firebaseUid) });
+
+  if (row) {
+    await db.transaction(async (tx) => {
+      // Behavioural telemetry is pure personal data with no retention duty.
+      await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
+
+      // Support tickets stay (the org's record of the issue) but lose the
+      // free text, which routinely carries phone numbers/addresses the user
+      // typed. Public forum threads keep their body — see the doc comment.
+      await tx
+        .update(supportIssues)
+        .set({ message: REDACTED, flowAnswers: null })
+        .where(eq(supportIssues.userId, row.id));
+
+      // Never dispatch to a deleted account, and drop the raw phone/email the
+      // outbound ledger stored as `recipient`.
+      await tx
+        .update(notifications)
+        .set({ status: 'skipped' })
+        .where(and(eq(notifications.userId, row.id), eq(notifications.status, 'pending')));
+      await tx
+        .update(notifications)
+        .set({ recipient: REDACTED, payload: {} })
+        .where(eq(notifications.userId, row.id));
+
+      await tx
+        .update(users)
+        .set({
+          firebaseUid: `${DELETED_UID_PREFIX}${row.id}`,
+          phoneE164: null,
+          email: null,
+          emailVerified: false,
+          displayName: null,
+          interests: [],
+          deletedAt: new Date(),
+        })
+        .where(eq(users.id, row.id));
+    });
+  }
+
+  try {
+    await deleteFirebaseUser(firebaseUid);
+  } catch (err) {
+    logger.error({ err, firebaseUid }, 'account_deletion_firebase_failed');
+    throw new Upstream(
+      'Your data was removed but the sign-in account could not be deleted. Please try again.',
+      'firebase_delete_failed',
+    );
+  }
 }
