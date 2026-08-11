@@ -269,8 +269,15 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
    *
    * Anonymises the users row and clears the personal trail, then deletes the
    * Firebase account. Bookings and payments are retained (financial records).
-   * Idempotent: keyed off the token's uid rather than `currentUser`, so a
-   * repeat call on a cached token is a plain 204 and never creates a row.
+   *
+   * Keyed off the token's uid rather than `currentUser`, which would create a
+   * row on first sight — this handler must never mint a user just to delete it.
+   * That also makes a RETRY after a failed Firebase teardown a clean 204: the
+   * token still verifies (nothing was revoked), no live row is found, and only
+   * the Firebase side is redone. Note that once teardown has SUCCEEDED the
+   * Firebase account is gone, so a replayed token is rejected by `requireAuth`
+   * with 401 — not 204. Returns 409 `partner_account` if the caller also has
+   * partner-portal access.
    */
   app.delete('/v1/consumer/me', { preHandler: requireAuth }, async (req, reply) => {
     // requireAuth guarantees authUser is set, or it would have thrown.

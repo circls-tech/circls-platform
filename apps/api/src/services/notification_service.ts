@@ -135,7 +135,8 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
            ab_fallback.name           as fallback_arena_name,
            u.phone_e164               as user_phone,
            u.email                    as user_email,
-           u.display_name             as user_display_name
+           u.display_name             as user_display_name,
+           u.deleted_at               as user_deleted_at
       from bookings b
       left join venues v           on v.id = b.venue_id
       left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
@@ -169,8 +170,19 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
   // user profile so a confirmation reaches both mobile and email.
   const userPhone = (r['user_phone'] as string | null) ?? null;
   const userEmail = (r['user_email'] as string | null) ?? null;
-  const resolvedPhone = phone ?? (userPhone && isPhone(userPhone) ? userPhone : null);
-  const resolvedEmail = email ?? (userEmail && isEmail(userEmail) ? userEmail : null);
+  // A deleted account must never be contacted again. The users join is already
+  // anonymised, but `bookings.customer_contact` is RETAINED as part of the
+  // financial record and is preferred above — so without this the venue
+  // cancelling an event months later would still text someone who deleted their
+  // account. Dropping both channels here is the single chokepoint: every
+  // dispatch below is guarded by `if (ctx.phone)` / `if (ctx.email)`.
+  const accountDeleted = r['user_deleted_at'] != null;
+  const resolvedPhone = accountDeleted
+    ? null
+    : (phone ?? (userPhone && isPhone(userPhone) ? userPhone : null));
+  const resolvedEmail = accountDeleted
+    ? null
+    : (email ?? (userEmail && isEmail(userEmail) ? userEmail : null));
 
   const totalPaise = Number(r['total_paise'] ?? 0);
   const startAtRaw =

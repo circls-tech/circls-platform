@@ -2,6 +2,38 @@ import { and, eq, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { type User, users } from '../db/schema/index.js';
+import { Unauthorized } from '../lib/errors.js';
+
+/** `db` or an open transaction handle — both expose the same query builder. */
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Refuse a Firebase uid that belongs to a DELETED account.
+ *
+ * PRECONDITION: the caller has already established that no LIVE row exists for
+ * this uid, so any row found here is a tombstone. (Uniqueness on firebase_uid is
+ * partial — live rows only — precisely so a tombstone can keep the uid that
+ * identifies it.)
+ *
+ * Every path that resolves a Firebase uid to a `users` row must call this before
+ * creating one. Without it, a token that is still valid in the window between
+ * the deletion transaction committing and the Firebase account actually being
+ * torn down would mint a fresh row from its own phone/email claims — silently
+ * undoing the deletion and restoring the PII the user asked us to remove.
+ *
+ * Runs only on the cold path (first sight, or deleted), served by
+ * `users_firebase_uid_deleted_idx`.
+ */
+export async function assertFirebaseUidNotDeleted(
+  firebaseUid: string,
+  conn: DbOrTx = db,
+): Promise<void> {
+  const tombstone = await conn.query.users.findFirst({
+    where: eq(users.firebaseUid, firebaseUid),
+    columns: { id: true },
+  });
+  if (tombstone) throw new Unauthorized('This account has been deleted', 'account_deleted');
+}
 
 export interface FirebaseIdentity {
   firebaseUid: string;
@@ -29,10 +61,15 @@ export interface FirebaseIdentity {
  * any number of unverified contact copies of the same address coexist.
  */
 export async function findOrCreateByFirebaseUid(identity: FirebaseIdentity): Promise<User> {
+  // Live rows only — a deleted account keeps its firebase_uid (see below), and
+  // this predicate is exactly the `users_firebase_uid_live_unique` index, so the
+  // hot path stays a single indexed lookup.
   const existing = await db.query.users.findFirst({
-    where: eq(users.firebaseUid, identity.firebaseUid),
+    where: and(eq(users.firebaseUid, identity.firebaseUid), isNull(users.deletedAt)),
   });
   if (existing) return backfillVerifiedEmail(existing, identity);
+
+  await assertFirebaseUidNotDeleted(identity.firebaseUid);
 
   // Adopt a pre-existing row keyed on this person's unique phone/verified-email
   // before the insert can trip users_phone_e164_unique / the verified-email
@@ -48,12 +85,15 @@ export async function findOrCreateByFirebaseUid(identity: FirebaseIdentity): Pro
       email: identity.email,
       emailVerified: identity.email !== null,
     })
-    .onConflictDoNothing({ target: users.firebaseUid })
+    // The uniqueness on firebase_uid is now partial (live rows only), so the
+    // conflict target must repeat the index predicate or Postgres cannot match
+    // it to an index.
+    .onConflictDoNothing({ target: users.firebaseUid, where: isNull(users.deletedAt) })
     .returning();
   if (inserted[0]) return inserted[0];
 
   const afterRace = await db.query.users.findFirst({
-    where: eq(users.firebaseUid, identity.firebaseUid),
+    where: and(eq(users.firebaseUid, identity.firebaseUid), isNull(users.deletedAt)),
   });
   if (afterRace) return afterRace;
 

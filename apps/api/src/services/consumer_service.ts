@@ -11,7 +11,7 @@
  * bookEvent, purchaseMembership) but first re-check public visibility so a
  * consumer can't book against an unapproved venue by guessing ids.
  */
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { arenas } from '../db/schema/arenas.js';
@@ -24,8 +24,9 @@ import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { notifications } from '../db/schema/notifications.js';
 import { supportIssues } from '../db/schema/support_issues.js';
+import { tenantMembers } from '../db/schema/tenant_members.js';
 import { venues, type Venue } from '../db/schema/venues.js';
-import { BadRequest, Conflict, NotFound, Upstream } from '../lib/errors.js';
+import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
@@ -1174,7 +1175,12 @@ export async function updateMyProfile(
     updated = await db
       .update(users)
       .set(patch)
-      .where(eq(users.id, userId))
+      // `isNull(deletedAt)` closes a race with DELETE /v1/consumer/me: a PATCH
+      // whose `currentUser` resolved just before the deletion committed would
+      // otherwise write the caller's name/email straight back onto the
+      // tombstone. Enforcing it in the WHERE (rather than a prior read) makes it
+      // atomic — the update simply affects no rows.
+      .where(and(eq(users.id, userId), isNull(users.deletedAt)))
       .returning();
   } catch (err) {
     // Email uniqueness is verified-only, and this PATCH always stores emails
@@ -1186,7 +1192,17 @@ export async function updateMyProfile(
     throw err;
   }
   const row = updated[0];
-  if (!row) throw new NotFound('User not found', 'user_not_found');
+  if (!row) {
+    // Zero rows means the id is unknown or the account was deleted mid-flight.
+    // Report the deleted case honestly so the client signs out instead of
+    // retrying a PATCH that can never succeed.
+    const tombstone = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { id: true },
+    });
+    if (tombstone) throw new Unauthorized('This account has been deleted', 'account_deleted');
+    throw new NotFound('User not found', 'user_not_found');
+  }
   return toMyProfile(row);
 }
 
@@ -1231,14 +1247,6 @@ export async function logConsumerActivity(
 
 // ── Account deletion (A7 — Google Play / App Store compliance) ────────────────
 
-/**
- * `firebase_uid` is NOT NULL + UNIQUE, so a deleted account cannot simply null
- * it. It is re-keyed to `deleted:<user id>` instead: unique by construction,
- * obviously a tombstone, and impossible to collide with a real Firebase uid
- * (those are `:`-free alphanumerics).
- */
-const DELETED_UID_PREFIX = 'deleted:';
-
 /** Placeholder written over free-text/contact fields the deleted account owned. */
 const REDACTED = '[deleted account]';
 
@@ -1251,10 +1259,12 @@ const REDACTED = '[deleted account]';
  * and must survive for financial/tax retention and Razorpay/Stripe
  * reconciliation, so the users row stays and loses every identity field.
  *
- * Order matters. DB anonymisation commits first, Firebase teardown follows —
- * if Firebase fails we surface a 502 with the DB already anonymised (no PII
- * left) and the whole endpoint stays safely retryable: a second call finds no
- * row for the uid, skips the DB work, and only redoes the Firebase side.
+ * Order matters. DB anonymisation commits first, Firebase teardown follows — if
+ * Firebase fails we surface a 502 with the DB already anonymised (no PII left)
+ * and the endpoint stays genuinely retryable: the caller's token is untouched
+ * (see `deleteFirebaseUser` on why nothing is revoked), so their next attempt
+ * gets past `requireAuth`, finds no LIVE row, skips the DB work and redoes only
+ * the Firebase side.
  *
  * What is NOT touched, on purpose:
  *   - `bookings` / `payments` — retention (they keep the name/contact captured
@@ -1264,17 +1274,36 @@ const REDACTED = '[deleted account]';
  *   - `user_memberships`, `coupon_redemptions`, `login_events` — no PII beyond
  *     the (now anonymous) user id.
  *
- * KNOWN GAP: a `users` row is shared by the consumer app and the partner/admin
- * portals. Deleting from the consumer surface therefore also destroys any
- * partner access that person had (their `tenant_members` rows survive but point
- * at a tombstone with no Firebase account). If partner staff start using
- * circls.app this needs a guard — reject with 409 when the caller is an active
- * tenant member and tell them to hand over their org first.
+ * One `users` row backs BOTH the consumer app and the partner/admin portals, so
+ * a partner deleting from circls.app would destroy their own org access with no
+ * way back. That is rejected with 409 `partner_account` rather than silently
+ * performed — see the guard below.
  */
 export async function deleteMyAccount(firebaseUid: string): Promise<void> {
-  const row = await db.query.users.findFirst({ where: eq(users.firebaseUid, firebaseUid) });
+  // Live rows only: a tombstone keeps its firebase_uid, and finding one here
+  // means the account is already deleted (a retry after a Firebase failure, or a
+  // token that outlived the DB write). Skip straight to the Firebase teardown —
+  // that is what makes the endpoint idempotent.
+  const row = await db.query.users.findFirst({
+    where: and(eq(users.firebaseUid, firebaseUid), isNull(users.deletedAt)),
+  });
 
   if (row) {
+    // Partner lockout guard. `tenant_members` has no status column — the row's
+    // existence IS the access — so any membership blocks self-service deletion.
+    // Deleting anyway would leave the org with an owner who cannot sign in and
+    // no recovery path short of a manual DB fix.
+    const membership = await db.query.tenantMembers.findFirst({
+      where: eq(tenantMembers.userId, row.id),
+      columns: { tenantId: true },
+    });
+    if (membership) {
+      throw new Conflict(
+        'This account manages a partner organisation. Transfer or close your organisation first, or email contact@gibbous.io and we will help.',
+        'partner_account',
+      );
+    }
+
     await db.transaction(async (tx) => {
       // Behavioural telemetry is pure personal data with no retention duty.
       await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
@@ -1298,10 +1327,13 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
         .set({ recipient: REDACTED, payload: {} })
         .where(eq(notifications.userId, row.id));
 
+      // firebase_uid is deliberately KEPT: it is what lets the login path
+      // recognise this tombstone and refuse it (401 `account_deleted`) instead
+      // of minting a fresh row from the token claims. Uniqueness on that column
+      // is partial (live rows only), so it cannot collide with a re-signup.
       await tx
         .update(users)
         .set({
-          firebaseUid: `${DELETED_UID_PREFIX}${row.id}`,
           phoneE164: null,
           email: null,
           emailVerified: false,

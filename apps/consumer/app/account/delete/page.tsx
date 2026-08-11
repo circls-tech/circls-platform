@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Header } from '@/components/Header';
+import { ApiError } from '@/lib/api/client';
 import { useDeleteMyAccount } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { Button, Card, Input } from '@/lib/ui';
@@ -24,15 +25,26 @@ export default function DeleteAccountPage() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  async function finish() {
+    // The Firebase account is gone server-side; drop the local session too so
+    // the app doesn't sit on a token that can no longer be verified.
+    await signOut();
+    router.replace('/');
+  }
+
   async function onDelete() {
     setError(null);
     try {
       await deleteAccount.mutateAsync();
-      // The Firebase account is gone server-side; drop the local session too so
-      // the app doesn't sit on a token that can no longer be verified.
-      await signOut();
-      router.replace('/');
+      await finish();
     } catch (e) {
+      // The account was already deleted (a stale tab, or a retry that raced the
+      // first call). Nothing is wrong — finish the flow rather than showing an
+      // error for work that is done.
+      if (e instanceof ApiError && e.code === 'account_deleted') {
+        await finish();
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Could not delete your account. Please try again.');
     }
   }

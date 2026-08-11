@@ -13,10 +13,23 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 // persistent DB (deleted rows keep their user id forever).
 const RUN = vi.hoisted(() => Date.now());
 
-// The Firebase side is mocked: `deleteFirebaseUser` records its calls so the
-// route's revoke+delete-after-commit ordering and its idempotency can be
-// asserted, and `failNextFirebaseDelete` simulates the 502 path.
-const fb = vi.hoisted(() => ({ calls: [] as string[], failNext: false }));
+/**
+ * A tiny fake Firebase Auth backend rather than a bare `deleteFirebaseUser`
+ * spy. This is load-bearing: the review of PR #173 found that stubbing teardown
+ * as one atomic throw hid the real bug — token validity has to FOLLOW from what
+ * teardown actually did, so that "can the caller retry?" is a genuine question
+ * these tests answer instead of an assumption they encode.
+ *
+ *  - `deleted` — uids whose Firebase account is gone; their tokens stop
+ *    verifying, exactly like production (`auth/user-not-found`).
+ *  - `failNext` — the next teardown throws WITHOUT deleting, modelling a
+ *    Firebase 5xx/timeout. Nothing is revoked, so the token must still work.
+ */
+const fb = vi.hoisted(() => ({
+  calls: [] as string[],
+  deleted: new Set<string>(),
+  failNext: false,
+}));
 
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
@@ -26,9 +39,12 @@ vi.mock('../lib/firebase_admin.js', () => ({
       resignup: { uid: `fbuid_resignup_ad_${RUN}`, phone_number: `+9199${String(RUN).slice(-8)}` },
       flaky: { uid: `fbuid_flaky_ad_${RUN}`, phone_number: `+9188${String(RUN).slice(-8)}` },
       owner: { uid: `fbuid_owner_ad_${RUN}`, email: `owner_ad_${RUN}@x.com`, email_verified: true },
+      partner: { uid: `fbuid_partner_ad_${RUN}`, email: `partner_ad_${RUN}@x.com`, email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
+    // A deleted Firebase account cannot mint or validate tokens any more.
+    if (fb.deleted.has(u['uid'] as string)) throw new Error('auth/user-not-found');
     return u;
   }),
   deleteFirebaseUser: vi.fn(async (uid: string) => {
@@ -37,11 +53,13 @@ vi.mock('../lib/firebase_admin.js', () => ({
       fb.failNext = false;
       throw new Error('firebase unreachable');
     }
+    fb.deleted.add(uid);
   }),
 }));
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { updateMyProfile } = await import('../services/consumer_service.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -78,11 +96,21 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
   let publicThreadId: string;
   let supportIssueId: string;
   let notificationId: string;
+  const VICTIM_UID = `fbuid_victim_ad_${RUN}`;
   const VICTIM_PHONE = `+9199${String(RUN).slice(-8)}`;
 
   const loadUser = async (id: string) =>
     firstRow<UserRow>(
       await db.execute<UserRow>(sql`SELECT * FROM users WHERE id = ${id}::uuid`),
+    );
+
+  const countUsersForUid = async (uid: string) =>
+    Number(
+      firstRow<{ n: string }>(
+        await db.execute<{ n: string }>(
+          sql`SELECT count(*)::text AS n FROM users WHERE firebase_uid = ${uid}`,
+        ),
+      ).n,
     );
 
   beforeAll(async () => {
@@ -196,7 +224,33 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     expect(res.statusCode).toBe(401);
   });
 
-  it('returns 502 and leaves the DB anonymised when Firebase deletion fails', async () => {
+  it('refuses to delete an account that also has partner-portal access (409)', async () => {
+    // Creating a tenant makes this user its owner.
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('partner'),
+      payload: { name: `AD Partner ${RUN}`, slug: `ad-partner-${RUN}`, country: 'India', acceptTerms: true },
+    });
+    expect(t.statusCode).toBe(200);
+
+    const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('partner') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('partner_account');
+
+    // Nothing was anonymised and Firebase was never touched — the guard runs first.
+    const stillLive = await app.inject({ method: 'GET', url: '/v1/consumer/me', headers: bearer('partner') });
+    expect(stillLive.statusCode).toBe(200);
+    expect(fb.calls).toEqual([]);
+  });
+
+  /**
+   * REGRESSION (review of PR #173, Critical 1). A Firebase teardown failure must
+   * leave the caller ABLE to retry. If anything revoked their refresh tokens,
+   * the retry below would be rejected by requireAuth with 401 and the Firebase
+   * account would be stranded with live PII forever.
+   */
+  it('returns 502 on a Firebase failure, then a retry on the SAME token succeeds', async () => {
     fb.failNext = true;
     const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('flaky') });
     expect(res.statusCode).toBe(502);
@@ -207,13 +261,13 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     expect(row.phone_e164).toBeNull();
     expect(row.deleted_at).not.toBeNull();
 
-    // Retry succeeds and is a clean 204.
+    // The retry reaches the handler at all only because the token still verifies.
     const retry = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('flaky') });
     expect(retry.statusCode).toBe(204);
     expect(fb.calls).toEqual([`fbuid_flaky_ad_${RUN}`, `fbuid_flaky_ad_${RUN}`]);
   });
 
-  it('returns 204 and anonymises the users row', async () => {
+  it('returns 204 and anonymises the users row, keeping firebase_uid', async () => {
     const before = await loadUser(victimId);
     expect(before.phone_e164).toBe(VICTIM_PHONE);
     expect(before.display_name).toBe('Deleteme Kumar');
@@ -229,12 +283,12 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     expect(after.display_name).toBeNull();
     expect(after.interests).toEqual([]);
     expect(after.deleted_at).not.toBeNull();
-    // firebase_uid is NOT NULL + UNIQUE, so it is re-keyed to a sentinel rather
-    // than nulled — the real uid must be gone.
-    expect(after.firebase_uid).toBe(`deleted:${victimId}`);
+    // The uid is RETAINED (no sentinel): it is what lets the login path
+    // recognise this tombstone instead of minting a fresh row for the uid.
+    expect(after.firebase_uid).toBe(VICTIM_UID);
 
     // Firebase account deleted after the commit, exactly once.
-    expect(fb.calls).toEqual([`fbuid_victim_ad_${RUN}`]);
+    expect(fb.calls).toEqual([VICTIM_UID]);
   });
 
   it('leaves the booking untouched (financial retention)', async () => {
@@ -288,14 +342,68 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     expect(row.payload).toEqual({});
   });
 
-  it('is idempotent — a second delete on a cached token is still 204', async () => {
-    const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('victim') });
-    expect(res.statusCode).toBe(204);
-    // No new users row was minted for the already-deleted identity.
+  /**
+   * REGRESSION (review of PR #173, Important 3). `bookings.customer_contact` is
+   * RETAINED for financial reasons and is preferred over the (anonymised) users
+   * join, so a later venue-side cancellation would otherwise text someone who
+   * deleted their account.
+   */
+  it('never contacts a deleted account about a retained booking', async () => {
+    const { notifyBookingCancelled } = await import('../services/notification_service.js');
+    await notifyBookingCancelled(bookingId);
     const rows = await db.execute<{ n: string }>(
-      sql`SELECT count(*)::text AS n FROM users WHERE firebase_uid = ${`fbuid_victim_ad_${RUN}`}`,
+      sql`SELECT count(*)::text AS n FROM notifications
+           WHERE payload->>'bookingId' = ${bookingId} AND recipient <> '[deleted account]'`,
     );
     expect(Number(firstRow<{ n: string }>(rows).n)).toBe(0);
+  });
+
+  /**
+   * REGRESSION (review of PR #173, Important 2). Any authenticated request in
+   * the window between the deletion committing and the Firebase account going
+   * away used to re-mint the users row straight from the token's phone claim,
+   * silently undoing the deletion. It must now be refused instead.
+   */
+  it('refuses a still-valid token for a deleted account instead of re-minting the row', async () => {
+    // Model the window: the DB is a tombstone but the Firebase account lingers.
+    fb.deleted.delete(VICTIM_UID);
+
+    for (const url of ['/v1/consumer/me', '/v1/me']) {
+      const res = await app.inject({ method: 'GET', url, headers: bearer('victim') });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe('account_deleted');
+    }
+    const login = await app.inject({ method: 'POST', url: '/v1/me/login', headers: bearer('victim') });
+    expect(login.statusCode).toBe(401);
+
+    // Still exactly one row for the uid — the tombstone — and it is still empty.
+    expect(await countUsersForUid(VICTIM_UID)).toBe(1);
+    expect((await loadUser(victimId)).phone_e164).toBeNull();
+
+    fb.deleted.add(VICTIM_UID);
+  });
+
+  /**
+   * REGRESSION (review of PR #173, Important 4). A PATCH whose `currentUser`
+   * resolved just before the deletion committed must not write the profile back
+   * onto the tombstone. Called at the service layer because the route's own auth
+   * now rejects the token before it gets this far.
+   */
+  it('refuses an in-flight profile update racing the deletion', async () => {
+    await expect(updateMyProfile(victimId, { displayName: 'Back Again' })).rejects.toMatchObject({
+      code: 'account_deleted',
+    });
+    const row = await loadUser(victimId);
+    expect(row.display_name).toBeNull();
+  });
+
+  it('rejects a replayed token once the Firebase account is really gone', async () => {
+    // Production truth: teardown succeeded, so the token no longer verifies and
+    // the request dies at requireAuth. The point is that it is never a 500, and
+    // that no row is resurrected.
+    const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('victim') });
+    expect(res.statusCode).toBe(401);
+    expect(await countUsersForUid(VICTIM_UID)).toBe(1);
   });
 
   it('re-signup with the same phone creates a fresh user, never resurrecting the old one', async () => {
@@ -307,9 +415,9 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     expect(profile.displayName).toBeNull();
     expect(profile.interests).toEqual([]);
 
-    // The deleted row stays deleted and keeps its sentinel uid.
+    // The deleted row stays deleted and keeps its real uid.
     const old = await loadUser(victimId);
     expect(old.deleted_at).not.toBeNull();
-    expect(old.firebase_uid).toBe(`deleted:${victimId}`);
+    expect(old.firebase_uid).toBe(VICTIM_UID);
   });
 });

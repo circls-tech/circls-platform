@@ -26,6 +26,7 @@ import { Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { env } from '../config/env.js';
 import { getNotifications } from '../lib/notifications/index.js';
 import { logger } from '../lib/logger.js';
+import { assertFirebaseUidNotDeleted } from './user_service.js';
 
 const INVITE_TTL_DAYS = 7;
 const BCRYPT_ROUNDS = 10;
@@ -308,9 +309,14 @@ export async function acceptInvitation(
     let [existing] = await tx
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.firebaseUid, input.firebaseUid))
+      .where(and(eq(users.firebaseUid, input.firebaseUid), isNull(users.deletedAt)))
       .limit(1);
     if (!existing) {
+      // A deleted account must not be able to walk back in by accepting an
+      // invite: uniqueness on firebase_uid is live-only, so without this the
+      // insert below would happily mint a SECOND live row for the same uid.
+      await assertFirebaseUidNotDeleted(input.firebaseUid, tx);
+
       // The invitee may already have a `users` row under tokenEmail but a
       // different firebase_uid (signed in via another provider before accepting).
       // Adopt that row onto the new uid rather than tripping users_email_unique
@@ -345,7 +351,9 @@ export async function acceptInvitation(
         const [created] = await tx
           .insert(users)
           .values({ firebaseUid: input.firebaseUid, email: tokenEmail, emailVerified: true })
-          .onConflictDoNothing({ target: users.firebaseUid })
+          // Uniqueness on firebase_uid is partial (live rows only), so the
+          // conflict target must repeat the index predicate to match an index.
+          .onConflictDoNothing({ target: users.firebaseUid, where: isNull(users.deletedAt) })
           .returning();
         if (created) {
           existing = { id: created.id };
@@ -353,7 +361,7 @@ export async function acceptInvitation(
           const [refetch] = await tx
             .select({ id: users.id })
             .from(users)
-            .where(eq(users.firebaseUid, input.firebaseUid))
+            .where(and(eq(users.firebaseUid, input.firebaseUid), isNull(users.deletedAt)))
             .limit(1);
           existing = refetch!;
         }
