@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { type User, users } from '../db/schema/index.js';
@@ -10,26 +10,30 @@ type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * Refuse a Firebase uid that belongs to a DELETED account.
  *
- * PRECONDITION: the caller has already established that no LIVE row exists for
- * this uid, so any row found here is a tombstone. (Uniqueness on firebase_uid is
- * partial — live rows only — precisely so a tombstone can keep the uid that
- * identifies it.)
- *
  * Every path that resolves a Firebase uid to a `users` row must call this before
  * creating one. Without it, a token that is still valid in the window between
  * the deletion transaction committing and the Firebase account actually being
  * torn down would mint a fresh row from its own phone/email claims — silently
  * undoing the deletion and restoring the PII the user asked us to remove.
  *
- * Runs only on the cold path (first sight, or deleted), served by
- * `users_firebase_uid_deleted_idx`.
+ * The `isNotNull(deletedAt)` predicate is load-bearing twice over, and matching
+ * only on the uid would be a bug:
+ *   - CORRECTNESS. Callers run this after their own live-row lookup missed, but
+ *     that is not an exclusive window: two concurrent first-sight requests for a
+ *     brand-new user are routine (the consumer app fires POST /v1/me/login
+ *     fire-and-forget while GET /v1/consumer/me races it). Without the
+ *     predicate, the request that loses the insert race would see the winner's
+ *     LIVE row here and 401 a legitimately new user.
+ *   - PERFORMANCE. Only this predicate lets the query use
+ *     `users_firebase_uid_deleted_idx`; a bare uid match can use neither partial
+ *     index and seq-scans `users` on every first-ever sign-in.
  */
 export async function assertFirebaseUidNotDeleted(
   firebaseUid: string,
   conn: DbOrTx = db,
 ): Promise<void> {
   const tombstone = await conn.query.users.findFirst({
-    where: eq(users.firebaseUid, firebaseUid),
+    where: and(eq(users.firebaseUid, firebaseUid), isNotNull(users.deletedAt)),
     columns: { id: true },
   });
   if (tombstone) throw new Unauthorized('This account has been deleted', 'account_deleted');

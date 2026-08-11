@@ -38,10 +38,11 @@ export default function DeleteAccountPage() {
       await deleteAccount.mutateAsync();
       await finish();
     } catch (e) {
-      // The account was already deleted (a stale tab, or a retry that raced the
-      // first call). Nothing is wrong — finish the flow rather than showing an
-      // error for work that is done.
-      if (e instanceof ApiError && e.code === 'account_deleted') {
+      // A stale tab whose account is already gone: the Firebase user no longer
+      // exists, so the request dies at the API's auth layer with `auth_required`
+      // rather than reaching the handler. Either way the session is dead and the
+      // work is done — finish the flow instead of showing an error.
+      if (e instanceof ApiError && e.code === 'auth_required') {
         await finish();
         return;
       }

@@ -9,57 +9,94 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 // financial record we must retain) are byte-for-byte untouched.
 // Integration (RUN_INTEGRATION + a real Postgres).
 //
-// RUN makes every identity unique per run so the suite is re-runnable against a
-// persistent DB (deleted rows keep their user id forever).
-const RUN = vi.hoisted(() => Date.now());
-
 /**
- * A tiny fake Firebase Auth backend rather than a bare `deleteFirebaseUser`
- * spy. This is load-bearing: the review of PR #173 found that stubbing teardown
- * as one atomic throw hid the real bug — token validity has to FOLLOW from what
- * teardown actually did, so that "can the caller retry?" is a genuine question
- * these tests answer instead of an assumption they encode.
+ * A fake Firebase Auth BACKEND, stubbed at the Admin SDK boundary so the real
+ * `lib/firebase_admin.ts` runs on top of it.
  *
- *  - `deleted` — uids whose Firebase account is gone; their tokens stop
- *    verifying, exactly like production (`auth/user-not-found`).
- *  - `failNext` — the next teardown throws WITHOUT deleting, modelling a
- *    Firebase 5xx/timeout. Nothing is revoked, so the token must still work.
+ * This shape is load-bearing. The review of PR #173 found that mocking
+ * `deleteFirebaseUser` itself — as one atomic throw — hid the actual bug: token
+ * validity has to FOLLOW from what teardown really did, or "can the caller
+ * retry?" is an assumption the test encodes rather than a question it answers.
+ * Because the real module is in the loop here, re-introducing the old
+ * revoke-before-delete ordering turns the retry test below red.
+ *
+ *  - `deleted` — uids whose account is gone; their tokens stop verifying with
+ *    `auth/user-not-found`, exactly like production.
+ *  - `revoked` — uids whose refresh tokens were revoked; `verifyIdToken` rejects
+ *    them because our wrapper always passes checkRevoked=true.
+ *  - `failNext` — the next `deleteUser` throws WITHOUT deleting, modelling a
+ *    Firebase 5xx/timeout.
+ *
+ * RUN makes every identity unique per run so the suite is re-runnable against a
+ * persistent DB (deleted rows keep their user id forever).
  */
-const fb = vi.hoisted(() => ({
-  calls: [] as string[],
-  deleted: new Set<string>(),
-  failNext: false,
-}));
-
-vi.mock('../lib/firebase_admin.js', () => ({
-  verifyIdToken: vi.fn(async (token: string) => {
-    const map: Record<string, Record<string, unknown>> = {
-      victim: { uid: `fbuid_victim_ad_${RUN}`, phone_number: `+9199${String(RUN).slice(-8)}` },
+const H = vi.hoisted(() => {
+  const RUN = Date.now();
+  // firebase_admin.app() checks env before initialising even though the SDK
+  // itself is stubbed — take the local-sandbox branch so no service account is
+  // needed. (env.ts only forbids this var when NODE_ENV=production.)
+  process.env['FIREBASE_AUTH_EMULATOR_HOST'] ??= 'localhost:9099';
+  const phone = `+9199${String(RUN).slice(-8)}`;
+  return {
+    RUN,
+    phone,
+    personas: {
+      victim: { uid: `fbuid_victim_ad_${RUN}`, phone_number: phone },
       // Same phone as `victim`, brand-new Firebase uid: the re-signup case.
-      resignup: { uid: `fbuid_resignup_ad_${RUN}`, phone_number: `+9199${String(RUN).slice(-8)}` },
+      resignup: { uid: `fbuid_resignup_ad_${RUN}`, phone_number: phone },
       flaky: { uid: `fbuid_flaky_ad_${RUN}`, phone_number: `+9188${String(RUN).slice(-8)}` },
       owner: { uid: `fbuid_owner_ad_${RUN}`, email: `owner_ad_${RUN}@x.com`, email_verified: true },
       partner: { uid: `fbuid_partner_ad_${RUN}`, email: `partner_ad_${RUN}@x.com`, email_verified: true },
-    };
-    const u = map[token];
-    if (!u) throw new Error('bad token');
-    // A deleted Firebase account cannot mint or validate tokens any more.
-    if (fb.deleted.has(u['uid'] as string)) throw new Error('auth/user-not-found');
-    return u;
-  }),
-  deleteFirebaseUser: vi.fn(async (uid: string) => {
-    fb.calls.push(uid);
-    if (fb.failNext) {
-      fb.failNext = false;
-      throw new Error('firebase unreachable');
-    }
-    fb.deleted.add(uid);
-  }),
+      invitee: { uid: `fbuid_invitee_ad_${RUN}`, email: `invitee_ad_${RUN}@x.com`, email_verified: true },
+    } as Record<string, Record<string, unknown>>,
+    calls: [] as string[],
+    deleted: new Set<string>(),
+    revoked: new Set<string>(),
+    failNext: false,
+  };
+});
+
+vi.mock('firebase-admin/app', () => ({
+  getApps: () => [],
+  initializeApp: vi.fn(() => ({ name: 'account-deletion-test-app' })),
+  cert: vi.fn(() => ({ kind: 'cert' })),
 }));
+
+vi.mock('firebase-admin/auth', () => {
+  const err = (code: string) => Object.assign(new Error(code), { code });
+  return {
+    getAuth: vi.fn(() => ({
+      verifyIdToken: async (token: string, checkRevoked?: boolean) => {
+        const u = H.personas[token];
+        if (!u) throw err('auth/argument-error');
+        const uid = u['uid'] as string;
+        if (H.deleted.has(uid)) throw err('auth/user-not-found');
+        if (checkRevoked && H.revoked.has(uid)) throw err('auth/id-token-revoked');
+        return u;
+      },
+      deleteUser: async (uid: string) => {
+        H.calls.push(uid);
+        if (H.failNext) {
+          H.failNext = false;
+          throw err('auth/internal-error');
+        }
+        H.deleted.add(uid);
+      },
+      revokeRefreshTokens: async (uid: string) => {
+        H.revoked.add(uid);
+      },
+      updateUser: async () => ({}),
+    })),
+  };
+});
+
+const RUN = H.RUN;
+const fb = H;
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
 const { updateMyProfile } = await import('../services/consumer_service.js');
+const { assertFirebaseUidNotDeleted } = await import('../services/user_service.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -96,6 +133,7 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
   let publicThreadId: string;
   let supportIssueId: string;
   let notificationId: string;
+  let orgTenantId: string;
   const VICTIM_UID = `fbuid_victim_ad_${RUN}`;
   const VICTIM_PHONE = `+9199${String(RUN).slice(-8)}`;
 
@@ -141,7 +179,8 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
       payload: { name: `AD Sports ${RUN}`, slug: `ad-sports-${RUN}`, country: 'India', acceptTerms: true },
     });
     expect(t.statusCode).toBe(200);
-    const tenantId = (t.json() as { id: string }).id;
+    orgTenantId = (t.json() as { id: string }).id;
+    const tenantId = orgTenantId;
     await db.execute(sql`UPDATE tenants SET status = 'active' WHERE id = ${tenantId}::uuid`);
 
     const eventId = firstRow<{ id: string }>(
@@ -217,6 +256,7 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
   beforeEach(() => {
     fb.calls.length = 0;
     fb.failNext = false;
+    fb.revoked.clear();
   });
 
   it('rejects an unauthenticated delete with 401', async () => {
@@ -246,15 +286,19 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
 
   /**
    * REGRESSION (review of PR #173, Critical 1). A Firebase teardown failure must
-   * leave the caller ABLE to retry. If anything revoked their refresh tokens,
-   * the retry below would be rejected by requireAuth with 401 and the Firebase
-   * account would be stranded with live PII forever.
+   * leave the caller ABLE to retry. The real `deleteFirebaseUser` runs here on
+   * top of the fake backend, so if it ever revoked refresh tokens again, the
+   * fake's checkRevoked path would reject the token, the retry would 401 at
+   * requireAuth, and the Firebase account would be stranded with live PII.
    */
   it('returns 502 on a Firebase failure, then a retry on the SAME token succeeds', async () => {
     fb.failNext = true;
     const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('flaky') });
     expect(res.statusCode).toBe(502);
     expect(res.json().error.code).toBe('firebase_delete_failed');
+
+    // Nothing may have been revoked — that is what keeps the retry reachable.
+    expect(fb.revoked.has(`fbuid_flaky_ad_${RUN}`)).toBe(false);
 
     // DB anonymisation already committed — the retry only has to redo Firebase.
     const row = await loadUser(flakyId);
@@ -404,6 +448,84 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     const res = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('victim') });
     expect(res.statusCode).toBe(401);
     expect(await countUsersForUid(VICTIM_UID)).toBe(1);
+  });
+
+  /**
+   * REGRESSION (re-review of PR #173, NEW-1). The tombstone guard must match on
+   * `deleted_at IS NOT NULL`, not on the uid alone. Callers run it after their
+   * own live-row lookup missed, but that window is not exclusive: two concurrent
+   * first-sight requests are routine (the app fires POST /v1/me/login
+   * fire-and-forget while GET /v1/consumer/me races it), and a uid-only match
+   * would see the winner's LIVE row and 401 a brand-new user. Asserted directly
+   * rather than by racing requests, because the interleaving that triggers it is
+   * too narrow to reproduce reliably — this pins the predicate itself.
+   */
+  it('does not mistake a LIVE row for a tombstone', async () => {
+    await expect(assertFirebaseUidNotDeleted(`fbuid_owner_ad_${RUN}`)).resolves.toBeUndefined();
+    // ...while a real tombstone is still refused.
+    await expect(assertFirebaseUidNotDeleted(VICTIM_UID)).rejects.toMatchObject({
+      code: 'account_deleted',
+    });
+  });
+
+  it('serves concurrent first-sight sign-ins without 401ing the loser', async () => {
+    const [a, b] = await Promise.all([
+      app.inject({ method: 'GET', url: '/v1/consumer/me', headers: bearer('resignup') }),
+      app.inject({ method: 'POST', url: '/v1/me/login', headers: bearer('resignup') }),
+    ]);
+    expect(a.statusCode).toBe(200);
+    expect(b.statusCode).toBe(204);
+  });
+
+  /**
+   * REGRESSION (review of PR #173, Important 2 — second call site). Accepting a
+   * team invitation is the OTHER path that resolves a Firebase uid to a users
+   * row and inserts one if it is missing. Uniqueness on firebase_uid is now
+   * live-only, so without its own tombstone guard this insert would happily mint
+   * a legal SECOND live row for a deleted uid — and that row would let the
+   * deleted account straight back in everywhere.
+   */
+  it('refuses a deleted account trying to walk back in via an invitation', async () => {
+    const inviteeUid = `fbuid_invitee_ad_${RUN}`;
+    const inviteeEmail = `invitee_ad_${RUN}@x.com`;
+
+    // The invitee signs in once (live row), then deletes their account.
+    const signIn = await app.inject({ method: 'GET', url: '/v1/consumer/me', headers: bearer('invitee') });
+    expect(signIn.statusCode).toBe(200);
+    const del = await app.inject({ method: 'DELETE', url: '/v1/consumer/me', headers: bearer('invitee') });
+    expect(del.statusCode).toBe(204);
+
+    // An org invites that same address.
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${orgTenantId}/invitations`,
+      headers: bearer('owner'),
+      payload: { email: inviteeEmail, role: 'staff' },
+    });
+    expect(invite.statusCode).toBe(201);
+    const inviteToken = (invite.json() as { token: string }).token;
+
+    // Model the window where the Firebase account outlives the DB tombstone, so
+    // the token still verifies and the request actually reaches acceptInvitation.
+    fb.deleted.delete(inviteeUid);
+
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/v1/invitations/${inviteToken}/accept`,
+      payload: { firebaseIdToken: 'invitee' },
+    });
+    expect(accept.statusCode).toBe(401);
+    expect(accept.json().error.code).toBe('account_deleted');
+
+    // No second live row was minted, and the tombstone is still the only row.
+    expect(await countUsersForUid(inviteeUid)).toBe(1);
+    const live = await db.execute<{ n: string }>(
+      sql`SELECT count(*)::text AS n FROM users
+           WHERE firebase_uid = ${inviteeUid} AND deleted_at IS NULL`,
+    );
+    expect(Number(firstRow<{ n: string }>(live).n)).toBe(0);
+
+    fb.deleted.add(inviteeUid);
   });
 
   it('re-signup with the same phone creates a fresh user, never resurrecting the old one', async () => {
