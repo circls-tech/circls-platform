@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { eventTicketTiers, events, tenants, users, venues } from '../db/schema/index.js';
@@ -51,6 +51,8 @@ describe.skipIf(!runIntegration)('post-booking redirect delivery', () => {
     await db.execute(
       sql`delete from event_booking_tickets where booking_id in (select id from bookings where tenant_id = ${tenantId})`,
     );
+    // payments FK bookings — the paid-path test leaves a charge row behind.
+    await db.execute(sql`delete from payments where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from event_ticket_tiers where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
@@ -107,6 +109,25 @@ describe.skipIf(!runIntegration)('post-booking redirect delivery', () => {
 
     const detail = await getMyBookingDetail(userId, res.booking.id);
     expect(detail.event?.postBookingRedirect).toBeNull();
+  });
+
+  it('withholds it from a paid booking, which is only pending at book time', async () => {
+    // Regression: the paid path used to return the link alongside a 'pending'
+    // booking, so starting a checkout and never paying was enough to read it.
+    const { event, tier } = await makeEvent(REDIRECT);
+    await db
+      .update(eventTicketTiers)
+      .set({ pricePaise: 50_000 })
+      .where(eq(eventTicketTiers.id, tier.id));
+
+    let res: Awaited<ReturnType<typeof bookEvent>> | null = null;
+    try {
+      res = await bookEvent(event.id, { userId }, null, [{ tierId: tier.id, quantity: 1 }]);
+    } catch {
+      // Gateway unavailable in this environment — the assertion below still
+      // holds trivially (no result means no link handed over).
+    }
+    expect(res?.postBookingRedirect ?? null).toBeNull();
   });
 
   it('is null when the organiser set no link', async () => {

@@ -7,6 +7,7 @@ import type {
   MyBooking,
   MyBookingDetail,
   MyProfile,
+  PostBookingRedirect,
   PublicEvent,
   PublicEventWithVenue,
   PublicMembershipWithScope,
@@ -289,6 +290,36 @@ export function useMyBookings() {
     enabled: Boolean(user),
     select: (data) => data.rows,
   });
+}
+
+/**
+ * Poll one booking for the organiser's post-booking link.
+ *
+ * Paid bookings are `pending` until the gateway's webhook confirms them, and
+ * the API withholds the link until then — but the browser's "payment done"
+ * callback usually fires a moment BEFORE that webhook lands. So retry briefly
+ * instead of concluding there's no link. Resolves null once the window closes;
+ * the link is on the booking page regardless, so giving up is safe.
+ */
+export async function fetchPostBookingRedirect(
+  bookingId: string,
+  { attempts = 6, intervalMs = 1200 }: { attempts?: number; intervalMs?: number } = {},
+): Promise<PostBookingRedirect | null> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const { booking } = await apiFetch<{ booking: MyBookingDetail }>(
+        `/v1/consumer/me/bookings/${bookingId}`,
+      );
+      const redirect = booking.event?.postBookingRedirect ?? null;
+      if (redirect) return redirect;
+      // A confirmed booking with no link means the organiser set none — stop.
+      if (booking.status === 'confirmed') return null;
+    } catch {
+      // Transient failure: keep trying for the rest of the window.
+    }
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
 }
 
 export function useMyBooking(id: string) {

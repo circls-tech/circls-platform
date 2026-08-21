@@ -470,9 +470,12 @@ export interface BookEventResult {
   amountPaise?: number;
   currency?: string;
   /**
-   * The event's post-booking link, if the partner set one — where to send the
-   * customer once this booking confirms. Delivered here (rather than on the
-   * public event payload) so only people who actually booked receive it.
+   * The event's post-booking link, if the partner set one. Present ONLY on the
+   * free path, where the booking is already `confirmed` when we return. The
+   * paid path deliberately omits it: at that point the booking is still
+   * `pending`, so returning it would hand the organiser's form/group link to
+   * anyone who starts a checkout and never pays. Paid bookers pick it up from
+   * `GET /v1/consumer/me/bookings/:id` once the payment webhook confirms them.
    */
   postBookingRedirect?: PostBookingRedirect | null;
 }
@@ -717,7 +720,8 @@ export async function bookEvent(
   });
 
   if (reserved.isFree) {
-    // Free events confirm inline (no payment webhook) — notify from here.
+    // Free events confirm inline (no payment webhook) — notify from here. The
+    // booking IS confirmed at this point, so the post-booking link is earned.
     await onBookingConfirmed(reserved.booking.id);
     return {
       booking: reserved.booking,
@@ -766,6 +770,7 @@ export async function bookEvent(
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
     currency: reserved.payCtx.currency,
-    postBookingRedirect: reserved.postBookingRedirect,
+    // No postBookingRedirect here on purpose — see the field's doc comment.
+    // This booking is 'pending' until the gateway webhook confirms it.
   };
 }

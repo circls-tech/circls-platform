@@ -64,10 +64,20 @@ export function PostBookingRedirectPanel({
     if (!counting || cancelled || outcome) return;
     if (secondsLeft <= 0) {
       // A timer-driven open has no user gesture behind it, so popup blockers
-      // may refuse it — blocked opens return null (or a window that's already
-      // closed). Detect that and fall back to asking for the tap, rather than
-      // leaving a countdown that visibly finished and did nothing.
-      const opened = window.open(redirect.url, '_blank', 'noopener,noreferrer');
+      // may refuse it. Only a BLOCKED open returns null here — which is why the
+      // `noopener` feature must not be passed: per the HTML spec window.open
+      // returns null whenever noopener is set, success or not, so asking for it
+      // would report every successful open as blocked. `target=_blank` is
+      // already implicitly noopener in current browsers, and clearing `opener`
+      // covers the rest.
+      const opened = window.open(redirect.url, '_blank');
+      if (opened) {
+        try {
+          opened.opener = null;
+        } catch {
+          // Cross-origin window: the browser already severed the reference.
+        }
+      }
       setOutcome(opened ? 'opened' : 'blocked');
       return;
     }

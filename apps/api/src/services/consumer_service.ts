@@ -232,7 +232,7 @@ export async function listPublicArenaSlots(
  */
 export async function listPublicEvents(
   venueId: string,
-): Promise<Array<Event & { seriesCount: number }>> {
+): Promise<Array<PublicEventColumns & { seriesCount: number }>> {
   await assertVenueVisible(venueId);
   const rows = await db
     .select()
@@ -246,7 +246,9 @@ export async function listPublicEvents(
       ),
     )
     .orderBy(sql`${events.startsAt} asc`);
-  return groupBySeries(rows, (e) => e);
+  // Group on the full rows (grouping reads id/seriesId), then strip — this is
+  // a public, unauthenticated endpoint, so the raw row must not go out.
+  return groupBySeries(rows, (e) => e).map(toPublicEventColumns);
 }
 
 /**
@@ -278,12 +280,27 @@ function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { ser
  * columns and the tenant/org name. `loc*` fields are what the UI renders.
  */
 /**
- * Public projection of an event. `postBookingRedirect` is deliberately omitted
- * (and deleted in {@link toPublicEvent}): a partner's WhatsApp invite or form
- * link is for people who booked, so it rides along with the booking instead —
- * see `BookEventResult.postBookingRedirect` and `MyBookingDetail.event`.
+ * An event row with the partner-only columns removed. Right now that is just
+ * `postBookingRedirect` — a WhatsApp invite or form link belongs to people who
+ * booked, so it travels with the booking (`BookEventResult.postBookingRedirect`
+ * and `MyBookingDetail.event`) and never with a listing.
+ *
+ * EVERY consumer-facing path that returns event columns must go through
+ * {@link toPublicEventColumns}; returning a raw `Event` publishes the link.
  */
-export interface PublicEventWithVenue extends Omit<Event, 'postBookingRedirect'> {
+export type PublicEventColumns = Omit<Event, 'postBookingRedirect'>;
+
+/** Drop the partner-only columns from an event row. See {@link PublicEventColumns}. */
+function toPublicEventColumns<T extends Event>(row: T): Omit<T, 'postBookingRedirect'> {
+  const { postBookingRedirect: _redirect, ...publicColumns } = row;
+  return publicColumns;
+}
+
+/**
+ * Public projection of an event with its resolved location. Built on
+ * {@link PublicEventColumns}, so the post-booking link is never included.
+ */
+export interface PublicEventWithVenue extends PublicEventColumns {
   venueName: string | null;
   venueTags: string[];
   isStandalone: boolean;
@@ -377,11 +394,8 @@ interface EventJoinRow {
 
 function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
-  // Spreading the row would leak the partner's post-booking link to anyone
-  // browsing the listing; pull it off before it reaches the response.
-  const { postBookingRedirect: _redirect, ...publicColumns } = r.e;
   return {
-    ...publicColumns,
+    ...toPublicEventColumns(r.e),
     venueName: r.venueName,
     venueTags: r.venueTags ?? [],
     isStandalone,

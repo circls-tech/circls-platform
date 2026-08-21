@@ -37,6 +37,23 @@ export function redirectToPayload(value: PostBookingRedirect | null): PostBookin
 }
 
 /**
+ * Field-by-field equality for two redirects.
+ *
+ * Do NOT compare these with JSON.stringify: the API's value comes back from a
+ * Postgres jsonb column, whose keys are ordered by length (`url`, `forced`,
+ * `description`), while {@link redirectToPayload} builds them in declaration
+ * order — so stringify never matches and a dirty check built on it is stuck
+ * on "changed".
+ */
+export function sameRedirect(
+  a: PostBookingRedirect | null,
+  b: PostBookingRedirect | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  return a.url === b.url && a.description === b.description && a.forced === b.forced;
+}
+
+/**
  * Editor for an event's `postBookingRedirect` — the link customers are shown
  * once their booking is confirmed (a Google Form for squad details, a WhatsApp
  * community invite, a waiver). Fully controlled: emits a complete object while

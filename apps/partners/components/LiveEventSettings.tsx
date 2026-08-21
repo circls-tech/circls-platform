@@ -16,6 +16,7 @@ import {
   PostBookingRedirectEditor,
   isValidRedirectUrl,
   redirectToPayload,
+  sameRedirect,
 } from './PostBookingRedirectEditor';
 
 /**
@@ -82,8 +83,7 @@ export function LiveEventSettings({
   const limitChanged = maxPerUserToPayload(limit) !== maxPerUser;
   const descriptionChanged = descDraft !== (description ?? '');
   const qrChanged = JSON.stringify(qrDraft) !== JSON.stringify(qrTicketConfig);
-  const redirectChanged =
-    JSON.stringify(redirectToPayload(redirectDraft)) !== JSON.stringify(postBookingRedirect);
+  const redirectChanged = !sameRedirect(redirectToPayload(redirectDraft), postBookingRedirect);
   const questionsChanged =
     JSON.stringify(questionsToPayload(questionDrafts)) !==
     JSON.stringify(questionsToPayload(questions.map(questionDraftFromApi)));
