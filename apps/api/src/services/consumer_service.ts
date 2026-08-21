@@ -17,6 +17,7 @@ import { isUniqueViolation } from '../db/errors.js';
 import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
+import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import { memberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
@@ -276,7 +277,13 @@ function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { ser
  * its location from the venue; a standalone (venue-less) event uses its own
  * columns and the tenant/org name. `loc*` fields are what the UI renders.
  */
-export interface PublicEventWithVenue extends Event {
+/**
+ * Public projection of an event. `postBookingRedirect` is deliberately omitted
+ * (and deleted in {@link toPublicEvent}): a partner's WhatsApp invite or form
+ * link is for people who booked, so it rides along with the booking instead —
+ * see `BookEventResult.postBookingRedirect` and `MyBookingDetail.event`.
+ */
+export interface PublicEventWithVenue extends Omit<Event, 'postBookingRedirect'> {
   venueName: string | null;
   venueTags: string[];
   isStandalone: boolean;
@@ -370,8 +377,11 @@ interface EventJoinRow {
 
 function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
+  // Spreading the row would leak the partner's post-booking link to anyone
+  // browsing the listing; pull it off before it reaches the response.
+  const { postBookingRedirect: _redirect, ...publicColumns } = r.e;
   return {
-    ...r.e,
+    ...publicColumns,
     venueName: r.venueName,
     venueTags: r.venueTags ?? [],
     isStandalone,
@@ -933,6 +943,12 @@ export interface MyBookingDetail {
     description: string | null;
     /** The user's registration-question answers, in the order asked. */
     answers: { label: string; answer: string }[];
+    /**
+     * The partner's "what to do next" link, or null when they set none — and
+     * always null until the booking is confirmed, so an abandoned checkout
+     * can't be used to read it.
+     */
+    postBookingRedirect: PostBookingRedirect | null;
   } | null;
   /** Membership purchases: the plan details (null otherwise). */
   membership: {
@@ -992,6 +1008,7 @@ export async function getMyBookingDetail(
       ev.id                      as event_id,
       ev.name                    as event_name,
       ev.description             as event_description,
+      ev.post_booking_redirect   as event_post_booking_redirect,
       ev.starts_at               as event_starts_at,
       ev.ends_at                 as event_ends_at,
       mm.id                      as membership_id,
@@ -1054,6 +1071,10 @@ export async function getMyBookingDetail(
         label: a['question_label'] as string,
         answer: a['answer'] as string,
       })),
+      postBookingRedirect:
+        (r['status'] as string) === 'confirmed'
+          ? ((r['event_post_booking_redirect'] as PostBookingRedirect | null) ?? null)
+          : null,
     };
   }
 

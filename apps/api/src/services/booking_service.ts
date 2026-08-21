@@ -3,6 +3,7 @@ import { db } from '../db/client.js';
 import { type Booking, bookings, slots, tenants } from '../db/schema/index.js';
 import { events } from '../db/schema/events.js';
 import { payments } from '../db/schema/payments.js';
+import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -468,6 +469,12 @@ export interface BookEventResult {
   clientSecret?: string | undefined;
   amountPaise?: number;
   currency?: string;
+  /**
+   * The event's post-booking link, if the partner set one — where to send the
+   * customer once this booking confirms. Delivered here (rather than on the
+   * public event payload) so only people who actually booked receive it.
+   */
+  postBookingRedirect?: PostBookingRedirect | null;
 }
 
 /**
@@ -705,13 +712,17 @@ export async function bookEvent(
       },
       billing: billingCfg,
       payCtx,
+      postBookingRedirect: ev.postBookingRedirect,
     };
   });
 
   if (reserved.isFree) {
     // Free events confirm inline (no payment webhook) — notify from here.
     await onBookingConfirmed(reserved.booking.id);
-    return { booking: reserved.booking };
+    return {
+      booking: reserved.booking,
+      postBookingRedirect: reserved.postBookingRedirect,
+    };
   }
 
   // Phase 2 — paid path: createPaymentOrder runs OUTSIDE the booking tx so it
@@ -755,5 +766,6 @@ export async function bookEvent(
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
     currency: reserved.payCtx.currency,
+    postBookingRedirect: reserved.postBookingRedirect,
   };
 }

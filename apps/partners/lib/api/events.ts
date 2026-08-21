@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
-import type { EventBooking, QrTicketConfig, VenueEvent, VenueEventSummary } from './types';
+import type {
+  EventBooking,
+  PostBookingRedirect,
+  QrTicketConfig,
+  VenueEvent,
+  VenueEventSummary,
+} from './types';
 
 export function useVenueEvents(venueId: string) {
   return useQuery({
@@ -86,6 +92,8 @@ export interface CreateTenantEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Where confirmed bookers are sent next; null/omitted = nothing shown. */
+  postBookingRedirect?: PostBookingRedirect | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -185,6 +193,8 @@ export interface CreateEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Where confirmed bookers are sent next; null/omitted = nothing shown. */
+  postBookingRedirect?: PostBookingRedirect | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -223,13 +233,16 @@ export interface UpdateEventInput {
   maxPerUser?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Post-booking link; null = remove it. Omit to leave unchanged. */
+  postBookingRedirect?: PostBookingRedirect | null;
   /** Published-only: raise tiers' capacity by id (null = unlimited). The API
    *  rejects decreases (`event_capacity_decrease`). */
   tierCapacities?: { tierId: string; capacity: number | null }[];
 }
 
 /** PATCH an event. Drafts: any field. Published: only the free live settings —
- *  `maxPerUser`, `tierCapacities`, `description`, `qrTicketConfig`, `questions`.
+ *  `maxPerUser`, `tierCapacities`, `description`, `qrTicketConfig`,
+ *  `postBookingRedirect`, `questions`.
  *  Anything else is 409 event_not_draft; name/window/location/tiers go through
  *  a change request (see `useCreateEventChangeRequest`). */
 export function useUpdateEvent(tenantId: string, venueId: string) {

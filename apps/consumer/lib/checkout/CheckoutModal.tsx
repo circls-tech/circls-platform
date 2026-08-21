@@ -9,6 +9,8 @@ import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from 
 import { ApiError } from '@/lib/api/client';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
+import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
@@ -60,6 +62,9 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   const [codeInput, setCodeInput] = useState(initialCode ?? '');
   const [appliedCode, setAppliedCode] = useState<string | undefined>(initialCode);
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
+  // The organiser's next step, handed back by the book call (never on the
+  // public listing). Only rendered once the booking actually confirms.
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
 
   const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
     : item.kind === 'membership' ? { itemType: 'membership' as const, itemId: item.membershipId } : null;
@@ -128,6 +133,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           ...(appliedCode ? { couponCode: appliedCode } : {}),
           ...(answerPayload.length > 0 ? { answers: answerPayload } : {}),
         });
+        setRedirect(r.postBookingRedirect ?? null);
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
         const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}), ...(appliedCode ? { couponCode: appliedCode } : {}) });
@@ -218,6 +224,11 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
               : phase.kind === 'reserved' ? 'bg-tone-warning-bg text-tone-warning-text'
               : 'bg-tone-danger-bg text-tone-danger-text',
           ].join(' ')}>{phase.message}</div>
+          {/* Only on a confirmed booking: a 'reserved' booking isn't paid for
+              yet, and an error created none at all. */}
+          {phase.kind === 'success' && redirect && (
+            <PostBookingRedirectPanel redirect={redirect} autoRedirect />
+          )}
           <Button onClick={onClose}>Done</Button>
         </div>
       ) : (

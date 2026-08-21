@@ -1,4 +1,4 @@
-Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding registration questions, adding photos, submitting it for review, and managing registrations.
+Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding registration questions, sending bookers to a next step, adding photos, submitting it for review, and managing registrations.
 
 ## Creating an event
 
@@ -78,6 +78,7 @@ Once the event is **published**, its detail page shows a **Live settings** card 
 - **Description** — fix typos or add details any time.
 - **Registration questions** — add, edit, remove, or reorder. Answers people already gave are kept under the question's old wording, so if you edit a question mid-event, the registrations CSV shows the old and new versions as **two separate columns**.
 - **QR ticket rules** — event-level QR settings; changes only apply to future registrations, passes customers already hold are never changed.
+- **After booking** — the link customers are sent to once they've booked (see **Sending bookers to a next step** below). Changing it applies to new bookings; people who already booked keep seeing the link that was set when they booked, on their booking page.
 
 The remaining fields — **name, date & time, location, and ticket tiers** — change only through an approved change request, described next.
 
@@ -117,6 +118,28 @@ Use the arrows to reorder questions; consumers see them in this order. You can a
 Questions are editable while the event is a **draft**, locked during review, and editable again once the event is **published** (from the **Live settings** card). Editing a question mid-event keeps the answers people already gave under the old wording — in the registrations CSV, the old and new versions appear as two separate columns. Answers appear with each registration (see **Managing registrations** below).
 
 Don't confuse these with **customer questions** — the public Q&A threads consumers post on your event page (see the end of this guide). Registration questions are asked *by you* and answered privately at booking.
+
+## Sending bookers to a next step
+
+Often the booking isn't the last thing you need from an attendee — you want their team roster, a signed waiver, or them in your WhatsApp group. Use the **After booking** section on the event form to attach a link that's shown the moment their booking is confirmed.
+
+Switch it from **Nothing** to **Send them a link** and fill in:
+
+| Field | Notes |
+| --- | --- |
+| **Link** | The full address, starting with `https://` — a Google Form, a WhatsApp group invite, a waiver, your Discord. Only `http://` and `https://` links are accepted. |
+| **What to tell them** | Your own sentence explaining why they should follow it, e.g. "Fill in your team roster before Friday so we can seed the draw." Shown above the link. Optional — leave it blank for generic wording. |
+| **Open it for them automatically** | Ticked = the confirmation screen counts down and opens the link in a **new tab** (they can still tap **Stay here**). Their confirmation and booking reference stay on screen either way. Unticked = the link is offered as a button they follow if they want to. |
+
+**Only people who completed a booking ever see the link.** It is not part of your public event page, so a private group invite stays with the people who actually registered. The link also stays on the customer's own booking page, so they can come back to it later — that page never opens it automatically, however you set the tick box.
+
+A few things worth knowing:
+
+- The link appears only once a booking is **confirmed** — a customer who abandons payment doesn't get it.
+- This is editable **after the event goes live** (see **Live settings** above), unlike most of the event form.
+- Recurring events: every date in the series gets the link you set on the create form. Change one date's link from that date's own event page.
+- Use **Open it for them automatically** sparingly — it's for genuinely mandatory steps like a waiver. For a nice-to-have like a community chat, leave it unticked.
+- A browser's popup blocker can refuse a tab the page opens on its own. When that happens the customer is told, and the button is right there to tap — so the step is never silently lost.
 
 ## QR entry tickets
 

@@ -28,6 +28,11 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
         startsAt: new Date('2030-09-01T10:00:00Z'),
         endsAt: new Date('2030-09-01T12:00:00Z'),
         pricePaise: 0,
+        postBookingRedirect: {
+          url: 'https://chat.whatsapp.com/private-invite',
+          description: 'Join the group',
+          forced: false,
+        },
         status: 'published',
       })
       .returning();
@@ -55,5 +60,17 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
     expect(row).toBeTruthy();
     expect(row!.isStandalone).toBe(true);
     expect((row!.locAddressJson as Record<string, unknown>).city).toBe('Pune');
+  });
+
+  it('keeps the post-booking redirect out of the public payloads', async () => {
+    // The organiser's group invite belongs to people who booked — a browsing
+    // visitor must not be able to lift it off the listing JSON.
+    const row = await getPublicEventById(eventId);
+    expect(row).not.toHaveProperty('postBookingRedirect');
+
+    const listRow = (await listPublicUpcomingEvents({ limit: 100 })).find(
+      (r) => r.id === eventId,
+    );
+    expect(listRow).not.toHaveProperty('postBookingRedirect');
   });
 });

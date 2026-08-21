@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { useMyBooking } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatDateTime, formatPaise, formatTime } from '@/lib/format';
+import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
 import { QrTicketCard } from '@/lib/QrTicketCard';
 import { Card, StatusPill } from '@/lib/ui';
 
@@ -114,6 +115,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </p>
                 {b.event.description && (
                   <p className="mt-3 whitespace-pre-line text-sm text-text-secondary">{b.event.description}</p>
+                )}
+                {/* The organiser's next step (form, group chat, waiver). Never
+                    auto-navigates here — people reopen this page long after
+                    booking and shouldn't be thrown off it. */}
+                {b.event.postBookingRedirect && (
+                  <div className="mt-4">
+                    <PostBookingRedirectPanel redirect={b.event.postBookingRedirect} />
+                  </div>
                 )}
                 {(b.event.answers ?? []).length > 0 && (
                   <div className="mt-3 flex flex-col divide-y divide-ink/15">

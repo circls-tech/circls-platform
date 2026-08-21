@@ -13,6 +13,12 @@ import {
   type QuestionDraft,
 } from '@/components/EventQuestionsEditor';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
+import {
+  PostBookingRedirectEditor,
+  isValidRedirectUrl,
+  redirectToPayload,
+} from '@/components/PostBookingRedirectEditor';
+import type { PostBookingRedirect } from '@/lib/api/types';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
   RecurrenceEditor,
@@ -68,6 +74,7 @@ export default function NewEventPage() {
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [err, setErr] = useState<string | null>(null);
@@ -101,6 +108,10 @@ export default function NewEventPage() {
       )
     ) {
       setErr('Give every multiple-choice question at least 2 options.');
+      return;
+    }
+    if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
+      setErr('Enter a full http:// or https:// link for the after-booking step.');
       return;
     }
 
@@ -142,6 +153,7 @@ export default function NewEventPage() {
         tiers: tiersToPayload(tiers),
         questions: questionsToPayload(questions),
         maxPerUser: maxPerUserToPayload(maxPerUser),
+        postBookingRedirect: redirectToPayload(redirect),
       });
       // For a series, photos land on the first date — the other dates (and the
       // consumer pages) borrow that gallery.
@@ -236,6 +248,8 @@ export default function NewEventPage() {
           <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
+
+          <PostBookingRedirectEditor value={redirect} onChange={setRedirect} />
 
           <PendingPhotosPicker photos={photos} onChange={setPhotos} />
 

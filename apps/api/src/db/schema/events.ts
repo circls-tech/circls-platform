@@ -9,6 +9,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { bigintPaise, createdAt, updatedAt, uuidPk } from './_columns.js';
+import type { PostBookingRedirect } from './post_booking_redirect.js';
 import type { QrTicketConfig } from './qr_ticket_config.js';
 import { tenants } from './tenants.js';
 import { venues } from './venues.js';
@@ -53,6 +54,13 @@ export const events = pgTable('events', {
   maxPerUser: integer('max_per_user'),
   /** QR entry-ticket rules for this event (null = QR tickets disabled). */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
+  /**
+   * Where to send the customer once their booking is confirmed — a partner's
+   * registration form, community chat, or waiver (null = nothing to show).
+   * Never part of the public event payload: it's delivered with the booking,
+   * so an unbooked visitor can't lift a private group invite off the listing.
+   */
+  postBookingRedirect: jsonb('post_booking_redirect').$type<PostBookingRedirect>(),
   /**
    * Groups the occurrences of a recurring event ("every Thu & Fri until …").
    * Each occurrence is a full row (own window/scope/tiers/bookings/status);

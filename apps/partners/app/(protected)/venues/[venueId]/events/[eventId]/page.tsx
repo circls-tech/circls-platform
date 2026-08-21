@@ -32,6 +32,12 @@ import {
   maxPerUserFromApi,
   maxPerUserToPayload,
 } from '@/components/MaxPerUserField';
+import {
+  PostBookingRedirectEditor,
+  isValidRedirectUrl,
+  redirectToPayload,
+} from '@/components/PostBookingRedirectEditor';
+import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { formatMoney, useCurrency } from '@/lib/currency';
@@ -129,6 +135,7 @@ export default function EventDetailPage() {
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
 
   function startEdit() {
     if (!ev) return;
@@ -139,6 +146,7 @@ export default function EventDetailPage() {
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
+    setRedirect(ev.postBookingRedirect ?? null);
     setErrorMsg(null);
     setEditing(true);
   }
@@ -183,6 +191,10 @@ export default function EventDetailPage() {
       setErrorMsg('Give every multiple-choice question at least 2 options.');
       return;
     }
+    if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
+      setErrorMsg('Enter a full http:// or https:// link for the after-booking step.');
+      return;
+    }
     try {
       await update.mutateAsync({
         eventId,
@@ -194,6 +206,7 @@ export default function EventDetailPage() {
           tiers: tiersToPayload(tiers),
           questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
+          postBookingRedirect: redirectToPayload(redirect),
         },
       });
       setEditing(false);
@@ -342,6 +355,7 @@ export default function EventDetailPage() {
                 maxPerUser={ev.maxPerUser}
                 description={ev.description}
                 qrTicketConfig={ev.qrTicketConfig}
+                postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
                 saving={update.isPending}
                 onSave={async (input) => {
@@ -399,6 +413,8 @@ export default function EventDetailPage() {
                 <EventQuestionsEditor value={questions} onChange={setQuestions} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
+
+                <PostBookingRedirectEditor value={redirect} onChange={setRedirect} />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
