@@ -38,6 +38,11 @@ import {
   type QuestionDraft,
 } from '@/components/EventQuestionsEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import {
+  PostBookingRedirectEditor,
+  isValidRedirectUrl,
+  redirectToPayload,
+} from '@/components/PostBookingRedirectEditor';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import {
@@ -45,7 +50,7 @@ import {
   maxPerUserFromApi,
   maxPerUserToPayload,
 } from '@/components/MaxPerUserField';
-import type { QrTicketConfig } from '@/lib/api/types';
+import type { PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
 import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
@@ -142,6 +147,7 @@ export default function OrgEventDetailPage() {
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
   // '' => standalone; otherwise a venue id.
   const [venueChoice, setVenueChoice] = useState('');
   // Standalone address fields (shown when venueChoice === '').
@@ -193,6 +199,7 @@ export default function OrgEventDetailPage() {
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setQrConfig(ev.qrTicketConfig ?? null);
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
+    setRedirect(ev.postBookingRedirect ?? null);
     setVenueChoice(ev.venueId ?? '');
     // Prefill the standalone address from whatever the event already carries.
     const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
@@ -270,6 +277,10 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Give every multiple-choice question at least 2 options.');
       return;
     }
+    if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
+      setErrorMsg('Enter a full http:// or https:// link for the after-booking step.');
+      return;
+    }
 
     const originalChoice = ev?.venueId ?? '';
     const scopeChanged = venueChoice !== originalChoice;
@@ -319,6 +330,7 @@ export default function OrgEventDetailPage() {
           questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
           qrTicketConfig: qrConfig,
+          postBookingRedirect: redirectToPayload(redirect),
           ...scopePatch,
         },
       });
@@ -511,6 +523,7 @@ export default function OrgEventDetailPage() {
                 maxPerUser={ev.maxPerUser}
                 description={ev.description}
                 qrTicketConfig={ev.qrTicketConfig}
+                postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
                 saving={update.isPending}
                 onSave={async (input) => {
@@ -679,6 +692,8 @@ export default function OrgEventDetailPage() {
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
                 <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
+
+                <PostBookingRedirectEditor value={redirect} onChange={setRedirect} />
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button

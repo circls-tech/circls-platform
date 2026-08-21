@@ -1,8 +1,12 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { events, tenants } from '../db/schema/index.js';
-import { getPublicEventById, listPublicUpcomingEvents } from './consumer_service.js';
+import { events, tenants, venues } from '../db/schema/index.js';
+import {
+  getPublicEventById,
+  listPublicEvents,
+  listPublicUpcomingEvents,
+} from './consumer_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -28,6 +32,11 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
         startsAt: new Date('2030-09-01T10:00:00Z'),
         endsAt: new Date('2030-09-01T12:00:00Z'),
         pricePaise: 0,
+        postBookingRedirect: {
+          url: 'https://chat.whatsapp.com/private-invite',
+          description: 'Join the group',
+          forced: false,
+        },
         status: 'published',
       })
       .returning();
@@ -36,6 +45,7 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await closeDb();
   });
@@ -55,5 +65,45 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
     expect(row).toBeTruthy();
     expect(row!.isStandalone).toBe(true);
     expect((row!.locAddressJson as Record<string, unknown>).city).toBe('Pune');
+  });
+
+  it('keeps the post-booking redirect out of the public payloads', async () => {
+    // The organiser's group invite belongs to people who booked — a browsing
+    // visitor must not be able to lift it off the listing JSON.
+    const row = await getPublicEventById(eventId);
+    expect(row).not.toHaveProperty('postBookingRedirect');
+
+    const listRow = (await listPublicUpcomingEvents({ limit: 100 })).find(
+      (r) => r.id === eventId,
+    );
+    expect(listRow).not.toHaveProperty('postBookingRedirect');
+  });
+
+  it('keeps it out of the per-venue listing too', async () => {
+    // Regression: this path returned the raw event row, so the link was served
+    // by the unauthenticated GET /v1/consumer/venues/:venueId/events.
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId, name: 'RedirectLeakV', tzName: 'Asia/Kolkata', status: 'active' })
+      .returning();
+    const [e] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId: v!.id,
+        name: 'Venue Listed Event',
+        startsAt: new Date('2030-09-02T10:00:00Z'),
+        endsAt: new Date('2030-09-02T12:00:00Z'),
+        pricePaise: 0,
+        postBookingRedirect: { url: 'https://forms.gle/private', description: null, forced: false },
+        status: 'published',
+      })
+      .returning();
+
+    const rows = await listPublicEvents(v!.id);
+    const row = rows.find((r) => r.id === e!.id);
+    expect(row).toBeTruthy();
+    expect(row).not.toHaveProperty('postBookingRedirect');
+    expect(JSON.stringify(rows)).not.toContain('forms.gle/private');
   });
 });

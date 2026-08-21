@@ -31,7 +31,12 @@ import {
   type RecurrenceValue,
 } from '@/components/RecurrenceEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
-import type { QrTicketConfig } from '@/lib/api/types';
+import {
+  PostBookingRedirectEditor,
+  isValidRedirectUrl,
+  redirectToPayload,
+} from '@/components/PostBookingRedirectEditor';
+import type { PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
 import { Button, Card, Input } from '@/lib/ui';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
@@ -74,6 +79,7 @@ export default function NewTenantEventPage() {
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
@@ -150,6 +156,10 @@ export default function NewTenantEventPage() {
       setErr('Give every multiple-choice question at least 2 options.');
       return;
     }
+    if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
+      setErr('Enter a full http:// or https:// link for the after-booking step.');
+      return;
+    }
 
     const isWeekly = recurrence.mode === 'weekly';
     const occurrences = isWeekly
@@ -185,6 +195,7 @@ export default function NewTenantEventPage() {
       questions: questionsToPayload(questions),
       maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
+      postBookingRedirect: redirectToPayload(redirect),
     };
 
     let input: CreateTenantEventInput;
@@ -357,6 +368,8 @@ export default function NewTenantEventPage() {
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 
           <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="event" />
+
+          <PostBookingRedirectEditor value={redirect} onChange={setRedirect} />
 
           <PendingPhotosPicker photos={photos} onChange={setPhotos} />
 

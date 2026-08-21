@@ -15,6 +15,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
+import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
@@ -192,6 +193,8 @@ export interface CreateEventInput {
   questions?: RegistrationQuestionInput[] | undefined;
   /** QR entry-ticket rules (null/omitted = disabled). */
   qrTicketConfig?: QrTicketConfig | null | undefined;
+  /** Where to send the customer after their booking confirms (null/omitted = nowhere). */
+  postBookingRedirect?: PostBookingRedirect | null | undefined;
 }
 
 /**
@@ -305,6 +308,7 @@ async function insertEventTx(
       capacity: input.capacity ?? null,
       maxPerUser: input.maxPerUser ?? null,
       qrTicketConfig: input.qrTicketConfig ?? null,
+      postBookingRedirect: input.postBookingRedirect ?? null,
       seriesId,
       status: 'draft',
     })
@@ -486,6 +490,8 @@ export interface UpdateEventPatch {
   lng?: number | null;
   /** null clears (QR tickets off); omitted = unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** null clears (no post-booking link); omitted = unchanged. */
+  postBookingRedirect?: PostBookingRedirect | null;
   /** Per-customer ticket cap for the whole event; null clears, omitted = unchanged. */
   maxPerUser?: number | null;
   /** When provided, replaces all ticket tiers (draft-only). */
@@ -508,6 +514,7 @@ const LIVE_EDITABLE_KEYS = new Set([
   'tierCapacities',
   'description',
   'qrTicketConfig',
+  'postBookingRedirect',
   'questions',
 ]);
 
@@ -515,8 +522,9 @@ const LIVE_EDITABLE_KEYS = new Set([
  * Unconstrained-on-approval-free fields for a published event: the
  * per-customer ticket cap (any change — it only gates future purchases, never
  * existing tickets), increase-only tier capacity, description, QR ticket
- * config, and registration questions (replace-all, like drafts). Any other
- * field is rejected — name/window/location/tiers change only via an approved
+ * config, the post-booking redirect (it only affects future bookings'
+ * confirmation screens), and registration questions (replace-all, like
+ * drafts). Any other field is rejected — name/window/location/tiers change only via an approved
  * change request, so the content the circls team reviewed stays controlled.
  */
 async function applyLiveSettings(
@@ -530,7 +538,7 @@ async function applyLiveSettings(
     .map(([k]) => k);
   if (disallowed.length > 0) {
     throw new Conflict(
-      `These fields need an approved change request on a live event: ${disallowed.join(', ')}. Freely editable: description, QR config, questions, per-customer limit, capacity increases.`,
+      `These fields need an approved change request on a live event: ${disallowed.join(', ')}. Freely editable: description, QR config, post-booking link, questions, per-customer limit, capacity increases.`,
       'event_not_draft',
       { fields: disallowed },
     );
@@ -567,6 +575,7 @@ async function applyLiveSettings(
   if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+  if (patch.postBookingRedirect !== undefined) set.postBookingRedirect = patch.postBookingRedirect;
   if (Object.keys(set).length > 0) {
     await tx.update(events).set(set).where(eq(events.id, existing.id));
   }
@@ -588,12 +597,18 @@ async function applyLiveSettings(
       capacities: capacityBefore,
       ...(patch.description !== undefined ? { description: existing.description } : {}),
       ...(patch.qrTicketConfig !== undefined ? { qrTicketConfig: existing.qrTicketConfig } : {}),
+      ...(patch.postBookingRedirect !== undefined
+        ? { postBookingRedirect: existing.postBookingRedirect }
+        : {}),
     },
     {
       ...(patch.maxPerUser !== undefined ? { maxPerUser: patch.maxPerUser } : {}),
       ...(patch.tierCapacities !== undefined ? { tierCapacities: patch.tierCapacities } : {}),
       ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.qrTicketConfig !== undefined ? { qrTicketConfig: patch.qrTicketConfig } : {}),
+      ...(patch.postBookingRedirect !== undefined
+        ? { postBookingRedirect: patch.postBookingRedirect }
+        : {}),
       ...(patch.questions !== undefined ? { questions: patch.questions } : {}),
     },
   );
@@ -651,6 +666,7 @@ async function applyEventPatchTx(
   if (patch.startsAt !== undefined) set.startsAt = patch.startsAt;
   if (patch.endsAt !== undefined) set.endsAt = patch.endsAt;
   if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+  if (patch.postBookingRedirect !== undefined) set.postBookingRedirect = patch.postBookingRedirect;
   if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
 
   // Resolve the post-update scope: a venue id in the patch wins, otherwise the

@@ -17,6 +17,7 @@ import { isUniqueViolation } from '../db/errors.js';
 import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
+import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import { memberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
@@ -231,7 +232,7 @@ export async function listPublicArenaSlots(
  */
 export async function listPublicEvents(
   venueId: string,
-): Promise<Array<Event & { seriesCount: number }>> {
+): Promise<Array<PublicEventColumns & { seriesCount: number }>> {
   await assertVenueVisible(venueId);
   const rows = await db
     .select()
@@ -245,7 +246,9 @@ export async function listPublicEvents(
       ),
     )
     .orderBy(sql`${events.startsAt} asc`);
-  return groupBySeries(rows, (e) => e);
+  // Group on the full rows (grouping reads id/seriesId), then strip — this is
+  // a public, unauthenticated endpoint, so the raw row must not go out.
+  return groupBySeries(rows, (e) => e).map(toPublicEventColumns);
 }
 
 /**
@@ -276,7 +279,28 @@ function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { ser
  * its location from the venue; a standalone (venue-less) event uses its own
  * columns and the tenant/org name. `loc*` fields are what the UI renders.
  */
-export interface PublicEventWithVenue extends Event {
+/**
+ * An event row with the partner-only columns removed. Right now that is just
+ * `postBookingRedirect` — a WhatsApp invite or form link belongs to people who
+ * booked, so it travels with the booking (`BookEventResult.postBookingRedirect`
+ * and `MyBookingDetail.event`) and never with a listing.
+ *
+ * EVERY consumer-facing path that returns event columns must go through
+ * {@link toPublicEventColumns}; returning a raw `Event` publishes the link.
+ */
+export type PublicEventColumns = Omit<Event, 'postBookingRedirect'>;
+
+/** Drop the partner-only columns from an event row. See {@link PublicEventColumns}. */
+function toPublicEventColumns<T extends Event>(row: T): Omit<T, 'postBookingRedirect'> {
+  const { postBookingRedirect: _redirect, ...publicColumns } = row;
+  return publicColumns;
+}
+
+/**
+ * Public projection of an event with its resolved location. Built on
+ * {@link PublicEventColumns}, so the post-booking link is never included.
+ */
+export interface PublicEventWithVenue extends PublicEventColumns {
   venueName: string | null;
   venueTags: string[];
   isStandalone: boolean;
@@ -371,7 +395,7 @@ interface EventJoinRow {
 function toPublicEvent(r: EventJoinRow, images: PublicImageRef[] = []): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
   return {
-    ...r.e,
+    ...toPublicEventColumns(r.e),
     venueName: r.venueName,
     venueTags: r.venueTags ?? [],
     isStandalone,
@@ -933,6 +957,12 @@ export interface MyBookingDetail {
     description: string | null;
     /** The user's registration-question answers, in the order asked. */
     answers: { label: string; answer: string }[];
+    /**
+     * The partner's "what to do next" link, or null when they set none — and
+     * always null until the booking is confirmed, so an abandoned checkout
+     * can't be used to read it.
+     */
+    postBookingRedirect: PostBookingRedirect | null;
   } | null;
   /** Membership purchases: the plan details (null otherwise). */
   membership: {
@@ -992,6 +1022,7 @@ export async function getMyBookingDetail(
       ev.id                      as event_id,
       ev.name                    as event_name,
       ev.description             as event_description,
+      ev.post_booking_redirect   as event_post_booking_redirect,
       ev.starts_at               as event_starts_at,
       ev.ends_at                 as event_ends_at,
       mm.id                      as membership_id,
@@ -1054,6 +1085,10 @@ export async function getMyBookingDetail(
         label: a['question_label'] as string,
         answer: a['answer'] as string,
       })),
+      postBookingRedirect:
+        (r['status'] as string) === 'confirmed'
+          ? ((r['event_post_booking_redirect'] as PostBookingRedirect | null) ?? null)
+          : null,
     };
   }
 

@@ -5,10 +5,12 @@ import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
-import { useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
+import { fetchPostBookingRedirect, useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
 import { ApiError } from '@/lib/api/client';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
+import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
 import type { CheckoutItem, CheckoutPrefill } from './types';
@@ -60,6 +62,12 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   const [codeInput, setCodeInput] = useState(initialCode ?? '');
   const [appliedCode, setAppliedCode] = useState<string | undefined>(initialCode);
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
+  // The organiser's next step. Free events get it straight from the book call
+  // (that booking is already confirmed); paid events must wait for the payment
+  // webhook, so it's fetched from the booking once the gateway reports success
+  // — the API withholds it while a booking is still 'pending'.
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
+  const [redirectPending, setRedirectPending] = useState(false);
 
   const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
     : item.kind === 'membership' ? { itemType: 'membership' as const, itemId: item.membershipId } : null;
@@ -104,6 +112,8 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     if (!breakdown) return;
     setPhase({ kind: 'paying' });
     try {
+      // Set on the event path so a paid success can look up its redirect.
+      let eventBookingId: string | null = null;
       let order: { gateway: 'razorpay' | 'stripe'; orderId: string; keyId: string; clientSecret: string; amountPaise: number; currency: string } =
         { gateway: 'razorpay', orderId: '', keyId: '', clientSecret: '', amountPaise: breakdown.totalPaise, currency: breakdown.currency ?? 'INR' };
       if (item.kind === 'slot') {
@@ -128,6 +138,9 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           ...(appliedCode ? { couponCode: appliedCode } : {}),
           ...(answerPayload.length > 0 ? { answers: answerPayload } : {}),
         });
+        // Present only on the free path; paid bookings resolve it after payment.
+        setRedirect(r.postBookingRedirect ?? null);
+        eventBookingId = r.booking?.id ?? null;
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
         const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}), ...(appliedCode ? { couponCode: appliedCode } : {}) });
@@ -151,7 +164,17 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
             description: item.title,
             prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
           });
-      if (result.kind === 'paid') setPhase({ kind: 'success', message: 'Payment received! See it in My Bookings.' });
+      if (result.kind === 'paid') {
+        setPhase({ kind: 'success', message: 'Payment received! See it in My Bookings.' });
+        // The booking only earns its post-booking link once the webhook flips
+        // it to confirmed, which usually lands just after this callback.
+        if (eventBookingId) {
+          setRedirectPending(true);
+          void fetchPostBookingRedirect(eventBookingId)
+            .then(setRedirect)
+            .finally(() => setRedirectPending(false));
+        }
+      }
       else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
       else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
     } catch (e) {
@@ -218,6 +241,16 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
               : phase.kind === 'reserved' ? 'bg-tone-warning-bg text-tone-warning-text'
               : 'bg-tone-danger-bg text-tone-danger-text',
           ].join(' ')}>{phase.message}</div>
+          {/* Only on a confirmed booking: a 'reserved' booking isn't paid for
+              yet, and an error created none at all. */}
+          {phase.kind === 'success' && redirect && (
+            <PostBookingRedirectPanel redirect={redirect} autoRedirect />
+          )}
+          {phase.kind === 'success' && !redirect && redirectPending && (
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              Checking whether the organiser has a next step for you…
+            </p>
+          )}
           <Button onClick={onClose}>Done</Button>
         </div>
       ) : (

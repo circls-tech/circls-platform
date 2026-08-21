@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { EventQuestion, EventTier, QrTicketConfig } from '@/lib/api/types';
+import type { EventQuestion, EventTier, PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
 import type { UpdateEventInput } from '@/lib/api/events';
 import { Button, Card, Input } from '@/lib/ui';
 import { MaxPerUserField, maxPerUserFromApi, maxPerUserToPayload } from './MaxPerUserField';
@@ -12,13 +12,20 @@ import {
   type QuestionDraft,
 } from './EventQuestionsEditor';
 import { QrTicketConfigEditor } from './QrTicketConfigEditor';
+import {
+  PostBookingRedirectEditor,
+  isValidRedirectUrl,
+  redirectToPayload,
+  sameRedirect,
+} from './PostBookingRedirectEditor';
 
 /**
  * The settings a PUBLISHED event may still change freely (no circls review):
  * tier capacity (increase only — higher, or blank for unlimited; the API
  * rejects decreases so tickets already sold are never invalidated), the
- * per-customer ticket limit, the description, QR ticket rules, and
- * registration questions. Sends only the fields that changed. Name, date/time,
+ * per-customer ticket limit, the description, QR ticket rules, the
+ * post-booking link, and registration questions. Sends only the fields that
+ * changed. Name, date/time,
  * location, and tier structure go through a change request instead (see
  * EventChangeRequests).
  */
@@ -27,6 +34,7 @@ export function LiveEventSettings({
   maxPerUser,
   description,
   qrTicketConfig,
+  postBookingRedirect,
   questions,
   onSave,
   saving,
@@ -35,11 +43,17 @@ export function LiveEventSettings({
   maxPerUser: number | null;
   description: string | null;
   qrTicketConfig: QrTicketConfig | null;
+  postBookingRedirect: PostBookingRedirect | null;
   questions: EventQuestion[];
   onSave: (
     input: Pick<
       UpdateEventInput,
-      'maxPerUser' | 'tierCapacities' | 'description' | 'qrTicketConfig' | 'questions'
+      | 'maxPerUser'
+      | 'tierCapacities'
+      | 'description'
+      | 'qrTicketConfig'
+      | 'postBookingRedirect'
+      | 'questions'
     >,
   ) => Promise<void>;
   saving: boolean;
@@ -51,6 +65,7 @@ export function LiveEventSettings({
   const [limit, setLimit] = useState<string | null>(() => maxPerUserFromApi(maxPerUser));
   const [descDraft, setDescDraft] = useState(description ?? '');
   const [qrDraft, setQrDraft] = useState<QrTicketConfig | null>(qrTicketConfig);
+  const [redirectDraft, setRedirectDraft] = useState<PostBookingRedirect | null>(postBookingRedirect);
   const [questionDrafts, setQuestionDrafts] = useState<QuestionDraft[]>(() =>
     questions.map(questionDraftFromApi),
   );
@@ -68,11 +83,17 @@ export function LiveEventSettings({
   const limitChanged = maxPerUserToPayload(limit) !== maxPerUser;
   const descriptionChanged = descDraft !== (description ?? '');
   const qrChanged = JSON.stringify(qrDraft) !== JSON.stringify(qrTicketConfig);
+  const redirectChanged = !sameRedirect(redirectToPayload(redirectDraft), postBookingRedirect);
   const questionsChanged =
     JSON.stringify(questionsToPayload(questionDrafts)) !==
     JSON.stringify(questionsToPayload(questions.map(questionDraftFromApi)));
   const dirty =
-    capacityChanges.length > 0 || limitChanged || descriptionChanged || qrChanged || questionsChanged;
+    capacityChanges.length > 0 ||
+    limitChanged ||
+    descriptionChanged ||
+    qrChanged ||
+    redirectChanged ||
+    questionsChanged;
 
   async function save() {
     setError(null);
@@ -89,12 +110,17 @@ export function LiveEventSettings({
       setError('Give every multiple-choice question at least 2 options.');
       return;
     }
+    if (redirectDraft && redirectDraft.url.trim() && !isValidRedirectUrl(redirectDraft.url)) {
+      setError('Enter a full http:// or https:// link for the after-booking step.');
+      return;
+    }
     try {
       await onSave({
         ...(limitChanged ? { maxPerUser: maxPerUserToPayload(limit) } : {}),
         ...(capacityChanges.length > 0 ? { tierCapacities: capacityChanges } : {}),
         ...(descriptionChanged ? { description: descDraft } : {}),
         ...(qrChanged ? { qrTicketConfig: qrDraft } : {}),
+        ...(redirectChanged ? { postBookingRedirect: redirectToPayload(redirectDraft) } : {}),
         ...(questionsChanged ? { questions: questionsToPayload(questionDrafts) } : {}),
       });
       setSaved(true);
@@ -109,7 +135,9 @@ export function LiveEventSettings({
         These can change while the event is live, without review. Capacity can only go up (or blank
         for unlimited) and the per-customer limit only affects future purchases — tickets people
         already hold are never touched. Editing a question mid-event keeps the answers people
-        already gave under the old wording.
+        already gave under the old wording. A changed after-booking link applies
+        to new bookings; people who already booked keep seeing it on their
+        booking page.
       </p>
 
       <div className="flex max-w-xl flex-col gap-3">
@@ -153,6 +181,8 @@ export function LiveEventSettings({
         <EventQuestionsEditor value={questionDrafts} onChange={setQuestionDrafts} />
 
         <QrTicketConfigEditor value={qrDraft} onChange={setQrDraft} itemNoun="event" />
+
+        <PostBookingRedirectEditor value={redirectDraft} onChange={setRedirectDraft} />
 
         {error && (
           <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">

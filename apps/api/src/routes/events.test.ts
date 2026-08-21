@@ -192,6 +192,7 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
           startsAt: '2030-07-01T10:00:00.000Z',
           endsAt: '2030-07-01T12:00:00.000Z',
           maxPerUser: 4,
+          postBookingRedirect: { url: 'https://forms.gle/at-create', forced: true },
           tiers: [
             { name: 'Capped', pricePaise: 0, capacity: 10 },
             { name: 'Uncapped', pricePaise: 0 },
@@ -199,6 +200,11 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         },
       });
       expect(create.statusCode).toBe(200);
+      expect((create.json() as { postBookingRedirect: unknown }).postBookingRedirect).toEqual({
+        url: 'https://forms.gle/at-create',
+        description: null,
+        forced: true,
+      });
       eventId = (create.json() as { id: string }).id;
       const tierRows = (await db.execute(sql`
         select id, name from event_ticket_tiers where event_id = ${eventId} and deleted_at is null
@@ -267,6 +273,63 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().error.code).toBe('event_capacity_decrease');
+    });
+
+    it('sets, rewrites, and clears the post-booking redirect while live', async () => {
+      const set = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: {
+          postBookingRedirect: {
+            url: 'https://forms.gle/roster',
+            description: '  Send us your roster  ',
+            forced: true,
+          },
+        },
+      });
+      expect(set.statusCode).toBe(200);
+      expect((set.json() as { postBookingRedirect: unknown }).postBookingRedirect).toEqual({
+        url: 'https://forms.gle/roster',
+        description: 'Send us your roster',
+        forced: true,
+      });
+
+      // Omitted optionals fall back to their defaults, not the previous values.
+      const rewrite = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { postBookingRedirect: { url: 'https://chat.whatsapp.com/ABCdef' } },
+      });
+      expect(rewrite.statusCode).toBe(200);
+      expect((rewrite.json() as { postBookingRedirect: unknown }).postBookingRedirect).toEqual({
+        url: 'https://chat.whatsapp.com/ABCdef',
+        description: null,
+        forced: false,
+      });
+
+      const cleared = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { postBookingRedirect: null },
+      });
+      expect(cleared.statusCode).toBe(200);
+      expect(
+        (cleared.json() as { postBookingRedirect: unknown }).postBookingRedirect,
+      ).toBeNull();
+    });
+
+    it('rejects a non-http(s) redirect URL', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${eventId}`,
+        headers: bearer('owner'),
+        payload: { postBookingRedirect: { url: 'javascript:alert(1)' } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('bad_request');
     });
 
     it('rejects any other field on a published event with event_not_draft', async () => {

@@ -31,6 +31,10 @@ import type { EventChangeRequestPatch } from '../db/schema/event_change_requests
 import type { TierInput } from '../services/event_tiers_service.js';
 import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
 import {
+  postBookingRedirectSchema,
+  toPostBookingRedirect,
+} from '../lib/post_booking_redirect_schema.js';
+import {
   qrTicketConfigSchema,
   toQrTicketConfig,
   toTierQrTicketConfig,
@@ -112,6 +116,7 @@ const createEventSchema = z
     questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
+    postBookingRedirect: postBookingRedirectSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
@@ -134,6 +139,7 @@ const createTenantEventSchema = z
     questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
+    postBookingRedirect: postBookingRedirectSchema.optional(),
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
@@ -170,6 +176,7 @@ const updateEventSchema = z.object({
   questions: questionsField.optional(),
   maxPerUser: maxPerUserField,
   qrTicketConfig: qrTicketConfigSchema.optional(),
+  postBookingRedirect: postBookingRedirectSchema.optional(),
   // Published-only: raise individual tiers' capacity by id (null = unlimited).
   // The service rejects decreases and any use on drafts.
   tierCapacities: z
@@ -274,6 +281,9 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
+      ...(parsed.data.postBookingRedirect !== undefined
+        ? { postBookingRedirect: toPostBookingRedirect(parsed.data.postBookingRedirect) }
+        : {}),
     };
     if (parsed.data.occurrences) {
       const occs = await resolveOccurrences(venue.tenantId, base, parsed.data.occurrences);
@@ -337,6 +347,9 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
+      ...(parsed.data.postBookingRedirect !== undefined
+        ? { postBookingRedirect: toPostBookingRedirect(parsed.data.postBookingRedirect) }
+        : {}),
     };
     if (parsed.data.occurrences) {
       const occs = await resolveOccurrences(tenantId, base, parsed.data.occurrences);
@@ -370,6 +383,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.tierCapacities !== undefined) patch.tierCapacities = parsed.data.tierCapacities;
     if (parsed.data.qrTicketConfig !== undefined)
       patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
+    if (parsed.data.postBookingRedirect !== undefined)
+      patch.postBookingRedirect = toPostBookingRedirect(parsed.data.postBookingRedirect);
     if (parsed.data.venueId !== undefined) {
       // Re-scoping to a venue: the venue must belong to this tenant.
       if (parsed.data.venueId) {

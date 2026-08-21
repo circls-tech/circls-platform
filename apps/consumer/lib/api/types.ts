@@ -129,6 +129,22 @@ export interface PublicTier {
   remaining: number | null;
 }
 
+/**
+ * The organiser's "what to do next" link, handed over once a booking is
+ * confirmed — a registration form, a community chat invite, a waiver. Never
+ * part of a public listing: it arrives with the booking, so only people who
+ * actually booked receive it.
+ */
+export interface PostBookingRedirect {
+  /** Absolute http(s) destination (the API rejects any other scheme). */
+  url: string;
+  /** The organiser's own copy explaining the link; null = generic wording. */
+  description: string | null;
+  /** true = the confirmation screen counts down and opens it in a new tab
+   *  (skippable); the confirmation itself stays on screen. */
+  forced: boolean;
+}
+
 /** A registration question the organiser asks at booking time. */
 export interface PublicEventQuestion {
   id: string;
@@ -260,6 +276,8 @@ export interface EventBookingResult {
   clientSecret?: string;
   amountPaise?: number;
   currency?: string;
+  /** Where the organiser wants the booker to go next; null/absent = nowhere. */
+  postBookingRedirect?: PostBookingRedirect | null;
 }
 
 export interface MembershipPurchaseResult {
@@ -361,6 +379,9 @@ export interface MyBookingDetail {
     description: string | null;
     /** Your registration-question answers, in the order asked. */
     answers: { label: string; answer: string }[];
+    /** The organiser's next step; null when they set none or the booking
+     *  isn't confirmed yet. */
+    postBookingRedirect: PostBookingRedirect | null;
   } | null;
   membership: {
     id: string;

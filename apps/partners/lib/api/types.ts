@@ -116,6 +116,23 @@ export interface QrTicketConfig {
   validUntilOffsetMin: number | null;
 }
 
+// ── Post-booking redirect ─────────────────────────────────────────────────────
+
+/**
+ * The link a partner sends customers to once an event booking is confirmed —
+ * a registration form, a community chat invite, a waiver. Stored as JSONB;
+ * `null` on the event = nothing shown after booking.
+ */
+export interface PostBookingRedirect {
+  /** Absolute http(s) destination (the API rejects any other scheme). */
+  url: string;
+  /** Partner's own copy explaining the link; null = generic wording. */
+  description: string | null;
+  /** true = the confirmation screen counts down and opens it in a new tab
+   *  (skippable); false = the customer taps through only if they want to. */
+  forced: boolean;
+}
+
 export type QrScanOutcome =
   | 'valid'
   | 'not_found'
@@ -420,6 +437,8 @@ export interface VenueEvent {
   status: EventStatus;
   /** QR ticket rules for registrations; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
+  /** Where confirmed bookers are sent next; null = nothing shown. */
+  postBookingRedirect: PostBookingRedirect | null;
   /** Groups the dates of a recurring event; null for one-off events. */
   seriesId: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */

@@ -3,6 +3,7 @@ import { db } from '../db/client.js';
 import { type Booking, bookings, slots, tenants } from '../db/schema/index.js';
 import { events } from '../db/schema/events.js';
 import { payments } from '../db/schema/payments.js';
+import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -468,6 +469,15 @@ export interface BookEventResult {
   clientSecret?: string | undefined;
   amountPaise?: number;
   currency?: string;
+  /**
+   * The event's post-booking link, if the partner set one. Present ONLY on the
+   * free path, where the booking is already `confirmed` when we return. The
+   * paid path deliberately omits it: at that point the booking is still
+   * `pending`, so returning it would hand the organiser's form/group link to
+   * anyone who starts a checkout and never pays. Paid bookers pick it up from
+   * `GET /v1/consumer/me/bookings/:id` once the payment webhook confirms them.
+   */
+  postBookingRedirect?: PostBookingRedirect | null;
 }
 
 /**
@@ -705,13 +715,18 @@ export async function bookEvent(
       },
       billing: billingCfg,
       payCtx,
+      postBookingRedirect: ev.postBookingRedirect,
     };
   });
 
   if (reserved.isFree) {
-    // Free events confirm inline (no payment webhook) — notify from here.
+    // Free events confirm inline (no payment webhook) — notify from here. The
+    // booking IS confirmed at this point, so the post-booking link is earned.
     await onBookingConfirmed(reserved.booking.id);
-    return { booking: reserved.booking };
+    return {
+      booking: reserved.booking,
+      postBookingRedirect: reserved.postBookingRedirect,
+    };
   }
 
   // Phase 2 — paid path: createPaymentOrder runs OUTSIDE the booking tx so it
@@ -755,5 +770,7 @@ export async function bookEvent(
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
     currency: reserved.payCtx.currency,
+    // No postBookingRedirect here on purpose — see the field's doc comment.
+    // This booking is 'pending' until the gateway webhook confirms it.
   };
 }
