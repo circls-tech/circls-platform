@@ -29,7 +29,6 @@ const bookSlotsSchema = z.object({
   // Razorpay Route order and returns the order id for the client checkout.
   // Default 'external' keeps the walk-in path the existing tests exercise.
   paymentMethod: z.enum(['external', 'razorpay_route']).optional().default('external'),
-  platformFeePaise: z.number().int().min(0).optional(),
 });
 
 const bookEventSchema = z.object({
@@ -65,7 +64,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid booking payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const { slotIds, customer, paymentMethod, platformFeePaise } = parsed.data;
+    const { slotIds, customer, paymentMethod } = parsed.data;
 
     // Resolve venue/tenant from the first slot
     const firstSlotRows = await db
@@ -97,7 +96,6 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
             customerName: customer.name,
             customerContact: customer.contact,
             note: customer.note ?? null,
-            ...(platformFeePaise !== undefined ? { platformFeePaise } : {}),
           },
         ),
       }));

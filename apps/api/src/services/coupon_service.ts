@@ -277,6 +277,13 @@ export interface PricedItem {
   tenantId: string;
   basePaise: number;
   item: CheckoutItem;
+  /** Per-event billing overrides (events only) so the quote endpoint can
+   *  resolve the billing config without re-querying the event row. */
+  eventBillingOverrides?: {
+    partnerCommissionBps: number | null;
+    consumerCommissionBps: number | null;
+    advancePayoutBps: number | null;
+  };
 }
 
 /** Resolve base price + tenant + scope-item for a quote/booking request. */
@@ -307,7 +314,16 @@ export async function priceItem(req:
         if (line.quantity <= 0) throw new BadRequest('Quantity must be positive', 'bad_request');
         basePaise += tier.pricePaise * line.quantity;
       }
-      return { tenantId: ev.tenantId, basePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
+      return {
+        tenantId: ev.tenantId,
+        basePaise,
+        item: { type: 'event', id: ev.id, venueId: ev.venueId },
+        eventBillingOverrides: {
+          partnerCommissionBps: ev.partnerCommissionBps,
+          consumerCommissionBps: ev.consumerCommissionBps,
+          advancePayoutBps: ev.advancePayoutBps,
+        },
+      };
     }
 
     // No lines (coupon-listing endpoint, which only needs a base to test
@@ -317,7 +333,16 @@ export async function priceItem(req:
       .from(eventTicketTiers)
       .where(and(eq(eventTicketTiers.eventId, ev.id), isNull(eventTicketTiers.deletedAt)));
     const basePaise = live.length ? Math.min(...live.map((r) => r.p)) : ev.pricePaise;
-    return { tenantId: ev.tenantId, basePaise, item: { type: 'event', id: ev.id, venueId: ev.venueId } };
+    return {
+      tenantId: ev.tenantId,
+      basePaise,
+      item: { type: 'event', id: ev.id, venueId: ev.venueId },
+      eventBillingOverrides: {
+        partnerCommissionBps: ev.partnerCommissionBps,
+        consumerCommissionBps: ev.consumerCommissionBps,
+        advancePayoutBps: ev.advancePayoutBps,
+      },
+    };
   }
   if (req.itemType === 'membership') {
     const [m] = await db.select().from(memberships).where(eq(memberships.id, req.membershipId)).limit(1);

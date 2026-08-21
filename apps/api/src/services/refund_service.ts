@@ -44,6 +44,9 @@ export interface SettleRefundInput {
   chargeAmountPaise: number;
   /** Circls-funded discount on the sale (coupon_redemptions with funder='platform'); 0 if none. */
   platformDiscountPaise: number;
+  /** Consumer-side commission (K) baked into the charge's amount_paise;
+   *  0 for legacy rows (NULL snapshot). */
+  consumerCommissionPaise: number;
   /** Cumulative cash refunded against the charge, including this refund. */
   totalRefundedPaise: number;
   /** Settle-side deduction already recorded by earlier refunds of this charge. */
@@ -54,11 +57,15 @@ export interface SettleRefundInput {
  * The settle-side payout deduction (in paise, ≥ 0) for one refund.
  *
  * Policy: partners bear the gateway's non-recoverable fee on refunds, and
- * Circls claws back any discount it funded. So a fully-refunded charge must
- * deduct D = amount_paise + platform-funded discount from the partner's payout:
- * for plain and org-funded-coupon sales that is exactly the customer cash
- * (today's behaviour); for platform-funded-coupon sales it equals the settle
- * credit plus the fee, so the partner nets −fee like any other refunded sale.
+ * Circls claws back any discount it funded — but eats its own consumer-side
+ * commission (the customer is made whole; the partner is not billed for
+ * Circls's cut). So a fully-refunded charge must deduct
+ * D = amount_paise + platform-funded discount − consumer commission from the
+ * partner's payout: for plain and org-funded-coupon sales without a consumer
+ * commission that is exactly the customer cash (today's behaviour); for
+ * platform-funded-coupon sales it equals the settle credit plus the fee, so
+ * the partner nets −fee like any other refunded sale. D ≥ 0 always: the
+ * customer total is grossed up on discountedBase + K, so amount ≥ K.
  *
  * Partial refunds prorate D cumulatively: target = floor(totalRefunded·D/A) in
  * BigInt (no float precision loss), and this refund's share is the delta over
@@ -66,7 +73,8 @@ export interface SettleRefundInput {
  * leaves [0, D]. A completed refund therefore deducts exactly D.
  */
 export function computeSettleRefundPaise(input: SettleRefundInput): number {
-  const deductibleTotal = input.chargeAmountPaise + input.platformDiscountPaise;
+  const deductibleTotal =
+    input.chargeAmountPaise + input.platformDiscountPaise - input.consumerCommissionPaise;
   const target = Number(
     (BigInt(input.totalRefundedPaise) * BigInt(deductibleTotal)) /
       BigInt(input.chargeAmountPaise),
@@ -164,6 +172,7 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
   const settleRefundPaise = computeSettleRefundPaise({
     chargeAmountPaise: Number(charge.amountPaise),
     platformDiscountPaise: Number(platformFunded?.discountPaise ?? 0),
+    consumerCommissionPaise: Number(charge.consumerCommissionPaise ?? 0),
     totalRefundedPaise: totalRefunded,
     priorSettleDeductedPaise: Number(refundedAgg?.settleDeductedSoFar ?? 0),
   });

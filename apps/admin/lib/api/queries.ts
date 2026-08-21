@@ -20,7 +20,10 @@ import type {
   AdminStats,
   AdminSupportIssue,
   AdminSupportIssueFilters,
+  AdminEventBillingPatch,
+  AdminTenantBillingPatch,
   AdminTenantDetail,
+  AdminTenantEventBillingPage,
   AdminTenantListPage,
   Coupon,
   QuestionMessageRow,
@@ -92,6 +95,50 @@ export function useReactivateTenant() {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenants'] });
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
       void qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
+    },
+  });
+}
+
+// ── Tenant billing knobs ──────────────────────────────────────────────────────
+
+export function useUpdateTenantBilling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; patch: AdminTenantBillingPatch }) =>
+      apiFetch<unknown>(`/v1/admin/tenants/${args.id}/billing`, {
+        method: 'PATCH',
+        body: JSON.stringify(args.patch),
+      }),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.id] });
+    },
+  });
+}
+
+export function useAdminTenantEvents(tenantId: string | null) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'events'],
+    enabled: Boolean(user && tenantId),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminTenantEventBillingPage>(
+        `/v1/admin/tenants/${tenantId!}/events${qs({ limit: 50, cursor: pageParam })}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useUpdateEventBilling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { eventId: string; tenantId: string; patch: AdminEventBillingPatch }) =>
+      apiFetch<unknown>(`/v1/admin/events/${args.eventId}/billing`, {
+        method: 'PATCH',
+        body: JSON.stringify(args.patch),
+      }),
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.tenantId, 'events'] });
     },
   });
 }

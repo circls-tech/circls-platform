@@ -63,9 +63,27 @@ export const tenants = pgTable('tenants', {
   termsRegion: text('terms_region').$type<'US' | 'IN'>(),
   termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
   termsAcceptedByUserId: uuid('terms_accepted_by_user_id'),
-  /** Per-tenant commission Circls keeps, in basis points (100 bps = 1%).
-   *  Applied at payout time: net = gross − refunds − commission. */
+  /** Per-tenant partner-side commission Circls keeps, in basis points
+   *  (100 bps = 1%). Snapshotted per charge into
+   *  payments.partner_commission_paise; events may override via
+   *  events.partner_commission_bps. Legacy charges (NULL snapshot) fall back
+   *  to this rate at payout reconciliation. */
   commissionBps: integer('commission_bps').notNull().default(0),
+  // ── Billing knobs (admin-editable; defaults preserve legacy behaviour) ─────
+  /** Consumer-side commission charged ON TOP of the customer's total, in bps
+   *  of the discounted base. Folded into "Other charges" at checkout; never
+   *  part of the org's settle base. Events may override. */
+  consumerCommissionBps: integer('consumer_commission_bps').notNull().default(0),
+  /** Share of the gateway fee the customer pays via the checkout gross-up,
+   *  in bps. 10000 = customer pays all (legacy). */
+  customerFeeShareBps: integer('customer_fee_share_bps').notNull().default(10000),
+  /** Share of the gateway fee the org bears, deducted from the charge's
+   *  settle base. customer + org ≤ 10000; Circls absorbs the remainder. */
+  orgFeeShareBps: integer('org_fee_share_bps').notNull().default(0),
+  /** Share of each charge's net payout (settle base − partner commission)
+   *  paid out in the weekly payout after CAPTURE instead of waiting for the
+   *  settlement hold. The final tranche nets it back out. Events may override. */
+  advancePayoutBps: integer('advance_payout_bps').notNull().default(0),
   subscriptionStatus: subscriptionStatus('subscription_status').notNull().default('trial'),
   status: tenantStatus('status').notNull().default('active'),
   createdAt: createdAt(),

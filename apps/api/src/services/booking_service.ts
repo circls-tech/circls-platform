@@ -11,6 +11,11 @@ import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
+import {
+  buildBillingMetadata,
+  computeChargeSnapshots,
+  resolveBillingConfig,
+} from './billing_config.js';
 import { recordRedemption } from './coupon_service.js';
 import type { Coupon } from '../db/schema/coupons.js';
 import { eventBookingTickets } from '../db/schema/event_booking_tickets.js';
@@ -208,7 +213,7 @@ export async function prepareOnlineBookingWithPayment(
 
   // Same claim flow as walk-in, but staged: bookings.status='pending', and we
   // capture the price total so the Razorpay order has the right paise amount.
-  const { bookingId, totalPaise, settleBasePaise, isFree } = await db.transaction(async (tx) => {
+  const { bookingId, totalPaise, snapshots, billing, isFree } = await db.transaction(async (tx) => {
     const sel = await tx
       .select({
         ...getTableColumns(slots),
@@ -232,9 +237,12 @@ export async function prepareOnlineBookingWithPayment(
 
     const total = sel.reduce((s, r) => s + r.pricePaise, 0);
 
-    // Money model: discount + gross-up. A 100%/over-base coupon makes the
-    // booking free (skip Razorpay). settleBase is the org's payout base: full
-    // base when platform-funded, discounted base when org-funded.
+    // Money model: discount + consumer commission + gross-up, shaped by the
+    // tenant's billing knobs. A 100%/over-base coupon makes the booking free
+    // (skip Razorpay). settleBase is the org's payout base: full base when
+    // platform-funded, discounted base when org-funded — minus the org's
+    // gateway-fee share.
+    const billingCfg = await resolveBillingConfig({ tenantId: ctx.tenantId }, tx);
     const breakdown = computeCheckout(
       total,
       pricing
@@ -245,9 +253,12 @@ export async function prepareOnlineBookingWithPayment(
           }
         : null,
       payCtx.provider,
+      billingCfg,
     );
     const free = breakdown.totalPaise === 0;
-    const settleBase = pricing && pricing.funder === 'platform' ? total : breakdown.discountedBasePaise;
+    const preFeeSettleBase =
+      pricing && pricing.funder === 'platform' ? total : breakdown.discountedBasePaise;
+    const chargeSnapshots = computeChargeSnapshots(preFeeSettleBase, breakdown, billingCfg);
 
     // Circls is the merchant — the customer's payment lands in Circls's account.
     // No per-tenant KYC / Linked Account gate; the venue is paid out weekly,
@@ -345,7 +356,12 @@ export async function prepareOnlineBookingWithPayment(
     return {
       bookingId: booking!.id,
       totalPaise: breakdown.totalPaise,
-      settleBasePaise: settleBase,
+      snapshots: {
+        ...chargeSnapshots,
+        orgFeeSharePaise: breakdown.orgFeeSharePaise,
+        gatewayFeeEstimatePaise: breakdown.gatewayFeeEstimatePaise,
+      },
+      billing: billingCfg,
       isFree: free,
     };
   });
@@ -375,7 +391,11 @@ export async function prepareOnlineBookingWithPayment(
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
-    settleBasePaise,
+    settleBasePaise: snapshots.settleBasePaise,
+    consumerCommissionPaise: snapshots.consumerCommissionPaise,
+    partnerCommissionPaise: snapshots.partnerCommissionPaise,
+    advancePaise: snapshots.advancePaise,
+    billingMetadata: buildBillingMetadata(billing, snapshots),
     provider: payCtx.provider,
     currency: payCtx.currency,
     actorUserId: ctx.actorUserId,
@@ -581,8 +601,22 @@ export async function bookEvent(
       tx,
     );
 
-    // Money model: discount + gross-up. A 100%/over-base coupon can make a paid
-    // event free, so derive isFree from the grossed-up total, not the base.
+    // Money model: discount + consumer commission + gross-up, shaped by the
+    // billing knobs (event overrides beat tenant defaults — ev is already
+    // loaded, so resolution costs one tenants select). A 100%/over-base coupon
+    // can make a paid event free, so derive isFree from the grossed-up total,
+    // not the base.
+    const billingCfg = await resolveBillingConfig(
+      {
+        tenantId: ev.tenantId,
+        eventOverrides: {
+          partnerCommissionBps: ev.partnerCommissionBps,
+          consumerCommissionBps: ev.consumerCommissionBps,
+          advancePayoutBps: ev.advancePayoutBps,
+        },
+      },
+      tx,
+    );
     const breakdown = computeCheckout(
       basePaise,
       pricing
@@ -593,9 +627,12 @@ export async function bookEvent(
           }
         : null,
       payCtx.provider,
+      billingCfg,
     );
     const isFree = breakdown.totalPaise === 0;
-    const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
+    const preFeeSettleBase =
+      pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
+    const chargeSnapshots = computeChargeSnapshots(preFeeSettleBase, breakdown, billingCfg);
     // Circls is the merchant — no per-tenant KYC / Linked Account gate.
 
     const [b] = await tx
@@ -661,7 +698,12 @@ export async function bookEvent(
       tenantId: ev.tenantId,
       eventName: ev.name,
       totalPaise: breakdown.totalPaise,
-      settleBasePaise,
+      snapshots: {
+        ...chargeSnapshots,
+        orgFeeSharePaise: breakdown.orgFeeSharePaise,
+        gatewayFeeEstimatePaise: breakdown.gatewayFeeEstimatePaise,
+      },
+      billing: billingCfg,
       payCtx,
     };
   });
@@ -685,7 +727,11 @@ export async function bookEvent(
       bookingId: reserved.booking.id,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,
-      settleBasePaise: reserved.settleBasePaise,
+      settleBasePaise: reserved.snapshots.settleBasePaise,
+      consumerCommissionPaise: reserved.snapshots.consumerCommissionPaise,
+      partnerCommissionPaise: reserved.snapshots.partnerCommissionPaise,
+      advancePaise: reserved.snapshots.advancePaise,
+      billingMetadata: buildBillingMetadata(reserved.billing, reserved.snapshots),
       provider: reserved.payCtx.provider,
       currency: reserved.payCtx.currency,
       actorUserId: customer.userId,

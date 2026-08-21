@@ -14,6 +14,10 @@ export interface QuoteResponse {
   discountedBasePaise: number;
   otherChargesPaise: number;
   totalPaise: number;
+  /** Split of otherChargesPaise (gateway charge + Circls platform fee) —
+   *  feeds the breakdown tooltip. Optional: older API responses lack them. */
+  gatewayFeePaise?: number;
+  platformFeePaise?: number;
   /** ISO 4217 — 'INR', or 'USD' for US venues. Amounts are its minor units. */
   currency: string;
   coupon: { id: string; code: string; description: string | null } | null;

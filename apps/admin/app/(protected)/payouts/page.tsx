@@ -174,6 +174,7 @@ export default function PayoutsPage() {
               <th className="px-4 py-2 text-right font-medium">Gross</th>
               <th className="px-4 py-2 text-right font-medium">Refunds</th>
               <th className="px-4 py-2 text-right font-medium">Commission</th>
+              <th className="px-4 py-2 text-right font-medium">Advances</th>
               <th className="px-4 py-2 text-right font-medium">Net</th>
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 text-right font-medium">Action</th>
@@ -215,6 +216,18 @@ export default function PayoutsPage() {
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                   {fmtRupees(r.commissionPaise)}
+                </td>
+                <td
+                  className="px-4 py-2.5 text-right tabular-nums text-slate-700"
+                  title={
+                    r.advanceRecoupedPaise
+                      ? `Recouped from earlier advances: ${fmtRupees(r.advanceRecoupedPaise)}`
+                      : undefined
+                  }
+                >
+                  {r.advancesPaise || r.advanceRecoupedPaise
+                    ? `${fmtRupees(r.advancesPaise)}${r.advanceRecoupedPaise ? ` (−${fmtRupees(r.advanceRecoupedPaise)})` : ''}`
+                    : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-900">
                   {fmtRupees(r.amountPaise)}

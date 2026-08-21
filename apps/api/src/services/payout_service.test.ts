@@ -2,8 +2,8 @@
  * Payout service tests.
  *
  *  - priorWeek(): pure date math, always runs.
- *  - computeCommissionPaise(): policy invariants — SKIPPED until the TODO(human)
- *    body lands. Un-skip the describe block once it's implemented.
+ *  - clampCommissionPaise(): clamp invariants (the commission itself is now a
+ *    per-payment snapshot; see reconcileWeeklyPayouts).
  *  - executePayout / listPayouts / reconcileWeeklyPayouts: integration
  *    (needs RUN_INTEGRATION + a DB).
  */
@@ -11,7 +11,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { bookings, payouts, tenants, users, venues } from '../db/schema/index.js';
-import { computeCommissionPaise, priorWeek, reconcileWeeklyPayouts } from './payout_service.js';
+import { clampCommissionPaise, priorWeek, reconcileWeeklyPayouts } from './payout_service.js';
 
 describe('priorWeek', () => {
   it('returns the previous Mon→Mon window for a mid-week date', () => {
@@ -33,52 +33,25 @@ describe('priorWeek', () => {
   });
 });
 
-// Policy-agnostic invariants — they hold for commission-on-gross or
-// commission-on-net, and for floor/round/ceil rounding.
-describe('computeCommissionPaise — invariants', () => {
-  it('is zero when the rate is zero', () => {
-    expect(computeCommissionPaise(100_000, 0, 0)).toBe(0);
+// The week-level clamp: raw commission (Σ per-payment snapshots/fallbacks)
+// can never push net below zero, and never goes negative itself.
+describe('clampCommissionPaise', () => {
+  it('passes a raw commission through when there is room', () => {
+    expect(clampCommissionPaise(100_000, 0, 5_000)).toBe(5_000);
   });
 
-  it('returns a non-negative integer', () => {
-    const c = computeCommissionPaise(123_457, 1_111, 750);
-    expect(Number.isInteger(c)).toBe(true);
-    expect(c).toBeGreaterThanOrEqual(0);
-  });
-
-  it('never exceeds the gross', () => {
-    expect(computeCommissionPaise(100_000, 0, 10_000)).toBeLessThanOrEqual(100_000);
-  });
-
-  it('charges more as the rate rises', () => {
-    const lo = computeCommissionPaise(100_000, 0, 200);
-    const hi = computeCommissionPaise(100_000, 0, 800);
-    expect(hi).toBeGreaterThan(lo);
-  });
-
-  it('takes a real cut on a non-zero rate', () => {
-    expect(computeCommissionPaise(100_000, 0, 500)).toBeGreaterThan(0);
-  });
-});
-
-// Pins the chosen policy: commission on GROSS, floored.
-describe('computeCommissionPaise — commission-on-gross, floored', () => {
-  it('charges the rate on gross (5% of ₹1000 = ₹50)', () => {
-    expect(computeCommissionPaise(100_000, 0, 500)).toBe(5_000);
-  });
-
-  it('floors the sub-paise remainder (2.5% of 12345p = 308p, not 308.625)', () => {
-    expect(computeCommissionPaise(12_345, 0, 250)).toBe(308);
-  });
-
-  it('ignores refunds when sizing the cut (still 5% of gross)', () => {
-    // gross 100000, refunds 40000 → commission stays 5000, not 5% of 60000.
-    expect(computeCommissionPaise(100_000, 40_000, 500)).toBe(5_000);
+  it('ignores refunds when they leave room (commission-on-gross policy)', () => {
+    // gross 100000, refunds 40000, raw 5000 → 5000, not 5% of 60000.
+    expect(clampCommissionPaise(100_000, 40_000, 5_000)).toBe(5_000);
   });
 
   it('clamps so commission never pushes net below zero', () => {
-    // 100% of gross but ₹9 already refunded → cut capped at the ₹1 left.
-    expect(computeCommissionPaise(1_000, 900, 10_000)).toBe(100);
+    // Raw cut of the full gross but ₹9 already refunded → capped at the ₹1 left.
+    expect(clampCommissionPaise(1_000, 900, 1_000)).toBe(100);
+  });
+
+  it('never goes negative even when refunds exceed gross', () => {
+    expect(clampCommissionPaise(1_000, 2_000, 500)).toBe(0);
   });
 });
 
@@ -236,5 +209,142 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
     const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
     expect(row?.refundsPaise).toBe(46088);
     expect(row?.amountPaise).toBe(103912);
+  });
+
+  /** A fresh tenant (optionally with a commission_bps) + a synthetic booking. */
+  async function seedTenant(name: string, commissionBps = 0): Promise<{ tid: string; bid: string }> {
+    const [t] = await db
+      .insert(tenants)
+      .values({
+        name,
+        slug: `payoutadv-${Date.now()}-${extraTenantIds.length}`,
+        commissionBps,
+      })
+      .returning();
+    extraTenantIds.push(t!.id);
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId: t!.id,
+        itemType: 'slot',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 51209,
+        createdByUserId: userId,
+      })
+      .returning();
+    return { tid: t!.id, bid: b!.id };
+  }
+
+  it('per-payment commission snapshots are summed; legacy NULL rows fall back to tenant bps', async () => {
+    // Tenant rate 5% — but the snapshot row carries 1000 (a per-event 2%
+    // override captured at charge time), which must win over the tenant rate.
+    const { tid, bid } = await seedTenant('Commission Snapshot Co', 500);
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        partner_commission_paise, status, kind, settlement_released_at
+      ) values
+      (${bid}::uuid, ${tid}::uuid, 'stub', 51209, 50000, 1000,
+       'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz),
+      (${bid}::uuid, ${tid}::uuid, 'stub', 102418, 100000, null,
+       'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz)
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    // snapshot 1000 + legacy fallback floor(100000 × 500/10000) = 5000.
+    expect(row?.grossPaise).toBe(150000);
+    expect(row?.commissionPaise).toBe(6000);
+    expect(row?.amountPaise).toBe(144000);
+  });
+
+  it('an advance released this week pays out before the settlement hold releases', async () => {
+    const { tid, bid } = await seedTenant('Advance Only Co');
+    // Captured in-window with a 30% advance, but still under settlement hold
+    // (settlement_released_at NULL).
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        advance_paise, advance_released_at, settlement_hold_until, status, kind
+      ) values
+      (${bid}::uuid, ${tid}::uuid, 'stub', 51209, 50000,
+       15000, ${RELEASED_IN_WINDOW}::timestamptz, '2026-06-10T00:00:00Z'::timestamptz,
+       'captured', 'charge')
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.grossPaise).toBe(0);
+    expect(row?.advancesPaise).toBe(15000);
+    expect(row?.advanceRecoupedPaise).toBe(0);
+    expect(row?.amountPaise).toBe(15000);
+  });
+
+  it('the final tranche recoups an advance released in an earlier week', async () => {
+    const { tid, bid } = await seedTenant('Advance Recoup Co');
+    // Advance released BEFORE the window (already paid); settlement releases
+    // in-window → this week pays settle − advance.
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        advance_paise, advance_released_at, status, kind, settlement_released_at
+      ) values
+      (${bid}::uuid, ${tid}::uuid, 'stub', 51209, 50000,
+       15000, '2026-05-10T10:00:00Z'::timestamptz,
+       'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz)
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.grossPaise).toBe(50000);
+    expect(row?.advancesPaise).toBe(0);
+    expect(row?.advanceRecoupedPaise).toBe(15000);
+    expect(row?.amountPaise).toBe(35000);
+  });
+
+  it('same-week capture + release degenerates to plain net (advance cancels out)', async () => {
+    const { tid, bid } = await seedTenant('Advance SameWeek Co');
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        advance_paise, advance_released_at, status, kind, settlement_released_at
+      ) values
+      (${bid}::uuid, ${tid}::uuid, 'stub', 51209, 50000,
+       15000, ${RELEASED_IN_WINDOW}::timestamptz,
+       'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz)
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.advancesPaise).toBe(15000);
+    expect(row?.advanceRecoupedPaise).toBe(15000);
+    expect(row?.amountPaise).toBe(50000);
+  });
+
+  it('an unreleased advance (never paid) is NOT recouped from the final', async () => {
+    const { tid, bid } = await seedTenant('Advance Unreleased Co');
+    // advance_paise set but advance_released_at NULL (e.g. captured via a path
+    // that never stamped it) — the final must pay the full settle base.
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        advance_paise, advance_released_at, status, kind, settlement_released_at
+      ) values
+      (${bid}::uuid, ${tid}::uuid, 'stub', 51209, 50000,
+       15000, null, 'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz)
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+
+    const [row] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+    expect(row?.advancesPaise).toBe(0);
+    expect(row?.advanceRecoupedPaise).toBe(0);
+    expect(row?.amountPaise).toBe(50000);
   });
 });

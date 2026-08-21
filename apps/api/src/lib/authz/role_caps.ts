@@ -62,7 +62,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   // Founder / CTO: everything platform + everything partner-of-Circls.
   owner: [
     ...PARTNER_CAPS.owner,
-    'admin.tenants.read', 'admin.tenants.suspend',
+    'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
     'admin.coupons.read', 'admin.coupons.write',
@@ -74,7 +74,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'members.read',
     'payments.refund',
     'integration.api_keys.manage',
-    'admin.tenants.read', 'admin.tenants.suspend',
+    'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
     'admin.coupons.read', 'admin.coupons.write',

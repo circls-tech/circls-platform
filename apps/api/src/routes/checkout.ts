@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { BadRequest } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
-import { computeCheckout } from '../services/checkout_pricing.js';
+import { type CheckoutBreakdown, computeCheckout } from '../services/checkout_pricing.js';
+import { resolveBillingConfig } from '../services/billing_config.js';
 import { resolvePaymentContext } from '../services/payments_service.js';
 import {
   listPublicCouponsForItem,
@@ -26,6 +27,36 @@ const itemSchema = z.union([
 ]);
 const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().min(1).max(64).optional() }));
 
+/** The money fields a quote response exposes to consumers. */
+interface QuoteMoneyFields {
+  basePaise: number;
+  discountPaise: number;
+  discountedBasePaise: number;
+  otherChargesPaise: number;
+  totalPaise: number;
+  gatewayFeePaise: number;
+  platformFeePaise: number;
+}
+
+/**
+ * Consumer-safe slice of a breakdown. Deliberately a whitelist, never a
+ * spread: `orgFeeSharePaise` / `gatewayFeeEstimatePaise` are org-billing data
+ * and must not leak to consumers. `otherChargesPaise` keeps its historical
+ * meaning (total − discountedBase) and now equals gatewayFee + platformFee —
+ * the two new fields feed the checkout tooltip's split.
+ */
+function quoteFields(b: CheckoutBreakdown): QuoteMoneyFields {
+  return {
+    basePaise: b.basePaise,
+    discountPaise: b.discountPaise,
+    discountedBasePaise: b.discountedBasePaise,
+    otherChargesPaise: b.otherChargesPaise,
+    totalPaise: b.totalPaise,
+    gatewayFeePaise: b.gatewayFeeCustomerPaise,
+    platformFeePaise: b.consumerCommissionPaise,
+  };
+}
+
 export const checkoutRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v1/consumer/checkout/quote', { preHandler: requireAuth }, async (req) => {
     const parsed = quoteBody.safeParse(req.body);
@@ -41,9 +72,16 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       tenantId: priced.tenantId,
     });
 
+    // Same billing knobs the booking path will resolve, so quote and charge
+    // can never diverge.
+    const billing = await resolveBillingConfig({
+      tenantId: priced.tenantId,
+      eventOverrides: priced.eventBillingOverrides ?? null,
+    });
+
     if (!parsed.data.couponCode) {
-      const b = computeCheckout(priced.basePaise, null, payCtx.provider);
-      return { ...b, currency: payCtx.currency, coupon: null };
+      const b = computeCheckout(priced.basePaise, null, payCtx.provider, billing);
+      return { ...quoteFields(b), currency: payCtx.currency, coupon: null };
     }
     const resolved = await resolveCouponForCheckout({
       code: parsed.data.couponCode,
@@ -54,8 +92,8 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       item: priced.item,
     });
     if (!resolved.ok) {
-      const b = computeCheckout(priced.basePaise, null, payCtx.provider);
-      return { ...b, currency: payCtx.currency, coupon: null, error: resolved.code };
+      const b = computeCheckout(priced.basePaise, null, payCtx.provider, billing);
+      return { ...quoteFields(b), currency: payCtx.currency, coupon: null, error: resolved.code };
     }
     const b = computeCheckout(
       priced.basePaise,
@@ -65,9 +103,10 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
         maxDiscountPaise: resolved.coupon.maxDiscountPaise,
       },
       payCtx.provider,
+      billing,
     );
     return {
-      ...b,
+      ...quoteFields(b),
       currency: payCtx.currency,
       coupon: { id: resolved.coupon.id, code: resolved.coupon.code, description: resolved.coupon.description },
     };

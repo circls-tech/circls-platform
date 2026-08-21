@@ -87,6 +87,10 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
     expect(get.json().city).toBe('Nagpur');
     // Billing fields never appear on the profile DTO.
     expect(get.json()).not.toHaveProperty('commissionBps');
+    expect(get.json()).not.toHaveProperty('consumerCommissionBps');
+    expect(get.json()).not.toHaveProperty('customerFeeShareBps');
+    expect(get.json()).not.toHaveProperty('orgFeeShareBps');
+    expect(get.json()).not.toHaveProperty('advancePayoutBps');
     expect(get.json()).not.toHaveProperty('subscriptionStatus');
   });
 
@@ -134,6 +138,10 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
     expect(org.slug).toBe(slug);
     expect(org.description).toBe('We run great courts.');
     expect(org).not.toHaveProperty('commissionBps');
+    expect(org).not.toHaveProperty('consumerCommissionBps');
+    expect(org).not.toHaveProperty('customerFeeShareBps');
+    expect(org).not.toHaveProperty('orgFeeShareBps');
+    expect(org).not.toHaveProperty('advancePayoutBps');
     expect(org).not.toHaveProperty('subscriptionStatus');
     expect(org).not.toHaveProperty('isPlatform');
     expect(org).not.toHaveProperty('status');
@@ -183,6 +191,10 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
     expect(venue.amenities).toEqual(['parking', 'wifi']);
     expect(venue.brand).toMatchObject({ id: tenantId, slug, name: 'Trust Co' });
     expect(venue.brand).not.toHaveProperty('commissionBps');
+    expect(venue.brand).not.toHaveProperty('consumerCommissionBps');
+    expect(venue.brand).not.toHaveProperty('customerFeeShareBps');
+    expect(venue.brand).not.toHaveProperty('orgFeeShareBps');
+    expect(venue.brand).not.toHaveProperty('advancePayoutBps');
   });
 
   // ── #110 Membership enrichment ───────────────────────────────────────────────

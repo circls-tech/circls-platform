@@ -67,10 +67,48 @@ export interface AdminTenantDetail {
     country: string | null;
     subscriptionStatus: string;
     status: AdminTenantListItem['status'];
+    // Billing knobs (basis points, 100 bps = 1%).
+    commissionBps: number;
+    consumerCommissionBps: number;
+    customerFeeShareBps: number;
+    orgFeeShareBps: number;
+    advancePayoutBps: number;
     createdAt: string;
     updatedAt: string | null;
   };
   members: AdminTenantMember[];
+}
+
+/** Patch body for PATCH /v1/admin/tenants/:id/billing — all fields optional. */
+export interface AdminTenantBillingPatch {
+  commissionBps?: number;
+  consumerCommissionBps?: number;
+  customerFeeShareBps?: number;
+  orgFeeShareBps?: number;
+  advancePayoutBps?: number;
+}
+
+/** Row of GET /v1/admin/tenants/:id/events — per-event billing overrides. */
+export interface AdminTenantEventBillingItem {
+  id: string;
+  name: string;
+  startsAt: string | null;
+  status: string;
+  partnerCommissionBps: number | null;
+  consumerCommissionBps: number | null;
+  advancePayoutBps: number | null;
+}
+
+export interface AdminTenantEventBillingPage {
+  rows: AdminTenantEventBillingItem[];
+  nextCursor: string | null;
+}
+
+/** Patch body for PATCH /v1/admin/events/:id/billing — null clears an override. */
+export interface AdminEventBillingPatch {
+  partnerCommissionBps?: number | null;
+  consumerCommissionBps?: number | null;
+  advancePayoutBps?: number | null;
 }
 
 export interface AdminAuditLogItem {
@@ -119,6 +157,8 @@ export interface AdminPayoutRow {
   grossPaise: number;
   refundsPaise: number;
   commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
   amountPaise: number;
   currency: string;
   status: 'pending' | 'paid';

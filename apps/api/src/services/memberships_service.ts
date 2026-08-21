@@ -36,6 +36,11 @@ import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
 import { issueQrTicketsForUserMembership, qrTicketDataUrl } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
+import {
+  buildBillingMetadata,
+  computeChargeSnapshots,
+  resolveBillingConfig,
+} from './billing_config.js';
 import { recordRedemption } from './coupon_service.js';
 import type { CouponPricing } from './booking_service.js';
 import {
@@ -437,9 +442,12 @@ export async function purchaseMembership(
       tx,
     );
 
-    // Money model: discount + gross-up. A 100%/over-base coupon makes a paid
-    // membership free; isFree derives from the grossed-up total, not the base.
+    // Money model: discount + consumer commission + gross-up, shaped by the
+    // tenant's billing knobs (memberships have no per-listing overrides). A
+    // 100%/over-base coupon makes a paid membership free; isFree derives from
+    // the grossed-up total, not the base.
     const basePaise = tier?.pricePaise ?? m.pricePaise;
+    const billingCfg = await resolveBillingConfig({ tenantId: m.tenantId }, tx);
     const breakdown = computeCheckout(
       basePaise,
       pricing
@@ -450,9 +458,12 @@ export async function purchaseMembership(
           }
         : null,
       payCtx.provider,
+      billingCfg,
     );
     const isFree = breakdown.totalPaise === 0;
-    const settleBasePaise = pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
+    const preFeeSettleBase =
+      pricing && pricing.funder === 'platform' ? basePaise : breakdown.discountedBasePaise;
+    const chargeSnapshots = computeChargeSnapshots(preFeeSettleBase, breakdown, billingCfg);
 
     // A coupon redemption must reference a bookings row (FK NOT NULL). The
     // original free path skipped the synthetic booking; we still skip it when
@@ -566,7 +577,12 @@ export async function purchaseMembership(
       userMembershipId: um.id,
       tenantId: m.tenantId,
       totalPaise: breakdown.totalPaise,
-      settleBasePaise,
+      snapshots: {
+        ...chargeSnapshots,
+        orgFeeSharePaise: breakdown.orgFeeSharePaise,
+        gatewayFeeEstimatePaise: breakdown.gatewayFeeEstimatePaise,
+      },
+      billing: billingCfg,
       membershipId: m.id,
       payCtx,
     };
@@ -607,7 +623,11 @@ export async function purchaseMembership(
       bookingId: reserved.bookingId,
       tenantId: reserved.tenantId,
       amountPaise: reserved.totalPaise,
-      settleBasePaise: reserved.settleBasePaise,
+      settleBasePaise: reserved.snapshots.settleBasePaise,
+      consumerCommissionPaise: reserved.snapshots.consumerCommissionPaise,
+      partnerCommissionPaise: reserved.snapshots.partnerCommissionPaise,
+      advancePaise: reserved.snapshots.advancePaise,
+      billingMetadata: buildBillingMetadata(reserved.billing, reserved.snapshots),
       provider: reserved.payCtx.provider,
       currency: reserved.payCtx.currency,
       actorUserId: input.userId,

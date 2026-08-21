@@ -21,25 +21,22 @@ import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 
 /**
- * The platform commission Circls keeps for a settlement period, in paise.
+ * Clamp a settlement period's raw commission so net (= gross − refunds −
+ * commission) can never go negative from the commission alone, and never
+ * below zero.
  *
- * @param grossPaise   Sum of captured charges in the period (always ≥ 0).
- * @param refundsPaise Sum of refunds issued in the period (always ≥ 0).
- * @param commissionBps Per-tenant rate in basis points (100 bps = 1%).
- * @returns The commission in paise (integer, ≥ 0).
+ * The commission itself is now computed per payment: snapshotted into
+ * payments.partner_commission_paise at charge time (rate edits only affect
+ * new sales), with legacy NULL rows falling back to the tenant's current
+ * commission_bps applied per payment. Policy: commission is charged on GROSS
+ * — a customer refund does not claw back Circls's cut on that sale.
  */
-export function computeCommissionPaise(
+export function clampCommissionPaise(
   grossPaise: number,
   refundsPaise: number,
-  commissionBps: number,
+  rawCommissionPaise: number,
 ): number {
-  // Policy: commission is charged on GROSS — a customer refund does not claw
-  // back Circls's cut on that sale. Floored to whole paise, so the sub-paise
-  // remainder stays with the venue.
-  const raw = Math.floor((grossPaise * commissionBps) / 10_000);
-  // Clamp so net (= gross − refunds − commission) can never go negative from
-  // the commission alone, and never below zero.
-  return Math.max(0, Math.min(raw, grossPaise - refundsPaise));
+  return Math.max(0, Math.min(rawCommissionPaise, grossPaise - refundsPaise));
 }
 
 /** A settlement week [start, end) in UTC. `end` is exclusive. */
@@ -70,9 +67,12 @@ export function priorWeek(now: Date): SettlementWeek {
  *
  * Windowing: gross counts captured charges whose funds were RELEASED in the
  * week (settlement_released_at), so money still under hold isn't paid early.
- * Refunds count by created_at in the week. A refund that lands in a later week
- * than its charge nets against that later week — acceptable for an ops-reviewed
- * batch; ops can adjust before marking paid.
+ * Advances count by advance_released_at (stamped at capture) — they pay out a
+ * slice of a charge's net before its hold releases; the final tranche recoups
+ * them, so cross-week totals are unchanged. Refunds count by created_at in
+ * the week. A refund that lands in a later week than its charge nets against
+ * that later week — acceptable for an ops-reviewed batch; ops can adjust
+ * before marking paid.
  *
  * @returns the number of payout rows inserted.
  */
@@ -84,19 +84,53 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   // mixed minor units if data disagrees). A charge keeps counting toward gross
   // even after a (partial) refund flips its status, so include
   // refunded/partially_refunded too.
+  //
+  // commission: per-payment snapshots (payments.partner_commission_paise),
+  // with legacy NULL rows falling back to the tenant's CURRENT commission_bps
+  // applied per payment. Bigint division truncates toward zero — for these
+  // non-negative operands that's floor, matching the old Math.floor, though
+  // per-payment flooring can differ from the old weekly-aggregate floor by
+  // < 1 paise per payment (in the partner's favour; accepted).
+  //
+  // advanceRecouped: finals released this week net out their own already-PAID
+  // advances (advance_released_at guard — an unreleased advance was never
+  // paid, so recouping it would short the partner).
   const grossRows = await db
     .select({
       tenantId: payments.tenantId,
       currency: payments.currency,
       gross: sql<number>`coalesce(sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
+      commission: sql<number>`coalesce(sum(coalesce(${payments.partnerCommissionPaise}, (coalesce(${payments.settleBasePaise}, ${payments.amountPaise}) * ${tenants.commissionBps}) / 10000)), 0)::bigint`,
+      advanceRecouped: sql<number>`coalesce(sum(case when ${payments.advanceReleasedAt} is not null then coalesce(${payments.advancePaise}, 0) else 0 end), 0)::bigint`,
     })
     .from(payments)
+    .innerJoin(tenants, eq(tenants.id, payments.tenantId))
     .where(
       and(
         eq(payments.kind, 'charge'),
         sql`${payments.status} in ('captured', 'refunded', 'partially_refunded')`,
         gte(payments.settlementReleasedAt, start),
         lt(payments.settlementReleasedAt, end),
+      ),
+    )
+    .groupBy(payments.tenantId, payments.currency);
+
+  // Advances: charges whose advance tranche became payable this week (stamped
+  // at capture). A tenant can have advances without any released settlement —
+  // that alone earns a payout row.
+  const advanceRows = await db
+    .select({
+      tenantId: payments.tenantId,
+      currency: payments.currency,
+      advances: sql<number>`coalesce(sum(coalesce(${payments.advancePaise}, 0)), 0)::bigint`,
+    })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.kind, 'charge'),
+        sql`${payments.status} in ('captured', 'refunded', 'partially_refunded')`,
+        gte(payments.advanceReleasedAt, start),
+        lt(payments.advanceReleasedAt, end),
       ),
     )
     .groupBy(payments.tenantId, payments.currency);
@@ -123,42 +157,82 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
     )
     .groupBy(payments.tenantId, payments.currency);
 
-  const refundByTenantCurrency = new Map(
-    refundRows.map((r) => [`${r.tenantId}|${r.currency}`, Number(r.refunds)]),
-  );
+  // Merge the three aggregates per (tenant, currency). Keys must span gross
+  // AND advance rows: an advances-only tenant (money captured, event not yet
+  // over) still earns a payout row this week.
+  interface Tranches {
+    tenantId: string;
+    currency: string;
+    gross: number;
+    commission: number;
+    advanceRecouped: number;
+    advances: number;
+    refunds: number;
+  }
+  const byKey = new Map<string, Tranches>();
+  const entry = (tenantId: string, currency: string): Tranches => {
+    const key = `${tenantId}|${currency}`;
+    let e = byKey.get(key);
+    if (!e) {
+      e = { tenantId, currency, gross: 0, commission: 0, advanceRecouped: 0, advances: 0, refunds: 0 };
+      byKey.set(key, e);
+    }
+    return e;
+  };
+  for (const g of grossRows) {
+    const e = entry(g.tenantId, g.currency);
+    e.gross = Number(g.gross);
+    e.commission = Number(g.commission);
+    e.advanceRecouped = Number(g.advanceRecouped);
+  }
+  for (const a of advanceRows) entry(a.tenantId, a.currency).advances = Number(a.advances);
+  for (const r of refundRows) entry(r.tenantId, r.currency).refunds = Number(r.refunds);
 
   // The payouts unique index is one row per (tenant, period) — a tenant with
   // charges in TWO currencies in one week can't be reconciled automatically
   // (onConflictDoNothing would silently drop the second currency's money).
   // Skip such tenants with a loud log so ops reconciles by hand.
+  //
+  // Deliberate change from the pre-advances version: the count now spans ALL
+  // activity (gross, advances, refunds), so a refund-only second currency —
+  // previously ignored silently — also trips the skip. Anomalous data now
+  // fails loud instead of half-reconciling.
   const currencyCount = new Map<string, number>();
-  for (const g of grossRows) currencyCount.set(g.tenantId, (currencyCount.get(g.tenantId) ?? 0) + 1);
+  for (const e of byKey.values()) {
+    currencyCount.set(e.tenantId, (currencyCount.get(e.tenantId) ?? 0) + 1);
+  }
 
-  // Per-tenant commission rate.
-  const tenantRows = await db
-    .select({ id: tenants.id, commissionBps: tenants.commissionBps })
-    .from(tenants);
-  const bpsByTenant = new Map(tenantRows.map((t) => [t.id, t.commissionBps]));
-
-  const toInsert = grossRows
-    .filter((g) => {
-      if ((currencyCount.get(g.tenantId) ?? 0) <= 1) return true;
+  const toInsert = [...byKey.values()]
+    .filter((e) => {
+      if ((currencyCount.get(e.tenantId) ?? 0) <= 1) return true;
       logger.error(
-        { tenantId: g.tenantId, start, end },
+        { tenantId: e.tenantId, start, end },
         'weekly_payout_mixed_currency_tenant_skipped',
       );
       return false;
     })
-    .map((g) => {
-      const gross = Number(g.gross);
-      const refunds = refundByTenantCurrency.get(`${g.tenantId}|${g.currency}`) ?? 0;
-      const commissionBps = bpsByTenant.get(g.tenantId) ?? 0;
-      const commission = computeCommissionPaise(gross, refunds, commissionBps);
-      const net = gross - refunds - commission;
-      return { tenantId: g.tenantId, currency: g.currency, gross, refunds, commission, net };
+    .map((e) => {
+      const commission = clampCommissionPaise(e.gross, e.refunds, e.commission);
+      // Row identity: net = gross − refunds − commission + advances − recoup.
+      // A charge captured AND released in the same week fires both tranches,
+      // which cancel — degenerating to plain net.
+      const net = e.gross - e.refunds - commission + e.advances - e.advanceRecouped;
+      return { ...e, commission, net };
     })
-    // Nothing owed (e.g. refunds ≥ gross) → no payout row this week.
-    .filter((p) => p.net > 0);
+    // Nothing owed (e.g. refunds ≥ gross) → no payout row this week. With
+    // advances in play a negative week can mean Circls already paid money it
+    // can't recoup from this week's activity — log loudly so ops follows up
+    // out-of-band (proper carry-forward is a follow-up).
+    .filter((p) => {
+      if (p.net > 0) return true;
+      if (p.net < 0) {
+        logger.error(
+          { tenantId: p.tenantId, currency: p.currency, net: p.net, start, end },
+          'weekly_payout_negative_net_skipped',
+        );
+      }
+      return false;
+    });
 
   if (toInsert.length === 0) {
     logger.debug({ start, end }, 'weekly_payout_no_rows');
@@ -176,6 +250,8 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         grossPaise: p.gross,
         refundsPaise: p.refunds,
         commissionPaise: p.commission,
+        advancesPaise: p.advances,
+        advanceRecoupedPaise: p.advanceRecouped,
         amountPaise: p.net,
         currency: p.currency,
         status: 'pending',
@@ -207,6 +283,8 @@ export interface PayoutListItem {
   grossPaise: number;
   refundsPaise: number;
   commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
   amountPaise: number;
   currency: string;
   status: string;
@@ -251,7 +329,8 @@ export async function listPayouts(input: ListPayoutsInput): Promise<PayoutListPa
     SELECT
       p.id, p.tenant_id, t.name AS tenant_name,
       p.period_start, p.period_end,
-      p.gross_paise, p.refunds_paise, p.commission_paise, p.amount_paise,
+      p.gross_paise, p.refunds_paise, p.commission_paise,
+      p.advances_paise, p.advance_recouped_paise, p.amount_paise,
       p.currency, p.status, p.paid_at, p.paid_reference, p.created_at
     FROM payouts p
     JOIN tenants t ON t.id = p.tenant_id
@@ -273,6 +352,8 @@ export async function listPayouts(input: ListPayoutsInput): Promise<PayoutListPa
     grossPaise: Number(r['gross_paise'] ?? 0),
     refundsPaise: Number(r['refunds_paise'] ?? 0),
     commissionPaise: Number(r['commission_paise'] ?? 0),
+    advancesPaise: Number(r['advances_paise'] ?? 0),
+    advanceRecoupedPaise: Number(r['advance_recouped_paise'] ?? 0),
     amountPaise: Number(r['amount_paise'] ?? 0),
     currency: r['currency'] as string,
     status: r['status'] as string,

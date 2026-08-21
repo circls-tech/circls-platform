@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client.js';
-import { tenantMembers, tenants, users } from '../db/schema/index.js';
+import { events, tenantMembers, tenants, users } from '../db/schema/index.js';
 import { writeAudit } from '../lib/audit.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
@@ -53,6 +53,52 @@ const listQuerySchema = z.object({
 });
 
 const tenantIdParamSchema = z.object({ id: z.string().uuid() });
+
+const bps = z.number().int().min(0).max(10_000);
+
+/** Cursor pagination only — unlike the tenants list there is no `q` search. */
+const eventsListQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+/** All-optional patch of the tenant billing knobs; must not be empty. */
+const tenantBillingBodySchema = z
+  .object({
+    commissionBps: bps.optional(),
+    consumerCommissionBps: bps.optional(),
+    customerFeeShareBps: bps.optional(),
+    orgFeeShareBps: bps.optional(),
+    advancePayoutBps: bps.optional(),
+  })
+  .refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Empty patch' });
+
+/** Per-event overrides: explicit null clears the override (inherit the
+ *  tenant's rate); 0 is a real "disabled for this event" override. */
+const eventBillingBodySchema = z
+  .object({
+    partnerCommissionBps: bps.nullable().optional(),
+    consumerCommissionBps: bps.nullable().optional(),
+    advancePayoutBps: bps.nullable().optional(),
+  })
+  .refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Empty patch' });
+
+/** The five admin-editable billing fields, for audit before/after blobs. */
+function billingFields(t: {
+  commissionBps: number;
+  consumerCommissionBps: number;
+  customerFeeShareBps: number;
+  orgFeeShareBps: number;
+  advancePayoutBps: number;
+}): Record<string, number> {
+  return {
+    commissionBps: t.commissionBps,
+    consumerCommissionBps: t.consumerCommissionBps,
+    customerFeeShareBps: t.customerFeeShareBps,
+    orgFeeShareBps: t.orgFeeShareBps,
+    advancePayoutBps: t.advancePayoutBps,
+  };
+}
 
 export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /v1/admin/tenants — paginated list with counts ─────────────────────
@@ -257,6 +303,217 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           { status: after.status },
         );
         return after;
+      });
+    },
+  );
+
+  // ── PATCH /v1/admin/tenants/:id/billing — edit the billing knobs ───────────
+  app.patch(
+    '/v1/admin/tenants/:id/billing',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.billing');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+      }
+      const body = tenantBillingBodySchema.safeParse(req.body);
+      if (!body.success) {
+        throw new BadRequest('Invalid billing patch', 'bad_request', { issues: body.error.issues });
+      }
+      const { id } = params.data;
+      const patch = body.data;
+
+      return db.transaction(async (tx) => {
+        const before = await tx.query.tenants.findFirst({ where: eq(tenants.id, id) });
+        if (!before) throw new NotFound('Tenant not found', 'tenant_not_found');
+
+        // Validate the MERGED fee split so a partial patch can't sneak past
+        // 100% (the DB CHECK is the backstop).
+        const mergedCustomer = patch.customerFeeShareBps ?? before.customerFeeShareBps;
+        const mergedOrg = patch.orgFeeShareBps ?? before.orgFeeShareBps;
+        if (mergedCustomer + mergedOrg > 10_000) {
+          throw new BadRequest(
+            'Customer + org gateway-fee shares exceed 100%',
+            'fee_share_split_exceeds_total',
+            { customerFeeShareBps: mergedCustomer, orgFeeShareBps: mergedOrg },
+          );
+        }
+
+        const [after] = await tx
+          .update(tenants)
+          .set({
+            ...(patch.commissionBps !== undefined ? { commissionBps: patch.commissionBps } : {}),
+            ...(patch.consumerCommissionBps !== undefined
+              ? { consumerCommissionBps: patch.consumerCommissionBps }
+              : {}),
+            ...(patch.customerFeeShareBps !== undefined
+              ? { customerFeeShareBps: patch.customerFeeShareBps }
+              : {}),
+            ...(patch.orgFeeShareBps !== undefined ? { orgFeeShareBps: patch.orgFeeShareBps } : {}),
+            ...(patch.advancePayoutBps !== undefined
+              ? { advancePayoutBps: patch.advancePayoutBps }
+              : {}),
+          })
+          .where(eq(tenants.id, id))
+          .returning();
+        if (!after) throw new NotFound('Tenant not found', 'tenant_not_found');
+
+        await writeAudit(
+          tx,
+          { tenantId: id, actorUserId: user.id },
+          'tenant.billing_updated',
+          'tenant',
+          id,
+          billingFields(before),
+          billingFields(after),
+        );
+        return after;
+      });
+    },
+  );
+
+  // ── GET /v1/admin/tenants/:id/events — events for the Billing tab ──────────
+  // Cursor-paginated (created_at, id) like the tenants list; carries the
+  // per-event billing overrides so the admin can edit them inline.
+  app.get(
+    '/v1/admin/tenants/:id/events',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.billing');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+      }
+      const query = eventsListQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        throw new BadRequest('Invalid query', 'bad_request', { issues: query.error.issues });
+      }
+      const limit = Math.min(query.data.limit ?? 50, 200);
+
+      const conditions = [eq(events.tenantId, params.data.id)];
+      if (query.data.cursor) {
+        const decoded = decodeCursor(query.data.cursor);
+        if (decoded) {
+          conditions.push(
+            or(
+              lt(events.createdAt, new Date(decoded.ts)),
+              and(eq(events.createdAt, new Date(decoded.ts)), lt(events.id, decoded.id)),
+            )!,
+          );
+        }
+      }
+
+      const rows = await db
+        .select({
+          id: events.id,
+          name: events.name,
+          startsAt: events.startsAt,
+          status: events.status,
+          partnerCommissionBps: events.partnerCommissionBps,
+          consumerCommissionBps: events.consumerCommissionBps,
+          advancePayoutBps: events.advancePayoutBps,
+          createdAt: events.createdAt,
+        })
+        .from(events)
+        .where(and(...conditions))
+        .orderBy(sql`${events.createdAt} desc, ${events.id} desc`)
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      const last = page[page.length - 1];
+      return {
+        rows: page.map((e) => ({
+          id: e.id,
+          name: e.name,
+          startsAt: e.startsAt ? new Date(e.startsAt).toISOString() : null,
+          status: e.status,
+          partnerCommissionBps: e.partnerCommissionBps,
+          consumerCommissionBps: e.consumerCommissionBps,
+          advancePayoutBps: e.advancePayoutBps,
+        })),
+        nextCursor:
+          hasMore && last ? encodeCursor(new Date(last.createdAt as unknown as string).toISOString(), last.id) : null,
+      };
+    },
+  );
+
+  // ── PATCH /v1/admin/events/:id/billing — per-event override edit ───────────
+  app.patch(
+    '/v1/admin/events/:id/billing',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.billing');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid event id', 'bad_request', { issues: params.error.issues });
+      }
+      const body = eventBillingBodySchema.safeParse(req.body);
+      if (!body.success) {
+        throw new BadRequest('Invalid billing patch', 'bad_request', { issues: body.error.issues });
+      }
+      const { id } = params.data;
+      const patch = body.data;
+
+      return db.transaction(async (tx) => {
+        const [before] = await tx.select().from(events).where(eq(events.id, id)).limit(1);
+        if (!before) throw new NotFound('Event not found', 'event_not_found');
+
+        const [after] = await tx
+          .update(events)
+          .set({
+            ...(patch.partnerCommissionBps !== undefined
+              ? { partnerCommissionBps: patch.partnerCommissionBps }
+              : {}),
+            ...(patch.consumerCommissionBps !== undefined
+              ? { consumerCommissionBps: patch.consumerCommissionBps }
+              : {}),
+            ...(patch.advancePayoutBps !== undefined
+              ? { advancePayoutBps: patch.advancePayoutBps }
+              : {}),
+          })
+          .where(eq(events.id, id))
+          .returning();
+        if (!after) throw new NotFound('Event not found', 'event_not_found');
+
+        // Audit under the event's OWNING tenant so the change surfaces in that
+        // tenant's scoped log.
+        await writeAudit(
+          tx,
+          { tenantId: before.tenantId, actorUserId: user.id },
+          'event.billing_updated',
+          'event',
+          id,
+          {
+            partnerCommissionBps: before.partnerCommissionBps,
+            consumerCommissionBps: before.consumerCommissionBps,
+            advancePayoutBps: before.advancePayoutBps,
+          },
+          {
+            partnerCommissionBps: after.partnerCommissionBps,
+            consumerCommissionBps: after.consumerCommissionBps,
+            advancePayoutBps: after.advancePayoutBps,
+          },
+        );
+        return {
+          id: after.id,
+          partnerCommissionBps: after.partnerCommissionBps,
+          consumerCommissionBps: after.consumerCommissionBps,
+          advancePayoutBps: after.advancePayoutBps,
+        };
       });
     },
   );
