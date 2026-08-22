@@ -45,15 +45,20 @@ export function ImageFocalEditor({
   const [focal, setFocal] = useState<FocalPoint>(initialFocal);
   const [dragging, setDragging] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Re-seed whenever a different photo (or a saved value) is opened.
   useEffect(() => {
     if (open) setFocal(initialFocal);
   }, [open, initialFocal]);
 
-  /** The box wraps the <img> exactly, so its rect IS image space. */
+  /**
+   * Map a pointer position into 0..1 image space. Measured against the <img>
+   * rather than its wrapper: the wrapper carries a 1px border, so its rect is
+   * slightly larger than the image and would bias every reading.
+   */
   function setFromPointer(e: ReactPointerEvent<HTMLDivElement>) {
-    const el = boxRef.current;
+    const el = imgRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
@@ -90,6 +95,10 @@ export function ImageFocalEditor({
   return (
     <Modal open={open} onClose={onClose} title="Adjust crop" maxWidth="max-w-3xl">
       <div className="flex flex-col gap-5">
+        {/* Body scrolls; the action row below stays pinned. Without this the
+            stacked mobile layout pushes "Save crop" past the viewport and the
+            shared Modal panel has no overflow of its own. */}
+        <div className="flex max-h-[62vh] flex-col gap-5 overflow-y-auto sm:max-h-[72vh]">
         <p className="text-sm text-slate-600">
           Drag the marker to the part of the photo that matters — the title of a poster, a
           face, your logo. The preview shows exactly how this photo appears in listings. The
@@ -117,14 +126,15 @@ export function ImageFocalEditor({
               setDragging(false);
             }}
             onPointerCancel={() => setDragging(false)}
-            className="relative inline-block max-h-[55vh] cursor-crosshair touch-none self-start overflow-hidden rounded border border-gray-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-400"
+            className="relative inline-block max-h-[38vh] cursor-crosshair sm:max-h-[55vh] touch-none self-start overflow-hidden rounded border border-gray-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-400"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              ref={imgRef}
               src={imageUrl}
               alt=""
               draggable={false}
-              className="block max-h-[55vh] max-w-full select-none"
+              className="block max-h-[38vh] max-w-full select-none sm:max-h-[55vh]"
             />
             <span
               aria-hidden
@@ -158,6 +168,7 @@ export function ImageFocalEditor({
               Reset to centre
             </button>
           </div>
+        </div>
         </div>
 
         <div className="flex justify-end gap-3">

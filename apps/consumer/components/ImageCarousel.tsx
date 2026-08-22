@@ -3,8 +3,19 @@
 import { type CSSProperties, type ReactNode, useEffect, useState } from 'react';
 import type { ImageRef } from '@/lib/api/types';
 
-/** Tallest a hero is allowed to get once its aspect ratio is honoured. */
-const HERO_MAX_HEIGHT = 520;
+/**
+ * Tallest a hero is allowed to get once its aspect ratio is honoured. Capped
+ * against the viewport as well as in absolute pixels: a portrait cover at its
+ * true aspect runs to ~63% of a phone screen, which pushed the event title to
+ * the very bottom edge and the price below the fold — the old fixed-height hero
+ * kept both in view. 48vh keeps the price above the fold on a laptop and the
+ * title comfortably clear on a phone. Landscape covers never reach this cap.
+ *
+ * Clamping costs nothing in coverage: the photo is `object-contain`, so a
+ * capped box still shows it WHOLE, just smaller and letterboxed against the
+ * blurred fill.
+ */
+const HERO_MAX_HEIGHT = 'min(520px, 48vh)';
 
 /** CSS `object-position` for a photo's focal point (0.5/0.5 = centre crop). */
 function focalPosition(img: ImageRef): string {
