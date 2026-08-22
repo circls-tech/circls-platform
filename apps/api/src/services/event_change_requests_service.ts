@@ -357,6 +357,9 @@ export interface ChangeRequestDetail {
     venueId: string | null;
     venueName: string | null;
     addressJson: Record<string, unknown> | null;
+    /** Current map pin — a patch can move it without touching the address. */
+    lat: number | null;
+    lng: number | null;
     tzName: string | null;
     /** Current live tiers with sold counts — shows the admin what a removal
      *  or capacity decrease is up against. */
@@ -405,6 +408,8 @@ export async function getChangeRequestDetail(id: string): Promise<ChangeRequestD
       venueId: event.venueId,
       venueName: currentVenue?.name ?? null,
       addressJson: event.addressJson,
+      lat: event.lat,
+      lng: event.lng,
       tzName: event.tzName,
       tiers,
     },

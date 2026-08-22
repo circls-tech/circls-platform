@@ -286,6 +286,8 @@ export interface AdminChangeRequestDetail {
     venueId: string | null;
     venueName: string | null;
     addressJson: Record<string, unknown> | null;
+    lat: number | null;
+    lng: number | null;
     tzName: string | null;
     tiers: {
       id: string;

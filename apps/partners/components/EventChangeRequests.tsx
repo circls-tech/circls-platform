@@ -195,7 +195,10 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     }
 
     const input: EventChangeRequestInput = {};
-    if (name.trim() !== ev.name) input.name = name.trim();
+    // Compare trimmed-to-trimmed: an event stored with stray whitespace would
+    // otherwise look edited the moment the form opens, and submitting sends a
+    // request whose only change is invisible to the reviewer.
+    if (name.trim() !== ev.name.trim()) input.name = name.trim();
 
     const startsAt = localToTzIso(startsAtLocal, editTz);
     const endsAt = localToTzIso(endsAtLocal, editTz);
@@ -216,7 +219,11 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
       }
       const addressChanged =
         !sameAddress(addressJson, ev.addressJson ?? {}) || tzForm.trim() !== (ev.tzName ?? '');
-      if (scopeChanged || addressChanged) {
+      // A map-pin drag moves only `coords`; without this the location patch is
+      // dropped and the form wrongly reports that nothing has changed. Cleared
+      // coords (null) aren't a change on their own — the server re-geocodes.
+      const coordsChanged = coords != null && (coords.lat !== ev.lat || coords.lng !== ev.lng);
+      if (scopeChanged || addressChanged || coordsChanged) {
         input.addressJson = addressJson;
         input.tzName = tzForm.trim();
         if (coords) {
