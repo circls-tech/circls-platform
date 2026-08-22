@@ -168,6 +168,131 @@ describe.skipIf(!runIntegration)('venue images', () => {
     expect(imgs[0].url).toBeTruthy();
   });
 
+  it('stores client-reported dimensions and defaults the focal point to centre', async () => {
+    const p = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/images/upload-presign`,
+      headers: bearer('imgOwner'),
+      payload: { contentType: 'image/jpeg' },
+    });
+    const key = p.json().storageKey;
+    simulateUpload(key, 'image/jpeg');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/images`,
+      headers: bearer('imgOwner'),
+      payload: { storageKey: key, width: 1600, height: 900 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ width: 1600, height: 900, focalX: 0.5, focalY: 0.5 });
+  });
+
+  it('rejects out-of-range dimensions', async () => {
+    const p = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/images/upload-presign`,
+      headers: bearer('imgOwner'),
+      payload: { contentType: 'image/jpeg' },
+    });
+    const key = p.json().storageKey;
+    simulateUpload(key, 'image/jpeg');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/images`,
+      headers: bearer('imgOwner'),
+      payload: { storageKey: key, width: 30000, height: 900 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('bad_request');
+  });
+
+  it('reorders the gallery so the chosen photo becomes the cover', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/images`,
+      headers: bearer('imgOwner'),
+    });
+    const ids = before.json().map((i: { id: string }) => i.id);
+    const reversed = [...ids].reverse();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/v1/venues/${venueId}/images/order`,
+      headers: bearer('imgOwner'),
+      payload: { imageIds: reversed },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((i: { id: string }) => i.id)).toEqual(reversed);
+    expect(res.json()[0].position).toBe(0);
+  });
+
+  it('rejects an order that is not a full permutation', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/images`,
+      headers: bearer('imgOwner'),
+    });
+    const ids = list.json().map((i: { id: string }) => i.id);
+
+    const partial = await app.inject({
+      method: 'PUT',
+      url: `/v1/venues/${venueId}/images/order`,
+      headers: bearer('imgOwner'),
+      payload: { imageIds: ids.slice(0, 1) },
+    });
+    expect(partial.statusCode).toBe(400);
+    expect(partial.json().error.code).toBe('bad_image_order');
+
+    const foreign = await app.inject({
+      method: 'PUT',
+      url: `/v1/venues/${venueId}/images/order`,
+      headers: bearer('imgOwner'),
+      payload: {
+        imageIds: [...ids.slice(0, ids.length - 1), '00000000-0000-0000-0000-0000000000ff'],
+      },
+    });
+    expect(foreign.statusCode).toBe(400);
+    expect(foreign.json().error.code).toBe('bad_image_order');
+  });
+
+  it('moves an image focal point and rejects out-of-range values', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/venues/${venueId}/images`,
+      headers: bearer('imgOwner'),
+    });
+    const imageId = list.json()[0].id;
+
+    const ok = await app.inject({
+      method: 'PATCH',
+      url: `/v1/venues/${venueId}/images/${imageId}`,
+      headers: bearer('imgOwner'),
+      payload: { focalX: 0.75, focalY: 0 },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ id: imageId, focalX: 0.75, focalY: 0 });
+
+    const bad = await app.inject({
+      method: 'PATCH',
+      url: `/v1/venues/${venueId}/images/${imageId}`,
+      headers: bearer('imgOwner'),
+      payload: { focalX: -1, focalY: 0.5 },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error.code).toBe('bad_request');
+  });
+
+  it('404s a focal patch for an image that is not on this venue', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/venues/${venueId}/images/00000000-0000-0000-0000-0000000000ff`,
+      headers: bearer('imgOwner'),
+      payload: { focalX: 0.5, focalY: 0.5 },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('venue_image_not_found');
+  });
+
   it('deletes an image', async () => {
     const list = await app.inject({
       method: 'GET',

@@ -198,6 +198,14 @@ export interface VenueImage {
   mimeType: string;
   sizeBytes: number | null;
   position: number;
+  /** Intrinsic pixel size. Null on photos uploaded before we captured it —
+   *  those fall back to a fixed-height crop on the consumer detail page. */
+  width: number | null;
+  height: number | null;
+  /** Crop anchor in 0..1 image space, applied as CSS `object-position` on the
+   *  consumer card crop. 0.5/0.5 (the default) is a plain centre crop. */
+  focalX: number;
+  focalY: number;
   createdAt: string;
 }
 
@@ -210,6 +218,14 @@ export interface EventImage {
   mimeType: string;
   sizeBytes: number | null;
   position: number;
+  /** Intrinsic pixel size. Null on photos uploaded before we captured it —
+   *  those fall back to a fixed-height crop on the consumer detail page. */
+  width: number | null;
+  height: number | null;
+  /** Crop anchor in 0..1 image space, applied as CSS `object-position` on the
+   *  consumer card crop. 0.5/0.5 (the default) is a plain centre crop. */
+  focalX: number;
+  focalY: number;
   createdAt: string;
 }
 

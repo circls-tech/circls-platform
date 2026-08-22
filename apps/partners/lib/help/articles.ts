@@ -43,7 +43,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Managing venues and arenas',
     category: 'Venues',
     summary:
-      'How to add, edit and update your venues and arenas, upload photos, and manage their listing status.',
+      'How to add, edit and update your venues and arenas, upload photos (choosing the cover and its listing crop), and manage their listing status.',
     order: 2,
   },
   {
@@ -78,7 +78,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Creating and publishing events',
     category: 'Events',
     summary:
-      'How to create one-off or weekly recurring events, add photos, define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
+      'How to create one-off or weekly recurring events, add photos (choosing the cover and its listing crop), define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
     order: 5,
   },
   {

@@ -97,6 +97,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 alt={venueQ.data.venue.name}
                 label={matchSport(venueQ.data.venue.tags) ?? undefined}
                 className="h-44 sm:h-56"
+                variant="hero"
                 fallback={
                   <SportImage
                     input={{ tags: venueQ.data.venue.tags }}

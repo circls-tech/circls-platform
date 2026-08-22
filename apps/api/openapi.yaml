@@ -233,7 +233,33 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/venues/{id}/images/order:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/venues/{id}/images/{imageId}:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: imageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
     delete:
       parameters:
         - schema:
@@ -662,7 +688,33 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/events/{id}/images/order:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/events/{id}/images/{imageId}:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: imageId
+          required: true
+      responses:
+        '200':
+          description: Default Response
     delete:
       parameters:
         - schema:

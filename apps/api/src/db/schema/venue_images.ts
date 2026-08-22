@@ -1,4 +1,4 @@
-import { bigint, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { bigint, integer, pgTable, real, text, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
 import { venues } from './venues.js';
@@ -27,6 +27,15 @@ export const venueImages = pgTable('venue_images', {
   mimeType: text('mime_type').notNull(),
   sizeBytes: bigint('size_bytes', { mode: 'number' }),
   position: integer('position').notNull().default(0),
+  /** Intrinsic pixel size, reported by the browser at upload (HEAD can't give
+   *  it). Cosmetic only — drives aspect-correct boxes; NULL on pre-focal rows,
+   *  which fall back to the legacy fixed-height crop. */
+  width: integer('width'),
+  height: integer('height'),
+  /** Crop anchor in 0..1 image space, rendered as CSS `object-position`.
+   *  0.5/0.5 (the default) reproduces the old centre crop exactly. */
+  focalX: real('focal_x').notNull().default(0.5),
+  focalY: real('focal_y').notNull().default(0.5),
   createdAt: createdAt(),
 });
 

@@ -104,6 +104,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 images={ev.images}
                 alt={ev.name}
                 className="h-44 sm:h-56"
+                variant="hero"
                 fallback={
                   <SportImage input={{ tags: ev.venueTags }} alt={ev.name} className="h-44 sm:h-56" />
                 }

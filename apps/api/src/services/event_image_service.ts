@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type EventImage, eventImages, events } from '../db/schema/index.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage, type PresignedUpload } from '../lib/storage.js';
-import type { PublicImageRef } from './venue_image_service.js';
+import type {
+  FocalPoint,
+  ImageDimensions,
+  PublicImageRef,
+} from './venue_image_service.js';
 
 /** Image content-types we accept, mapped to the key extension we store under. */
 const ALLOWED_TYPES: Record<string, string> = {
@@ -24,6 +28,10 @@ export interface EventImageDTO {
   mimeType: string;
   sizeBytes: number | null;
   position: number;
+  width: number | null;
+  height: number | null;
+  focalX: number;
+  focalY: number;
   createdAt: Date;
 }
 
@@ -36,6 +44,10 @@ function toDTO(row: EventImage): EventImageDTO {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     position: row.position,
+    width: row.width,
+    height: row.height,
+    focalX: row.focalX,
+    focalY: row.focalY,
     createdAt: row.createdAt,
   };
 }
@@ -79,6 +91,7 @@ export async function finalizeEventImage(
   tenantId: string,
   eventId: string,
   storageKey: string,
+  dimensions?: ImageDimensions,
 ): Promise<EventImageDTO> {
   if (!storageKey.startsWith(eventPrefix(eventId))) {
     throw new BadRequest('storageKey does not belong to this event', 'bad_storage_key');
@@ -118,6 +131,8 @@ export async function finalizeEventImage(
       mimeType: head.contentType,
       sizeBytes: head.sizeBytes,
       position: nextPos,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
     })
     .returning();
   if (!row) throw new Error('event_image insert returned no row');
@@ -148,7 +163,14 @@ export async function imagesForEvents(eventIds: string[]): Promise<Map<string, P
   const storage = getStorage();
   for (const r of rows) {
     const list = out.get(r.eventId) ?? [];
-    list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
+    list.push({
+      url: storage.publicUrl(r.storageKey),
+      position: r.position,
+      width: r.width,
+      height: r.height,
+      focalX: r.focalX,
+      focalY: r.focalY,
+    });
     out.set(r.eventId, list);
   }
   return out;
@@ -171,6 +193,10 @@ export async function imagesForSeries(
       eventId: eventImages.eventId,
       storageKey: eventImages.storageKey,
       position: eventImages.position,
+      width: eventImages.width,
+      height: eventImages.height,
+      focalX: eventImages.focalX,
+      focalY: eventImages.focalY,
     })
     .from(eventImages)
     .innerJoin(events, eq(events.id, eventImages.eventId))
@@ -183,7 +209,14 @@ export async function imagesForSeries(
     if (!chosenEvent.has(sid)) chosenEvent.set(sid, r.eventId);
     if (chosenEvent.get(sid) !== r.eventId) continue;
     const list = out.get(sid) ?? [];
-    list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
+    list.push({
+      url: storage.publicUrl(r.storageKey),
+      position: r.position,
+      width: r.width,
+      height: r.height,
+      focalX: r.focalX,
+      focalY: r.focalY,
+    });
     out.set(sid, list);
   }
   return out;
@@ -199,4 +232,59 @@ export async function deleteEventImage(eventId: string, imageId: string): Promis
   }
   await getStorage().delete(row.storageKey);
   await db.delete(eventImages).where(eq(eventImages.id, imageId));
+}
+
+/**
+ * Replace the gallery order wholesale. `imageIds` must be an exact permutation
+ * of the event's current images — a full list rather than a "move A to N" makes
+ * the call idempotent and leaves no room for a partial reorder to wedge the
+ * gallery. Position 0 is the cover, so "set as cover" is this call with one id
+ * spliced to the front. No unique index on `position`, so the rewrite needs no
+ * intermediate renumbering pass.
+ *
+ * Recurring events share one gallery (see imagesForSeries), so reordering on
+ * any occurrence that owns photos reorders what the whole series shows.
+ */
+export async function reorderEventImages(eventId: string, imageIds: string[]): Promise<EventImageDTO[]> {
+  const current = await db
+    .select({ id: eventImages.id })
+    .from(eventImages)
+    .where(eq(eventImages.eventId, eventId));
+  const currentIds = new Set(current.map((r) => r.id));
+  const seen = new Set<string>();
+  for (const id of imageIds) {
+    if (seen.has(id)) throw new BadRequest('imageIds contains duplicates', 'bad_image_order');
+    if (!currentIds.has(id)) {
+      throw new BadRequest('imageIds contains an image not on this event', 'bad_image_order');
+    }
+    seen.add(id);
+  }
+  if (seen.size !== currentIds.size) {
+    throw new BadRequest(
+      `imageIds must list all ${currentIds.size} images of this event`,
+      'bad_image_order',
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    for (const [i, id] of imageIds.entries()) {
+      await tx.update(eventImages).set({ position: i }).where(eq(eventImages.id, id));
+    }
+  });
+  return listEventImages(eventId);
+}
+
+/** Move an image's crop anchor. Values are 0..1; the DB CHECK backs this up. */
+export async function setEventImageFocal(
+  eventId: string,
+  imageId: string,
+  focal: FocalPoint,
+): Promise<EventImageDTO> {
+  const [row] = await db
+    .update(eventImages)
+    .set({ focalX: focal.focalX, focalY: focal.focalY })
+    .where(and(eq(eventImages.id, imageId), eq(eventImages.eventId, eventId)))
+    .returning();
+  if (!row) throw new NotFound('Image not found', 'event_image_not_found');
+  return toDTO(row);
 }

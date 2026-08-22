@@ -143,6 +143,171 @@ describe.skipIf(!runIntegration)('event images', () => {
     expect(res.json().error.code).toBe('bad_storage_key');
   });
 
+  it('stores client-reported dimensions and defaults the focal point to centre', async () => {
+    const p = await app.inject({
+      method: 'POST',
+      url: `/v1/events/${eventId}/images/upload-presign`,
+      headers: bearer('eviOwner'),
+      payload: { contentType: 'image/jpeg' },
+    });
+    const key = p.json().storageKey;
+    simulateUpload(key, 'image/jpeg');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+      payload: { storageKey: key, width: 1200, height: 1800 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ width: 1200, height: 1800, focalX: 0.5, focalY: 0.5 });
+  });
+
+  it('leaves dimensions null when the client cannot report them', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+    });
+    // The first two images were finalized without width/height.
+    expect(list.json()[0]).toMatchObject({ width: null, height: null, focalX: 0.5, focalY: 0.5 });
+  });
+
+  it('rejects out-of-range dimensions', async () => {
+    const p = await app.inject({
+      method: 'POST',
+      url: `/v1/events/${eventId}/images/upload-presign`,
+      headers: bearer('eviOwner'),
+      payload: { contentType: 'image/jpeg' },
+    });
+    const key = p.json().storageKey;
+    simulateUpload(key, 'image/jpeg');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+      payload: { storageKey: key, width: 0, height: 999999 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('bad_request');
+  });
+
+  it('reorders the gallery so the chosen photo becomes the cover', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+    });
+    const ids = before.json().map((i: { id: string }) => i.id);
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    const reversed = [...ids].reverse();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/v1/events/${eventId}/images/order`,
+      headers: bearer('eviOwner'),
+      payload: { imageIds: reversed },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((i: { id: string }) => i.id)).toEqual(reversed);
+    expect(res.json().map((i: { position: number }) => i.position)).toEqual(
+      reversed.map((_: string, i: number) => i),
+    );
+
+    // Idempotent: sending the same order again is a no-op, not an error.
+    const again = await app.inject({
+      method: 'PUT',
+      url: `/v1/events/${eventId}/images/order`,
+      headers: bearer('eviOwner'),
+      payload: { imageIds: reversed },
+    });
+    expect(again.json().map((i: { id: string }) => i.id)).toEqual(reversed);
+  });
+
+  it('rejects an order that is not a full permutation', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+    });
+    const ids = list.json().map((i: { id: string }) => i.id);
+
+    const partial = await app.inject({
+      method: 'PUT',
+      url: `/v1/events/${eventId}/images/order`,
+      headers: bearer('eviOwner'),
+      payload: { imageIds: ids.slice(0, 1) },
+    });
+    expect(partial.statusCode).toBe(400);
+    expect(partial.json().error.code).toBe('bad_image_order');
+
+    const duplicated = await app.inject({
+      method: 'PUT',
+      url: `/v1/events/${eventId}/images/order`,
+      headers: bearer('eviOwner'),
+      payload: { imageIds: ids.map(() => ids[0]) },
+    });
+    expect(duplicated.statusCode).toBe(400);
+    expect(duplicated.json().error.code).toBe('bad_image_order');
+
+    const foreign = await app.inject({
+      method: 'PUT',
+      url: `/v1/events/${eventId}/images/order`,
+      headers: bearer('eviOwner'),
+      payload: {
+        imageIds: [...ids.slice(0, ids.length - 1), '00000000-0000-0000-0000-0000000000ff'],
+      },
+    });
+    expect(foreign.statusCode).toBe(400);
+    expect(foreign.json().error.code).toBe('bad_image_order');
+  });
+
+  it('moves an image focal point', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+    });
+    const imageId = list.json()[0].id;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/events/${eventId}/images/${imageId}`,
+      headers: bearer('eviOwner'),
+      payload: { focalX: 0.25, focalY: 0.1 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: imageId, focalX: 0.25, focalY: 0.1 });
+  });
+
+  it('rejects a focal point outside 0..1', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/events/${eventId}/images`,
+      headers: bearer('eviOwner'),
+    });
+    const imageId = list.json()[0].id;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/events/${eventId}/images/${imageId}`,
+      headers: bearer('eviOwner'),
+      payload: { focalX: 1.5, focalY: -0.2 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('bad_request');
+  });
+
+  it('404s a focal patch for an image that is not on this event', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/events/${eventId}/images/00000000-0000-0000-0000-0000000000ff`,
+      headers: bearer('eviOwner'),
+      payload: { focalX: 0.5, focalY: 0.5 },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('event_image_not_found');
+  });
+
   it('lists then deletes images', async () => {
     const list = await app.inject({
       method: 'GET',
