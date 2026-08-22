@@ -95,6 +95,12 @@ export function PendingPhotosPicker({
             {hint ??
               `${photos.length}/${max} · JPEG, PNG or WebP, up to ${VENUE_IMAGE_MAX_BYTES / (1024 * 1024)} MB each${single ? '' : ' · first is the cover'} · uploaded on create`}
           </p>
+          {!single && photos.length > 0 && (
+            <p className="text-xs text-gray-400">
+              Previews show the listing crop. You can reorder photos and adjust each crop from the
+              Photos section once this is created.
+            </p>
+          )}
         </div>
         <Button
           type="button"
@@ -116,11 +122,17 @@ export function PendingPhotosPicker({
       </div>
 
       {photos.length > 0 && (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <ul
+          className={`grid gap-3 ${
+            single ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+          }`}
+        >
           {photos.map((p, i) => (
             <li
               key={p.id}
-              className="group relative aspect-square overflow-hidden rounded border border-gray-200 bg-gray-50"
+              className={`group relative overflow-hidden rounded border border-gray-200 bg-gray-50 ${
+                single ? 'aspect-square' : 'aspect-[13/7]'
+              }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.previewUrl} alt="Selected photo" className="h-full w-full object-cover" />

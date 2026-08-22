@@ -11,7 +11,7 @@ Events are one-off or recurring happenings — tournaments, classes, socials, sc
    - **Description** (optional).
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
    - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
-   - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover.
+   - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
 4. Click **Create event**.
 
 The event is created as a **draft** and you're returned to the Events list. Add ticket tiers next (see below) before submitting.
@@ -39,7 +39,7 @@ Open **Advanced settings** under the weekly options to fine-tune individual date
 
 Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts) or cancelled on their own pages.
 
-Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery.
+Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery. Reordering photos or adjusting a crop therefore changes what every date in the series shows.
 
 ## Ticket tiers
 
@@ -192,9 +192,24 @@ The lifecycle is: *draft → submit for review → published* (or *rejected*), w
 You can add photos in two places:
 
 - **On the create form** — pick up to 12 photos before clicking **Create event**; they upload automatically once the event exists.
-- **On the event detail page** — use the **Photos** section to add, reorder-by-re-upload, or delete photos at any time.
+- **On the event detail page** — use the **Photos** section to add, reorder, re-crop or delete photos at any time.
 
-JPEG, PNG or WebP, up to 10 MB each; the first photo is the cover. Photos appear to consumers in the listing, so a strong lead image helps registrations. For recurring events the whole series shares one gallery.
+JPEG, PNG or WebP, up to 10 MB each. Photos appear to consumers in the listing, so a strong lead image helps registrations. For recurring events the whole series shares one gallery.
+
+### Choosing the cover
+
+The **first** photo is the cover — it's the one shown on listing cards and in search results. Use the **←** and **→** buttons under a photo to move it, or **Make cover** to send it straight to the front.
+
+### Adjusting the crop
+
+Listing cards are a fixed landscape shape, so a tall photo — a poster, a portrait shot — can't be shown whole there. Each thumbnail in the **Photos** section shows you exactly how that photo will be cropped on a card.
+
+If something important is cut off, click **Crop** and drag the marker onto the part that matters: the title of a poster, a face, your logo. The preview next to it updates live, so you can see the finished card before you save.
+
+Two things worth knowing:
+
+- Cropping never changes your file. It only records which point to keep in frame, so you can readjust it any time.
+- The **full photo is always shown uncropped on the public event page**. A poster with all its text on it is fine to upload — pick a crop that works on the card, and visitors still see the whole thing when they open the event.
 
 ## Managing registrations
 

@@ -6,6 +6,15 @@
 export interface ImageRef {
   url: string;
   position: number;
+  /** Intrinsic pixel size; null on photos uploaded before we captured it, which
+   *  is the signal to fall back to a fixed-height crop instead of an
+   *  aspect-correct box. */
+  width: number | null;
+  height: number | null;
+  /** Crop anchor in 0..1 image space, applied as CSS `object-position` so the
+   *  partner chooses what survives the card crop. 0.5/0.5 = plain centre. */
+  focalX: number;
+  focalY: number;
 }
 
 /** Social handles/URLs an org advertises (PR #108). */

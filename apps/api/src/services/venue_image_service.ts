@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type VenueImage, venueImages } from '../db/schema/index.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
@@ -16,6 +16,24 @@ const ALLOWED_TYPES: Record<string, string> = {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MiB
 const MAX_IMAGES_PER_VENUE = 12;
 
+/**
+ * Intrinsic pixel size of an upload, reported by the browser. R2's HEAD gives
+ * us bytes and content-type but not dimensions, so unlike those two this is
+ * client-supplied. It is cosmetic only (aspect-correct boxes, reserved layout
+ * space) and never feeds authz, billing, or storage accounting — the API just
+ * range-checks it. Omitted for uploads whose dimensions we couldn't read.
+ */
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/** Crop anchor in 0..1 image space; 0.5/0.5 is a plain centre crop. */
+export interface FocalPoint {
+  focalX: number;
+  focalY: number;
+}
+
 /** Wire shape: the stored row plus the public URL the frontend renders. */
 export interface VenueImageDTO {
   id: string;
@@ -25,6 +43,10 @@ export interface VenueImageDTO {
   mimeType: string;
   sizeBytes: number | null;
   position: number;
+  width: number | null;
+  height: number | null;
+  focalX: number;
+  focalY: number;
   createdAt: Date;
 }
 
@@ -37,6 +59,10 @@ function toDTO(row: VenueImage): VenueImageDTO {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     position: row.position,
+    width: row.width,
+    height: row.height,
+    focalX: row.focalX,
+    focalY: row.focalY,
     createdAt: row.createdAt,
   };
 }
@@ -88,6 +114,7 @@ export async function finalizeVenueImage(
   tenantId: string,
   venueId: string,
   storageKey: string,
+  dimensions?: ImageDimensions,
 ): Promise<VenueImageDTO> {
   if (!storageKey.startsWith(venuePrefix(venueId))) {
     throw new BadRequest('storageKey does not belong to this venue', 'bad_storage_key');
@@ -129,6 +156,8 @@ export async function finalizeVenueImage(
       mimeType: head.contentType,
       sizeBytes: head.sizeBytes,
       position: nextPos,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
     })
     .returning();
   if (!row) throw new Error('venue_image insert returned no row');
@@ -148,6 +177,11 @@ export async function listVenueImages(venueId: string): Promise<VenueImageDTO[]>
 export interface PublicImageRef {
   url: string;
   position: number;
+  /** Null on rows uploaded before dimensions were captured. */
+  width: number | null;
+  height: number | null;
+  focalX: number;
+  focalY: number;
 }
 
 /**
@@ -167,7 +201,14 @@ export async function imagesForVenues(venueIds: string[]): Promise<Map<string, P
   const storage = getStorage();
   for (const r of rows) {
     const list = out.get(r.venueId) ?? [];
-    list.push({ url: storage.publicUrl(r.storageKey), position: r.position });
+    list.push({
+      url: storage.publicUrl(r.storageKey),
+      position: r.position,
+      width: r.width,
+      height: r.height,
+      focalX: r.focalX,
+      focalY: r.focalY,
+    });
     out.set(r.venueId, list);
   }
   return out;
@@ -183,4 +224,56 @@ export async function deleteVenueImage(venueId: string, imageId: string): Promis
   }
   await getStorage().delete(row.storageKey);
   await db.delete(venueImages).where(eq(venueImages.id, imageId));
+}
+
+/**
+ * Replace the gallery order wholesale. `imageIds` must be an exact permutation
+ * of the venue's current images — a full list rather than a "move A to N" makes
+ * the call idempotent and leaves no room for a partial reorder to wedge the
+ * gallery. Position 0 is the cover, so "set as cover" is this call with one id
+ * spliced to the front. No unique index on `position`, so the rewrite needs no
+ * intermediate renumbering pass.
+ */
+export async function reorderVenueImages(venueId: string, imageIds: string[]): Promise<VenueImageDTO[]> {
+  const current = await db
+    .select({ id: venueImages.id })
+    .from(venueImages)
+    .where(eq(venueImages.venueId, venueId));
+  const currentIds = new Set(current.map((r) => r.id));
+  const seen = new Set<string>();
+  for (const id of imageIds) {
+    if (seen.has(id)) throw new BadRequest('imageIds contains duplicates', 'bad_image_order');
+    if (!currentIds.has(id)) {
+      throw new BadRequest('imageIds contains an image not on this venue', 'bad_image_order');
+    }
+    seen.add(id);
+  }
+  if (seen.size !== currentIds.size) {
+    throw new BadRequest(
+      `imageIds must list all ${currentIds.size} images of this venue`,
+      'bad_image_order',
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    for (const [i, id] of imageIds.entries()) {
+      await tx.update(venueImages).set({ position: i }).where(eq(venueImages.id, id));
+    }
+  });
+  return listVenueImages(venueId);
+}
+
+/** Move an image's crop anchor. Values are 0..1; the DB CHECK backs this up. */
+export async function setVenueImageFocal(
+  venueId: string,
+  imageId: string,
+  focal: FocalPoint,
+): Promise<VenueImageDTO> {
+  const [row] = await db
+    .update(venueImages)
+    .set({ focalX: focal.focalX, focalY: focal.focalY })
+    .where(and(eq(venueImages.id, imageId), eq(venueImages.venueId, venueId)))
+    .returning();
+  if (!row) throw new NotFound('Image not found', 'venue_image_not_found');
+  return toDTO(row);
 }

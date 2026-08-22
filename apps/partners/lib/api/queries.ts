@@ -217,6 +217,32 @@ export function useCreateVenue(tenantId: string) {
 export const VENUE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const VENUE_IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB
 
+/** Crop anchor sent to the image PATCH endpoints. */
+export interface FocalPoint {
+  focalX: number;
+  focalY: number;
+}
+
+/**
+ * Read a picked file's intrinsic pixel size so finalize can store it. R2's HEAD
+ * (which is where the API gets the real size and mime) cannot report pixel
+ * dimensions, so this is the only place they're available. Purely cosmetic —
+ * the API range-checks them and the upload still succeeds if we return null,
+ * the photo just falls back to a fixed-height crop on the consumer detail page.
+ */
+export async function readImageDimensions(
+  file: File,
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const { width, height } = bitmap;
+    bitmap.close();
+    return width > 0 && height > 0 ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useVenueImages(venueId: string) {
   return useQuery({
     queryKey: ['venue-images', venueId],
@@ -250,9 +276,10 @@ export function useUploadVenueImage(venueId: string) {
         body: file,
       });
       if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+      const dims = await readImageDimensions(file);
       return apiFetch<VenueImage>(`/v1/venues/${venueId}/images`, {
         method: 'POST',
-        body: JSON.stringify({ storageKey: presign.storageKey }),
+        body: JSON.stringify({ storageKey: presign.storageKey, ...dims }),
       });
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
@@ -264,6 +291,35 @@ export function useDeleteVenueImage(venueId: string) {
   return useMutation({
     mutationFn: (imageId: string) =>
       apiFetch<{ ok: true }>(`/v1/venues/${venueId}/images/${imageId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
+  });
+}
+
+/**
+ * Rewrite the gallery order. The API wants the FULL ordered id list (it rejects
+ * anything that isn't a permutation of the venue's images), which also makes
+ * "set as cover" just this call with one id moved to the front.
+ */
+export function useReorderVenueImages(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (imageIds: string[]) =>
+      apiFetch<VenueImage[]>(`/v1/venues/${venueId}/images/order`, {
+        method: 'PUT',
+        body: JSON.stringify({ imageIds }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
+  });
+}
+
+export function useSetVenueImageFocal(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ imageId, focal }: { imageId: string; focal: FocalPoint }) =>
+      apiFetch<VenueImage>(`/v1/venues/${venueId}/images/${imageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(focal),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['venue-images', venueId] }),
   });
 }
@@ -301,9 +357,10 @@ export async function uploadEventImageFile(eventId: string, file: File): Promise
     body: file,
   });
   if (!put.ok) throw new Error(`Upload to storage failed (${put.status}).`);
+  const dims = await readImageDimensions(file);
   return apiFetch<EventImage>(`/v1/events/${eventId}/images`, {
     method: 'POST',
-    body: JSON.stringify({ storageKey: presign.storageKey }),
+    body: JSON.stringify({ storageKey: presign.storageKey, ...dims }),
   });
 }
 
@@ -320,6 +377,31 @@ export function useDeleteEventImage(eventId: string) {
   return useMutation({
     mutationFn: (imageId: string) =>
       apiFetch<{ ok: true }>(`/v1/events/${eventId}/images/${imageId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
+  });
+}
+
+/** See useReorderVenueImages — same full-list contract, against the event. */
+export function useReorderEventImages(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (imageIds: string[]) =>
+      apiFetch<EventImage[]>(`/v1/events/${eventId}/images/order`, {
+        method: 'PUT',
+        body: JSON.stringify({ imageIds }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
+  });
+}
+
+export function useSetEventImageFocal(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ imageId, focal }: { imageId: string; focal: FocalPoint }) =>
+      apiFetch<EventImage>(`/v1/events/${eventId}/images/${imageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(focal),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['event-images', eventId] }),
   });
 }
