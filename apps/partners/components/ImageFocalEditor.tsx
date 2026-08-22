@@ -47,10 +47,28 @@ export function ImageFocalEditor({
   const boxRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Re-seed whenever a different photo (or a saved value) is opened.
+  // Seed from props once per opened photo — NOT on every parent render.
+  //
+  // The parent passes `initialFocal` as a fresh object literal, so an effect
+  // keyed on it re-runs whenever the parent re-renders for ANY reason and
+  // clobbers `focal` with the stored value. That silently wiped a drag in
+  // progress: react-query refetches the gallery on window focus (staleTime is
+  // 30s), so alt-tabbing away mid-adjustment and coming back reset the marker.
+  // Clicking Save did it too, via the parent's `pending` state — harmless on
+  // success, but on failure the dialog stayed open showing the OLD point.
+  //
+  // The ref makes the seeding idempotent per (open, photo), so re-renders are
+  // inert while a genuinely different photo still seeds correctly.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    if (open) setFocal(initialFocal);
-  }, [open, initialFocal]);
+    if (!open) {
+      seededFor.current = null;
+      return;
+    }
+    if (seededFor.current === imageUrl) return;
+    seededFor.current = imageUrl;
+    setFocal(initialFocal);
+  }, [open, imageUrl, initialFocal]);
 
   /**
    * Map a pointer position into 0..1 image space. Measured against the <img>
