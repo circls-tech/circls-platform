@@ -40,8 +40,17 @@ import {
   toTierQrTicketConfig,
 } from '../lib/qr_ticket_config_schema.js';
 
+/**
+ * Names are stored trimmed. Without this a stray leading/trailing space
+ * survives the round-trip, and every later "has this changed?" comparison
+ * against a trimmed client value reports a phantom edit — which, on a
+ * published event, means a change request whose diff looks identical to the
+ * reviewer.
+ */
+const eventNameField = (max: number) => z.string().trim().min(1).max(max);
+
 const tierSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: eventNameField(120),
   description: z
     .string()
     .max(2000)
@@ -108,7 +117,7 @@ const maxPerUserField = z.number().int().min(1).nullable().optional();
 
 const createEventSchema = z
   .object({
-    name: z.string().min(1).max(200),
+    name: eventNameField(200),
     description: z.string().optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
@@ -131,7 +140,7 @@ const createTenantEventSchema = z
     lat: z.number().optional(),
     lng: z.number().optional(),
     tzName: z.string().min(1).optional(),
-    name: z.string().min(1).max(200),
+    name: eventNameField(200),
     description: z.string().optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
@@ -160,7 +169,7 @@ const createTenantEventSchema = z
   );
 
 const updateEventSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
+  name: eventNameField(200).optional(),
   description: z.string().nullable().optional(),
   startsAt: z.string().datetime().optional(),
   endsAt: z.string().datetime().optional(),
@@ -197,7 +206,7 @@ const updateEventSchema = z.object({
 const liveTierSchema = tierSchema.extend({ id: z.string().uuid().optional() });
 const changeRequestSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    name: eventNameField(200).optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     venueId: z.string().uuid().nullable().optional(),

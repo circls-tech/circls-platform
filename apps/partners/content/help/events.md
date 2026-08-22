@@ -84,7 +84,7 @@ The remaining fields — **name, date & time, location, and ticket tiers** — c
 
 ### Requesting changes to a live event
 
-To change a live event's **name**, **date & time**, **location** (its venue, or a standalone event's address), or **ticket tiers** (names, prices, adding or removing tiers), use the **Request changes** card on the event's detail page. Your proposal is sent to the circls team for review and applies only after they approve it — consumers keep seeing the current details until then.
+To change a live event's **name**, **date & time**, **location** (its venue, or a standalone event's address, timezone and map pin — moving the pin alone counts as a change), or **ticket tiers** (names, prices, adding or removing tiers), use the **Request changes** card on the event's detail page. Your proposal is sent to the circls team for review and applies only after they approve it — consumers keep seeing the current details until then.
 
 How it works:
 
