@@ -38,6 +38,10 @@ jobs:
       REQUIRED_CHECKS: 'verify,db'
       HEALTH_URL: 'https://api.circls.app/v1/health'
       PORTAL_URLS: 'https://admin.circls.app,https://partners.circls.app,https://circls.app'
+      # Portals deploy independently of the API, so smoke retries them for this
+      # long before giving up (they can still be rolling when /v1/health already
+      # reports the new SHA). Worst-case verify budget = 600s health + this.
+      PORTAL_TIMEOUT_S: '300'
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
