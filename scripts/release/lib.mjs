@@ -74,6 +74,19 @@ function safeParse(s) {
 }
 
 /**
+ * True if a portal probe means "this portal is serving".
+ *
+ * Anything else — a 4xx/5xx, or a network error surfaced as a null status — is
+ * treated as not-ready-YET and retried until the caller's deadline, rather than
+ * failing the release on the first attempt. Portals deploy independently of the
+ * API, so one can still be rolling for seconds after /v1/health already reports
+ * the new build SHA.
+ */
+export function portalProbeOk(status) {
+  return Number.isInteger(status) && status >= 100 && status < 400;
+}
+
+/**
  * Given GitHub check-runs JSON and required check names, report the overall CI status.
  *
  * Returns { status: 'success'|'failed'|'pending', ok: boolean, details: [...] }

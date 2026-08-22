@@ -8,6 +8,7 @@ import {
   healthShaMatches,
   allChecksPassed,
   nextReleaseTag,
+  portalProbeOk,
 } from './lib.mjs';
 
 test('parseChangedFiles: trims, drops blanks', () => {
@@ -223,4 +224,28 @@ test('nextReleaseTag: increments past existing, ignores other dates/malformed', 
 test('nextReleaseTag: ignores scientific-notation / padded suffixes', () => {
   const tags = ['release-2026-06-01.1', 'release-2026-06-01.2e3', 'release-2026-06-01. 5'];
   assert.equal(nextReleaseTag(tags, '2026-06-01'), 'release-2026-06-01.2');
+});
+
+test('portalProbeOk: 2xx/3xx are up (portals 307 to their login)', () => {
+  assert.equal(portalProbeOk(200), true);
+  assert.equal(portalProbeOk(204), true);
+  assert.equal(portalProbeOk(307), true);
+  assert.equal(portalProbeOk(399), true);
+});
+
+test('portalProbeOk: the deploy-race statuses are NOT up, so they get retried', () => {
+  // 502 is what circls.app returned mid-rollout on 2026-08-21 and failed a
+  // release that had already shipped.
+  assert.equal(portalProbeOk(502), false);
+  assert.equal(portalProbeOk(503), false);
+  assert.equal(portalProbeOk(504), false);
+  assert.equal(portalProbeOk(404), false);
+  assert.equal(portalProbeOk(400), false);
+});
+
+test('portalProbeOk: a network error (no numeric status) is not up', () => {
+  assert.equal(portalProbeOk(null), false);
+  assert.equal(portalProbeOk(undefined), false);
+  assert.equal(portalProbeOk('200'), false);
+  assert.equal(portalProbeOk(NaN), false);
 });
