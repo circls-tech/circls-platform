@@ -20,6 +20,60 @@ export function useMemberships(tenantId: string) {
 }
 
 /** Consumer purchases of a membership plan (partner-facing). */
+export interface AddMemberInput {
+  name: string;
+  contact?: string;
+  membershipTierId?: string;
+  startsAt?: string;
+  endsAt?: string;
+}
+
+/** Record a member who joined off-platform. Counts towards tier capacity; no
+ *  money is written, so it never reaches a payout. */
+export function useAddMember(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ membershipId, input }: { membershipId: string; input: AddMemberInput }) =>
+      apiFetch<{ userMembershipId: string }>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/members`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: (_r, { membershipId }) => {
+      void qc.invalidateQueries({ queryKey: ['membership-purchases', tenantId, membershipId] });
+      void qc.invalidateQueries({ queryKey: ['memberships', tenantId] });
+    },
+  });
+}
+
+export interface UpdateMemberInput {
+  startsAt?: string;
+  endsAt?: string;
+  status?: 'active' | 'cancelled';
+}
+
+/** Correct a member's validity window, or cancel their membership. */
+export function useUpdateMember(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userMembershipId,
+      membershipId,
+      input,
+    }: {
+      userMembershipId: string;
+      membershipId: string;
+      input: UpdateMemberInput;
+    }) =>
+      apiFetch<{ ok: boolean }>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/members/${userMembershipId}`,
+        { method: 'PATCH', body: JSON.stringify(input) },
+      ),
+    onSuccess: (_r, { membershipId }) => {
+      void qc.invalidateQueries({ queryKey: ['membership-purchases', tenantId, membershipId] });
+    },
+  });
+}
+
 export function useMembershipPurchases(tenantId: string, membershipId: string) {
   const { user } = useAuth();
   return useQuery({

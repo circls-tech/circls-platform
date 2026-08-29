@@ -41,12 +41,15 @@ vi.mock('./payments_service.js', async (importOriginal) => {
 
 const { closeDb, db, pingDb } = await import('../db/client.js');
 const { tenants, users } = await import('../db/schema/index.js');
-const { eq } = await import('drizzle-orm');
+const { eq, sql } = await import('drizzle-orm');
 const {
   createMembership,
+  listMembershipPurchases,
   listMembershipsForTenant,
   listUserMemberships,
   purchaseMembership,
+  addExternalMember,
+  updateMember,
 } = await import('./memberships_service.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -79,6 +82,156 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
       })
       .returning();
     buyerId = u2!.id;
+  });
+
+  describe('members added by hand', () => {
+    async function makePlan(capacity: number | null) {
+      const plan = await createMembership({
+        tenantId,
+        actorUserId,
+        name: `Hand-added ${Date.now()}${Math.round(capacity ?? -1)}`,
+        pricePaise: 0,
+        durationDays: 30,
+        ...(capacity === null ? {} : { tiers: [{ name: 'Std', pricePaise: 50000, durationDays: 30, capacity }] }),
+      });
+      return plan;
+    }
+
+    it('records the member and never touches money', async () => {
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Desk Signup Deepa', contact: '+919876500777' },
+      );
+
+      const rows = (await db.execute(sql`
+        select user_id, payment_id, external_name, external_contact, created_by_user_id, status
+          from user_memberships where id = ${userMembershipId}
+      `)) as unknown as Array<Record<string, unknown>>;
+      const r = rows[0]!;
+      expect(r['user_id']).toBeNull();
+      // The money guarantee: payouts read `payments`, and there is no payment.
+      expect(r['payment_id']).toBeNull();
+      expect(r['external_name']).toBe('Desk Signup Deepa');
+      expect(r['external_contact']).toBe('+919876500777');
+      expect(r['created_by_user_id']).toBe(actorUserId);
+      expect(r['status']).toBe('active');
+    });
+
+    it('shows up in the buyers list, flagged as external', async () => {
+      const plan = await makePlan(null);
+      await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Listed Lakshmi', contact: 'lakshmi@example.com' },
+      );
+      const rows = await listMembershipPurchases(tenantId, plan.id);
+      const row = rows.find((x: { buyerName: string | null }) => x.buyerName === 'Listed Lakshmi');
+      // A left join is required here: an inner join on users would silently
+      // drop every hand-added member from the partner's own list.
+      expect(row).toBeTruthy();
+      expect(row!.external).toBe(true);
+      expect(row!.buyerContact).toBe('lakshmi@example.com');
+    });
+
+    it('counts towards tier capacity like a purchase', async () => {
+      const plan = await makePlan(1);
+      const tierId = plan.tiers?.[0]?.id;
+      await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'First In', ...(tierId ? { membershipTierId: tierId } : {}) },
+      );
+      await expect(
+        addExternalMember(
+          { tenantId, actorUserId },
+          { membershipId: plan.id, name: 'One Too Many', ...(tierId ? { membershipTierId: tierId } : {}) },
+        ),
+      ).rejects.toMatchObject({ code: 'membership_tier_sold_out' });
+    });
+
+    it('rejects a blank name, so no member can be anonymous', async () => {
+      const plan = await makePlan(null);
+      await expect(
+        addExternalMember({ tenantId, actorUserId }, { membershipId: plan.id, name: '   ' }),
+      ).rejects.toMatchObject({ code: 'bad_request' });
+    });
+
+    it('refuses a plan belonging to another org', async () => {
+      const [other] = await db
+        .insert(tenants)
+        .values({ name: 'OtherCo', slug: `otherco-${Date.now()}` })
+        .returning();
+      const plan = await makePlan(null);
+      await expect(
+        addExternalMember(
+          { tenantId: other!.id, actorUserId },
+          { membershipId: plan.id, name: 'Cross Tenant' },
+        ),
+      ).rejects.toMatchObject({ code: 'membership_not_found' });
+      await db.execute(sql`delete from tenants where id = ${other!.id}`);
+    });
+
+    it('edits the validity window', async () => {
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Extend Me' },
+      );
+      const newEnd = new Date(Date.now() + 400 * 24 * 60 * 60 * 1000);
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, { endsAt: newEnd });
+
+      const rows = (await db.execute(sql`
+        select ends_at from user_memberships where id = ${userMembershipId}
+      `)) as unknown as Array<{ ends_at: string }>;
+      expect(new Date(rows[0]!.ends_at).getTime()).toBeCloseTo(newEnd.getTime(), -4);
+    });
+
+    it('refuses a window that ends before it starts', async () => {
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Backwards' },
+      );
+      await expect(
+        updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+          endsAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        }),
+      ).rejects.toMatchObject({ code: 'bad_date_range' });
+    });
+
+    it('cancels a member, freeing their seat', async () => {
+      const plan = await makePlan(1);
+      const tierId = plan.tiers?.[0]?.id;
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Leaving Leela', ...(tierId ? { membershipTierId: tierId } : {}) },
+      );
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, { status: 'cancelled' });
+
+      // Capacity counts non-cancelled holders, so the seat is available again.
+      const { userMembershipId: replacement } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Taking The Seat', ...(tierId ? { membershipTierId: tierId } : {}) },
+      );
+      expect(replacement).toBeTruthy();
+    });
+
+    it("refuses to touch another org's member", async () => {
+      const [other] = await db
+        .insert(tenants)
+        .values({ name: 'OtherCo2', slug: `otherco2-${Date.now()}` })
+        .returning();
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Not Yours' },
+      );
+      await expect(
+        updateMember({ tenantId: other!.id, actorUserId }, userMembershipId, plan.id, {
+          status: 'cancelled',
+        }),
+      ).rejects.toMatchObject({ code: 'member_not_found' });
+      await db.execute(sql`delete from tenants where id = ${other!.id}`);
+    });
   });
 
   afterAll(async () => {

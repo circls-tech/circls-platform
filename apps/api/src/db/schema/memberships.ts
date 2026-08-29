@@ -71,9 +71,13 @@ export const userMembershipStatus = pgEnum('user_membership_status', [
 
 export const userMemberships = pgTable('user_memberships', {
   id: uuidPk(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id),
+  /**
+   * Null for a member the partner added by hand, who has no circls account —
+   * their identity lives in externalName/externalContact instead. A DB CHECK
+   * (`user_memberships_member_identity_chk`) requires one or the other, so a
+   * row can never be anonymous. Mirrors bookings' customerUserId.
+   */
+  userId: uuid('user_id').references(() => users.id),
   membershipId: uuid('membership_id')
     .notNull()
     .references(() => memberships.id),
@@ -87,6 +91,12 @@ export const userMemberships = pgTable('user_memberships', {
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
   endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
   status: userMembershipStatus('status').notNull().default('active'),
+  /** Set only when userId is null: who the partner recorded. */
+  externalName: text('external_name'),
+  /** Phone or email for an externally-added member, when one was captured. */
+  externalContact: text('external_contact'),
+  /** The partner who recorded this member; null for consumer purchases. */
+  createdByUserId: uuid('created_by_user_id').references(() => users.id),
   createdAt: createdAt(),
 });
 

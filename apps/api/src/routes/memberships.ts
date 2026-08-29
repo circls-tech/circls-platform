@@ -13,6 +13,7 @@ import {
   toTierQrTicketConfig,
 } from '../lib/qr_ticket_config_schema.js';
 import {
+  addExternalMember,
   createMembership,
   finalizeMembershipCover,
   getMembership,
@@ -23,6 +24,7 @@ import {
   purchaseMembership,
   removeMembershipCover,
   setMembershipActive,
+  updateMember,
   updateMembership,
 } from '../services/memberships_service.js';
 
@@ -232,6 +234,85 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     await requireTenantMembership(user.id, tenantId);
     return { rows: await listMembershipPurchases(tenantId, id) };
   });
+
+  /**
+   * A member the partner signed up off-platform. Counts towards tier capacity
+   * like any purchase; writes no payment, so it never reaches a payout.
+   */
+  const addMemberSchema = z.object({
+    name: z.string().min(1).max(200),
+    contact: z.string().max(200).optional(),
+    membershipTierId: z.string().uuid().optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+  });
+
+  app.post(
+    '/v1/tenants/:tenantId/memberships/:id/members',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertTermsAccepted(memberCtx);
+      const parsed = addMemberSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('Invalid member', 'bad_request', { issues: parsed.error.issues });
+      }
+      const result = await addExternalMember(
+        { tenantId, actorUserId: user.id },
+        {
+          membershipId: id,
+          name: parsed.data.name,
+          ...(parsed.data.contact ? { contact: parsed.data.contact } : {}),
+          ...(parsed.data.membershipTierId
+            ? { membershipTierId: parsed.data.membershipTierId }
+            : {}),
+          ...(parsed.data.startsAt ? { startsAt: new Date(parsed.data.startsAt) } : {}),
+          ...(parsed.data.endsAt ? { endsAt: new Date(parsed.data.endsAt) } : {}),
+        },
+      );
+      return reply.code(201).send(result);
+    },
+  );
+
+  /** Correct a member's validity window, or cancel their membership. */
+  const updateMemberSchema = z
+    .object({
+      startsAt: z.string().datetime().optional(),
+      endsAt: z.string().datetime().optional(),
+      status: z.enum(['active', 'cancelled']).optional(),
+    })
+    .refine((d) => Object.keys(d).length > 0, { message: 'Nothing to update' });
+
+  // Nested under the plan on purpose: /v1/tenants/:tenantId/members/:userId is
+  // already taken by team-member role edits, and fastify matches on path shape
+  // rather than param name, so a flat path here collides and the server refuses
+  // to boot.
+  app.patch(
+    '/v1/tenants/:tenantId/memberships/:membershipId/members/:userMembershipId',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, membershipId, userMembershipId } = req.params as {
+        tenantId: string;
+        membershipId: string;
+        userMembershipId: string;
+      };
+      const user = await currentUser(req);
+      const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertTermsAccepted(memberCtx);
+      const parsed = updateMemberSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('Invalid update', 'bad_request', { issues: parsed.error.issues });
+      }
+      await updateMember({ tenantId, actorUserId: user.id }, userMembershipId, membershipId, {
+        ...(parsed.data.startsAt ? { startsAt: new Date(parsed.data.startsAt) } : {}),
+        ...(parsed.data.endsAt ? { endsAt: new Date(parsed.data.endsAt) } : {}),
+        ...(parsed.data.status ? { status: parsed.data.status } : {}),
+      });
+      return { ok: true };
+    },
+  );
 
   app.post('/v1/memberships/:id/purchase', { preHandler: requireAuth }, async (req) => {
     const { id } = req.params as { id: string };

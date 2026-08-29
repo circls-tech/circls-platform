@@ -618,6 +618,9 @@ export interface MembershipPurchase {
   endsAt: string;
   /** ISO-8601 */
   createdAt: string;
+  /** True when the partner added this member by hand: no circls account
+   *  behind them, and no money passed through circls. */
+  external: boolean;
 }
 
 // ── Phase 17: API keys + outbound webhooks ────────────────────────────────────
