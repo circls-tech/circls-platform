@@ -22,12 +22,18 @@ import { venues } from './venues.js';
  */
 // Listing-approval lifecycle: `draft` → (partner submits) `pending_review` →
 // (admin) `published` (approved + live) / `rejected`; `cancelled` is terminal.
+//
+// `completed` is the partner ending a live event early — it ran (or is over)
+// and should stop selling before its scheduled `ends_at`. Also terminal, and
+// deliberately distinct from `cancelled`, which implies the event did not
+// happen. Neither refunds anything on its own.
 export const eventStatus = pgEnum('event_status', [
   'draft',
   'pending_review',
   'published',
   'cancelled',
   'rejected',
+  'completed',
 ]);
 
 export const events = pgTable('events', {
@@ -73,6 +79,13 @@ export const events = pgTable('events', {
   consumerCommissionBps: integer('consumer_commission_bps'),
   advancePayoutBps: integer('advance_payout_bps'),
   status: eventStatus('status').notNull().default('draft'),
+  /**
+   * Partner-side shelving: non-null hides the event from their default list.
+   * Orthogonal to `status` on purpose — a cancelled, rejected, completed or
+   * abandoned draft event can all be archived without losing why it ended that
+   * way. Never consulted by a consumer query.
+   */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

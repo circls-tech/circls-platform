@@ -175,6 +175,132 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(rows.some((r: { venueId: string | null }) => r.venueId === null)).toBe(true);
   });
 
+  describe('ending and archiving', () => {
+    /** Fresh event per test; most of these are one-way state changes. */
+    async function makeEvent(name: string): Promise<string> {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/tenants/${tenantId}/events`,
+        headers: bearer('owner'),
+        payload: {
+          addressJson: { line1: '5 MG Rd', city: 'Pune' },
+          tzName: 'Asia/Kolkata',
+          name,
+          startsAt: '2030-08-01T10:00:00.000Z',
+          endsAt: '2030-08-01T12:00:00.000Z',
+          tiers: [{ name: 'GA', pricePaise: 0 }],
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { id: string }).id;
+    }
+
+    const post = (id: string, action: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/v1/tenants/${tenantId}/events/${id}/${action}`,
+        headers: bearer('owner'),
+      });
+
+    it('ends a published event, and it leaves the public listing', async () => {
+      const id = await makeEvent('To End');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+
+      const res = await post(id, 'complete');
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { status: string }).status).toBe('completed');
+
+      // Consumers gate on status='published', so it is gone from the browse
+      // feed the moment it completes.
+      const browse = await app.inject({ method: 'GET', url: '/v1/consumer/events' });
+      expect(browse.statusCode).toBe(200);
+      const { rows } = browse.json() as { rows: Array<{ id: string }> };
+      expect(rows.some((e) => e.id === id)).toBe(false);
+    });
+
+    it('refuses to end anything that is not published', async () => {
+      const id = await makeEvent('Still Draft');
+      const res = await post(id, 'complete');
+      expect(res.statusCode).toBe(409);
+      expect((res.json() as { error: { code: string } }).error.code).toBe('event_not_published');
+    });
+
+    it('writes an audit row for the ending', async () => {
+      const id = await makeEvent('Audited End');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+      const rows = (await db.execute(sql`
+        select action from audit_log
+         where entity_id = ${id} and action = 'event.completed'
+      `)) as unknown as Array<{ action: string }>;
+      expect(rows.length).toBe(1);
+    });
+
+    it('archives a draft and hides it from the default list', async () => {
+      const id = await makeEvent('To Archive');
+      expect((await post(id, 'archive')).statusCode).toBe(200);
+
+      const listed = async (query: string) => {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/v1/tenants/${tenantId}/events${query}`,
+          headers: bearer('owner'),
+        });
+        return (res.json() as Array<{ id: string }>).some((e) => e.id === id);
+      };
+
+      expect(await listed('')).toBe(false);
+      expect(await listed('?archived=true')).toBe(true);
+      expect(await listed('?archived=all')).toBe(true);
+    });
+
+    it('unarchives back onto the default list', async () => {
+      const id = await makeEvent('Round Trip');
+      await post(id, 'archive');
+      expect((await post(id, 'unarchive')).statusCode).toBe(200);
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/events`,
+        headers: bearer('owner'),
+      });
+      expect((res.json() as Array<{ id: string }>).some((e) => e.id === id)).toBe(true);
+    });
+
+    it('refuses to archive a live event, so nothing still selling can be hidden', async () => {
+      const id = await makeEvent('Live One');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      const res = await post(id, 'archive');
+      expect(res.statusCode).toBe(409);
+      expect((res.json() as { error: { code: string } }).error.code).toBe('event_not_archivable');
+    });
+
+    it('archives an event once it has been ended', async () => {
+      const id = await makeEvent('End Then Shelve');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+      expect((await post(id, 'archive')).statusCode).toBe(200);
+    });
+
+    it('is idempotent — archiving twice is not an error', async () => {
+      const id = await makeEvent('Twice');
+      expect((await post(id, 'archive')).statusCode).toBe(200);
+      expect((await post(id, 'archive')).statusCode).toBe(200);
+    });
+
+    it('refuses to edit an event once it has ended', async () => {
+      const id = await makeEvent('No Edits After End');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}/events/${id}`,
+        headers: bearer('owner'),
+        payload: { name: 'Renamed' },
+      });
+      expect(res.statusCode).toBe(409);
+    });
+  });
+
   describe('live settings on a published event', () => {
     let eventId: string;
     let cappedTierId: string;

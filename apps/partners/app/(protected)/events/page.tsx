@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import {
+  useArchiveTenantEvent,
+  useCompleteTenantEvent,
   useTenantEvents,
   usePublishEventSeries,
   usePublishTenantEvent,
+  type EventShelf,
 } from '@/lib/api/events';
 import type { VenueEventSummary } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
@@ -50,10 +53,19 @@ function groupRows(events: VenueEventSummary[]): EventRow[] {
   return order.map((k) => byKey.get(k)!);
 }
 
+const SHELF_TABS: { key: EventShelf; label: string }[] = [
+  { key: 'active', label: 'Active' },
+  { key: 'archived', label: 'Archived' },
+  { key: 'all', label: 'All' },
+];
+
 function EventList({ tenantId }: { tenantId: string }) {
-  const { data: events, isLoading } = useTenantEvents(tenantId);
+  const [shelf, setShelf] = useState<EventShelf>('active');
+  const { data: events, isLoading } = useTenantEvents(tenantId, shelf);
   const publish = usePublishTenantEvent(tenantId);
   const publishSeries = usePublishEventSeries(tenantId);
+  const complete = useCompleteTenantEvent(tenantId);
+  const archive = useArchiveTenantEvent(tenantId);
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -72,12 +84,60 @@ function EventList({ tenantId }: { tenantId: string }) {
     }
   }
 
-  if (isLoading) return <p className="text-sm text-slate-500">Loading events…</p>;
+  async function run(action: () => Promise<unknown>) {
+    setErrorMsg(null);
+    try {
+      await action();
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    }
+  }
+
+  const tabs = (
+    <div className="flex gap-1" role="tablist" aria-label="Event shelf">
+      {SHELF_TABS.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={shelf === t.key}
+          onClick={() => setShelf(t.key)}
+          className={[
+            'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+            shelf === t.key
+              ? 'border-[#17151D] bg-[#9CE0D4] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+              : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+          ].join(' ')}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {tabs}
+        <p className="text-sm text-slate-500">Loading events…</p>
+      </div>
+    );
+  }
   if (!events || events.length === 0) {
-    return <p className="text-sm text-slate-500">No events yet for this organization.</p>;
+    return (
+      <div className="flex flex-col gap-3">
+        {tabs}
+        <p className="text-sm text-slate-500">
+          {shelf === 'archived'
+            ? 'Nothing archived.'
+            : 'No events yet for this organization.'}
+        </p>
+      </div>
+    );
   }
   return (
     <div className="flex flex-col gap-3">
+      {tabs}
       {errorMsg && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
           {errorMsg}
@@ -119,6 +179,46 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {ev.status === 'pending_review' && (
                   <span className="text-xs text-slate-400">Awaiting Circls review</span>
                 )}
+                {/* Series are ended and archived per date, from the date's own
+                    page — one row stands for many, so a bulk action here would
+                    be ambiguous. */}
+                {!ev.seriesId && ev.status === 'published' && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={complete.isPending}
+                    onClick={() => void run(() => complete.mutateAsync(ev.id))}
+                  >
+                    End
+                  </Button>
+                )}
+                {!ev.seriesId &&
+                  (ev.archivedAt ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={archive.isPending}
+                      onClick={() =>
+                        void run(() => archive.mutateAsync({ eventId: ev.id, archived: false }))
+                      }
+                    >
+                      Restore
+                    </Button>
+                  ) : (
+                    ev.status !== 'published' &&
+                    ev.status !== 'pending_review' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={archive.isPending}
+                        onClick={() =>
+                          void run(() => archive.mutateAsync({ eventId: ev.id, archived: true }))
+                        }
+                      >
+                        Archive
+                      </Button>
+                    )
+                  ))}
               </div>
             </div>
           </li>

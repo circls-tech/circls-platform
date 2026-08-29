@@ -330,6 +330,13 @@
       "when": 1782970000000,
       "tag": "0047_image_focal_and_dimensions",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1783050000000,
+      "tag": "0048_event_completed_and_archive",
+      "breakpoints": true
     }
   ]
 }

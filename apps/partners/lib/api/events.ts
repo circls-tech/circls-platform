@@ -17,11 +17,21 @@ export function useVenueEvents(venueId: string) {
   });
 }
 
+/** Which shelf of a tenant's events to list. */
+export type EventShelf = 'active' | 'archived' | 'all';
+
+const SHELF_QUERY: Record<EventShelf, string> = {
+  active: '',
+  archived: '?archived=true',
+  all: '?archived=all',
+};
+
 /** All events for a tenant (venue-scoped + org-scoped). */
-export function useTenantEvents(tenantId: string) {
+export function useTenantEvents(tenantId: string, shelf: EventShelf = 'active') {
   return useQuery({
-    queryKey: ['tenant-events', tenantId],
-    queryFn: () => apiFetch<VenueEventSummary[]>(`/v1/tenants/${tenantId}/events`),
+    queryKey: ['tenant-events', tenantId, shelf],
+    queryFn: () =>
+      apiFetch<VenueEventSummary[]>(`/v1/tenants/${tenantId}/events${SHELF_QUERY[shelf]}`),
     enabled: Boolean(tenantId),
   });
 }
@@ -340,6 +350,40 @@ export function useCancelTenantEvent(tenantId: string) {
       apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
         method: 'POST',
       }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** End a live event early: it stops selling and leaves consumer listings. */
+export function useCompleteTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/complete`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** Move an event on or off the archive shelf. Partner-side only — consumers
+ *  never see the difference. */
+export function useArchiveTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, archived }: { eventId: string; archived: boolean }) =>
+      apiFetch<VenueEventSummary>(
+        `/v1/tenants/${tenantId}/events/${eventId}/${archived ? 'archive' : 'unarchive'}`,
+        { method: 'POST' },
+      ),
     onSuccess: (ev) => {
       void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
       if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });

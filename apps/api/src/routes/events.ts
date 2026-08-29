@@ -8,6 +8,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   cancelEvent,
   cancelEventSeries,
+  completeEvent,
   createEvent,
   createEventSeries,
   getEvent,
@@ -18,6 +19,7 @@ import {
   MAX_SERIES_OCCURRENCES,
   publishEvent,
   publishEventSeries,
+  setEventArchived,
   updateEvent,
   type CreateEventInput,
 } from '../services/events_service.js';
@@ -319,7 +321,12 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     const { tenantId } = req.params as { tenantId: string };
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
-    return listEventsForTenant(tenantId);
+    // Default to the working list; ?archived=true is the shelf, ?archived=all
+    // returns both. Anything the partner archived stays out of the way unless
+    // it is asked for by name.
+    const { archived } = req.query as { archived?: string };
+    const opts = archived === 'all' ? {} : { archived: archived === 'true' };
+    return listEventsForTenant(tenantId, opts);
   });
 
   app.post('/v1/tenants/:tenantId/events', { preHandler: requireAuth }, async (req) => {
@@ -430,6 +437,42 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return cancelEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  // End a live event early — it stops selling and leaves consumer listings at
+  // once. Distinct from cancel: the event happened, and entry passes stay valid
+  // for stragglers still being checked in at the door.
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/complete',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return completeEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/archive',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return setEventArchived({ tenantId, actorUserId: user.id }, id, true);
+    },
+  );
+
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/unarchive',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return setEventArchived({ tenantId, actorUserId: user.id }, id, false);
     },
   );
 

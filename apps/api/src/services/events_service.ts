@@ -134,12 +134,26 @@ export async function listEventsForVenue(venueId: string): Promise<Event[]> {
   return db.select().from(events).where(eq(events.venueId, venueId));
 }
 
-/** All events for a tenant (venue-scoped + org-scoped), newest first. */
-export async function listEventsForTenant(tenantId: string): Promise<Event[]> {
+/**
+ * All events for a tenant (venue-scoped + org-scoped), newest first.
+ *
+ * `archived` selects the shelf: false (the default) is the working list,
+ * true is the archive, and undefined returns both.
+ */
+export async function listEventsForTenant(
+  tenantId: string,
+  opts: { archived?: boolean } = {},
+): Promise<Event[]> {
+  const archiveFilter =
+    opts.archived === undefined
+      ? undefined
+      : opts.archived
+        ? sql`${events.archivedAt} is not null`
+        : sql`${events.archivedAt} is null`;
   return db
     .select()
     .from(events)
-    .where(eq(events.tenantId, tenantId))
+    .where(archiveFilter ? and(eq(events.tenantId, tenantId), archiveFilter) : eq(events.tenantId, tenantId))
     .orderBy(sql`${events.createdAt} desc`);
 }
 
@@ -851,6 +865,92 @@ export async function cancelEvent(ctx: AuditCtx, eventId: string): Promise<Event
     await revokeQrTicketsForEvent(eventId, tx);
 
     await writeAudit(tx, ctx, 'event.cancelled', 'event', eventId, { status: existing.status }, { status: 'cancelled' });
+
+    return updated!;
+  });
+}
+
+/**
+ * End a live event early: published → completed.
+ *
+ * Consumers stop seeing it immediately, because every consumer query gates on
+ * `status = 'published'`. Unlike cancelling, this does NOT revoke QR entry
+ * passes — the event happened, and staff may still be checking in stragglers at
+ * the door as the partner closes sales. Cancelling remains the way to kill
+ * passes. No refunds either way.
+ */
+export async function completeEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Event not found', 'event_not_found');
+    if (existing.status !== 'published') {
+      throw new Conflict('Only a published event can be ended', 'event_not_published', {
+        status: existing.status,
+      });
+    }
+
+    const [updated] = await tx
+      .update(events)
+      .set({ status: 'completed' })
+      .where(eq(events.id, eventId))
+      .returning();
+
+    await writeAudit(tx, ctx, 'event.completed', 'event', eventId, { status: existing.status }, { status: 'completed' });
+
+    return updated!;
+  });
+}
+
+/** States that may be shelved. A live or in-review event has to reach an end
+ *  state first, so archiving can never hide something still selling. */
+const ARCHIVABLE_STATUSES = new Set(['draft', 'cancelled', 'rejected', 'completed']);
+
+/**
+ * Move an event on or off the partner's archive shelf. Purely partner-side:
+ * `archived_at` is never consulted by a consumer query, so archiving cannot
+ * change what the public sees.
+ */
+export async function setEventArchived(
+  ctx: AuditCtx,
+  eventId: string,
+  archived: boolean,
+): Promise<Event> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Event not found', 'event_not_found');
+
+    if (archived && !ARCHIVABLE_STATUSES.has(existing.status)) {
+      throw new Conflict(
+        'Cancel or end this event before archiving it',
+        'event_not_archivable',
+        { status: existing.status },
+      );
+    }
+    if (archived === (existing.archivedAt !== null)) return existing;
+
+    const [updated] = await tx
+      .update(events)
+      .set({ archivedAt: archived ? new Date() : null })
+      .where(eq(events.id, eventId))
+      .returning();
+
+    await writeAudit(
+      tx,
+      ctx,
+      archived ? 'event.archived' : 'event.unarchived',
+      'event',
+      eventId,
+      { archived: existing.archivedAt !== null },
+      { archived },
+    );
 
     return updated!;
   });

@@ -175,6 +175,7 @@ passes customers already hold are never changed.
 | **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Not approved. Read-only. |
+| **completed** | Ended by you. The event ran and has stopped selling. Read-only. |
 
 ## Editing and submitting
 
@@ -183,9 +184,33 @@ Open an event to see its detail page. What you can do depends on its status:
 - **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review** to send it to circls, or **Cancel** to drop it.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
 - **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
-- **Cancelled** or **rejected** — read-only.
+- **Cancelled**, **rejected** or **ended** — read-only.
 
-The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way.
+The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way and *end* available once it's live.
+
+## Ending an event
+
+Consumers stop seeing an event automatically once its end time passes, so you only need this when you want to stop selling **early** — the event filled up elsewhere, finished sooner than planned, or you simply want registrations closed.
+
+Click **End** on a published event, from the events list or the event's own page. It immediately:
+
+- disappears from consumer listings and can no longer be registered for;
+- becomes read-only, so live settings and change requests are closed;
+- keeps its registrations, payments and reports exactly as they are.
+
+**Ending is not cancelling.** Ending says the event happened and is now closed; cancelling says it did not happen. Neither issues refunds on its own — refund attendees from the event's **Registered** table if you need to. The one practical difference: cancelling revokes everyone's QR entry passes, while ending leaves them valid, so staff can still check in stragglers at the door as you close sales.
+
+Ending can't be undone.
+
+## Archiving an event
+
+Archiving clears finished events off your list without deleting anything. It is yours alone — **archiving never changes what consumers see**, and an archived event keeps every registration, payment and export.
+
+Use the **Active** / **Archived** / **All** tabs at the top of the Events page to switch shelves. **Archive** shelves an event; **Restore** brings it back.
+
+You can archive a draft, cancelled, rejected or ended event. You cannot archive one that is live or awaiting review — end or cancel it first, so nothing still selling can be hidden from your own list.
+
+For a recurring event, end and archive each date from that date's own page: a series shows as a single row, so a button there couldn't tell which date you meant.
 
 ## Adding event photos
 

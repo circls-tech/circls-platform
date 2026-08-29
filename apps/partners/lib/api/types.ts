@@ -430,7 +430,9 @@ export type EventStatus =
   | 'pending_review'
   | 'published'
   | 'rejected'
-  | 'cancelled';
+  | 'cancelled'
+  /** Ended early by the partner: it ran, and has stopped selling. */
+  | 'completed';
 
 export interface VenueEvent {
   id: string;
@@ -457,6 +459,8 @@ export interface VenueEvent {
   postBookingRedirect: PostBookingRedirect | null;
   /** Groups the dates of a recurring event; null for one-off events. */
   seriesId: string | null;
+  /** Non-null = on the partner's archive shelf. Never affects consumers. */
+  archivedAt: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
   /** Registration questions consumers answer at booking. Present on the detail endpoint. */
