@@ -19,6 +19,7 @@ import {
   MAX_SERIES_OCCURRENCES,
   publishEvent,
   publishEventSeries,
+  reopenEvent,
   setEventArchived,
   updateEvent,
   type CreateEventInput,
@@ -451,6 +452,18 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return completeEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  // Undo an accidental end, while the event's window is still open.
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/reopen',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      await requireTenantMembership(user.id, tenantId);
+      return reopenEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
 

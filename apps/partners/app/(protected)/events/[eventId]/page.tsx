@@ -10,6 +10,7 @@ import {
   useArchiveTenantEvent,
   useCancelTenantEvent,
   useCompleteTenantEvent,
+  useReopenTenantEvent,
   useEvent,
   useEventBookings,
   useEventSeries,
@@ -126,6 +127,7 @@ export default function OrgEventDetailPage() {
   const cancel = useCancelTenantEvent(tenantId);
   const complete = useCompleteTenantEvent(tenantId);
   const archive = useArchiveTenantEvent(tenantId);
+  const reopen = useReopenTenantEvent(tenantId);
   const update = useUpdateTenantEvent(tenantId);
   const { data: series } = useEventSeries(tenantId, ev?.seriesId ?? null);
   const publishSeries = usePublishEventSeries(tenantId);
@@ -252,6 +254,15 @@ export default function OrgEventDetailPage() {
     setErrorMsg(null);
     try {
       await complete.mutateAsync(eventId);
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    }
+  }
+
+  async function handleReopen() {
+    setErrorMsg(null);
+    try {
+      await reopen.mutateAsync(eventId);
     } catch (e) {
       setErrorMsg((e as Error).message);
     }
@@ -545,6 +556,19 @@ export default function OrgEventDetailPage() {
                     This event has {ev.status === 'completed' ? 'ended' : ev.status} and is
                     read-only.
                   </span>
+                )}
+                {/* An event ended by mistake goes straight back on sale,
+                    while its window is still open. */}
+                {ev.status === 'completed' && new Date(ev.endsAt) > new Date() && (
+                  <Button
+                    petal="#A7E3BF"
+                    size="sm"
+                    loading={reopen.isPending}
+                    disabled={!authed}
+                    onClick={handleReopen}
+                  >
+                    Reopen event
+                  </Button>
                 )}
                 {/* Archiving is the last step for anything that has reached an
                     end state, and the only way to shelve one date of a series. */}

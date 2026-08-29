@@ -374,6 +374,23 @@ export function useCompleteTenantEvent(tenantId: string) {
   });
 }
 
+/** Undo an end: puts a completed event back on sale. Only valid while its end
+ *  time is still in the future. */
+export function useReopenTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/reopen`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
 /** Move an event on or off the archive shelf. Partner-side only — consumers
  *  never see the difference. */
 export function useArchiveTenantEvent(tenantId: string) {

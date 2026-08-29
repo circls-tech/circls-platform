@@ -287,6 +287,61 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
       expect((await post(id, 'archive')).statusCode).toBe(200);
     });
 
+    it('reopens an event ended by mistake, while its window is still open', async () => {
+      const id = await makeEvent('Oops Ended');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+
+      const res = await post(id, 'reopen');
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { status: string }).status).toBe('published');
+
+      // Back on sale: the public browse feed lists it again.
+      const browse = await app.inject({ method: 'GET', url: '/v1/consumer/events' });
+      const { rows } = browse.json() as { rows: Array<{ id: string }> };
+      expect(rows.some((e) => e.id === id)).toBe(true);
+    });
+
+    it('refuses to reopen an event whose end time has passed', async () => {
+      const id = await makeEvent('Long Over');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+      // Drag the window into the past — a reopened event would be invisible to
+      // consumers anyway, since their queries require ends_at >= now().
+      await db.execute(sql`
+        update events set starts_at = now() - interval '3 hours',
+                          ends_at   = now() - interval '1 hour'
+         where id = ${id}
+      `);
+
+      const res = await post(id, 'reopen');
+      expect(res.statusCode).toBe(409);
+      expect((res.json() as { error: { code: string } }).error.code).toBe('event_window_passed');
+    });
+
+    it('refuses to reopen anything that was not ended', async () => {
+      const id = await makeEvent('Never Ended');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      const res = await post(id, 'reopen');
+      expect(res.statusCode).toBe(409);
+      expect((res.json() as { error: { code: string } }).error.code).toBe('event_not_completed');
+    });
+
+    it('reopening also takes the event back off the archive shelf', async () => {
+      const id = await makeEvent('Ended Then Shelved');
+      await db.execute(sql`update events set status='published' where id = ${id}`);
+      await post(id, 'complete');
+      await post(id, 'archive');
+
+      expect((await post(id, 'reopen')).statusCode).toBe(200);
+      // A published event is never archived, so the shelf flag has to clear.
+      const rows = (await db.execute(sql`
+        select status, archived_at from events where id = ${id}
+      `)) as unknown as Array<{ status: string; archived_at: string | null }>;
+      expect(rows[0]!.status).toBe('published');
+      expect(rows[0]!.archived_at).toBeNull();
+    });
+
     it('refuses to edit an event once it has ended', async () => {
       const id = await makeEvent('No Edits After End');
       await db.execute(sql`update events set status='published' where id = ${id}`);

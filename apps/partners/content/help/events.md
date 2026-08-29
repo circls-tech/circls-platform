@@ -175,7 +175,7 @@ passes customers already hold are never changed.
 | **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Not approved. Read-only. |
-| **completed** | Ended by you. The event ran and has stopped selling. Read-only. |
+| **completed** | Ended by you. The event has stopped selling. Read-only, but reopenable while its end time is still ahead. |
 
 ## Editing and submitting
 
@@ -200,7 +200,7 @@ Click **End** on a published event, from the events list or the event's own page
 
 **Ending is not cancelling.** Ending says the event happened and is now closed; cancelling says it did not happen. Neither issues refunds on its own — refund attendees from the event's **Registered** table if you need to. The one practical difference: cancelling revokes everyone's QR entry passes, while ending leaves them valid, so staff can still check in stragglers at the door as you close sales.
 
-Ending can't be undone.
+**Ended one by mistake?** A **Reopen** button appears on an ended event and puts it straight back on sale, exactly as it was. It's only offered while the event's end time is still in the future — once that has passed, reopening would put the event back into a state consumers can't see anyway, since listings already hide anything past its end time. Reopening also takes the event back off the archive shelf if you had filed it there.
 
 ## Archiving an event
 

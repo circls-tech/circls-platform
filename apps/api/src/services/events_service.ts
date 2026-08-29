@@ -905,6 +905,59 @@ export async function completeEvent(ctx: AuditCtx, eventId: string): Promise<Eve
   });
 }
 
+/**
+ * Undo an end: completed → published.
+ *
+ * Ending is one click and easy to hit by mistake, so it needs a way back. Only
+ * while the event's window is still open, though — reopening one that is
+ * already over would put it back in a state consumers can't see anyway (their
+ * queries also require `ends_at >= now()`), so the button would lie.
+ *
+ * Clears `archived_at` on the way through: a published event is never archived,
+ * and reopening a shelved one should put it back on the working list rather
+ * than leave it live but hidden from the partner.
+ */
+export async function reopenEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!existing) throw new NotFound('Event not found', 'event_not_found');
+    if (existing.status !== 'completed') {
+      throw new Conflict('Only an ended event can be reopened', 'event_not_completed', {
+        status: existing.status,
+      });
+    }
+    if (existing.endsAt.getTime() <= Date.now()) {
+      throw new Conflict(
+        'This event is already past its end time and cannot be reopened',
+        'event_window_passed',
+        { endsAt: existing.endsAt.toISOString() },
+      );
+    }
+
+    const [updated] = await tx
+      .update(events)
+      .set({ status: 'published', archivedAt: null })
+      .where(eq(events.id, eventId))
+      .returning();
+
+    await writeAudit(
+      tx,
+      ctx,
+      'event.reopened',
+      'event',
+      eventId,
+      { status: existing.status, archived: existing.archivedAt !== null },
+      { status: 'published', archived: false },
+    );
+
+    return updated!;
+  });
+}
+
 /** States that may be shelved. A live or in-review event has to reach an end
  *  state first, so archiving can never hide something still selling. */
 const ARCHIVABLE_STATUSES = new Set(['draft', 'cancelled', 'rejected', 'completed']);

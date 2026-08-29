@@ -7,6 +7,7 @@ import { useTimezone } from '@/lib/timezone_context';
 import {
   useArchiveTenantEvent,
   useCompleteTenantEvent,
+  useReopenTenantEvent,
   useTenantEvents,
   usePublishEventSeries,
   usePublishTenantEvent,
@@ -66,6 +67,7 @@ function EventList({ tenantId }: { tenantId: string }) {
   const publishSeries = usePublishEventSeries(tenantId);
   const complete = useCompleteTenantEvent(tenantId);
   const archive = useArchiveTenantEvent(tenantId);
+  const reopen = useReopenTenantEvent(tenantId);
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -182,6 +184,22 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {/* Series are ended and archived per date, from the date's own
                     page — one row stands for many, so a bulk action here would
                     be ambiguous. */}
+                {/* Ending is one click, so an event ended by mistake can go
+                    straight back on sale — but only while its window is still
+                    open, since a reopened past event would be invisible to
+                    consumers anyway. */}
+                {!ev.seriesId &&
+                  ev.status === 'completed' &&
+                  new Date(ev.endsAt) > new Date() && (
+                    <Button
+                      petal="#A7E3BF"
+                      size="sm"
+                      loading={reopen.isPending}
+                      onClick={() => void run(() => reopen.mutateAsync(ev.id))}
+                    >
+                      Reopen
+                    </Button>
+                  )}
                 {!ev.seriesId && ev.status === 'published' && (
                   <Button
                     petal="#FFB0A3"
