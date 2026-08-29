@@ -27,7 +27,7 @@ A booking paid online stays **pending** while the customer completes payment —
 
 ## The booking detail
 
-The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Cancel booking** action.
+The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Refund booking** action.
 
 ### Payment methods
 
@@ -43,10 +43,12 @@ scannable entry pass covering their booked slots. Validate passes on the
 portal's **Check-in** page; cancelling a booking revokes its passes
 automatically. See [QR tickets and door check-in](/help/qr-tickets).
 
-## Cancelling a booking and refunds
+## Refunding a booking
 
-1. From the booking detail, click **Cancel booking**.
-2. The cancellation page summarises the booking and shows a **refund preview**. The preview is a guide based on how far ahead of the slot you're cancelling:
+Refunding a booking also cancels it and releases its slots — the two go together, which is why there is a single action for both.
+
+1. From the booking detail, click **Refund booking**.
+2. The refund page summarises the booking and shows a **refund preview**. The preview is a guide based on how far ahead of the slot you're refunding:
 
    | Timing / type | Indicative refund |
    | --- | --- |
@@ -56,10 +58,12 @@ automatically. See [QR tickets and door check-in](/help/qr-tickets).
    | Paid at the venue (external) | No online refund |
    | Free booking | Nothing to refund |
 
-3. Enter a **cancellation reason** (required).
-4. Click **Cancel booking**.
+3. Enter a **reason for the refund** (required).
+4. Click **Refund booking**.
 
-The **final refund amount is decided by the server at the moment of cancellation**, so it can differ slightly from the preview. On success you'll see the refund policy that was applied, the final refund amount, and a refund ID if one was issued. The cancellation and its reason are logged.
+The **final refund amount is decided by the server at the moment you submit**, so it can differ slightly from the preview. On success you'll see the refund policy that was applied, the final refund amount, and a refund ID if one was issued. The refund and its reason are logged.
+
+Cancelling a booking from an arena's reception grid is a different, quicker action: it frees the slot without taking you through the refund preview.
 
 ## No-shows
 

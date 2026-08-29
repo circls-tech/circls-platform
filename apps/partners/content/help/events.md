@@ -222,16 +222,16 @@ Each table has its own **Download CSV** button, so you can export either list �
 
 Use these tables to check turnout and reconcile payments.
 
-### Cancelling a registration
+### Refunding a registration
 
-Every row in the **Registered** table has a **Cancel** button. Cancelling on behalf of an attendee:
+Every row in the **Registered** table has a **Refund** button. Refunding on behalf of an attendee cancels their registration and:
 
 - refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log);
 - revokes the attendee's QR entry passes so they can no longer check in;
 - frees the seats — tier sold counts and any per-person ticket limits no longer count the cancelled registration;
 - moves the row to the **Cancelled** table.
 
-Free registrations and payments that were never completed are simply cancelled — there is nothing to refund. Cancellation can't be undone; the attendee has to register again if plans change.
+Free registrations and payments that were never completed are simply cancelled — the confirmation says so, because there is nothing to refund. This can't be undone; the attendee has to register again if plans change.
 
 ## Customer questions
 

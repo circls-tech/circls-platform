@@ -214,7 +214,7 @@ function RegistrationsTable({
                         disabled={cancellingId !== null && cancellingId !== undefined}
                         onClick={() => onCancel(b)}
                       >
-                        Cancel
+                        Refund
                       </Button>
                     </td>
                   )}
@@ -301,10 +301,9 @@ export function EventRegistrations({
         )}
         {lastCancelled && (
           <p className="mb-3 rounded-[var(--radius)] bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Cancelled {lastCancelled.name ?? 'registration'}
             {lastCancelled.refundPaise > 0
-              ? ` — ${formatMoney(lastCancelled.refundPaise, currency, { decimals: 2 })} refunded.`
-              : ' — no refund due.'}
+              ? `Refunded ${lastCancelled.name ?? 'registration'} — ${formatMoney(lastCancelled.refundPaise, currency, { decimals: 2 })} returned.`
+              : `Cancelled ${lastCancelled.name ?? 'registration'} — no refund due.`}
           </p>
         )}
         {tiers.length > 0 && (
@@ -336,15 +335,15 @@ export function EventRegistrations({
 
       <ConfirmDialog
         open={pendingCancel !== null}
-        title="Cancel registration"
+        title="Refund registration"
         message={
           !pendingCancel?.totalPaise
             ? `Cancel ${pendingCancel?.customerName ?? 'this registration'}? The ticket will be revoked. This was a free registration — there is nothing to refund.`
             : pendingCancel.status === 'pending'
               ? `Cancel ${pendingCancel.customerName ?? 'this registration'}? Payment was never completed, so nothing will be refunded.`
-              : `Cancel ${pendingCancel.customerName ?? 'this registration'}? The attendee will be refunded ${formatMoney(pendingCancel.totalPaise, currency, { decimals: 2 })} in full and their ticket revoked.`
+              : `Refund ${pendingCancel.customerName ?? 'this registration'}? The attendee will be refunded ${formatMoney(pendingCancel.totalPaise, currency, { decimals: 2 })} in full, their registration cancelled and their ticket revoked.`
         }
-        confirmLabel="Cancel registration"
+        confirmLabel="Refund registration"
         danger
         onConfirm={() => pendingCancel && confirmCancel(pendingCancel)}
         onClose={() => setPendingCancel(null)}
