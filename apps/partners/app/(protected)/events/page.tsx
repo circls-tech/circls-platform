@@ -184,7 +184,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                     be ambiguous. */}
                 {!ev.seriesId && ev.status === 'published' && (
                   <Button
-                    variant="secondary"
+                    petal="#FFB0A3"
                     size="sm"
                     loading={complete.isPending}
                     onClick={() => void run(() => complete.mutateAsync(ev.id))}
@@ -195,7 +195,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {!ev.seriesId &&
                   (ev.archivedAt ? (
                     <Button
-                      variant="secondary"
+                      petal="#A9C9F2"
                       size="sm"
                       loading={archive.isPending}
                       onClick={() =>
@@ -208,7 +208,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                     ev.status !== 'published' &&
                     ev.status !== 'pending_review' && (
                       <Button
-                        variant="secondary"
+                        petal="#A9C9F2"
                         size="sm"
                         loading={archive.isPending}
                         onClick={() =>

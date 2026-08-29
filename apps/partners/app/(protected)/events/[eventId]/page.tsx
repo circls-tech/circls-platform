@@ -7,7 +7,9 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import {
   useCancelEventSeries,
+  useArchiveTenantEvent,
   useCancelTenantEvent,
+  useCompleteTenantEvent,
   useEvent,
   useEventBookings,
   useEventSeries,
@@ -122,6 +124,8 @@ export default function OrgEventDetailPage() {
   const { data: bookings, isLoading: bookingsLoading } = useEventBookings(tenantId, eventId);
   const publish = usePublishTenantEvent(tenantId);
   const cancel = useCancelTenantEvent(tenantId);
+  const complete = useCompleteTenantEvent(tenantId);
+  const archive = useArchiveTenantEvent(tenantId);
   const update = useUpdateTenantEvent(tenantId);
   const { data: series } = useEventSeries(tenantId, ev?.seriesId ?? null);
   const publishSeries = usePublishEventSeries(tenantId);
@@ -239,6 +243,24 @@ export default function OrgEventDetailPage() {
     setErrorMsg(null);
     try {
       await cancel.mutateAsync(eventId);
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    }
+  }
+
+  async function handleComplete() {
+    setErrorMsg(null);
+    try {
+      await complete.mutateAsync(eventId);
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    }
+  }
+
+  async function handleArchive(archived: boolean) {
+    setErrorMsg(null);
+    try {
+      await archive.mutateAsync({ eventId, archived });
     } catch (e) {
       setErrorMsg((e as Error).message);
     }
@@ -489,6 +511,17 @@ export default function OrgEventDetailPage() {
                 )}
                 {(ev.status === 'pending_review' || ev.status === 'published') && (
                   <>
+                    {ev.status === 'published' && (
+                      <Button
+                        petal="#FFB0A3"
+                        size="sm"
+                        loading={complete.isPending}
+                        disabled={!authed}
+                        onClick={handleComplete}
+                      >
+                        End event
+                      </Button>
+                    )}
                     <Button
                       variant="danger"
                       size="sm"
@@ -501,15 +534,30 @@ export default function OrgEventDetailPage() {
                     <span className="text-xs text-slate-400">
                       {ev.status === 'pending_review'
                         ? 'Awaiting Circls review. You can still cancel.'
-                        : 'This event is live. Cancelling takes it down for consumers.'}
+                        : 'This event is live. Ending stops registrations and keeps entry passes valid; cancelling takes it down and revokes them.'}
                     </span>
                   </>
                 )}
-                {(ev.status === 'cancelled' || ev.status === 'rejected') && (
+                {(ev.status === 'cancelled' ||
+                  ev.status === 'rejected' ||
+                  ev.status === 'completed') && (
                   <span className="text-xs text-slate-400">
-                    This event is {ev.status === 'cancelled' ? 'cancelled' : 'rejected'} and is
+                    This event has {ev.status === 'completed' ? 'ended' : ev.status} and is
                     read-only.
                   </span>
+                )}
+                {/* Archiving is the last step for anything that has reached an
+                    end state, and the only way to shelve one date of a series. */}
+                {ev.status !== 'published' && ev.status !== 'pending_review' && (
+                  <Button
+                    petal="#A9C9F2"
+                    size="sm"
+                    loading={archive.isPending}
+                    disabled={!authed}
+                    onClick={() => void handleArchive(!ev.archivedAt)}
+                  >
+                    {ev.archivedAt ? 'Restore from archive' : 'Archive'}
+                  </Button>
                 )}
               </div>
             </Card>
