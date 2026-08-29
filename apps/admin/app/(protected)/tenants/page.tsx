@@ -35,10 +35,30 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+/** Blank means "no minimum"; anything else is parsed and sent to the API. */
+function toMin(value: string): number | undefined {
+  if (value.trim() === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
+const FIELD =
+  'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none';
+
 export default function TenantsPage() {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounced(searchInput, 300);
+
+  // Suspended orgs are hidden until asked for — that's the API default too, but
+  // stating it here keeps the control and the request in step.
+  const [status, setStatus] = useState<'active' | 'suspended' | 'all'>('active');
+  const [minVenuesInput, setMinVenuesInput] = useState('');
+  const [minBookingsInput, setMinBookingsInput] = useState('');
+  const [sort, setSort] = useState<'created_desc' | 'created_asc'>('created_desc');
+
+  const minVenues = useDebounced(toMin(minVenuesInput), 300);
+  const minBookings30d = useDebounced(toMin(minBookingsInput), 300);
 
   const {
     data,
@@ -48,7 +68,16 @@ export default function TenantsPage() {
     isLoading,
     isError,
     error,
-  } = useAdminTenants(search.trim() || undefined);
+  } = useAdminTenants({
+    q: search.trim() || undefined,
+    status,
+    minVenues,
+    minBookings30d,
+    sort,
+  });
+
+  const filtered =
+    status !== 'active' || minVenues !== undefined || minBookings30d !== undefined;
 
   const rows: AdminTenantListItem[] = useMemo(
     () => data?.pages.flatMap((p) => p.rows) ?? [],
@@ -61,15 +90,90 @@ export default function TenantsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Tenants</h1>
           <p className="text-sm text-slate-500">
-            Every tenant on the platform — search by name or slug.
+            {status === 'active'
+              ? 'Active tenants — switch Status to see suspended ones.'
+              : status === 'suspended'
+                ? 'Suspended tenants only.'
+                : 'Every tenant on the platform, active and suspended.'}
           </p>
         </div>
         <input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search name or slug…"
-          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none sm:w-72"
+          className={`w-full sm:w-72 ${FIELD}`}
         />
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</span>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as typeof status)}
+            className={FIELD}
+          >
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Min venues
+          </span>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={minVenuesInput}
+            onChange={(e) => setMinVenuesInput(e.target.value)}
+            placeholder="Any"
+            className={`w-28 ${FIELD}`}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Min bookings (30d)
+          </span>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={minBookingsInput}
+            onChange={(e) => setMinBookingsInput(e.target.value)}
+            placeholder="Any"
+            className={`w-36 ${FIELD}`}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Created</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            className={FIELD}
+          >
+            <option value="created_desc">Newest first</option>
+            <option value="created_asc">Oldest first</option>
+          </select>
+        </label>
+
+        {filtered && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatus('active');
+              setMinVenuesInput('');
+              setMinBookingsInput('');
+            }}
+            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -102,7 +206,9 @@ export default function TenantsPage() {
             {!isLoading && !isError && rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
-                  No tenants found.
+                  {filtered
+                    ? 'No tenants match these filters.'
+                    : 'No tenants found.'}
                 </td>
               </tr>
             )}

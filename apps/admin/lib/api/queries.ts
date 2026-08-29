@@ -50,15 +50,25 @@ export function useAdminStats() {
   });
 }
 
-export function useAdminTenants(searchQuery?: string) {
+export interface AdminTenantFilters {
+  /** Name or slug search. */
+  q?: string;
+  /** Omitted means the API's default, which is active only. */
+  status?: 'active' | 'suspended' | 'all';
+  minVenues?: number;
+  minBookings30d?: number;
+  sort?: 'created_desc' | 'created_asc';
+}
+
+export function useAdminTenants(filters: AdminTenantFilters = {}) {
   const { user } = useAuth();
   return useInfiniteQuery({
-    queryKey: ['admin', 'tenants', searchQuery ?? ''],
+    queryKey: ['admin', 'tenants', filters],
     enabled: Boolean(user),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       apiFetch<AdminTenantListPage>(
-        `/v1/admin/tenants${qs({ limit: 50, cursor: pageParam, q: searchQuery })}`,
+        `/v1/admin/tenants${qs({ limit: 50, cursor: pageParam, ...filters })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });

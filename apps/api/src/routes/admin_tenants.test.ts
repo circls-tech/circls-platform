@@ -153,6 +153,84 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(page.rows.some((r) => r.slug === slugA)).toBe(true);
   });
 
+  it('GET /v1/admin/tenants — defaults to active; status filter opts in', async () => {
+    await db.execute(sql`UPDATE tenants SET status = 'suspended' WHERE id = ${tenantBId}::uuid`);
+    try {
+      const def = await app.inject({
+        method: 'GET',
+        url: '/v1/admin/tenants?limit=200',
+        headers: bearer('padmin'),
+      });
+      const defPage = def.json() as TenantListPage;
+      expect(defPage.rows.some((r) => r.id === tenantBId)).toBe(false);
+      expect(defPage.rows.some((r) => r.id === tenantAId)).toBe(true);
+
+      const susp = await app.inject({
+        method: 'GET',
+        url: '/v1/admin/tenants?limit=200&status=suspended',
+        headers: bearer('padmin'),
+      });
+      const suspPage = susp.json() as TenantListPage;
+      expect(suspPage.rows.some((r) => r.id === tenantBId)).toBe(true);
+      expect(suspPage.rows.every((r) => r.status === 'suspended')).toBe(true);
+
+      const all = await app.inject({
+        method: 'GET',
+        url: '/v1/admin/tenants?limit=200&status=all',
+        headers: bearer('padmin'),
+      });
+      const allPage = all.json() as TenantListPage;
+      expect(allPage.rows.some((r) => r.id === tenantBId)).toBe(true);
+      expect(allPage.rows.some((r) => r.id === tenantAId)).toBe(true);
+    } finally {
+      await db.execute(sql`UPDATE tenants SET status = 'active' WHERE id = ${tenantBId}::uuid`);
+    }
+  });
+
+  it('GET /v1/admin/tenants — minVenues filters on the computed count', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/tenants?limit=200&minVenues=1',
+      headers: bearer('padmin'),
+    });
+    expect(res.statusCode).toBe(200);
+    const page = res.json() as TenantListPage;
+    // Both fixture tenants were created without venues.
+    expect(page.rows.some((r) => r.id === tenantAId)).toBe(false);
+    expect(page.rows.every((r) => r.venueCount >= 1)).toBe(true);
+  });
+
+  it('GET /v1/admin/tenants — sort=created_asc reverses order and pages forwards', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/tenants?limit=200&sort=created_asc',
+      headers: bearer('padmin'),
+    });
+    expect(res.statusCode).toBe(200);
+    const ts = (res.json() as TenantListPage).rows.map((r) => r.createdAt);
+    for (let i = 1; i < ts.length; i++) {
+      expect(ts[i]! >= ts[i - 1]!).toBe(true);
+    }
+
+    // The keyset cursor has to follow the direction, or page 2 repeats page 1.
+    const p1 = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/tenants?limit=1&sort=created_asc',
+      headers: bearer('padmin'),
+    });
+    const page1 = p1.json() as TenantListPage;
+    expect(page1.nextCursor).not.toBeNull();
+    const p2 = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants?limit=1&sort=created_asc&cursor=${encodeURIComponent(page1.nextCursor!)}`,
+      headers: bearer('padmin'),
+    });
+    const page2 = p2.json() as TenantListPage;
+    expect(page2.rows).toHaveLength(1);
+    expect(page2.rows[0]!.id).not.toBe(page1.rows[0]!.id);
+    expect(page2.rows[0]!.createdAt >= page1.rows[0]!.createdAt).toBe(true);
+  });
+
   it('GET /v1/admin/tenants/:id — returns tenant + members', async () => {
     const res = await app.inject({
       method: 'GET',
