@@ -31,6 +31,7 @@ import type {
   SupportIssueStatus,
   SupportIssuePriority,
   TenantAuditLogPage,
+  AdminPayoutBreakdown,
 } from './types';
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -125,15 +126,18 @@ export function useUpdateTenantBilling() {
   });
 }
 
-export function useAdminTenantEvents(tenantId: string | null) {
+export function useAdminTenantEvents(
+  tenantId: string | null,
+  scope: 'active' | 'all' = 'active',
+) {
   const { user } = useAuth();
   return useInfiniteQuery({
-    queryKey: ['admin', 'tenant', tenantId, 'events'],
+    queryKey: ['admin', 'tenant', tenantId, 'events', scope],
     enabled: Boolean(user && tenantId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       apiFetch<AdminTenantEventBillingPage>(
-        `/v1/admin/tenants/${tenantId!}/events${qs({ limit: 50, cursor: pageParam })}`,
+        `/v1/admin/tenants/${tenantId!}/events${qs({ limit: 50, cursor: pageParam, scope })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -190,6 +194,9 @@ export function useAdminPartnerUsers(filters: AdminUserReportFilters) {
 }
 
 export interface AdminAuditLogFilters {
+  /** Free text: an organisation's name or slug, or a person's name, email or
+   *  phone. Lets the log be used without knowing any UUIDs. */
+  q?: string;
   tenantId?: string;
   actorUserId?: string;
   entityType?: string;
@@ -210,6 +217,16 @@ export function useAdminAuditLog(filters: AdminAuditLogFilters) {
         `/v1/admin/audit-log${qs({ limit: 50, cursor: pageParam, ...filters })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+/** What a payout was for: split by item and by customer. */
+export function useAdminPayoutBreakdown(payoutId: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'payout-breakdown', payoutId],
+    enabled: Boolean(user && payoutId),
+    queryFn: () => apiFetch<AdminPayoutBreakdown>(`/v1/admin/payouts/${payoutId!}/breakdown`),
   });
 }
 

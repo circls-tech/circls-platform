@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useAdminPayouts, useExecutePayout, useReconcilePayouts } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
 import type { AdminPayoutRow } from '@/lib/api/types';
+import { PayoutBreakdown } from '@/components/PayoutBreakdown';
 
 const STATUS_TONE: Record<AdminPayoutRow['status'], string> = {
   pending: 'bg-amber-100 text-amber-800',
@@ -59,6 +60,8 @@ export default function PayoutsPage() {
   } = useAdminPayouts(filter === 'all' ? undefined : filter);
 
   const execute = useExecutePayout();
+  // Which payout has its breakdown open. One at a time: the tables are wide.
+  const [openBreakdown, setOpenBreakdown] = useState<string | null>(null);
   const reconcile = useReconcilePayouts();
   const [actionError, setActionError] = useState<string | null>(null);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
@@ -203,8 +206,21 @@ export default function PayoutsPage() {
               </tr>
             )}
             {rows.map((r) => (
-              <tr key={r.id} className="transition-colors hover:bg-slate-50">
-                <td className="px-4 py-2.5 font-medium text-slate-900">{r.tenantName}</td>
+              <Fragment key={r.id}>
+              <tr className="transition-colors hover:bg-slate-50">
+                <td className="px-4 py-2.5 font-medium text-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => setOpenBreakdown(openBreakdown === r.id ? null : r.id)}
+                    aria-expanded={openBreakdown === r.id}
+                    className="text-left text-blue-700 hover:underline"
+                  >
+                    {r.tenantName}
+                  </button>
+                  <span className="block text-xs text-slate-400">
+                    {openBreakdown === r.id ? 'Hide what this is for' : 'What is this for?'}
+                  </span>
+                </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">
                   {fmtDate(r.periodStart)} → {fmtDate(r.periodEnd)}
                 </td>
@@ -252,6 +268,14 @@ export default function PayoutsPage() {
                   )}
                 </td>
               </tr>
+              {openBreakdown === r.id && (
+                <tr>
+                  <td colSpan={9} className="p-0">
+                    <PayoutBreakdown payoutId={r.id} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

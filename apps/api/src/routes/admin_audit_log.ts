@@ -26,6 +26,10 @@ interface AdminAuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  /** Phone or email of whoever acted, so a row is identifiable without an id. */
+  actorContact: string | null;
+  /** Owning organisation's name; null for platform-level entries. */
+  tenantName: string | null;
   before: unknown;
   after: unknown;
   createdAt: string;
@@ -49,6 +53,12 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
 }
 
 const querySchema = z.object({
+  /**
+   * Free-text search so the log can be used without knowing any UUIDs: matches
+   * an organisation's name or slug, and a person's name, email or phone —
+   * whether they acted or were acted upon.
+   */
+  q: z.string().min(1).max(200).optional(),
   tenantId: z.string().uuid().optional(),
   actorUserId: z.string().uuid().optional(),
   entityType: z.string().min(1).max(100).optional(),
@@ -79,6 +89,34 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
       const fetchLimit = limit + 1;
 
       const conditions: ReturnType<typeof sql>[] = [sql`1=1`];
+      if (p.q) {
+        const like = `%${p.q.toLowerCase().trim()}%`;
+        // Phones are stored E.164; people type them with spaces, dashes or no
+        // country code, so compare digits-only as well as the raw string.
+        const digits = p.q.replace(/\D/g, '');
+        const phoneLike = digits.length >= 4 ? `%${digits}%` : null;
+        conditions.push(sql`(
+          exists (
+            select 1 from tenants tq
+             where tq.id = al.tenant_id
+               and (lower(tq.name) like ${like} or lower(tq.slug) like ${like})
+          )
+          or exists (
+            select 1 from users uq
+             where uq.id = al.actor_user_id
+               and (lower(coalesce(uq.display_name, '')) like ${like}
+                    or lower(coalesce(uq.email, '')) like ${like}
+                    ${phoneLike ? sql`or regexp_replace(coalesce(uq.phone_e164, ''), '\\D', '', 'g') like ${phoneLike}` : sql``})
+          )
+          or exists (
+            select 1 from users ue
+             where ue.id = al.entity_id
+               and (lower(coalesce(ue.display_name, '')) like ${like}
+                    or lower(coalesce(ue.email, '')) like ${like}
+                    ${phoneLike ? sql`or regexp_replace(coalesce(ue.phone_e164, ''), '\\D', '', 'g') like ${phoneLike}` : sql``})
+          )
+        )`);
+      }
       if (p.tenantId)    conditions.push(sql`al.tenant_id     = ${p.tenantId}::uuid`);
       if (p.actorUserId) conditions.push(sql`al.actor_user_id = ${p.actorUserId}::uuid`);
       if (p.entityType)  conditions.push(sql`al.entity_type   = ${p.entityType}`);
@@ -109,11 +147,14 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
           al.entity_id,
           al.actor_user_id,
           u.display_name AS actor_name,
+          coalesce(u.phone_e164, u.email) AS actor_contact,
+          t.name AS tenant_name,
           al.before,
           al.after,
           al.created_at
         FROM audit_log al
         LEFT JOIN users u ON u.id = al.actor_user_id
+        LEFT JOIN tenants t ON t.id = al.tenant_id
         WHERE ${whereClause}
         ORDER BY al.created_at DESC, al.id DESC
         LIMIT ${fetchLimit}
@@ -131,6 +172,8 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
         entityId: (row['entity_id'] as string | null) ?? null,
         actorUserId: (row['actor_user_id'] as string | null) ?? null,
         actorName: (row['actor_name'] as string | null) ?? null,
+        actorContact: (row['actor_contact'] as string | null) ?? null,
+        tenantName: (row['tenant_name'] as string | null) ?? null,
         before: row['before'] ?? null,
         after: row['after'] ?? null,
         createdAt: new Date(row['created_at'] as string).toISOString(),

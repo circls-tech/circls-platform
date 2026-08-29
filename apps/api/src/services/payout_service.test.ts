@@ -11,7 +11,9 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { bookings, payouts, tenants, users, venues } from '../db/schema/index.js';
-import { clampCommissionPaise, priorWeek, reconcileWeeklyPayouts } from './payout_service.js';
+import { clampCommissionPaise, priorWeek, reconcileWeeklyPayouts,
+  getPayoutBreakdown,
+} from './payout_service.js';
 
 describe('priorWeek', () => {
   it('returns the previous Mon→Mon window for a mid-week date', () => {
@@ -346,5 +348,79 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
     expect(row?.advancesPaise).toBe(0);
     expect(row?.advanceRecoupedPaise).toBe(0);
     expect(row?.amountPaise).toBe(50000);
+  });
+
+  it('breaks a payout down by item and by customer, and reconciles', async () => {
+    // Its own tenant and period: reconcile writes one row per (tenant, period),
+    // so sharing a tenant with another test would make whichever ran second a
+    // silent no-op.
+    const [t] = await db
+      .insert(tenants)
+      .values({
+        name: 'Payout Breakdown Co',
+        slug: `payoutbd-${Date.now()}-${extraTenantIds.length}`,
+        commissionBps: 0,
+      })
+      .returning();
+    extraTenantIds.push(t!.id);
+
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId: t!.id, name: 'Breakdown Arena', tzName: 'Asia/Kolkata' })
+      .returning();
+
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId: t!.id,
+        venueId: v!.id,
+        itemType: 'slot',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        customerName: 'Breakdown Buyer',
+        customerContact: '+91-9000000111',
+        totalPaise: 50000,
+        createdByUserId: userId,
+      })
+      .returning();
+
+    await db.execute(sql`
+      insert into payments (
+        booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+        status, kind, settlement_released_at, created_at
+      ) values (
+        ${b!.id}::uuid, ${t!.id}::uuid, 'stub', 46088, 50000,
+        'captured', 'charge', ${RELEASED_IN_WINDOW}::timestamptz, ${RELEASED_IN_WINDOW}::timestamptz
+      )
+    `);
+
+    await reconcileWeeklyPayouts(NOW);
+    const [payout] = await db.select().from(payouts).where(sql`tenant_id = ${t!.id}::uuid`);
+    expect(payout).toBeTruthy();
+
+    const breakdown = await getPayoutBreakdown(payout!.id);
+    expect(breakdown).toBeTruthy();
+
+    // A slot booking is what the venue was paid for.
+    const venueLine = breakdown!.byItem.find((l) => l.kind === 'venue');
+    expect(venueLine).toBeTruthy();
+    expect(venueLine!.label).toBe('Breakdown Arena');
+    expect(venueLine!.grossPaise).toBe(50000);
+
+    // And the customer behind it is nameable without an id.
+    const consumerLine = breakdown!.byConsumer[0];
+    expect(consumerLine).toBeTruthy();
+    expect(consumerLine!.label).toBe('Breakdown Buyer');
+
+    // The whole point: the lines must add up to what was actually paid.
+    expect(breakdown!.attributedPaise + breakdown!.unattributedPaise).toBe(
+      breakdown!.amountPaise,
+    );
+    expect(breakdown!.unattributedPaise).toBe(0);
+  });
+
+  it('returns null for a payout that does not exist', async () => {
+    expect(await getPayoutBreakdown('00000000-0000-0000-0000-000000000000')).toBeNull();
   });
 });

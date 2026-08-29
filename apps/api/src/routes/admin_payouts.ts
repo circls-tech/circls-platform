@@ -1,12 +1,17 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
-import { BadRequest } from '../lib/errors.js';
+import { BadRequest, NotFound } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { executePayout, listPayouts, reconcileWeeklyPayouts } from '../services/payout_service.js';
+import {
+  executePayout,
+  getPayoutBreakdown,
+  listPayouts,
+  reconcileWeeklyPayouts,
+} from '../services/payout_service.js';
 
 /**
  * Platform-admin payouts. Circls is the merchant: the weekly worker computes
@@ -45,6 +50,22 @@ export const adminPayoutRoutes: FastifyPluginAsync = async (app) => {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
       ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
     });
+  });
+
+  // ── GET /v1/admin/payouts/:id/breakdown — what the money was for ───────────
+  // Splits a payout by item (event / membership / venue) and by customer, so
+  // "what is this partner being paid for?" has an answer. Rebuilt from the same
+  // window the reconciler used, with any residual reported rather than hidden.
+  app.get('/v1/admin/payouts/:id/breakdown', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.payouts.read');
+
+    const { id } = req.params as { id: string };
+    const breakdown = await getPayoutBreakdown(id);
+    if (!breakdown) throw new NotFound('Payout not found', 'payout_not_found');
+    return breakdown;
   });
 
   // ── POST /v1/admin/payouts/reconcile — run reconciliation on demand ─────────

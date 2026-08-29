@@ -29,6 +29,8 @@ interface AuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  actorContact: string | null;
+  tenantName: string | null;
   before: unknown;
   after: unknown;
   createdAt: string;
@@ -220,4 +222,22 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
     const page = await fetchLog(`tenantId=${tenantBId}`);
     expect(page.rows.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('finds rows by organisation name, so no UUID is needed', async () => {
+    // The org is named "Audit Co adm-al-a-<suffix>" by the fixture helper.
+    const page = await fetchLog(`q=${encodeURIComponent(`adm-al-a-${SUFFIX}`)}`);
+    expect(page.rows.length).toBeGreaterThan(0);
+    expect(page.rows.every((r) => r.tenantId === tenantAId)).toBe(true);
+  });
+
+  it('names the organisation on each row instead of only its id', async () => {
+    const page = await fetchLog(`tenantId=${tenantAId}`);
+    expect(page.rows[0]!.tenantName).toContain('Audit Co');
+  });
+
+  it('returns nothing when no organisation or person matches', async () => {
+    const page = await fetchLog('q=zzz-no-such-thing-zzz');
+    expect(page.rows).toHaveLength(0);
+  });
+
 });

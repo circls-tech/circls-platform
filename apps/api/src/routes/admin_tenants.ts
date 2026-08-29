@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { and, eq, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client.js';
-import { events, tenantMembers, tenants, users } from '../db/schema/index.js';
+import { events, tenantMembers, tenants, users, venues } from '../db/schema/index.js';
 import { writeAudit } from '../lib/audit.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
@@ -71,6 +71,12 @@ const bps = z.number().int().min(0).max(10_000);
 const eventsListQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
+  /**
+   * 'active' (the default) is what an org still has in flight: draft, awaiting
+   * review or live, and not archived. 'all' includes cancelled, rejected,
+   * ended and archived events.
+   */
+  scope: z.enum(['active', 'all']).optional(),
 });
 
 /** All-optional patch of the tenant billing knobs; must not be empty. */
@@ -445,6 +451,11 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const limit = Math.min(query.data.limit ?? 50, 200);
 
       const conditions = [eq(events.tenantId, params.data.id)];
+      if ((query.data.scope ?? 'active') === 'active') {
+        // Status only: the archive shelf ships separately, so an archived
+        // draft still counts as active here until that lands.
+        conditions.push(sql`${events.status} in ('draft', 'pending_review', 'published')`);
+      }
       if (query.data.cursor) {
         const decoded = decodeCursor(query.data.cursor);
         if (decoded) {
@@ -462,13 +473,16 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           id: events.id,
           name: events.name,
           startsAt: events.startsAt,
+          endsAt: events.endsAt,
           status: events.status,
+          venueName: venues.name,
           partnerCommissionBps: events.partnerCommissionBps,
           consumerCommissionBps: events.consumerCommissionBps,
           advancePayoutBps: events.advancePayoutBps,
           createdAt: events.createdAt,
         })
         .from(events)
+        .leftJoin(venues, eq(venues.id, events.venueId))
         .where(and(...conditions))
         .orderBy(sql`${events.createdAt} desc, ${events.id} desc`)
         .limit(limit + 1);
@@ -481,7 +495,9 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           id: e.id,
           name: e.name,
           startsAt: e.startsAt ? new Date(e.startsAt).toISOString() : null,
+          endsAt: e.endsAt ? new Date(e.endsAt).toISOString() : null,
           status: e.status,
+          venueName: e.venueName ?? null,
           partnerCommissionBps: e.partnerCommissionBps,
           consumerCommissionBps: e.consumerCommissionBps,
           advancePayoutBps: e.advancePayoutBps,

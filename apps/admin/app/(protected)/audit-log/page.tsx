@@ -56,6 +56,7 @@ function isUuidOrEmpty(s: string): boolean {
 
 export default function AuditLogPage() {
   // Form state — strings the user types
+  const [q, setQ] = useState('');
   const [tenantId, setTenantId] = useState('');
   const [actorUserId, setActorUserId] = useState('');
   const [entityType, setEntityType] = useState('');
@@ -90,6 +91,7 @@ export default function AuditLogPage() {
   function apply() {
     if (formInvalid) return;
     const next: AdminAuditLogFilters = {};
+    if (q.trim())           next.q           = q.trim();
     if (tenantId.trim())    next.tenantId    = tenantId.trim();
     if (actorUserId.trim()) next.actorUserId = actorUserId.trim();
     if (entityType.trim())  next.entityType  = entityType.trim();
@@ -101,6 +103,7 @@ export default function AuditLogPage() {
   }
 
   function clearAll() {
+    setQ('');
     setTenantId('');
     setActorUserId('');
     setEntityType('');
@@ -118,12 +121,33 @@ export default function AuditLogPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Audit log search</h1>
         <p className="text-sm text-slate-500">
-          Cross-tenant search of every audit event. Use UUIDs for tenant / actor / entity filters.
+          Cross-tenant search of every audit event. Search by organisation or
+          person; the ID fields below are there when you already have one.
         </p>
       </div>
 
       {/* Filters */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        {/* The plain-language search comes first: it is what most people have —
+            an org name or someone's phone — rather than a UUID. */}
+        <div className="mb-3">
+          <Field label="Search by organisation or person">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') apply();
+              }}
+              placeholder="Organisation name, or a person's name, email or phone"
+              className={inputCls(false)}
+            />
+          </Field>
+          <p className="mt-1 text-xs text-slate-500">
+            Matches an organisation&apos;s name or slug, and a person&apos;s name,
+            email or phone — whether they acted or were acted upon. Phone numbers
+            match with or without spaces or a country code.
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Tenant ID" invalid={tenantIdInvalid}>
             <input
@@ -243,22 +267,30 @@ export default function AuditLogPage() {
                 <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs text-slate-500">
                   {IST_FMT.format(new Date(r.createdAt))}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-xs">
+                <td className="px-4 py-2.5 text-xs">
                   {r.tenantId ? (
                     <Link
                       href={`/tenants/${r.tenantId}`}
                       className="text-blue-700 hover:underline"
+                      title={r.tenantId}
                     >
-                      {r.tenantId.slice(0, 8)}…
+                      {r.tenantName ?? `${r.tenantId.slice(0, 8)}…`}
                     </Link>
                   ) : (
-                    <span className="text-slate-400">—</span>
+                    <span className="text-slate-400">Platform</span>
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-slate-700">
-                  {r.actorName ?? (
+                  {r.actorName ? (
+                    <span title={r.actorUserId ?? undefined}>
+                      {r.actorName}
+                      {r.actorContact && (
+                        <span className="block text-xs text-slate-400">{r.actorContact}</span>
+                      )}
+                    </span>
+                  ) : (
                     <span className="text-slate-400">
-                      {r.actorUserId ? `${r.actorUserId.slice(0, 8)}…` : '—'}
+                      {r.actorUserId ? `${r.actorUserId.slice(0, 8)}…` : 'System'}
                     </span>
                   )}
                 </td>
