@@ -12,7 +12,7 @@ import { useEvent, usePublicOrg } from '@/lib/api/consumer';
 import { usePublicCoupons, type PublicCoupon } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
-import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
+import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 import { AddressLink } from '@/components/AddressLink';
 
@@ -71,6 +71,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     }
     setQty((q) => ({ ...q, [tierId]: capped }));
   }
+
+  // Sign-in interrupted a purchase on this page — reopen it, and put the tier
+  // quantities back on the page so closing the modal doesn't reveal an empty
+  // selection behind it.
+  useResumeCheckout((item, prefill) => {
+    if (item.kind === 'event') {
+      setQty(Object.fromEntries(item.lines.map((l) => [l.tierId, l.quantity])));
+    }
+    openCheckout(item, prefill);
+  });
 
   function book() {
     if (!ev || totalSelected === 0) return;

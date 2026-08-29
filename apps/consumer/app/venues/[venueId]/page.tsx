@@ -1,5 +1,5 @@
 'use client';
-import { use, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
@@ -29,18 +29,10 @@ import {
   formatSlotRange,
   telHref,
 } from '@/lib/format';
-import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
+import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
+import type { CartSlot } from '@/lib/checkout/types';
 import { Badge, Button, Card } from '@/lib/ui';
-
-/** A slot held in the cart, with the display info the cart summary needs. */
-export interface CartSlot {
-  id: string;
-  arenaId: string;
-  arenaName: string;
-  startAt: string;
-  endAt: string;
-  pricePaise: number;
-}
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
   const { venueId } = use(params);
@@ -54,6 +46,23 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   // endpoint takes the combined slotIds and books them as one multi-arena
   // booking with a single payment.
   const [cart, setCart] = useState<Map<string, CartSlot>>(new Map());
+  // Restore a cart that a sign-in redirect interrupted. Done in an effect, not
+  // a lazy initialiser, because sessionStorage doesn't exist during SSR and
+  // reading it there would desync hydration.
+  useEffect(() => {
+    const saved = loadVenueCart(venueId);
+    if (saved.length > 0) setCart(new Map(saved.map((s) => [s.id, s])));
+  }, [venueId]);
+  // Skip the first run: it fires before the restore above has been applied, and
+  // would write the still-empty cart back over what we just read.
+  const cartHydrated = useRef(false);
+  useEffect(() => {
+    if (!cartHydrated.current) {
+      cartHydrated.current = true;
+      return;
+    }
+    saveVenueCart(venueId, [...cart.values()]);
+  }, [venueId, cart]);
   // Prices at this venue are denominated by the venue's country.
   const currency = currencyForCountry(venueQ.data?.venue.address.country);
 
@@ -75,6 +84,13 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   function clearCart() {
     setCart(new Map());
   }
+
+  // Sign-in interrupted a checkout on this page — reopen it with the cart's
+  // clear-on-success wired back up.
+  const { openCheckout } = useCheckoutModal();
+  useResumeCheckout((item, prefill) => {
+    openCheckout(item, prefill, { onSuccess: clearCart });
+  });
 
   return (
     <div className="min-h-screen">
