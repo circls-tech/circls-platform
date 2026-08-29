@@ -60,6 +60,10 @@ export interface EventBookingRow {
   status: string;
   totalPaise: number;
   createdAt: string;
+  /** How it was paid. 'external' marks a registration the partner took off
+   *  platform — circls processed no money for it, so its total is zero and
+   *  it must not be read as a free ticket. */
+  paymentMethod: string;
   /** Ticket lines (tier name + quantity), in tier sort order. */
   tickets: EventBookingTicketLine[];
   /** Registration-question answers, in question sort order. */
@@ -82,6 +86,7 @@ export async function listEventBookings(
 ): Promise<EventBookingRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
     select b.id, b.customer_name, b.customer_contact, b.status, b.total_paise, b.created_at,
+           b.payment_method,
            u.display_name as user_display_name, u.email as user_email, u.phone_e164 as user_phone,
            coalesce(t.tickets, '[]'::json)::text as tickets,
            coalesce(ans.answers, '[]'::json)::text as answers
@@ -124,6 +129,7 @@ export async function listEventBookings(
       status: r['status'] as string,
       totalPaise: Number(r['total_paise']),
       createdAt: new Date(r['created_at'] as string).toISOString(),
+      paymentMethod: r['payment_method'] as string,
       tickets: JSON.parse(r['tickets'] as string) as EventBookingTicketLine[],
       answers: JSON.parse(r['answers'] as string) as EventBookingAnswerLine[],
     };

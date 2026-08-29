@@ -247,6 +247,22 @@ Each table has its own **Download CSV** button, so you can export either list �
 
 Use these tables to check turnout and reconcile payments.
 
+### Adding someone who registered elsewhere
+
+Took a registration at the door, over the phone, or through your own form? Click **Add registration** on a live event to put them on the roll.
+
+You are asked for the same things the customer would have given: their name, an optional contact, which tickets they took, and answers to any **required** registration question — those are enforced here exactly as they are in the customer flow, so your answer data stays complete.
+
+The registration is real in every way that matters to your event:
+
+- it takes seats out of your ticket tiers, so capacity counts it and can sell out because of it;
+- it appears in the **Registered** table and every CSV export;
+- it gets a QR entry pass, sent to the contact you entered, if the event issues them.
+
+**It is invisible to money.** circls processed nothing, so the registration carries no amount, never appears in a payout, and never attracts commission — whatever the attendee paid, they paid you directly. The amount column shows **External** rather than an amount, which is what tells it apart from a genuinely free ticket.
+
+One limit does not apply: the per-person ticket cap. That is counted per circls account, and someone who registered off-platform has none, so it cannot be attributed to them.
+
 ### Refunding a registration
 
 Every row in the **Registered** table has a **Refund** button. Refunding on behalf of an attendee cancels their registration and:

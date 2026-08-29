@@ -374,6 +374,35 @@ export function useCompleteTenantEvent(tenantId: string) {
   });
 }
 
+/** A registration the partner took off-platform. */
+export interface ExternalRegistrationInput {
+  name: string;
+  contact?: string;
+  note?: string;
+  lines: { tierId: string; quantity: number }[];
+  answers?: { questionId: string; answer: string }[];
+}
+
+/**
+ * Record an attendee who registered away from circls. Claims seats and enforces
+ * required questions exactly like a consumer booking, but writes no payment, so
+ * it never reaches a payout.
+ */
+export function useAddExternalRegistration(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, input }: { eventId: string; input: ExternalRegistrationInput }) =>
+      apiFetch<{ bookingId: string }>(
+        `/v1/tenants/${tenantId}/events/${eventId}/registrations`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: (_res, { eventId }) => {
+      void qc.invalidateQueries({ queryKey: ['event-bookings', tenantId, eventId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, eventId] });
+    },
+  });
+}
+
 /** Undo an end: puts a completed event back on sale. Only valid while its end
  *  time is still in the future. */
 export function useReopenTenantEvent(tenantId: string) {

@@ -525,6 +525,9 @@ export interface EventBooking {
   totalPaise: number;
   /** ISO-8601 */
   createdAt: string;
+  /** 'external' marks a registration taken off-platform: circls processed no
+   *  money, so a zero total means "not our money", not "free ticket". */
+  paymentMethod: string;
   /** Ticket lines (tier name + quantity), in tier sort order. */
   tickets: EventBookingTicketLine[];
   /** Registration-question answers, in question sort order. */

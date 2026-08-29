@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import { addExternalEventRegistration } from '../services/booking_service.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
@@ -259,6 +260,28 @@ async function resolveOccurrences(
   });
 }
 
+/**
+ * A registration the partner took off-platform. Ticket lines mirror the
+ * consumer payload so per-tier capacity is claimed identically; answers carry
+ * the event's required registration questions, which are validated server-side.
+ */
+const externalRegistrationSchema = z.object({
+  name: z.string().min(1).max(200),
+  contact: z.string().max(200).optional(),
+  note: z.string().max(1000).optional(),
+  lines: z
+    .array(
+      z.object({
+        tierId: z.string().uuid(),
+        quantity: z.number().int().positive().max(100),
+      }),
+    )
+    .min(1),
+  answers: z
+    .array(z.object({ questionId: z.string().uuid(), answer: z.string().max(2000) }))
+    .optional(),
+});
+
 export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/venues/:venueId/events', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };
@@ -452,6 +475,37 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       await requireTenantMembership(user.id, tenantId);
       return completeEvent({ tenantId, actorUserId: user.id }, id);
+    },
+  );
+
+  // Register someone who signed up off-platform. Counts against capacity and
+  // must answer the event's required questions, but never reaches payouts.
+  app.post(
+    '/v1/tenants/:tenantId/events/:id/registrations',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { tenantId, id } = req.params as { tenantId: string; id: string };
+      const user = await currentUser(req);
+      const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertTermsAccepted(memberCtx);
+      const parsed = externalRegistrationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('Invalid registration', 'bad_request', {
+          issues: parsed.error.issues,
+        });
+      }
+      const result = await addExternalEventRegistration(
+        { tenantId, actorUserId: user.id },
+        id,
+        {
+          name: parsed.data.name,
+          ...(parsed.data.contact ? { contact: parsed.data.contact } : {}),
+          ...(parsed.data.note ? { note: parsed.data.note } : {}),
+          lines: parsed.data.lines,
+          ...(parsed.data.answers ? { answers: parsed.data.answers } : {}),
+        },
+      );
+      return reply.code(201).send(result);
     },
   );
 

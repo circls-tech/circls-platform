@@ -866,6 +866,10 @@ export default function OrgEventDetailPage() {
             isLoading={bookingsLoading}
             tiers={ev.tiers}
             eventName={ev.name}
+            tenantId={tenantId}
+            eventId={eventId}
+            questions={ev.questions}
+            canAddRegistration={ev.status === 'published' && authed}
             tz={effectiveTz}
             currency={currency}
           />

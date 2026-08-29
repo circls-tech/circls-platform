@@ -442,6 +442,10 @@ export default function EventDetailPage() {
             isLoading={bookingsLoading}
             tiers={ev.tiers}
             eventName={ev.name}
+            tenantId={ev.tenantId}
+            eventId={eventId}
+            questions={ev.questions}
+            canAddRegistration={ev.status === 'published'}
             tz={displayTz}
             currency={currency}
           />
