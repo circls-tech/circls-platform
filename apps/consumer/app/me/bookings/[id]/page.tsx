@@ -3,6 +3,7 @@ import { use, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { useMyBooking } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatDateTime, formatPaise, formatTime } from '@/lib/format';
@@ -48,9 +49,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <Link href="/me/bookings" className="text-sm font-semibold text-coral-deep underline">
-          ← All bookings
-        </Link>
+        <BackBar fallbackHref="/me/bookings" />
 
         {loading || !user ? (
           <p className="mt-6 text-sm text-text-secondary">Loading…</p>

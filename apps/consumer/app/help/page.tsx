@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { BrandMark } from '@/lib/ui';
 
 export const metadata: Metadata = {
@@ -111,6 +112,7 @@ export default function HelpPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
+        <BackBar fallbackHref="/" />
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-coral-deep">
           <BrandMark className="h-4 w-4" />
           <span>circls · Help &amp; Support</span>

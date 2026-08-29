@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { EmptyState } from '@/components/EmptyState';
 import { ThreadCard } from '@/components/questions/ThreadCard';
 import { ThreadView } from '@/components/questions/ThreadView';
@@ -37,6 +38,7 @@ export default function MyQuestionsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <BackBar fallbackHref="/" />
         <h1 className="mb-6 font-display text-4xl font-extrabold text-ink">My questions</h1>
 
         {questionsQ.isLoading ? (

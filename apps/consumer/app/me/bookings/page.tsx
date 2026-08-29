@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { EmptyState } from '@/components/EmptyState';
 import { useMyBookings } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -41,6 +42,7 @@ export default function MyBookingsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <BackBar fallbackHref="/" />
         <h1 className="mb-6 font-display text-4xl font-extrabold text-ink">My bookings</h1>
 
         {bookings.isLoading ? (
