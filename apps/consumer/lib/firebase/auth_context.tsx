@@ -23,9 +23,10 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   /**
-   * Starts phone sign-in: lazily builds an invisible reCAPTCHA verifier and
-   * sends an SMS OTP to `phoneE164` (e.g. "+919876543210"). Stores the
-   * ConfirmationResult for the subsequent confirmOtp() call.
+   * Starts phone sign-in: builds a fresh invisible reCAPTCHA verifier and sends
+   * an SMS OTP to `phoneE164` (e.g. "+919876543210"). Stores the
+   * ConfirmationResult for the subsequent confirmOtp() call. Safe to call again
+   * to resend a code to the same number.
    */
   startPhoneSignIn: (phoneE164: string) => Promise<void>;
   /** Confirms the SMS code from the active ConfirmationResult; resolves to the user. */
@@ -67,14 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       loading,
       async startPhoneSignIn(phoneE164) {
-        // Build (once) an invisible reCAPTCHA bound to our container div. We
-        // reuse it across attempts; if a prior attempt left it in a bad state
-        // we clear and rebuild so the user can always retry.
-        if (!verifierRef.current) {
-          verifierRef.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
-            size: 'invisible',
-          });
-        }
+        // A reCAPTCHA token is single-use, so a verifier that has already sent
+        // an SMS can't send a second one — which is what a resend asks it to
+        // do. Tear down whatever is there and build fresh on every send.
+        verifierRef.current?.clear();
+        verifierRef.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
+          size: 'invisible',
+        });
         try {
           confirmationRef.current = await signInWithPhoneNumber(
             auth,
