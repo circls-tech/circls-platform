@@ -345,9 +345,9 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={() => bookingId && router.push(`/bookings/${bookingId}/cancel`)}
+                  onClick={() => bookingId && router.push(`/bookings/${bookingId}/refund`)}
                 >
-                  Cancel booking
+                  Refund booking
                 </Button>
               </div>
             )}

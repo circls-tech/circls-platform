@@ -81,7 +81,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
     <div className="min-h-screen">
       <Header />
       <main className={`mx-auto max-w-3xl px-4 pt-8${selectedTier ? ' pb-28' : ' pb-8'}`}>
-        <BackBar />
+        <BackBar fallbackHref="/memberships" />
         {membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (

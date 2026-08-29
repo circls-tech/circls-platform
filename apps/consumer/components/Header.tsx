@@ -30,8 +30,8 @@ export function Header() {
             <span className="max-w-[7rem] truncate">{locationLabel}</span>
           </button>
           {/* Desktop nav (lg+). Below that these collapse into the hamburger menu. */}
-          <Link href="/venues" className="hidden text-sm font-bold text-ink hover:text-coral-deep lg:inline">Venues</Link>
           <Link href="/events" className="hidden text-sm font-bold text-ink hover:text-coral-deep lg:inline">Events</Link>
+          <Link href="/venues" className="hidden text-sm font-bold text-ink hover:text-coral-deep lg:inline">Venues</Link>
           <Link href="/memberships" className="hidden text-sm font-bold text-ink hover:text-coral-deep lg:inline">Memberships</Link>
           <Link href="/orgs" className="hidden text-sm font-bold text-ink hover:text-coral-deep lg:inline">Organisations</Link>
           {/* Profile chip at the right edge → opens the account sidebar (right side). */}

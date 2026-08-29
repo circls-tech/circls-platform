@@ -15,7 +15,7 @@ import {
 } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
-import { Button, Card, Input, StatusPill } from '@/lib/ui';
+import { Button, Card, Input, Modal, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -69,6 +69,7 @@ export default function MembershipsPage() {
   // Row-level edit/toggle state.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingBuyersId, setViewingBuyersId] = useState<string | null>(null);
+  const viewingBuyers = memberships?.find((m) => m.id === viewingBuyersId) ?? null;
   const [rowErr, setRowErr] = useState<string | null>(null);
 
   function venueName(id: string | null) {
@@ -225,10 +226,10 @@ export default function MembershipsPage() {
                             size="sm"
                             onClick={() => {
                               setRowErr(null);
-                              setViewingBuyersId(viewingBuyersId === m.id ? null : m.id);
+                              setViewingBuyersId(m.id);
                             }}
                           >
-                            {viewingBuyersId === m.id ? 'Hide buyers' : 'View buyers'}
+                            View buyers
                           </Button>
                           {m.status === 'active' && (
                             <Button
@@ -270,9 +271,6 @@ export default function MembershipsPage() {
                               }
                             }}
                           />
-                        )}
-                        {viewingBuyersId === m.id && (
-                          <MembershipBuyers tenantId={tenantId} membershipId={m.id} />
                         )}
                       </td>
                     </tr>
@@ -371,6 +369,19 @@ export default function MembershipsPage() {
           </div>
         </form>
       </Card>
+
+      {/* Buyers open in a modal — the list used to render inside the row's
+          Actions cell, which squeezed a six-column table into one column. */}
+      <Modal
+        open={viewingBuyers !== null}
+        onClose={() => setViewingBuyersId(null)}
+        title={viewingBuyers ? `Buyers — ${viewingBuyers.name}` : 'Buyers'}
+        maxWidth="max-w-3xl"
+      >
+        {viewingBuyers && (
+          <MembershipBuyers tenantId={tenantId} membershipId={viewingBuyers.id} />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -518,22 +529,65 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
     [resolveTz],
   );
 
+  const rows = data?.rows ?? [];
+
+  if (isLoading) return <p className="py-6 text-center text-sm text-slate-400">Loading…</p>;
+  if (error) {
+    return (
+      <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+        {(error as Error).message}
+      </p>
+    );
+  }
+  if (rows.length === 0) {
+    return <p className="py-6 text-center text-sm text-slate-400">No purchases yet.</p>;
+  }
+
   return (
-    <div className="mt-3 max-w-3xl rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-4">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#475569]">
-        Buyers{data ? ` (${data.rows.length})` : ''}
-      </h3>
-      {isLoading && <p className="py-4 text-center text-sm text-slate-400">Loading…</p>}
-      {error && (
-        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-          {(error as Error).message}
-        </p>
-      )}
-      {!isLoading && !error && data && data.rows.length === 0 && (
-        <p className="py-4 text-center text-sm text-slate-400">No purchases yet.</p>
-      )}
-      {!isLoading && !error && data && data.rows.length > 0 && (
-        <div className="overflow-x-auto">
+    <div className="flex flex-col gap-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+        {rows.length} {rows.length === 1 ? 'buyer' : 'buyers'}
+      </p>
+
+      {/* The modal is centred in the viewport, so the list scrolls rather than
+          pushing the panel off-screen on a short one. */}
+      <div className="max-h-[60vh] overflow-y-auto">
+        {/* Phones: one card per buyer — a six-column table is unreadable there. */}
+        <ul className="flex flex-col gap-2 md:hidden">
+          {rows.map((p) => (
+            <li
+              key={p.userMembershipId}
+              className="rounded-[var(--radius)] border border-[#e5e7eb] p-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-800">{p.buyerName}</p>
+                  <p className="truncate text-xs text-slate-500">{p.buyerContact}</p>
+                </div>
+                <StatusPill status={p.status} />
+              </div>
+              <dl className="mt-2 flex flex-col gap-0.5 text-xs text-slate-600">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Tier</dt>
+                  <dd>{p.tierName ?? '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Valid</dt>
+                  <dd className="text-right">
+                    {fmtDate(dateFmt, p.startsAt)} → {fmtDate(dateFmt, p.endsAt)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Purchased</dt>
+                  <dd>{fmtDate(dateFmt, p.createdAt)}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
+        {/* Tablet and up: the full table. */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#e5e7eb] text-left">
@@ -546,7 +600,7 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f1f5f9]">
-              {data.rows.map((p) => (
+              {rows.map((p) => (
                 <tr key={p.userMembershipId}>
                   <td className="py-2.5 pr-4 font-medium text-slate-700">{p.buyerName}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{p.buyerContact}</td>
@@ -554,16 +608,18 @@ function MembershipBuyers({ tenantId, membershipId }: MembershipBuyersProps) {
                   <td className="py-2.5 pr-4">
                     <StatusPill status={p.status} />
                   </td>
-                  <td className="py-2.5 pr-4 text-slate-700">
+                  <td className="py-2.5 pr-4 whitespace-nowrap text-slate-700">
                     {fmtDate(dateFmt, p.startsAt)} → {fmtDate(dateFmt, p.endsAt)}
                   </td>
-                  <td className="py-2.5 text-slate-700">{fmtDate(dateFmt, p.createdAt)}</td>
+                  <td className="py-2.5 whitespace-nowrap text-slate-700">
+                    {fmtDate(dateFmt, p.createdAt)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }

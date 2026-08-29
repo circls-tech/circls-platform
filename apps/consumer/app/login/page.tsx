@@ -1,6 +1,6 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, type FormEvent, useState } from 'react';
+import { Suspense, type FormEvent, useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { Button, Card, Input } from '@/lib/ui';
@@ -15,6 +15,11 @@ function friendlyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'Something went wrong. Please try again.';
 }
+
+/** Seconds the Resend button stays disabled after a code goes out. */
+const RESEND_COOLDOWN_S = 30;
+/** Resends allowed per number before we send the user back to the phone step. */
+const MAX_RESENDS = 3;
 
 /** Best-effort E.164 normaliser: defaults to India (+91) when no + prefix. */
 function toE164(raw: string): string {
@@ -35,6 +40,18 @@ function LoginInner() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Resend gating: a countdown so the button can't be hammered, and a cap so a
+  // number that never receives an SMS goes back to the phone step instead of
+  // burning attempts against Firebase's own throttle.
+  const [cooldown, setCooldown] = useState(0);
+  const [resendsLeft, setResendsLeft] = useState(MAX_RESENDS);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   async function handleSendCode(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +60,8 @@ function LoginInner() {
     try {
       await startPhoneSignIn(toE164(phone));
       setStep('otp');
+      setCooldown(RESEND_COOLDOWN_S);
+      setResendsLeft(MAX_RESENDS);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -50,10 +69,38 @@ function LoginInner() {
     }
   }
 
+  async function handleResend() {
+    if (busy || cooldown > 0 || resendsLeft <= 0) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await startPhoneSignIn(toE164(phone));
+      setCode('');
+      setResendsLeft((n) => n - 1);
+      setCooldown(RESEND_COOLDOWN_S);
+      setNotice('New code sent.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function backToPhone() {
+    setStep('phone');
+    setCode('');
+    setError(null);
+    setNotice(null);
+    setCooldown(0);
+    setResendsLeft(MAX_RESENDS);
+  }
+
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await confirmOtp(code);
       router.replace(redirect);
@@ -103,20 +150,27 @@ function LoginInner() {
               <Button type="submit" loading={busy} disabled={!code.trim()}>
                 Verify
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setStep('phone');
-                  setCode('');
-                  setError(null);
-                }}
-              >
+              {resendsLeft > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || cooldown > 0}
+                  onClick={() => void handleResend()}
+                >
+                  {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+                </Button>
+              ) : (
+                <p className="text-center text-sm text-text-secondary">
+                  Still no code? Check the number and try again.
+                </p>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={backToPhone}>
                 Use a different number
               </Button>
             </form>
           )}
+          {notice && !error && <p className="mt-3 text-sm font-semibold text-ink">{notice}</p>}
           {error && <p className="mt-3 text-sm font-semibold text-petal-red">{error}</p>}
         </Card>
       </main>

@@ -46,10 +46,21 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
   return { ts, id };
 }
 
+/**
+ * `status` defaults to 'active' so suspended orgs stay out of the way until
+ * they're asked for. `minVenues` / `minBookings30d` filter the two count
+ * columns; those are correlated subqueries in the SELECT list, so they can't be
+ * filtered in the same WHERE and are applied to a wrapping query instead.
+ * `sort` only offers created-at, which is what the keyset cursor is built on.
+ */
 const listQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   q: z.string().min(1).max(200).optional(),
+  status: z.enum(['active', 'suspended', 'all']).optional(),
+  minVenues: z.coerce.number().int().min(0).optional(),
+  minBookings30d: z.coerce.number().int().min(0).optional(),
+  sort: z.enum(['created_desc', 'created_asc']).optional(),
 });
 
 const tenantIdParamSchema = z.object({ id: z.string().uuid() });
@@ -118,7 +129,13 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const limit = Math.min(parsed.data.limit ?? 50, 200);
       const fetchLimit = limit + 1;
 
+      const ascending = parsed.data.sort === 'created_asc';
+      const status = parsed.data.status ?? 'active';
+
       const conditions: ReturnType<typeof sql>[] = [sql`1=1`];
+      if (status !== 'all') {
+        conditions.push(sql`t.status = ${status}::tenant_status`);
+      }
       if (parsed.data.q) {
         const like = `%${parsed.data.q.toLowerCase()}%`;
         conditions.push(sql`(lower(t.name) like ${like} or lower(t.slug) like ${like})`);
@@ -126,28 +143,55 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       if (parsed.data.cursor) {
         const decoded = decodeCursor(parsed.data.cursor);
         if (decoded) {
+          // The keyset comparison has to follow the sort direction, or paging
+          // an ascending list walks backwards and repeats the first page.
           conditions.push(
-            sql`(t.created_at, t.id) < (${decoded.ts}::timestamptz, ${decoded.id}::uuid)`,
+            ascending
+              ? sql`(t.created_at, t.id) > (${decoded.ts}::timestamptz, ${decoded.id}::uuid)`
+              : sql`(t.created_at, t.id) < (${decoded.ts}::timestamptz, ${decoded.id}::uuid)`,
           );
         }
       }
       const whereClause = conditions.reduce((acc, c) => sql`${acc} AND ${c}`);
 
+      // Filters on the two computed counts; applied outside the inner select
+      // because a correlated subquery alias isn't visible to its own WHERE.
+      const countConditions: ReturnType<typeof sql>[] = [sql`1=1`];
+      if (parsed.data.minVenues !== undefined) {
+        countConditions.push(sql`s.venue_count >= ${parsed.data.minVenues}`);
+      }
+      if (parsed.data.minBookings30d !== undefined) {
+        countConditions.push(sql`s.booking_count_30d >= ${parsed.data.minBookings30d}`);
+      }
+      const countClause = countConditions.reduce((acc, c) => sql`${acc} AND ${c}`);
+
+      // Direction is chosen from a closed set, never interpolated user input.
+      const orderClause = ascending
+        ? sql`s.created_at ASC, s.id ASC`
+        : sql`s.created_at DESC, s.id DESC`;
+
       const rawRows = await db.execute<Record<string, unknown>>(sql`
-        SELECT
-          t.id,
-          t.name,
-          t.slug,
-          t.status,
-          t.subscription_status,
-          t.created_at,
-          (SELECT count(*) FROM venues v WHERE v.tenant_id = t.id)                       AS venue_count,
-          (SELECT count(*) FROM bookings b
-             WHERE b.tenant_id = t.id
-               AND b.created_at >= now() - interval '30 days')                            AS booking_count_30d
-        FROM tenants t
-        WHERE ${whereClause}
-        ORDER BY t.created_at DESC, t.id DESC
+        SELECT * FROM (
+          SELECT
+            t.id,
+            t.name,
+            t.slug,
+            t.status,
+            t.subscription_status,
+            t.created_at,
+            -- Cursor timestamp at full microsecond precision. Going through a JS
+            -- Date truncates to milliseconds, which makes the keyset comparison
+            -- match the row it was built from and re-serve it as the next page.
+            to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')     AS created_at_cursor,
+            (SELECT count(*) FROM venues v WHERE v.tenant_id = t.id)                     AS venue_count,
+            (SELECT count(*) FROM bookings b
+               WHERE b.tenant_id = t.id
+                 AND b.created_at >= now() - interval '30 days')                          AS booking_count_30d
+          FROM tenants t
+          WHERE ${whereClause}
+        ) s
+        WHERE ${countClause}
+        ORDER BY ${orderClause}
         LIMIT ${fetchLimit}
       `);
 
@@ -170,7 +214,8 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       if (hasMore && pageRows.length > 0) {
         const last = pageRows[pageRows.length - 1]!;
         nextCursor = encodeCursor(
-          new Date(last['created_at'] as string).toISOString(),
+          // Full-precision value straight from Postgres, not a JS Date.
+          last['created_at_cursor'] as string,
           last['id'] as string,
         );
       }

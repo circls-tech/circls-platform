@@ -107,18 +107,18 @@ export default function LandingPage() {
             </button>
           </p>
         )}
-        {nearbyVenues.length > 0 && (
-          <HScroll title={venuesTitle} viewAllHref="/venues">
-            {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
-          </HScroll>
-        )}
-
         {nearbyEvents.length > 0 && (
           <HScroll
             title={coords ? "What's on near you" : country ? `What's on in ${country}` : 'Upcoming events'}
             viewAllHref="/events"
           >
             {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
+          </HScroll>
+        )}
+
+        {nearbyVenues.length > 0 && (
+          <HScroll title={venuesTitle} viewAllHref="/venues">
+            {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
           </HScroll>
         )}
 

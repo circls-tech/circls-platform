@@ -66,10 +66,10 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
   },
   {
     slug: 'bookings',
-    title: 'Understanding bookings and cancellations',
+    title: 'Understanding bookings and refunds',
     category: 'Bookings',
     summary:
-      'How to view confirmed bookings, handle cancellations, issue refunds, and manage no-shows.',
+      'How to view confirmed bookings, refund and cancel them, and manage no-shows.',
     quickLink: true,
     order: 4,
   },
