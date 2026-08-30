@@ -61,7 +61,7 @@ export function BenefitsEditor({
                 type="button"
                 onClick={() => move(i, -1)}
                 disabled={i === 0}
-                className="rounded border border-gray-200 px-2 py-1 text-xs text-slate-500 disabled:opacity-40 hover:bg-white"
+                className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
                 aria-label="Move up"
               >
                 ↑
@@ -70,7 +70,7 @@ export function BenefitsEditor({
                 type="button"
                 onClick={() => move(i, 1)}
                 disabled={i === items.length - 1}
-                className="rounded border border-gray-200 px-2 py-1 text-xs text-slate-500 disabled:opacity-40 hover:bg-white"
+                className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
                 aria-label="Move down"
               >
                 ↓
@@ -78,7 +78,7 @@ export function BenefitsEditor({
               <button
                 type="button"
                 onClick={() => remove(i)}
-                className="rounded border border-gray-200 px-2 py-1 text-xs text-red-600 hover:bg-white"
+                className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-red-600 hover:bg-white"
               >
                 Remove
               </button>
