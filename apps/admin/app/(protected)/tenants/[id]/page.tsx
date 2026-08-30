@@ -412,28 +412,59 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
 }
 
 function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }) {
+  // Active by default — an org's finished and cancelled events pile up fast and
+  // bury what it currently has running.
+  const [scope, setScope] = useState<'active' | 'all'>('active');
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
-    useAdminTenantEvents(tenant.id);
+    useAdminTenantEvents(tenant.id, scope);
   const rows: AdminTenantEventBillingItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
   return (
     <section className="space-y-2">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        Per-event overrides
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Events
+        </h2>
+        <div className="flex gap-1" role="tablist" aria-label="Which events to show">
+          {(['active', 'all'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={scope === k}
+              onClick={() => setScope(k)}
+              className={
+                scope === k
+                  ? 'rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white'
+                  : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
+              }
+            >
+              {k === 'active' ? 'Active' : 'All'}
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="text-xs text-slate-400">
-        Blank = inherit the tenant rate (shown greyed). 0 = explicitly disabled for that event.
+        {scope === 'active'
+          ? 'Draft, awaiting review and live events. Switch to All for cancelled, rejected and ended ones.'
+          : 'Every event this organisation has ever created.'}
+        {' '}Commission columns: blank = inherit the tenant rate (shown greyed), 0 = explicitly disabled.
       </p>
       {isLoading ? (
         <p className="text-sm text-slate-400">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">This tenant has no events.</p>
+        <p className="text-sm text-slate-400">
+          {scope === 'active'
+            ? 'Nothing active. Switch to All to see finished events.'
+            : 'This tenant has no events.'}
+        </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2 font-medium">Event</th>
+                <th className="px-4 py-2 font-medium">Venue</th>
                 <th className="px-4 py-2 font-medium">Starts</th>
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 text-right font-medium">Partner comm.</th>
@@ -505,6 +536,9 @@ function EventOverrideRow({
   return (
     <tr>
       <td className="px-4 py-2.5 text-slate-800">{event.name}</td>
+      <td className="px-4 py-2.5 text-xs text-slate-500">
+        {event.venueName ?? <span className="text-slate-400">Standalone</span>}
+      </td>
       <td className="px-4 py-2.5 text-xs text-slate-500">{fmtIST(event.startsAt)}</td>
       <td className="px-4 py-2.5 text-xs text-slate-500">{event.status}</td>
       <td className="px-4 py-2.5 text-right">

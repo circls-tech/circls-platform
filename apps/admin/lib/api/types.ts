@@ -93,7 +93,11 @@ export interface AdminTenantEventBillingItem {
   id: string;
   name: string;
   startsAt: string | null;
+  /** ISO-8601 — the event's end, so a row reads on its own. */
+  endsAt: string | null;
   status: string;
+  /** Venue the event belongs to; null for org-scoped (standalone) events. */
+  venueName: string | null;
   partnerCommissionBps: number | null;
   consumerCommissionBps: number | null;
   advancePayoutBps: number | null;
@@ -118,7 +122,14 @@ export interface AdminAuditLogItem {
   entityType: string;
   entityId: string | null;
   actorUserId: string | null;
+  /** Name of the event / venue / membership acted on; null for anything with
+   *  no name of its own, such as a booking or a payment. */
+  entityName: string | null;
   actorName: string | null;
+  /** Phone or email of whoever acted — identifies a row without any id. */
+  actorContact: string | null;
+  /** Owning organisation's name; null for platform-level entries. */
+  tenantName: string | null;
   before: unknown;
   after: unknown;
   createdAt: string;
@@ -127,6 +138,38 @@ export interface AdminAuditLogItem {
 export interface AdminAuditLogPage {
   rows: AdminAuditLogItem[];
   nextCursor: string | null;
+}
+
+/** One line of a payout breakdown: what a slice of the money was for. */
+export interface AdminPayoutBreakdownLine {
+  /** 'event' | 'membership' | 'venue' for items; 'consumer' for people. */
+  kind: string;
+  id: string | null;
+  label: string;
+  /** The venue an event belongs to; null otherwise. */
+  venueName: string | null;
+  /** Phone or email, on consumer lines only. */
+  contact: string | null;
+  grossPaise: number;
+  refundsPaise: number;
+  commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
+  netPaise: number;
+  bookings: number;
+}
+
+export interface AdminPayoutBreakdown {
+  payoutId: string;
+  currency: string;
+  /** What was actually paid, from the payout row. */
+  amountPaise: number;
+  /** What the lines add up to. */
+  attributedPaise: number;
+  /** amountPaise − attributedPaise; normally 0. Shown, never hidden. */
+  unattributedPaise: number;
+  byItem: AdminPayoutBreakdownLine[];
+  byConsumer: AdminPayoutBreakdownLine[];
 }
 
 // Tenant-scoped audit log (existing /v1/tenants/:id/audit-log) — no tenantId

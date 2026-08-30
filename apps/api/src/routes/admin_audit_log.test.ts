@@ -29,6 +29,9 @@ interface AuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  actorContact: string | null;
+  tenantName: string | null;
+  entityName: string | null;
   before: unknown;
   after: unknown;
   createdAt: string;
@@ -219,5 +222,56 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
   it('tenant B audit rows accessible via filter', async () => {
     const page = await fetchLog(`tenantId=${tenantBId}`);
     expect(page.rows.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('finds rows by organisation name, so no UUID is needed', async () => {
+    // The org is named "Audit Co adm-al-a-<suffix>" by the fixture helper.
+    const page = await fetchLog(`q=${encodeURIComponent(`adm-al-a-${SUFFIX}`)}`);
+    expect(page.rows.length).toBeGreaterThan(0);
+    expect(page.rows.every((r) => r.tenantId === tenantAId)).toBe(true);
+  });
+
+  it('names the organisation on each row instead of only its id', async () => {
+    const page = await fetchLog(`tenantId=${tenantAId}`);
+    expect(page.rows[0]!.tenantName).toContain('Audit Co');
+  });
+
+  it('returns nothing when no organisation or person matches', async () => {
+    const page = await fetchLog('q=zzz-no-such-thing-zzz');
+    expect(page.rows).toHaveLength(0);
+  });
+
+
+  it('finds rows by the name of the event that was acted on', async () => {
+    // Audit rows reference entities by uuid; searching should not require one.
+    const evRows = (await db.execute(sql`
+      insert into events (tenant_id, name, starts_at, ends_at, status, tz_name, address_json)
+      values (${tenantAId}::uuid, 'Audit Searchable Gala', now() + interval '10 days',
+              now() + interval '10 days 2 hours', 'draft', 'Asia/Kolkata', '{"city":"Pune"}'::jsonb)
+      returning id
+    `)) as unknown as Array<{ id: string }>;
+    const eventId = evRows[0]!.id;
+    await insertAudit({
+      tenantId: tenantAId,
+      action: 'event.updated',
+      entityType: 'event',
+      entityId: eventId,
+    });
+
+    const page = await fetchLog('q=searchable%20gala');
+    expect(page.rows.some((r) => r.entityId === eventId)).toBe(true);
+    // And the row names it rather than showing a uuid fragment.
+    expect(page.rows.find((r) => r.entityId === eventId)!.entityName).toBe(
+      'Audit Searchable Gala',
+    );
+
+    await db.execute(sql`delete from audit_log where entity_id = ${eventId}::uuid`);
+    await db.execute(sql`delete from events where id = ${eventId}::uuid`);
+  });
+
+  it('leaves entityName null for things that have no name', async () => {
+    const page = await fetchLog(`tenantId=${tenantAId}&entityType=slot`);
+    expect(page.rows.length).toBeGreaterThan(0);
+    expect(page.rows.every((r) => r.entityName === null)).toBe(true);
   });
 });

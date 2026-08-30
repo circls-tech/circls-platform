@@ -370,6 +370,278 @@ export async function listPayouts(input: ListPayoutsInput): Promise<PayoutListPa
   return { rows: items, nextCursor };
 }
 
+/** One line of a payout breakdown: what a slice of the money was for. */
+export interface PayoutBreakdownLine {
+  /** 'event' | 'membership' | 'venue' for item lines; 'consumer' for people. */
+  kind: string;
+  /** Event / membership / venue / user id. Null when it can't be attributed. */
+  id: string | null;
+  /** Event name, membership name, venue name, or the customer's name. */
+  label: string;
+  /** Venue an event belongs to; null for org-scoped events and other kinds. */
+  venueName: string | null;
+  /** Phone or email, on consumer lines only. */
+  contact: string | null;
+  grossPaise: number;
+  refundsPaise: number;
+  commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
+  /** gross − refunds − commission + advances − recouped, for this line. */
+  netPaise: number;
+  /** Distinct bookings behind the line. */
+  bookings: number;
+}
+
+export interface PayoutBreakdown {
+  payoutId: string;
+  currency: string;
+  /** The payout's own stored total, for reconciliation. */
+  amountPaise: number;
+  /** What the attributed lines add up to. */
+  attributedPaise: number;
+  /**
+   * amountPaise − attributedPaise. Normally 0. It can be non-zero for two
+   * honest reasons: a payment with no booking behind it, and the commission
+   * clamp, which the reconciler applies to the tenant's weekly total rather
+   * than per line. Surfaced rather than hidden so the numbers can be trusted.
+   */
+  unattributedPaise: number;
+  /** What the partner is being paid for: events, memberships, venue bookings. */
+  byItem: PayoutBreakdownLine[];
+  /** Who paid: one line per customer. */
+  byConsumer: PayoutBreakdownLine[];
+}
+
+interface AttributedRow {
+  bookingId: string | null;
+  itemType: string | null;
+  itemId: string | null;
+  itemName: string | null;
+  venueName: string | null;
+  consumerId: string | null;
+  consumerName: string | null;
+  consumerContact: string | null;
+  gross: number;
+  commission: number;
+  advances: number;
+  advanceRecouped: number;
+  refunds: number;
+}
+
+function emptyLine(
+  kind: string,
+  id: string | null,
+  label: string,
+  venueName: string | null,
+  contact: string | null,
+): PayoutBreakdownLine {
+  return {
+    kind,
+    id,
+    label,
+    venueName,
+    contact,
+    grossPaise: 0,
+    refundsPaise: 0,
+    commissionPaise: 0,
+    advancesPaise: 0,
+    advanceRecoupedPaise: 0,
+    netPaise: 0,
+    bookings: 0,
+  };
+}
+
+/**
+ * What a payout was actually for, split by item and by customer.
+ *
+ * Rebuilds the payout's contributing payments from the SAME window and filters
+ * the weekly reconciler used — the payout row carries its period, tenant and
+ * currency — so the lines reconcile with the amount that was paid. Anything
+ * that cannot be attributed is reported as a residual rather than quietly
+ * dropped or spread across the lines.
+ */
+export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakdown | null> {
+  const [po] = (await db.execute<Record<string, unknown>>(sql`
+    select id, tenant_id, currency, period_start, period_end, amount_paise
+      from payouts where id = ${payoutId}::uuid
+  `)) as unknown as Record<string, unknown>[];
+  if (!po) return null;
+
+  // A legacy payout with no period can't be reconstructed: there is no window
+  // to select its payments by.
+  if (po['period_start'] === null || po['period_end'] === null) {
+    return {
+      payoutId,
+      currency: po['currency'] as string,
+      amountPaise: Number(po['amount_paise']),
+      attributedPaise: 0,
+      unattributedPaise: Number(po['amount_paise']),
+      byItem: [],
+      byConsumer: [],
+    };
+  }
+
+  const tenantId = po['tenant_id'] as string;
+  const currency = po['currency'] as string;
+  const start = po['period_start'] as string;
+  const end = po['period_end'] as string;
+
+  // Mirrors reconcileWeeklyPayouts: charges released for settlement this week,
+  // advance tranches that became payable this week, and refunds raised this
+  // week. Each contributing payment is joined out to what it was for.
+  const raw = await db.execute<Record<string, unknown>>(sql`
+    with contrib as (
+      select p.booking_id,
+             coalesce(p.settle_base_paise, p.amount_paise) as gross,
+             coalesce(p.partner_commission_paise,
+                      (coalesce(p.settle_base_paise, p.amount_paise) * t.commission_bps) / 10000)
+               as commission,
+             case when p.advance_released_at is not null
+                  then coalesce(p.advance_paise, 0) else 0 end as advance_recouped,
+             0::bigint as advances,
+             0::bigint as refunds
+        from payments p
+        join tenants t on t.id = p.tenant_id
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency = ${currency}
+         and p.kind = 'charge'
+         and p.status in ('captured', 'refunded', 'partially_refunded')
+         and p.settlement_released_at >= ${start}::timestamptz
+         and p.settlement_released_at <  ${end}::timestamptz
+      union all
+      select p.booking_id, 0::bigint, 0::bigint, 0::bigint,
+             coalesce(p.advance_paise, 0) as advances, 0::bigint
+        from payments p
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency = ${currency}
+         and p.kind = 'charge'
+         and p.status in ('captured', 'refunded', 'partially_refunded')
+         and p.advance_released_at >= ${start}::timestamptz
+         and p.advance_released_at <  ${end}::timestamptz
+      union all
+      select p.booking_id, 0::bigint, 0::bigint, 0::bigint, 0::bigint,
+             -coalesce(p.settle_base_paise, p.amount_paise) as refunds
+        from payments p
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency = ${currency}
+         and p.kind = 'refund'
+         and p.status <> 'failed'
+         and p.created_at >= ${start}::timestamptz
+         and p.created_at <  ${end}::timestamptz
+    )
+    select c.booking_id,
+           b.item_type,
+           case b.item_type
+             when 'event'      then b.item_data->>'eventId'
+             when 'membership' then b.item_data->>'membershipId'
+             else b.venue_id::text
+           end                                                   as item_id,
+           case b.item_type
+             when 'event'      then ev.name
+             when 'membership' then mem.name
+             else v.name
+           end                                                   as item_name,
+           case when b.item_type = 'event' then v.name else null end as venue_name,
+           b.customer_user_id,
+           coalesce(u.display_name, b.customer_name)             as consumer_name,
+           coalesce(u.phone_e164, u.email, b.customer_contact)   as consumer_contact,
+           sum(c.gross)::bigint            as gross,
+           sum(c.commission)::bigint       as commission,
+           sum(c.advances)::bigint         as advances,
+           sum(c.advance_recouped)::bigint as advance_recouped,
+           sum(c.refunds)::bigint          as refunds
+      from contrib c
+      left join bookings b   on b.id = c.booking_id
+      left join venues v     on v.id = b.venue_id
+      left join users u      on u.id = b.customer_user_id
+      left join events ev    on b.item_type = 'event'
+                           and ev.id = (b.item_data->>'eventId')::uuid
+      left join memberships mem on b.item_type = 'membership'
+                           and mem.id = (b.item_data->>'membershipId')::uuid
+     group by c.booking_id, b.item_type, b.item_data, b.venue_id, ev.name, mem.name, v.name,
+              b.customer_user_id, u.display_name, b.customer_name,
+              u.phone_e164, u.email, b.customer_contact
+  `);
+
+  const rows: AttributedRow[] = (raw as unknown as Record<string, unknown>[]).map((r) => ({
+    bookingId: (r['booking_id'] as string | null) ?? null,
+    itemType: (r['item_type'] as string | null) ?? null,
+    itemId: (r['item_id'] as string | null) ?? null,
+    itemName: (r['item_name'] as string | null) ?? null,
+    venueName: (r['venue_name'] as string | null) ?? null,
+    consumerId: (r['customer_user_id'] as string | null) ?? null,
+    consumerName: (r['consumer_name'] as string | null) ?? null,
+    consumerContact: (r['consumer_contact'] as string | null) ?? null,
+    gross: Number(r['gross'] ?? 0),
+    commission: Number(r['commission'] ?? 0),
+    advances: Number(r['advances'] ?? 0),
+    advanceRecouped: Number(r['advance_recouped'] ?? 0),
+    refunds: Number(r['refunds'] ?? 0),
+  }));
+
+  const byItem = new Map<string, PayoutBreakdownLine>();
+  const byConsumer = new Map<string, PayoutBreakdownLine>();
+
+  function add(line: PayoutBreakdownLine, r: AttributedRow): void {
+    line.grossPaise += r.gross;
+    line.commissionPaise += r.commission;
+    line.advancesPaise += r.advances;
+    line.advanceRecoupedPaise += r.advanceRecouped;
+    line.refundsPaise += r.refunds;
+    line.netPaise =
+      line.grossPaise -
+      line.refundsPaise -
+      line.commissionPaise +
+      line.advancesPaise -
+      line.advanceRecoupedPaise;
+    if (r.bookingId) line.bookings += 1;
+  }
+
+  for (const r of rows) {
+    // Slot bookings are attributed to their venue; an org-scoped event with no
+    // venue still groups under its own name.
+    const kind =
+      r.itemType === 'event' ? 'event' : r.itemType === 'membership' ? 'membership' : r.itemType === 'slot' ? 'venue' : 'other';
+    const itemKey = `${kind}|${r.itemId ?? 'none'}`;
+    let itemLine = byItem.get(itemKey);
+    if (!itemLine) {
+      itemLine = emptyLine(kind, r.itemId, r.itemName ?? 'Unattributed', r.venueName, null);
+      byItem.set(itemKey, itemLine);
+    }
+    add(itemLine, r);
+
+    const consumerKey = r.consumerId ?? `guest|${r.consumerName ?? 'unknown'}`;
+    let consumerLine = byConsumer.get(consumerKey);
+    if (!consumerLine) {
+      consumerLine = emptyLine(
+        'consumer',
+        r.consumerId,
+        r.consumerName ?? 'Guest',
+        null,
+        r.consumerContact,
+      );
+      byConsumer.set(consumerKey, consumerLine);
+    }
+    add(consumerLine, r);
+  }
+
+  const byNet = (a: PayoutBreakdownLine, b: PayoutBreakdownLine) => b.netPaise - a.netPaise;
+  const itemLines = [...byItem.values()].sort(byNet);
+  const attributedPaise = itemLines.reduce((sum, l) => sum + l.netPaise, 0);
+  const amountPaise = Number(po['amount_paise']);
+
+  return {
+    payoutId,
+    currency,
+    amountPaise,
+    attributedPaise,
+    unattributedPaise: amountPaise - attributedPaise,
+    byItem: itemLines,
+    byConsumer: [...byConsumer.values()].sort(byNet),
+  };
+}
+
 export interface ExecutePayoutInput {
   payoutId: string;
   actorUserId: string;
