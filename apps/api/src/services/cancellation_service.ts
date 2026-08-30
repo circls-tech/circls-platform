@@ -15,7 +15,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { bookings, events, payments, slots } from '../db/schema/index.js';
+import { bookings, events, payments, slots, userMemberships } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGateway } from '../lib/gateway.js';
@@ -110,6 +110,18 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
           .limit(1);
         slotStart = ev?.startsAt ?? null;
       }
+    }
+    // Membership purchases carry no time_range and no slots either. The
+    // membership's own start plays the slot-start role, so a self-cancel would
+    // be scored on the same tiers; a staff refund overrides them regardless.
+    if (!slotStart && booking.itemType === 'membership') {
+      const [um] = await tx
+        .select({ startsAt: userMemberships.startsAt })
+        .from(userMemberships)
+        .innerJoin(payments, eq(payments.id, userMemberships.paymentId))
+        .where(eq(payments.bookingId, input.bookingId))
+        .limit(1);
+      slotStart = um?.startsAt ?? null;
     }
     // Fail-closed: cancelling without knowing the slot start would silently
     // hand a full refund. Reject loudly instead.

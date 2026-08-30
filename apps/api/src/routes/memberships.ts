@@ -15,6 +15,7 @@ import {
 import {
   addExternalMember,
   createMembership,
+  refundMember,
   finalizeMembershipCover,
   getMembership,
   listMembershipPurchases,
@@ -273,6 +274,39 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
         },
       );
       return reply.code(201).send(result);
+    },
+  );
+
+  /**
+   * Refund a member's purchase and end their membership. Distinct from the
+   * cancel above, which only frees the seat and moves no money.
+   */
+  const refundMemberSchema = z.object({ reason: z.string().min(1).max(500) });
+
+  app.post(
+    '/v1/tenants/:tenantId/memberships/:membershipId/members/:userMembershipId/refund',
+    { preHandler: requireAuth },
+    async (req) => {
+      const { tenantId, membershipId, userMembershipId } = req.params as {
+        tenantId: string;
+        membershipId: string;
+        userMembershipId: string;
+      };
+      const user = await currentUser(req);
+      const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertTermsAccepted(memberCtx);
+      const parsed = refundMemberSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequest('A reason is required', 'bad_request', {
+          issues: parsed.error.issues,
+        });
+      }
+      return refundMember(
+        { tenantId, actorUserId: user.id },
+        userMembershipId,
+        membershipId,
+        parsed.data.reason,
+      );
     },
   );
 
