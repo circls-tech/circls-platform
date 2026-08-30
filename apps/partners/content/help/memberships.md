@@ -94,7 +94,10 @@ They are a real member where it counts: the seat comes out of that tier's capaci
 
 **Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Extending a member's dates extends what their QR pass gets them through the door with, because pass validity is read from the membership itself rather than copied onto the pass when it was issued.
 
-**Cancel** ends a membership immediately and frees its seat on the tier, so someone else can take it. It does not refund anything on its own.
+Two actions end a membership, and which you want depends on the money:
+
+- **Refund** hands back what the member paid and ends the membership. It is offered only where circls actually took the money — a hand-added member paid you directly and a free plan has nothing to give back, so neither shows it. The refund is made in full regardless of how much of the membership has run, the same way a staff-cancelled event registration is, and it is recorded in the audit log.
+- **Cancel** ends the membership and frees its seat on the tier, so someone else can take it, but returns no money. Use it when the refund happened elsewhere, or when there was nothing to refund.
 
 ## Customer questions
 

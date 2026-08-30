@@ -51,6 +51,32 @@ export interface UpdateMemberInput {
   status?: 'active' | 'cancelled';
 }
 
+/**
+ * Refund a member's purchase and end their membership. Separate from cancel,
+ * which frees the seat without moving money.
+ */
+export function useRefundMember(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userMembershipId,
+      membershipId,
+      reason,
+    }: {
+      userMembershipId: string;
+      membershipId: string;
+      reason: string;
+    }) =>
+      apiFetch<{ refundPaise: number; refundId?: string }>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/members/${userMembershipId}/refund`,
+        { method: 'POST', body: JSON.stringify({ reason }) },
+      ),
+    onSuccess: (_r, { membershipId }) => {
+      void qc.invalidateQueries({ queryKey: ['membership-purchases', tenantId, membershipId] });
+    },
+  });
+}
+
 /** Correct a member's validity window, or cancel their membership. */
 export function useUpdateMember(tenantId: string) {
   const qc = useQueryClient();

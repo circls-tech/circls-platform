@@ -50,6 +50,7 @@ const {
   purchaseMembership,
   addExternalMember,
   updateMember,
+  refundMember,
 } = await import('./memberships_service.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -262,6 +263,60 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
         select status from user_memberships where id = ${userMembershipId}
       `)) as unknown as Array<{ status: string }>;
       expect(rows[0]!.status).toBe('active');
+    });
+
+    it('refuses to refund a hand-added member — there is nothing to give back', async () => {
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Paid You Directly' },
+      );
+      // No payment_id: circls never took this money, so offering a refund
+      // would promise something it cannot deliver.
+      await expect(
+        refundMember({ tenantId, actorUserId }, userMembershipId, plan.id, 'test'),
+      ).rejects.toMatchObject({ code: 'membership_not_refundable' });
+    });
+
+    it('refuses to refund a membership that is already cancelled', async () => {
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Already Gone' },
+      );
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        status: 'cancelled',
+      });
+      await expect(
+        refundMember({ tenantId, actorUserId }, userMembershipId, plan.id, 'test'),
+      ).rejects.toMatchObject({ code: 'member_already_cancelled' });
+    });
+
+    it("refuses to refund another org's member", async () => {
+      const [other] = await db
+        .insert(tenants)
+        .values({ name: 'OtherCo3', slug: `otherco3-${Date.now()}` })
+        .returning();
+      const plan = await makePlan(null);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Not Yours Either' },
+      );
+      await expect(
+        refundMember({ tenantId: other!.id, actorUserId }, userMembershipId, plan.id, 'test'),
+      ).rejects.toMatchObject({ code: 'member_not_found' });
+      await db.execute(sql`delete from tenants where id = ${other!.id}`);
+    });
+
+    it('marks a hand-added member as not refundable in the list', async () => {
+      const plan = await makePlan(null);
+      await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'No Money Moved' },
+      );
+      const rows = await listMembershipPurchases(tenantId, plan.id);
+      const row = rows.find((r: { buyerName: string | null }) => r.buyerName === 'No Money Moved');
+      expect(row!.refundable).toBe(false);
     });
 
     it("refuses to touch another org's member", async () => {

@@ -5,6 +5,7 @@ import { useTimezone } from '@/lib/timezone_context';
 import {
   useAddMember,
   useMembershipPurchases,
+  useRefundMember,
   useUpdateMember,
 } from '@/lib/api/memberships';
 import type { Membership, MembershipPurchase } from '@/lib/api/types';
@@ -45,6 +46,7 @@ export function MembershipMembers({ tenantId, membershipId, tiers }: MembershipM
 
   const addMember = useAddMember(tenantId);
   const updateMember = useUpdateMember(tenantId);
+  const refundMember = useRefundMember(tenantId);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -110,6 +112,23 @@ export function MembershipMembers({ tenantId, membershipId, tiers }: MembershipM
     }
   }
 
+  /**
+   * Hands the money back and ends the membership. Kept separate from cancel:
+   * that one only frees the seat, which is why it doesn't say Refund.
+   */
+  async function refund(p: MembershipPurchase) {
+    setErr(null);
+    try {
+      await refundMember.mutateAsync({
+        userMembershipId: p.userMembershipId,
+        membershipId,
+        reason: 'Refunded by organiser',
+      });
+    } catch (e2) {
+      setErr((e2 as Error).message);
+    }
+  }
+
   async function cancelMember(p: MembershipPurchase) {
     setErr(null);
     try {
@@ -166,12 +185,26 @@ export function MembershipMembers({ tenantId, membershipId, tiers }: MembershipM
         >
           Edit dates
         </Button>
-        {p2.status !== 'cancelled' && (
+        {/* Only where circls took money. A hand-added or free membership has
+            nothing to give back, so offering Refund would be a lie. */}
+        {p2.refundable && (
           <Button
             variant="danger"
             size="sm"
+            loading={refundMember.isPending}
+            onClick={() => void refund(p2)}
+            title="Refund what they paid and end the membership"
+          >
+            Refund
+          </Button>
+        )}
+        {p2.status !== 'cancelled' && (
+          <Button
+            variant="secondary"
+            size="sm"
             loading={updateMember.isPending}
             onClick={() => void cancelMember(p2)}
+            title="End the membership and free its seat. No money is returned."
           >
             Cancel
           </Button>

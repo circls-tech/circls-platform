@@ -26,8 +26,10 @@ import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { qrTickets } from '../db/schema/qr_tickets.js';
 import { bookings } from '../db/schema/bookings.js';
+import { payments } from '../db/schema/payments.js';
 import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
+import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
@@ -96,6 +98,9 @@ export interface MembershipPurchaseRow {
   /** True when the partner added this member by hand — no circls account
    *  behind them, and no money passed through circls. */
   external: boolean;
+  /** circls took money for this membership, so it can be refunded. False for
+   *  hand-added and free memberships, which have nothing to give back. */
+  refundable: boolean;
   status: string;
   startsAt: string;
   endsAt: string;
@@ -114,7 +119,7 @@ export async function listMembershipPurchases(
   const raw = await db.execute<Record<string, unknown>>(sql`
     select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
            u.display_name, u.phone_e164, u.email, mt.name as tier_name,
-           um.external_name, um.external_contact, um.user_id
+           um.external_name, um.external_contact, um.user_id, um.payment_id
     from user_memberships um
     join memberships m on m.id = um.membership_id
     left join users u on u.id = um.user_id
@@ -135,6 +140,7 @@ export async function listMembershipPurchases(
       null,
     tierName: (r['tier_name'] as string | null) ?? null,
     external: r['user_id'] === null,
+    refundable: r['payment_id'] !== null && r['status'] !== 'cancelled',
     status: r['status'] as string,
     startsAt: new Date(r['starts_at'] as string).toISOString(),
     endsAt: new Date(r['ends_at'] as string).toISOString(),
@@ -475,6 +481,95 @@ export async function addExternalMember(
 
     return { userMembershipId: row.id };
   });
+}
+
+/**
+ * Refund a member's purchase and end their membership.
+ *
+ * Cancelling a member only frees their seat — it never moved money, which is
+ * why that button says Cancel. This is the other half: it hands back what the
+ * member paid AND cancels them, so the partner has a route that doesn't end
+ * off-platform.
+ *
+ * Goes through the same {@link cancelPaidBooking} the booking and event-
+ * registration refunds use, rather than a second money path of its own: that
+ * one already handles the gateway call, the payment ledger, QR revocation and
+ * the audit trail. `bySelf: false` marks it a staff refund, which is a full
+ * out-of-policy refund by design — the same treatment a staff-cancelled event
+ * registration gets.
+ */
+export async function refundMember(
+  ctx: AuditCtx,
+  userMembershipId: string,
+  membershipId: string,
+  reason: string,
+): Promise<{ refundPaise: number; refundId?: string }> {
+  const [existing] = await db
+    .select({ um: userMemberships, tenantId: memberships.tenantId })
+    .from(userMemberships)
+    .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+    .where(
+      and(
+        eq(userMemberships.id, userMembershipId),
+        eq(userMemberships.membershipId, membershipId),
+      ),
+    )
+    .limit(1);
+  if (!existing || existing.tenantId !== ctx.tenantId) {
+    throw new NotFound('Member not found', 'member_not_found');
+  }
+  if (existing.um.status === 'cancelled') {
+    throw new Conflict('This membership is already cancelled', 'member_already_cancelled');
+  }
+  if (!existing.um.paymentId) {
+    throw new Conflict(
+      'circls took no money for this membership, so there is nothing to refund — cancel it instead',
+      'membership_not_refundable',
+    );
+  }
+
+  const [pay] = await db
+    .select({ bookingId: payments.bookingId })
+    .from(payments)
+    .where(eq(payments.id, existing.um.paymentId))
+    .limit(1);
+  if (!pay?.bookingId) {
+    throw new Conflict(
+      'No booking behind this membership to refund against',
+      'membership_not_refundable',
+    );
+  }
+
+  // Refund first: cancelling the membership before the money is safely back
+  // would leave a member with neither their pass nor their payment if the
+  // gateway call failed.
+  const result = await cancelPaidBooking({
+    bookingId: pay.bookingId,
+    actorUserId: ctx.actorUserId,
+    reason,
+    bySelf: false,
+  });
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(userMemberships)
+      .set({ status: 'cancelled' })
+      .where(eq(userMemberships.id, userMembershipId));
+    await writeAudit(
+      tx,
+      ctx,
+      'membership.member_refunded',
+      'user_membership',
+      userMembershipId,
+      { status: existing.um.status },
+      { status: 'cancelled', refundPaise: result.refundPaise, policy: result.policy },
+    );
+  });
+
+  return {
+    refundPaise: result.refundPaise,
+    ...(result.refundId ? { refundId: result.refundId } : {}),
+  };
 }
 
 export interface UpdateMemberInput {

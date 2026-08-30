@@ -621,6 +621,9 @@ export interface MembershipPurchase {
   /** True when the partner added this member by hand: no circls account
    *  behind them, and no money passed through circls. */
   external: boolean;
+  /** circls took money for this membership, so it can be refunded. False for
+   *  hand-added and free memberships, which have nothing to give back. */
+  refundable: boolean;
 }
 
 // ── Phase 17: API keys + outbound webhooks ────────────────────────────────────
