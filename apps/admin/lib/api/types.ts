@@ -96,6 +96,9 @@ export interface AdminTenantEventBillingItem {
   /** ISO-8601 — the event's end, so a row reads on its own. */
   endsAt: string | null;
   status: string;
+  /** On the partner's archive shelf. Only ever true under scope=all, since
+   *  active deliberately excludes archived events. */
+  archived: boolean;
   /** Venue the event belongs to; null for org-scoped (standalone) events. */
   venueName: string | null;
   partnerCommissionBps: number | null;

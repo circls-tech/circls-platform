@@ -527,4 +527,35 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     });
     expect(res.statusCode).toBe(200);
   });
+
+  it('active scope hides an archived draft; all shows it flagged', async () => {
+    const evRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name, archived_at)
+      VALUES (${tenantAId}::uuid, 'Shelved Draft', now() + interval '9 days',
+              now() + interval '9 days 2 hours', 'draft', '{"city":"Nagpur"}'::jsonb,
+              'Asia/Kolkata', now())
+      RETURNING id
+    `);
+    const eventId = ((evRows as unknown as { id: string }[])[0]!).id;
+
+    const listed = async (query: string) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/events${query}`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { rows: Array<Record<string, unknown>> }).rows;
+    };
+
+    // A draft is an active status, so only the archive check keeps it out.
+    expect((await listed('')).some((r) => r['id'] === eventId)).toBe(false);
+
+    const all = await listed('?scope=all');
+    const row = all.find((r) => r['id'] === eventId);
+    expect(row).toBeDefined();
+    expect(row!['archived']).toBe(true);
+
+    await db.execute(sql`delete from events where id = ${eventId}::uuid`);
+  });
 });

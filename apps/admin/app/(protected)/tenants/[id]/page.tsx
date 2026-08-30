@@ -446,7 +446,7 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
       </div>
       <p className="text-xs text-slate-400">
         {scope === 'active'
-          ? 'Draft, awaiting review and live events. Switch to All for cancelled, rejected and ended ones.'
+          ? 'Draft, awaiting review and live events, excluding anything archived. Switch to All for cancelled, rejected, ended and archived ones.'
           : 'Every event this organisation has ever created.'}
         {' '}Commission columns: blank = inherit the tenant rate (shown greyed), 0 = explicitly disabled.
       </p>
@@ -540,7 +540,15 @@ function EventOverrideRow({
         {event.venueName ?? <span className="text-slate-400">Standalone</span>}
       </td>
       <td className="px-4 py-2.5 text-xs text-slate-500">{fmtIST(event.startsAt)}</td>
-      <td className="px-4 py-2.5 text-xs text-slate-500">{event.status}</td>
+      <td className="px-4 py-2.5 text-xs text-slate-500">
+        {event.status}
+        {/* Only reachable under All, which is the one view that mixes them. */}
+        {event.archived && (
+          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+            archived
+          </span>
+        )}
+      </td>
       <td className="px-4 py-2.5 text-right">
         <PctInput
           value={partner}

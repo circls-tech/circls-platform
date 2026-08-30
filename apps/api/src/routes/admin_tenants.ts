@@ -452,9 +452,14 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
 
       const conditions = [eq(events.tenantId, params.data.id)];
       if ((query.data.scope ?? 'active') === 'active') {
-        // Status only: the archive shelf ships separately, so an archived
-        // draft still counts as active here until that lands.
-        conditions.push(sql`${events.status} in ('draft', 'pending_review', 'published')`);
+        // Live or in flight, and not shelved. The archived check matters for
+        // drafts: everything else a partner can archive has already left these
+        // three statuses, but an abandoned draft they filed away would
+        // otherwise keep showing as active work.
+        conditions.push(
+          sql`${events.status} in ('draft', 'pending_review', 'published')
+              and ${events.archivedAt} is null`,
+        );
       }
       if (query.data.cursor) {
         const decoded = decodeCursor(query.data.cursor);
@@ -475,6 +480,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           startsAt: events.startsAt,
           endsAt: events.endsAt,
           status: events.status,
+          archivedAt: events.archivedAt,
           venueName: venues.name,
           partnerCommissionBps: events.partnerCommissionBps,
           consumerCommissionBps: events.consumerCommissionBps,
@@ -497,6 +503,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           startsAt: e.startsAt ? new Date(e.startsAt).toISOString() : null,
           endsAt: e.endsAt ? new Date(e.endsAt).toISOString() : null,
           status: e.status,
+          archived: e.archivedAt !== null,
           venueName: e.venueName ?? null,
           partnerCommissionBps: e.partnerCommissionBps,
           consumerCommissionBps: e.consumerCommissionBps,
