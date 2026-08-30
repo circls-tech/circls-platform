@@ -2,7 +2,7 @@ Memberships are time-bound passes your customers can buy — a monthly unlimited
 
 ## Creating a membership plan
 
-1. Go to **Memberships** in the sidebar and use the **Create a plan** card.
+1. Go to **Memberships** in the sidebar and click **New plan**.
 2. Fill in the plan details:
    - **Name** (required) — e.g. *Monthly Unlimited*.
    - **Description** (optional) — a short summary shown above the tiers.
@@ -18,12 +18,16 @@ Memberships are time-bound passes your customers can buy — a monthly unlimited
    - **Description** (optional) and **Benefits** — add structured perks with **Add benefit**: each row has a **label** (e.g. *Priority booking*) and an optional **detail** line. These render as a clean list on the consumer plan page when the tier is selected.
 
    Use **+ Add tier** for more tiers (up to 20) and **Remove tier** to drop one. A plan needs at least one tier.
-4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the create form. It uploads automatically when the plan is created.
-5. Click **Add membership**.
+4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the form. It uploads automatically when the plan is created.
+5. Click **Create plan**.
 
-Artwork can also be added or changed later from the **Edit** panel (see below).
+Artwork can also be added or changed later while editing the plan (see below).
 
-You'll see *"Membership created. It's now pending review by Circls before it goes live."* New plans start in **pending review**. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
+You land on the new plan's page, where it starts in **pending review** until Circls approves it. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
+
+## The plans list
+
+**Memberships** in the sidebar lists your plans with their scope, a one-line tier summary (*3 tiers · ₹500–₹2,000*) and status. Click a plan's name to open it: everything a plan can do — editing, artwork, activating, and its members — lives on its own page, where there is room for it.
 
 ## Membership statuses
 
@@ -36,11 +40,11 @@ You'll see *"Membership created. It's now pending review by Circls before it goe
 
 ## Editing a plan
 
-Click **Edit** on a plan to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is **pending review** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate. Existing members keep the tier they bought even if you later change or remove it.
+Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is **pending review** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate. Existing members keep the tier they bought even if you later change or remove it.
 
 ### Artwork
 
-Artwork is a single cover image shown on the consumer plan page. You can add it on the **create form** (it uploads when the plan is created) or later in the **Edit panel**, where **Upload** adds it, **Replace** swaps it and **Remove** clears it. Accepted formats are **JPEG, PNG and WebP**, up to **10 MB**.
+Artwork is a single cover image shown on the consumer plan page. You can add it on the **New plan** form (it uploads when the plan is created) or later while editing the plan, where **Upload** adds it, **Replace** swaps it and **Remove** clears it. Accepted formats are **JPEG, PNG and WebP**, up to **10 MB**.
 
 ## QR membership passes
 
@@ -74,7 +78,7 @@ purchase time — later edits never change passes that are already issued.
 
 ## Managing a plan's members
 
-Click **View buyers** on a plan to open its member list. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
+Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
 
 A purchased membership runs for the plan's **duration in days** from the purchase date, then automatically becomes **expired**. Individual memberships can be **active**, **expired** or **cancelled**.
 
