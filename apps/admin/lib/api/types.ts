@@ -122,6 +122,9 @@ export interface AdminAuditLogItem {
   entityType: string;
   entityId: string | null;
   actorUserId: string | null;
+  /** Name of the event / venue / membership acted on; null for anything with
+   *  no name of its own, such as a booking or a payment. */
+  entityName: string | null;
   actorName: string | null;
   /** Phone or email of whoever acted — identifies a row without any id. */
   actorContact: string | null;

@@ -24,6 +24,9 @@ interface AdminAuditLogItem {
   action: string;
   entityType: string;
   entityId: string | null;
+  /** Name of the event / venue / membership acted on; null for everything
+   *  else, which has no name to show. */
+  entityName: string | null;
   actorUserId: string | null;
   actorName: string | null;
   /** Phone or email of whoever acted, so a row is identifiable without an id. */
@@ -55,8 +58,9 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
 const querySchema = z.object({
   /**
    * Free-text search so the log can be used without knowing any UUIDs: matches
-   * an organisation's name or slug, and a person's name, email or phone —
-   * whether they acted or were acted upon.
+   * an organisation's name or slug, a person's name, email or phone (whether
+   * they acted or were acted upon), and the name of the event, venue or
+   * membership that was acted on.
    */
   q: z.string().min(1).max(200).optional(),
   tenantId: z.string().uuid().optional(),
@@ -109,6 +113,21 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
                     ${phoneLike ? sql`or regexp_replace(coalesce(uq.phone_e164, ''), '\\D', '', 'g') like ${phoneLike}` : sql``})
           )
           or exists (
+            select 1 from events eq
+             where eq.id = al.entity_id and al.entity_type = 'event'
+               and lower(eq.name) like ${like}
+          )
+          or exists (
+            select 1 from venues vq
+             where vq.id = al.entity_id and al.entity_type = 'venue'
+               and lower(vq.name) like ${like}
+          )
+          or exists (
+            select 1 from memberships mq
+             where mq.id = al.entity_id and al.entity_type = 'membership'
+               and lower(mq.name) like ${like}
+          )
+          or exists (
             select 1 from users ue
              where ue.id = al.entity_id
                and (lower(coalesce(ue.display_name, '')) like ${like}
@@ -145,6 +164,14 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
           al.action,
           al.entity_type,
           al.entity_id,
+          -- Name of whatever the row acted on, for the three things partners
+          -- actually name. Everything else (bookings, payments, slots) has no
+          -- name to show and keeps its id.
+          case al.entity_type
+            when 'event'      then (select e2.name from events e2      where e2.id = al.entity_id)
+            when 'venue'      then (select v2.name from venues v2      where v2.id = al.entity_id)
+            when 'membership' then (select m2.name from memberships m2 where m2.id = al.entity_id)
+          end AS entity_name,
           al.actor_user_id,
           u.display_name AS actor_name,
           coalesce(u.phone_e164, u.email) AS actor_contact,
@@ -170,6 +197,7 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
         action: row['action'] as string,
         entityType: row['entity_type'] as string,
         entityId: (row['entity_id'] as string | null) ?? null,
+        entityName: (row['entity_name'] as string | null) ?? null,
         actorUserId: (row['actor_user_id'] as string | null) ?? null,
         actorName: (row['actor_name'] as string | null) ?? null,
         actorContact: (row['actor_contact'] as string | null) ?? null,
