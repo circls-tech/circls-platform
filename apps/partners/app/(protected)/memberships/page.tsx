@@ -549,7 +549,20 @@ function MembershipBuyers({ tenantId, membershipId, tiers }: MembershipBuyersPro
 
   /** <input type="date"> wants YYYY-MM-DD; the API speaks ISO instants. */
   const toDateInput = (iso: string) => iso.slice(0, 10);
-  const toIso = (d: string) => new Date(`${d}T00:00:00.000Z`).toISOString();
+  /**
+   * Swap the calendar date of `iso` while keeping its time of day. Rebuilding
+   * the instant from the date alone would silently drop a membership that runs
+   * from 09:30 back to midnight — so merely opening the editor and saving would
+   * move someone's window by hours in both directions.
+   */
+  function withDate(iso: string, ymd: string): string {
+    const [y, m, d] = ymd.split('-').map(Number);
+    if (!y || !m || !d) return iso;
+    const next = new Date(iso);
+    if (Number.isNaN(next.getTime())) return iso;
+    next.setUTCFullYear(y, m - 1, d);
+    return next.toISOString();
+  }
 
   async function submitNew(e: FormEvent) {
     e.preventDefault();
@@ -561,8 +574,10 @@ function MembershipBuyers({ tenantId, membershipId, tiers }: MembershipBuyersPro
           name: form.name.trim(),
           ...(form.contact.trim() ? { contact: form.contact.trim() } : {}),
           ...(form.tierId ? { membershipTierId: form.tierId } : {}),
-          ...(form.startsAt ? { startsAt: toIso(form.startsAt) } : {}),
-          ...(form.endsAt ? { endsAt: toIso(form.endsAt) } : {}),
+          // A new member has no prior instant to preserve, so a bare date means
+          // the start of that day.
+          ...(form.startsAt ? { startsAt: `${form.startsAt}T00:00:00.000Z` } : {}),
+          ...(form.endsAt ? { endsAt: `${form.endsAt}T00:00:00.000Z` } : {}),
         },
       });
       setForm({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
@@ -578,7 +593,10 @@ function MembershipBuyers({ tenantId, membershipId, tiers }: MembershipBuyersPro
       await updateMember.mutateAsync({
         userMembershipId: p.userMembershipId,
         membershipId,
-        input: { startsAt: toIso(editRange.startsAt), endsAt: toIso(editRange.endsAt) },
+        input: {
+          startsAt: withDate(p.startsAt, editRange.startsAt),
+          endsAt: withDate(p.endsAt, editRange.endsAt),
+        },
       });
       setEditingId(null);
     } catch (e2) {

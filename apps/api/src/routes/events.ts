@@ -282,6 +282,11 @@ const externalRegistrationSchema = z.object({
     .optional(),
 });
 
+/** Which shelf of a tenant's events to list; absent means the working list. */
+const eventsShelfQuerySchema = z.object({
+  archived: z.enum(['true', 'all']).optional(),
+});
+
 export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/venues/:venueId/events', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };
@@ -346,9 +351,14 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
     // Default to the working list; ?archived=true is the shelf, ?archived=all
-    // returns both. Anything the partner archived stays out of the way unless
-    // it is asked for by name.
-    const { archived } = req.query as { archived?: string };
+    // returns both. Parsed rather than compared loosely: an unrecognised value
+    // used to fall through to the active list, so a typo answered a question
+    // the caller didn't ask.
+    const query = eventsShelfQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      throw new BadRequest('Invalid query', 'bad_request', { issues: query.error.issues });
+    }
+    const { archived } = query.data;
     const opts = archived === 'all' ? {} : { archived: archived === 'true' };
     return listEventsForTenant(tenantId, opts);
   });

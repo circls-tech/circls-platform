@@ -434,6 +434,17 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
       expect(await listed('?archived=all')).toBe(true);
     });
 
+    it('rejects an unrecognised archived value instead of silently listing active', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/events?archived=yes`,
+        headers: bearer('owner'),
+      });
+      // A typo used to fall through to the working list, answering a question
+      // the caller never asked.
+      expect(res.statusCode).toBe(400);
+    });
+
     it('unarchives back onto the default list', async () => {
       const id = await makeEvent('Round Trip');
       await post(id, 'archive');

@@ -215,6 +215,55 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
       expect(replacement).toBeTruthy();
     });
 
+    it('refuses to reactivate a member whose seat has since been taken', async () => {
+      const plan = await makePlan(1);
+      const tierId = plan.tiers?.[0]?.id;
+      const tier = tierId ? { membershipTierId: tierId } : {};
+
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Original Holder', ...tier },
+      );
+      // Cancelling frees the seat...
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        status: 'cancelled',
+      });
+      // ...and someone else takes it.
+      await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Replacement', ...tier },
+      );
+
+      // Reactivating the original would put a capacity-1 tier at two members.
+      await expect(
+        updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, { status: 'active' }),
+      ).rejects.toMatchObject({ code: 'membership_tier_sold_out' });
+    });
+
+    it('reactivates a member when their seat is still free', async () => {
+      const plan = await makePlan(1);
+      const tierId = plan.tiers?.[0]?.id;
+      const tier = tierId ? { membershipTierId: tierId } : {};
+
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'Changed Their Mind', ...tier },
+      );
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        status: 'cancelled',
+      });
+      // Nobody took the seat, so they can have it back. The row must not block
+      // itself when the count is taken.
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        status: 'active',
+      });
+
+      const rows = (await db.execute(sql`
+        select status from user_memberships where id = ${userMembershipId}
+      `)) as unknown as Array<{ status: string }>;
+      expect(rows[0]!.status).toBe('active');
+    });
+
     it("refuses to touch another org's member", async () => {
       const [other] = await db
         .insert(tenants)

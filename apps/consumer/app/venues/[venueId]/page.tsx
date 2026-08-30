@@ -46,16 +46,24 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   // endpoint takes the combined slotIds and books them as one multi-arena
   // booking with a single payment.
   const [cart, setCart] = useState<Map<string, CartSlot>>(new Map());
+  // Skips the persist effect's first run for each venue: it fires before the
+  // restore below has been applied, and would write the previous venue's cart
+  // under the new venue's key.
+  const cartHydrated = useRef(false);
   // Restore a cart that a sign-in redirect interrupted. Done in an effect, not
   // a lazy initialiser, because sessionStorage doesn't exist during SSR and
   // reading it there would desync hydration.
+  //
+  // Replaces the cart outright rather than only filling it when something was
+  // stored. Routing between two venues reuses this component — the dynamic
+  // param changes but the instance doesn't — so leaving state alone when the
+  // new venue has no saved cart carries the previous venue's slots over, and
+  // booking from that page would claim slots belonging to the venue we left.
   useEffect(() => {
+    cartHydrated.current = false;
     const saved = loadVenueCart(venueId);
-    if (saved.length > 0) setCart(new Map(saved.map((s) => [s.id, s])));
+    setCart(new Map(saved.map((s) => [s.id, s])));
   }, [venueId]);
-  // Skip the first run: it fires before the restore above has been applied, and
-  // would write the still-empty cart back over what we just read.
-  const cartHydrated = useRef(false);
   useEffect(() => {
     if (!cartHydrated.current) {
       cartHydrated.current = true;

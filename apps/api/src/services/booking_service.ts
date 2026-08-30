@@ -480,31 +480,6 @@ export interface BookEventResult {
   postBookingRedirect?: PostBookingRedirect | null;
 }
 
-/**
- * Book a seat on a published event.
- *
- * Capacity check (per-tier):
- *   - The booking is composed of `lines` (one per ticket tier + quantity). We
- *     SELECT ... FOR UPDATE the referenced tiers inside the booking transaction
- *     to serialize concurrent buyers, then for each capped tier compare the
- *     line-table sold count (SUM(quantity) over non-cancelled bookings) plus the
- *     requested quantity against the tier capacity, rejecting with a
- *     `tier_sold_out` Conflict if it would exceed. basePaise is the sum of
- *     tier.pricePaise * quantity across the lines (event.pricePaise is only the
- *     min-tier display price and is NOT used for charging).
- *
- * Per-customer cap (event-level): when event.maxPerUser is set, the buyer's
- *   total tickets for the event — across ALL tiers and all their non-cancelled
- *   bookings — may not exceed it (`event_user_limit` Conflict).
- *
- * Free path  (basePaise === 0): inserts booking with status='confirmed',
- *   paymentMethod='free'. No KYC check.
- *
- * Paid path: Circls is the merchant (no per-tenant KYC / Linked Account).
- *   Inserts booking status='pending' + payments row kind='charge', then calls
- *   `payments_service.createPaymentOrder`. If Phase 12 isn't ready, surfaces a
- *   `payment_not_available` Conflict (the wrapping transaction rolls back).
- */
 export interface ExternalRegistrationInput {
   /** Who attended. Free text — there is no account behind this booking. */
   name: string;
@@ -725,6 +700,31 @@ async function claimEventSeats(
   return { basePaise, lineValues };
 }
 
+/**
+ * Book a seat on a published event.
+ *
+ * Capacity check (per-tier):
+ *   - The booking is composed of `lines` (one per ticket tier + quantity). We
+ *     SELECT ... FOR UPDATE the referenced tiers inside the booking transaction
+ *     to serialize concurrent buyers, then for each capped tier compare the
+ *     line-table sold count (SUM(quantity) over non-cancelled bookings) plus the
+ *     requested quantity against the tier capacity, rejecting with a
+ *     `tier_sold_out` Conflict if it would exceed. basePaise is the sum of
+ *     tier.pricePaise * quantity across the lines (event.pricePaise is only the
+ *     min-tier display price and is NOT used for charging).
+ *
+ * Per-customer cap (event-level): when event.maxPerUser is set, the buyer's
+ *   total tickets for the event — across ALL tiers and all their non-cancelled
+ *   bookings — may not exceed it (`event_user_limit` Conflict).
+ *
+ * Free path  (basePaise === 0): inserts booking with status='confirmed',
+ *   paymentMethod='free'. No KYC check.
+ *
+ * Paid path: Circls is the merchant (no per-tenant KYC / Linked Account).
+ *   Inserts booking status='pending' + payments row kind='charge', then calls
+ *   `payments_service.createPaymentOrder`. If Phase 12 isn't ready, surfaces a
+ *   `payment_not_available` Conflict (the wrapping transaction rolls back).
+ */
 export async function bookEvent(
   eventId: string,
   customer: BookEventCustomer,

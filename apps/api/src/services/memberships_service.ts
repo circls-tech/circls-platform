@@ -375,25 +375,6 @@ export interface PurchaseMembershipResult {
   currency?: string;
 }
 
-/**
- * Purchase a membership.
- *
- * Free path (pricePaise === 0):
- *   - Insert `user_memberships` with status='active' immediately.
- *   - No KYC required, no payment row.
- *
- * Paid path:
- *   - Circls is the merchant — no per-tenant KYC / Linked Account gate.
- *   - We synthesize a `bookings` row (item_type='membership', status='pending')
- *     because `payments.booking_id` is NOT NULL — payments hangs off bookings
- *     across the system, and memberships reuse that ledger to keep refund /
- *     reconciliation code paths identical.
- *   - Insert `user_memberships` status='active' with payment_id set.
- *   - Call `payments_service.createPaymentOrder` to mint the gateway order.
- *
- * If the Phase 12 stub still throws, we surface `payment_not_available` so
- * callers (and tests) can distinguish "not implemented" from "really failed".
- */
 export interface AddExternalMemberInput {
   membershipId: string;
   name: string;
@@ -537,6 +518,36 @@ export async function updateMember(
       throw new BadRequest('The end date must be after the start date', 'bad_date_range');
     }
 
+    // Reactivating takes a seat back, and the seat may have been given away
+    // while this member was cancelled. Without this, cancelling a member on a
+    // full tier, selling the freed seat, then reactivating them puts the tier
+    // over capacity — the one invariant adding a member is careful to hold.
+    const reactivating = input.status === 'active' && existing.um.status !== 'active';
+    if (reactivating && existing.um.membershipTierId) {
+      const [tier] = await tx
+        .select()
+        .from(membershipTiers)
+        .where(eq(membershipTiers.id, existing.um.membershipTierId))
+        .limit(1);
+      if (tier && tier.capacity != null) {
+        const [{ sold } = { sold: 0 }] = await tx
+          .select({ sold: sql<number>`count(*)::int` })
+          .from(userMemberships)
+          .where(
+            and(
+              eq(userMemberships.membershipTierId, tier.id),
+              sql`${userMemberships.status} <> 'cancelled'`,
+              // Exclude this row: an expired member already occupies a seat, so
+              // counting it would refuse to reactivate them into their own.
+              sql`${userMemberships.id} <> ${userMembershipId}::uuid`,
+            ),
+          );
+        if (sold >= tier.capacity) {
+          throw new Conflict('This tier is sold out', 'membership_tier_sold_out');
+        }
+      }
+    }
+
     await tx
       .update(userMemberships)
       .set({
@@ -566,6 +577,25 @@ export async function updateMember(
   });
 }
 
+/**
+ * Purchase a membership.
+ *
+ * Free path (pricePaise === 0):
+ *   - Insert `user_memberships` with status='active' immediately.
+ *   - No KYC required, no payment row.
+ *
+ * Paid path:
+ *   - Circls is the merchant — no per-tenant KYC / Linked Account gate.
+ *   - We synthesize a `bookings` row (item_type='membership', status='pending')
+ *     because `payments.booking_id` is NOT NULL — payments hangs off bookings
+ *     across the system, and memberships reuse that ledger to keep refund /
+ *     reconciliation code paths identical.
+ *   - Insert `user_memberships` status='active' with payment_id set.
+ *   - Call `payments_service.createPaymentOrder` to mint the gateway order.
+ *
+ * If the Phase 12 stub still throws, we surface `payment_not_available` so
+ * callers (and tests) can distinguish "not implemented" from "really failed".
+ */
 export async function purchaseMembership(
   input: PurchaseMembershipInput,
   pricing?: CouponPricing | null,
