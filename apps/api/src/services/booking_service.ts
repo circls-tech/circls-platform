@@ -480,6 +480,226 @@ export interface BookEventResult {
   postBookingRedirect?: PostBookingRedirect | null;
 }
 
+export interface ExternalRegistrationInput {
+  /** Who attended. Free text — there is no account behind this booking. */
+  name: string;
+  /** Phone or email, if the partner captured one. */
+  contact?: string | null;
+  lines: EventLine[];
+  answers?: RegistrationAnswerInput[];
+  note?: string | null;
+}
+
+/**
+ * Record a registration the partner took off-platform — at the door, over the
+ * phone, through their own form — so their event roll is complete.
+ *
+ * It is a real registration in every way that constrains the event: it claims
+ * seats through the same {@link claimEventSeats} the consumer checkout uses, so
+ * per-tier capacity counts it, and required registration questions must be
+ * answered here too (saveRegistrationAnswers enforces that). The per-person cap
+ * is the one rule it escapes, and only because it must: there is no account to
+ * attribute tickets to.
+ *
+ * It is deliberately invisible to money. No payment row is written, and payouts
+ * are computed purely from `payments` — so this can never reach a settlement,
+ * commission or advance. Totals are stored as zero rather than the tier price
+ * because Circls processed nothing; whatever the attendee paid was collected by
+ * the partner directly. `payment_method = 'external'` is what distinguishes
+ * that from a genuinely free ticket.
+ */
+export async function addExternalEventRegistration(
+  ctx: AuditCtx,
+  eventId: string,
+  input: ExternalRegistrationInput,
+): Promise<{ bookingId: string }> {
+  const name = input.name.trim();
+  if (!name) throw new BadRequest('A name is required', 'bad_request');
+  if (input.lines.length === 0) throw new Conflict('No tickets selected', 'no_tickets');
+  const tierIds = input.lines.map((l) => l.tierId);
+  if (new Set(tierIds).size !== tierIds.length) {
+    throw new BadRequest('Duplicate ticket tier in request', 'bad_request');
+  }
+
+  const bookingId = await db.transaction(async (tx) => {
+    const [ev] = await tx
+      .select()
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!ev) throw new NotFound('Event not found', 'event_not_found');
+    if (ev.status !== 'published') {
+      throw new Conflict(
+        'Only a published event can take registrations',
+        'event_not_published',
+        { status: ev.status },
+      );
+    }
+
+    // No userId: this attendee has no circls account, so the per-person cap
+    // cannot be attributed to them. Per-tier capacity still applies.
+    const { lineValues } = await claimEventSeats(tx, ev, input.lines, null);
+
+    const payCtx = await resolvePaymentContext({ venueId: ev.venueId, tenantId: ev.tenantId }, tx);
+
+    const [b] = await tx
+      .insert(bookings)
+      .values({
+        tenantId: ev.tenantId,
+        venueId: ev.venueId,
+        itemType: 'event',
+        channel: 'walkin',
+        paymentMethod: 'external',
+        status: 'confirmed',
+        customerUserId: null,
+        customerName: name,
+        customerContact: input.contact?.trim() || null,
+        note: input.note?.trim() || null,
+        pricePaise: 0,
+        basePaise: 0,
+        discountPaise: 0,
+        totalPaise: 0,
+        currency: payCtx.currency,
+        itemData: { eventId: ev.id, eventName: ev.name },
+        createdByUserId: ctx.actorUserId,
+      })
+      .returning();
+    if (!b) throw new Error('booking insert returned no row');
+
+    // Quantities drive the tier sold counts; prices stay zero for the same
+    // reason the booking total does.
+    await tx.insert(eventBookingTickets).values(
+      lineValues.map((l) => ({
+        bookingId: b.id,
+        tierId: l.tierId,
+        quantity: l.quantity,
+        unitPricePaise: 0,
+      })),
+    );
+
+    // Rejects a missing required answer, so the partner cannot skip questions
+    // the consumer flow would have forced.
+    await saveRegistrationAnswers(tx, ev.id, b.id, input.answers ?? []);
+
+    await writeAudit(tx, ctx, 'event.registration_added', 'booking', b.id, null, {
+      eventId: ev.id,
+      name,
+      tickets: lineValues.reduce((sum, l) => sum + l.quantity, 0),
+      channel: 'walkin',
+    });
+
+    return b.id;
+  });
+
+  // Outside the transaction, exactly as the other confirmed paths do: issues QR
+  // entry passes so the attendee can be checked in at the door, and notifies
+  // them if a contact was captured. Best-effort — never throws.
+  await onBookingConfirmed(bookingId);
+
+  return { bookingId };
+}
+
+/** The transaction handle drizzle hands a db.transaction callback. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Seat claim shared by every way an event gets booked: the consumer checkout
+ * and the partner's own external-registration entry.
+ *
+ * Kept in one place deliberately — capacity and the per-person cap are the
+ * rules a partner relies on being true, and two copies would drift the moment
+ * one path changed. Callers differ only in `userId`: a registration entered on
+ * behalf of someone who signed up off-platform has no account behind it, so the
+ * per-person cap cannot be attributed and is skipped. Per-tier capacity always
+ * applies — a seat is a seat however it was filled.
+ *
+ * Must run inside a transaction: it takes row locks in event -> tier order.
+ */
+async function claimEventSeats(
+  tx: Tx,
+  ev: typeof events.$inferSelect,
+  lines: EventLine[],
+  userId: string | null,
+): Promise<{
+  basePaise: number;
+  lineValues: { tierId: string; quantity: number; unitPricePaise: number }[];
+}> {
+  const tierIds = lines.map((l) => l.tierId);
+
+  // Per-customer event cap: the buyer's tickets for this event — summed
+  // across ALL tiers and all their non-cancelled bookings — plus this request
+  // may not exceed event.maxPerUser. The event row is locked first (before
+  // the tier locks below, keeping one event→tier lock order) so two
+  // concurrent bookings by the same user serialize rather than both passing.
+  if (ev.maxPerUser !== null && userId !== null) {
+    await tx
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.id, ev.id))
+      .for('update');
+    const requested = lines.reduce((sum, l) => sum + l.quantity, 0);
+    const [row] = await tx
+      .select({ held: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
+      .from(eventBookingTickets)
+      .innerJoin(eventTicketTiers, eq(eventTicketTiers.id, eventBookingTickets.tierId))
+      .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
+      .where(
+        and(
+          eq(eventTicketTiers.eventId, ev.id),
+          ne(bookings.status, 'cancelled'),
+          eq(bookings.customerUserId, userId),
+        ),
+      );
+    const held = row?.held ?? 0;
+    if (held + requested > ev.maxPerUser) {
+      throw new Conflict(
+        held >= ev.maxPerUser
+          ? `You've already booked the maximum of ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} for this event`
+          : `This event is limited to ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} per person`,
+        'event_user_limit',
+        { maxPerUser: ev.maxPerUser, held },
+      );
+    }
+  }
+
+  // Lock the referenced tiers (serialize concurrent buyers), validate ownership,
+  // and enforce per-tier capacity using the line-table sold count.
+  const tiers = await tx
+    .select()
+    .from(eventTicketTiers)
+    .where(
+      and(
+        inArray(eventTicketTiers.id, tierIds),
+        eq(eventTicketTiers.eventId, ev.id),
+        sql`${eventTicketTiers.deletedAt} is null`,
+      ),
+    )
+    .for('update');
+  const tierById = new Map(tiers.map((t) => [t.id, t]));
+
+  let basePaise = 0;
+  const lineValues: { tierId: string; quantity: number; unitPricePaise: number }[] = [];
+  for (const line of lines) {
+    const tier = tierById.get(line.tierId);
+    if (!tier) throw new BadRequest('Unknown ticket tier for this event', 'bad_request');
+    if (line.quantity <= 0) throw new BadRequest('Quantity must be positive', 'bad_request');
+    if (tier.capacity !== null) {
+      const [row] = await tx
+        .select({ sold: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
+        .from(eventBookingTickets)
+        .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
+        .where(and(eq(eventBookingTickets.tierId, tier.id), ne(bookings.status, 'cancelled')));
+      const sold = row?.sold ?? 0;
+      if (sold + line.quantity > tier.capacity) {
+        throw new Conflict('Tier sold out', 'tier_sold_out', { tierId: tier.id });
+      }
+    }
+    basePaise += tier.pricePaise * line.quantity;
+    lineValues.push({ tierId: tier.id, quantity: line.quantity, unitPricePaise: tier.pricePaise });
+  }
+  return { basePaise, lineValues };
+}
+
 /**
  * Book a seat on a published event.
  *
@@ -533,77 +753,7 @@ export async function bookEvent(
       throw new BadRequest('Duplicate ticket tier in request', 'bad_request');
     }
 
-    // Per-customer event cap: the buyer's tickets for this event — summed
-    // across ALL tiers and all their non-cancelled bookings — plus this request
-    // may not exceed event.maxPerUser. The event row is locked first (before
-    // the tier locks below, keeping one event→tier lock order) so two
-    // concurrent bookings by the same user serialize rather than both passing.
-    if (ev.maxPerUser !== null) {
-      await tx
-        .select({ id: events.id })
-        .from(events)
-        .where(eq(events.id, eventId))
-        .for('update');
-      const requested = lines.reduce((sum, l) => sum + l.quantity, 0);
-      const [row] = await tx
-        .select({ held: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
-        .from(eventBookingTickets)
-        .innerJoin(eventTicketTiers, eq(eventTicketTiers.id, eventBookingTickets.tierId))
-        .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
-        .where(
-          and(
-            eq(eventTicketTiers.eventId, eventId),
-            ne(bookings.status, 'cancelled'),
-            eq(bookings.customerUserId, customer.userId),
-          ),
-        );
-      const held = row?.held ?? 0;
-      if (held + requested > ev.maxPerUser) {
-        throw new Conflict(
-          held >= ev.maxPerUser
-            ? `You've already booked the maximum of ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} for this event`
-            : `This event is limited to ${ev.maxPerUser} ticket${ev.maxPerUser > 1 ? 's' : ''} per person`,
-          'event_user_limit',
-          { maxPerUser: ev.maxPerUser, held },
-        );
-      }
-    }
-
-    // Lock the referenced tiers (serialize concurrent buyers), validate ownership,
-    // and enforce per-tier capacity using the line-table sold count.
-    const tiers = await tx
-      .select()
-      .from(eventTicketTiers)
-      .where(
-        and(
-          inArray(eventTicketTiers.id, tierIds),
-          eq(eventTicketTiers.eventId, eventId),
-          sql`${eventTicketTiers.deletedAt} is null`,
-        ),
-      )
-      .for('update');
-    const tierById = new Map(tiers.map((t) => [t.id, t]));
-
-    let basePaise = 0;
-    const lineValues: { tierId: string; quantity: number; unitPricePaise: number }[] = [];
-    for (const line of lines) {
-      const tier = tierById.get(line.tierId);
-      if (!tier) throw new BadRequest('Unknown ticket tier for this event', 'bad_request');
-      if (line.quantity <= 0) throw new BadRequest('Quantity must be positive', 'bad_request');
-      if (tier.capacity !== null) {
-        const [row] = await tx
-          .select({ sold: sql<number>`coalesce(sum(${eventBookingTickets.quantity}), 0)::int` })
-          .from(eventBookingTickets)
-          .innerJoin(bookings, eq(bookings.id, eventBookingTickets.bookingId))
-          .where(and(eq(eventBookingTickets.tierId, tier.id), ne(bookings.status, 'cancelled')));
-        const sold = row?.sold ?? 0;
-        if (sold + line.quantity > tier.capacity) {
-          throw new Conflict('Tier sold out', 'tier_sold_out', { tierId: tier.id });
-        }
-      }
-      basePaise += tier.pricePaise * line.quantity;
-      lineValues.push({ tierId: tier.id, quantity: line.quantity, unitPricePaise: tier.pricePaise });
-    }
+    const { basePaise, lineValues } = await claimEventSeats(tx, ev, lines, customer.userId);
 
     // Gateway + currency follow the event's venue country (fallback: tenant).
     const payCtx = await resolvePaymentContext(

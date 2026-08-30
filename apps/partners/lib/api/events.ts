@@ -17,11 +17,21 @@ export function useVenueEvents(venueId: string) {
   });
 }
 
+/** Which shelf of a tenant's events to list. */
+export type EventShelf = 'active' | 'archived' | 'all';
+
+const SHELF_QUERY: Record<EventShelf, string> = {
+  active: '',
+  archived: '?archived=true',
+  all: '?archived=all',
+};
+
 /** All events for a tenant (venue-scoped + org-scoped). */
-export function useTenantEvents(tenantId: string) {
+export function useTenantEvents(tenantId: string, shelf: EventShelf = 'active') {
   return useQuery({
-    queryKey: ['tenant-events', tenantId],
-    queryFn: () => apiFetch<VenueEventSummary[]>(`/v1/tenants/${tenantId}/events`),
+    queryKey: ['tenant-events', tenantId, shelf],
+    queryFn: () =>
+      apiFetch<VenueEventSummary[]>(`/v1/tenants/${tenantId}/events${SHELF_QUERY[shelf]}`),
     enabled: Boolean(tenantId),
   });
 }
@@ -340,6 +350,86 @@ export function useCancelTenantEvent(tenantId: string) {
       apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/cancel`, {
         method: 'POST',
       }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** End a live event early: it stops selling and leaves consumer listings. */
+export function useCompleteTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/complete`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** A registration the partner took off-platform. */
+export interface ExternalRegistrationInput {
+  name: string;
+  contact?: string;
+  note?: string;
+  lines: { tierId: string; quantity: number }[];
+  answers?: { questionId: string; answer: string }[];
+}
+
+/**
+ * Record an attendee who registered away from circls. Claims seats and enforces
+ * required questions exactly like a consumer booking, but writes no payment, so
+ * it never reaches a payout.
+ */
+export function useAddExternalRegistration(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, input }: { eventId: string; input: ExternalRegistrationInput }) =>
+      apiFetch<{ bookingId: string }>(
+        `/v1/tenants/${tenantId}/events/${eventId}/registrations`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: (_res, { eventId }) => {
+      void qc.invalidateQueries({ queryKey: ['event-bookings', tenantId, eventId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, eventId] });
+    },
+  });
+}
+
+/** Undo an end: puts a completed event back on sale. Only valid while its end
+ *  time is still in the future. */
+export function useReopenTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiFetch<VenueEventSummary>(`/v1/tenants/${tenantId}/events/${eventId}/reopen`, {
+        method: 'POST',
+      }),
+    onSuccess: (ev) => {
+      void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+      if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });
+      void qc.invalidateQueries({ queryKey: ['event', tenantId, ev.id] });
+    },
+  });
+}
+
+/** Move an event on or off the archive shelf. Partner-side only — consumers
+ *  never see the difference. */
+export function useArchiveTenantEvent(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, archived }: { eventId: string; archived: boolean }) =>
+      apiFetch<VenueEventSummary>(
+        `/v1/tenants/${tenantId}/events/${eventId}/${archived ? 'archive' : 'unarchive'}`,
+        { method: 'POST' },
+      ),
     onSuccess: (ev) => {
       void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
       if (ev.venueId) void qc.invalidateQueries({ queryKey: ['venue-events', ev.venueId] });

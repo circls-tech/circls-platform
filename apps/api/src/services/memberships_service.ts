@@ -27,7 +27,7 @@ import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { qrTickets } from '../db/schema/qr_tickets.js';
 import { bookings } from '../db/schema/bookings.js';
 import { tenants } from '../db/schema/tenants.js';
-import { writeAudit } from '../lib/audit.js';
+import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
@@ -93,6 +93,9 @@ export interface MembershipPurchaseRow {
   buyerContact: string | null;
   /** The tier the buyer purchased, or null for legacy/no-tier purchases. */
   tierName: string | null;
+  /** True when the partner added this member by hand — no circls account
+   *  behind them, and no money passed through circls. */
+  external: boolean;
   status: string;
   startsAt: string;
   endsAt: string;
@@ -110,10 +113,11 @@ export async function listMembershipPurchases(
 ): Promise<MembershipPurchaseRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
     select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
-           u.display_name, u.phone_e164, u.email, mt.name as tier_name
+           u.display_name, u.phone_e164, u.email, mt.name as tier_name,
+           um.external_name, um.external_contact, um.user_id
     from user_memberships um
     join memberships m on m.id = um.membership_id
-    join users u on u.id = um.user_id
+    left join users u on u.id = um.user_id
     left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
     order by um.created_at desc
@@ -122,9 +126,15 @@ export async function listMembershipPurchases(
   const rows = raw as unknown as Record<string, unknown>[];
   return rows.map((r) => ({
     userMembershipId: r['id'] as string,
-    buyerName: (r['display_name'] as string | null) ?? null,
-    buyerContact: ((r['phone_e164'] as string | null) ?? (r['email'] as string | null)) ?? null,
+    buyerName:
+      (r['display_name'] as string | null) ?? (r['external_name'] as string | null) ?? null,
+    buyerContact:
+      (r['phone_e164'] as string | null) ??
+      (r['email'] as string | null) ??
+      (r['external_contact'] as string | null) ??
+      null,
     tierName: (r['tier_name'] as string | null) ?? null,
+    external: r['user_id'] === null,
     status: r['status'] as string,
     startsAt: new Date(r['starts_at'] as string).toISOString(),
     endsAt: new Date(r['ends_at'] as string).toISOString(),
@@ -363,6 +373,208 @@ export interface PurchaseMembershipResult {
   clientSecret?: string | undefined;
   amountPaise?: number;
   currency?: string;
+}
+
+export interface AddExternalMemberInput {
+  membershipId: string;
+  name: string;
+  contact?: string | null;
+  /** Defaults to the cheapest live tier, like a consumer purchase. */
+  membershipTierId?: string | null;
+  /** Defaults to now. */
+  startsAt?: Date;
+  /** Defaults to the tier's duration from startsAt. */
+  endsAt?: Date;
+}
+
+/**
+ * Record a member who joined off-platform — signed up at the desk, over the
+ * phone, or on paper.
+ *
+ * They are a real member where it constrains the plan: the row counts towards
+ * per-tier capacity exactly like a purchase, so a tier can sell out because of
+ * them. They are invisible to money: `payment_id` stays null, and payouts are
+ * computed purely from `payments`, so this can never reach a settlement or
+ * attract commission — whatever they paid went to the partner directly.
+ */
+export async function addExternalMember(
+  ctx: AuditCtx,
+  input: AddExternalMemberInput,
+): Promise<{ userMembershipId: string }> {
+  const name = input.name.trim();
+  if (!name) throw new BadRequest('A name is required', 'bad_request');
+
+  return db.transaction(async (tx) => {
+    const [m] = await tx
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!m) throw new NotFound('Membership not found', 'membership_not_found');
+
+    const liveTiers = await tx
+      .select()
+      .from(membershipTiers)
+      .where(and(eq(membershipTiers.membershipId, m.id), isNull(membershipTiers.deletedAt)))
+      .orderBy(membershipTiers.pricePaise);
+    const tier = input.membershipTierId
+      ? liveTiers.find((t) => t.id === input.membershipTierId)
+      : liveTiers[0];
+    if (input.membershipTierId && !tier) {
+      throw new NotFound('Membership tier not found', 'membership_tier_not_found');
+    }
+
+    // Same capacity rule as a purchase — a seat is a seat however it was filled.
+    if (tier && tier.capacity != null) {
+      const [{ sold } = { sold: 0 }] = await tx
+        .select({ sold: sql<number>`count(*)::int` })
+        .from(userMemberships)
+        .where(
+          and(
+            eq(userMemberships.membershipTierId, tier.id),
+            sql`${userMemberships.status} <> 'cancelled'`,
+          ),
+        );
+      if (sold >= tier.capacity) {
+        throw new Conflict('This tier is sold out', 'membership_tier_sold_out');
+      }
+    }
+
+    const durationDays = tier?.durationDays ?? m.durationDays;
+    const startsAt = input.startsAt ?? new Date();
+    const endsAt =
+      input.endsAt ?? new Date(startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    if (endsAt.getTime() <= startsAt.getTime()) {
+      throw new BadRequest('The end date must be after the start date', 'bad_date_range');
+    }
+
+    const [row] = await tx
+      .insert(userMemberships)
+      .values({
+        userId: null,
+        membershipId: m.id,
+        membershipTierId: tier?.id ?? null,
+        paymentId: null,
+        startsAt,
+        endsAt,
+        status: 'active',
+        externalName: name,
+        externalContact: input.contact?.trim() || null,
+        createdByUserId: ctx.actorUserId,
+      })
+      .returning();
+    if (!row) throw new Error('user_membership insert returned no row');
+
+    await writeAudit(tx, ctx, 'membership.member_added', 'user_membership', row.id, null, {
+      membershipId: m.id,
+      name,
+      tierId: tier?.id ?? null,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+    });
+
+    return { userMembershipId: row.id };
+  });
+}
+
+export interface UpdateMemberInput {
+  startsAt?: Date;
+  endsAt?: Date;
+  status?: 'active' | 'cancelled';
+}
+
+/**
+ * Correct a member's validity window, or cancel their membership.
+ *
+ * Extending a window changes what the member can get through the door with, so
+ * this deliberately does not touch their entry pass: QR validity is derived
+ * from the membership row, not copied onto the ticket.
+ */
+export async function updateMember(
+  ctx: AuditCtx,
+  userMembershipId: string,
+  membershipId: string,
+  input: UpdateMemberInput,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ um: userMemberships, tenantId: memberships.tenantId })
+      .from(userMemberships)
+      .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+      .where(
+        and(
+          eq(userMemberships.id, userMembershipId),
+          eq(userMemberships.membershipId, membershipId),
+        ),
+      )
+      .limit(1);
+    if (!existing || existing.tenantId !== ctx.tenantId) {
+      throw new NotFound('Member not found', 'member_not_found');
+    }
+
+    const startsAt = input.startsAt ?? existing.um.startsAt;
+    const endsAt = input.endsAt ?? existing.um.endsAt;
+    if (endsAt.getTime() <= startsAt.getTime()) {
+      throw new BadRequest('The end date must be after the start date', 'bad_date_range');
+    }
+
+    // Reactivating takes a seat back, and the seat may have been given away
+    // while this member was cancelled. Without this, cancelling a member on a
+    // full tier, selling the freed seat, then reactivating them puts the tier
+    // over capacity — the one invariant adding a member is careful to hold.
+    const reactivating = input.status === 'active' && existing.um.status !== 'active';
+    if (reactivating && existing.um.membershipTierId) {
+      const [tier] = await tx
+        .select()
+        .from(membershipTiers)
+        .where(eq(membershipTiers.id, existing.um.membershipTierId))
+        .limit(1);
+      if (tier && tier.capacity != null) {
+        const [{ sold } = { sold: 0 }] = await tx
+          .select({ sold: sql<number>`count(*)::int` })
+          .from(userMemberships)
+          .where(
+            and(
+              eq(userMemberships.membershipTierId, tier.id),
+              sql`${userMemberships.status} <> 'cancelled'`,
+              // Exclude this row: an expired member already occupies a seat, so
+              // counting it would refuse to reactivate them into their own.
+              sql`${userMemberships.id} <> ${userMembershipId}::uuid`,
+            ),
+          );
+        if (sold >= tier.capacity) {
+          throw new Conflict('This tier is sold out', 'membership_tier_sold_out');
+        }
+      }
+    }
+
+    await tx
+      .update(userMemberships)
+      .set({
+        startsAt,
+        endsAt,
+        ...(input.status ? { status: input.status } : {}),
+      })
+      .where(eq(userMemberships.id, userMembershipId));
+
+    await writeAudit(
+      tx,
+      ctx,
+      'membership.member_updated',
+      'user_membership',
+      userMembershipId,
+      {
+        startsAt: existing.um.startsAt.toISOString(),
+        endsAt: existing.um.endsAt.toISOString(),
+        status: existing.um.status,
+      },
+      {
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        status: input.status ?? existing.um.status,
+      },
+    );
+  });
 }
 
 /**
@@ -711,7 +923,9 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
 
   return rows.map((r) => ({
     id: r.um.id,
-    userId: r.um.userId,
+    // The query filters on this userId, so the column is never null here; it is
+    // nullable only for members a partner added without a circls account.
+    userId: r.um.userId ?? userId,
     membershipId: r.um.membershipId,
     paymentId: r.um.paymentId,
     startsAt: r.um.startsAt,

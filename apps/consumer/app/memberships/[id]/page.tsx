@@ -10,7 +10,7 @@ import { useMembership, usePublicOrg } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
-import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
+import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
 import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
@@ -59,6 +59,15 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   const selectedTier: PublicMembershipTier | undefined = tiers.find(
     (t) => t.id === selectedTierId,
   );
+
+  // Sign-in interrupted a purchase on this page — reopen it, and reselect the
+  // tier they had chosen so the page matches the modal.
+  useResumeCheckout((item, prefill) => {
+    if (item.kind === 'membership' && item.membershipTierId) {
+      setSelectedTierId(item.membershipTierId);
+    }
+    openCheckout(item, prefill);
+  });
 
   function buy(tier: PublicMembershipTier | undefined) {
     if (!m) return;

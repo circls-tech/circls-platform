@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import type { EventBooking, EventTier } from '@/lib/api/types';
+import type { EventBooking, EventQuestion, EventTier } from '@/lib/api/types';
 import { useCancelBookingWithReason } from '@/lib/api/queries';
+import { AddRegistrationModal } from '@/components/AddRegistrationModal';
 import { ApiError } from '@/lib/api/client';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
@@ -71,7 +72,7 @@ function bookingsToCsv(rows: EventBooking[], tz: string, currency: CurrencyCode)
       b.customerPhone ?? '',
       ticketsLabel(b, '; '),
       b.status,
-      (b.totalPaise / 100).toFixed(2),
+      b.paymentMethod === 'external' ? 'External' : (b.totalPaise / 100).toFixed(2),
       fmt(b.createdAt, tz),
       ...answerCols.map(
         (c) => answersOf(b).find((a) => a.questionId === c.questionId)?.answer ?? '',
@@ -198,7 +199,11 @@ function RegistrationsTable({
                     </td>
                   )}
                   <td className="py-2.5 pr-4 text-slate-700">
-                    {b.totalPaise === 0 ? (
+                    {b.paymentMethod === 'external' ? (
+                      <span className="text-slate-500" title="Registered off-platform — circls processed no money">
+                        External
+                      </span>
+                    ) : b.totalPaise === 0 ? (
                       <span className="text-emerald-600">Free</span>
                     ) : (
                       formatMoney(b.totalPaise, currency, { decimals: 2 })
@@ -233,6 +238,13 @@ export interface EventRegistrationsProps {
   isLoading: boolean;
   tiers: EventTier[];
   eventName: string;
+  tenantId: string;
+  eventId: string;
+  /** The event's registration questions — required ones must be answered when
+   *  the partner records an off-platform attendee. */
+  questions: EventQuestion[];
+  /** Only a live event can take registrations. */
+  canAddRegistration: boolean;
   /** Zone registration timestamps are displayed in. */
   tz: string;
   /** Display currency for amounts (see lib/currency). */
@@ -248,10 +260,15 @@ export function EventRegistrations({
   isLoading,
   tiers,
   eventName,
+  tenantId,
+  eventId,
+  questions,
+  canAddRegistration,
   tz,
   currency,
 }: EventRegistrationsProps) {
   const cancel = useCancelBookingWithReason();
+  const [addingRegistration, setAddingRegistration] = useState(false);
   const [pendingCancel, setPendingCancel] = useState<EventBooking | null>(null);
   const [lastCancelled, setLastCancelled] = useState<{ name: string | null; refundPaise: number } | null>(null);
 
@@ -283,6 +300,25 @@ export function EventRegistrations({
 
   return (
     <>
+      {canAddRegistration && (
+        <div className="mb-3 flex justify-end">
+          <Button petal="#BCE3A0" size="sm" onClick={() => setAddingRegistration(true)}>
+            Add registration
+          </Button>
+        </div>
+      )}
+
+      <AddRegistrationModal
+        open={addingRegistration}
+        tenantId={tenantId}
+        eventId={eventId}
+        eventName={eventName}
+        tiers={tiers}
+        questions={questions}
+        currency={currency}
+        onClose={() => setAddingRegistration(false)}
+      />
+
       <RegistrationsTable
         title="Registered"
         emptyLabel="No registrations yet."

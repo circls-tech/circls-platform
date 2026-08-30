@@ -3,6 +3,20 @@ import type { PublicEventQuestion } from '@/lib/api/types';
 
 export type CheckoutLine = { tierId: string; tierName: string; quantity: number; unitPricePaise: number };
 
+/**
+ * A slot held in a venue's cart, carrying the display info the cart summary
+ * needs. Lives here rather than on the venue page so it can be persisted across
+ * a sign-in redirect (see ./pending).
+ */
+export interface CartSlot {
+  id: string;
+  arenaId: string;
+  arenaName: string;
+  startAt: string;
+  endAt: string;
+  pricePaise: number;
+}
+
 /** Fields shared by every checkout item. `currency` only affects how the
  *  price breakdown is DISPLAYED (defaults to INR); the payment order itself
  *  comes from the API. */

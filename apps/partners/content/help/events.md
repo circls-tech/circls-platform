@@ -175,6 +175,7 @@ passes customers already hold are never changed.
 | **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Not approved. Read-only. |
+| **completed** | Ended by you. The event has stopped selling. Read-only, but reopenable while its end time is still ahead. |
 
 ## Editing and submitting
 
@@ -183,9 +184,33 @@ Open an event to see its detail page. What you can do depends on its status:
 - **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review** to send it to circls, or **Cancel** to drop it.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
 - **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
-- **Cancelled** or **rejected** — read-only.
+- **Cancelled**, **rejected** or **ended** — read-only.
 
-The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way.
+The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way and *end* available once it's live.
+
+## Ending an event
+
+Consumers stop seeing an event automatically once its end time passes, so you only need this when you want to stop selling **early** — the event filled up elsewhere, finished sooner than planned, or you simply want registrations closed.
+
+Click **End** on a published event, from the events list or the event's own page. It immediately:
+
+- disappears from consumer listings and can no longer be registered for;
+- becomes read-only, so live settings and change requests are closed;
+- keeps its registrations, payments and reports exactly as they are.
+
+**Ending is not cancelling.** Ending says the event happened and is now closed; cancelling says it did not happen. Neither issues refunds on its own — refund attendees from the event's **Registered** table if you need to. The one practical difference: cancelling revokes everyone's QR entry passes, while ending leaves them valid, so staff can still check in stragglers at the door as you close sales.
+
+**Ended one by mistake?** A **Reopen** button appears on an ended event and puts it straight back on sale, exactly as it was. It's only offered while the event's end time is still in the future — once that has passed, reopening would put the event back into a state consumers can't see anyway, since listings already hide anything past its end time. Reopening also takes the event back off the archive shelf if you had filed it there.
+
+## Archiving an event
+
+Archiving clears finished events off your list without deleting anything. It is yours alone — **archiving never changes what consumers see**, and an archived event keeps every registration, payment and export.
+
+Use the **Active** / **Archived** / **All** tabs at the top of the Events page to switch shelves. **Archive** shelves an event; **Restore** brings it back.
+
+You can archive a draft, cancelled, rejected or ended event. You cannot archive one that is live or awaiting review — end or cancel it first, so nothing still selling can be hidden from your own list.
+
+For a recurring event, end and archive each date from that date's own page: a series shows as a single row, so a button there couldn't tell which date you meant.
 
 ## Adding event photos
 
@@ -221,6 +246,22 @@ The event detail page shows registrations in two separate tables:
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. When the event has registration questions, the CSV gets **one extra column per question**, so answers line up ready for a spreadsheet. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.
 
 Use these tables to check turnout and reconcile payments.
+
+### Adding someone who registered elsewhere
+
+Took a registration at the door, over the phone, or through your own form? Click **Add registration** on a live event to put them on the roll.
+
+You are asked for the same things the customer would have given: their name, an optional contact, which tickets they took, and answers to any **required** registration question — those are enforced here exactly as they are in the customer flow, so your answer data stays complete.
+
+The registration is real in every way that matters to your event:
+
+- it takes seats out of your ticket tiers, so capacity counts it and can sell out because of it;
+- it appears in the **Registered** table and every CSV export;
+- it gets a QR entry pass, sent to the contact you entered, if the event issues them.
+
+**It is invisible to money.** circls processed nothing, so the registration carries no amount, never appears in a payout, and never attracts commission — whatever the attendee paid, they paid you directly. The amount column shows **External** rather than an amount, which is what tells it apart from a genuinely free ticket.
+
+One limit does not apply: the per-person ticket cap. That is counted per circls account, and someone who registered off-platform has none, so it cannot be attributed to them.
 
 ### Refunding a registration
 
