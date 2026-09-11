@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -25,6 +26,7 @@ export default function VenuesPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <BackBar fallbackHref="/" />
         <div className="mb-8 max-w-xl">
           <h1 className="font-display text-4xl font-extrabold text-ink">Find a venue</h1>
           <p className="mt-1 text-sm text-text-secondary">

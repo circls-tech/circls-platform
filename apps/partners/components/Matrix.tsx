@@ -473,7 +473,12 @@ export function Matrix({
   };
 
   return (
-    <div className="flex gap-4 w-full">
+    // Side-by-side needs roughly 1,140px of viewport: a 600px-minimum week
+    // grid, the 256px inspector, the gap between them and the 220px app
+    // sidebar. Below that the grid was handed whatever the fixed-width
+    // inspector left over - 71px on a phone - which collapsed the week pager
+    // and reduced the grid to an unusable sliver. Stack until there is room.
+    <div className="flex flex-col xl:flex-row gap-4 w-full">
       {/* ── Left: grid ── */}
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         {/* Week pager */}
@@ -481,7 +486,7 @@ export function Matrix({
           <Button size="sm" variant="ghost" onClick={onPrevWeek} aria-label="Previous week">
             ◀
           </Button>
-          <span className="text-sm font-medium text-slate-600">{weekLabel}</span>
+          <span className="whitespace-nowrap text-sm font-medium text-slate-600">{weekLabel}</span>
           <Button size="sm" variant="ghost" onClick={onNextWeek} aria-label="Next week">
             ▶
           </Button>
@@ -599,8 +604,8 @@ export function Matrix({
         </div>
       </div>
 
-      {/* ── Right: inspector ── */}
-      <div className="w-64 flex-shrink-0">
+      {/* ── Right: inspector ── (below the grid once stacked) */}
+      <div className="w-full xl:w-64 xl:flex-shrink-0">
         <Inspector
           selected={selected}
           slots={slots}

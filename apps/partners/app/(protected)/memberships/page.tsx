@@ -70,50 +70,85 @@ export default function MembershipsPage() {
           </p>
         )}
         {!isLoading && memberships && memberships.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#e5e7eb] text-left">
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Name</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Scope</th>
-                  <th className="pb-2 pr-4 font-medium text-slate-500">Tiers</th>
-                  <th className="pb-2 font-medium text-slate-500">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#f1f5f9]">
-                {memberships.map((m) => (
-                  <tr key={m.id}>
-                    <td className="py-2.5 pr-4 font-medium">
-                      {/* The row's only action: everything a plan can do lives
-                          on its own page, which has room for it. */}
-                      <Link
-                        href={`/memberships/${m.id}`}
-                        className="text-[#17151D] hover:underline"
-                      >
-                        {m.name}
-                      </Link>
-                      {m.description && (
-                        <p className="mt-0.5 text-xs font-normal text-slate-400">{m.description}</p>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 text-slate-700">
-                      {m.venueId ? (
-                        venueName(m.venueId)
-                      ) : (
-                        <span className="text-slate-500">Org-wide</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap text-slate-700">
-                      {tiersSummary(m, currencyFor(m.venueId))}
-                    </td>
-                    <td className="py-2.5">
-                      <StatusPill status={m.status} />
-                    </td>
+          <>
+            {/* Phones: one card per plan. The four-column table wrapped names
+                onto three or four lines, cut Tiers mid-price and pushed Status
+                off-screen entirely. Mirrors the members list on a plan page. */}
+            <ul className="flex flex-col gap-2 md:hidden">
+              {memberships.map((m) => (
+                <li key={m.id} className="rounded-[var(--radius)] border border-[#e5e7eb] p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link
+                      href={`/memberships/${m.id}`}
+                      className="min-w-0 font-medium text-[#17151D] hover:underline"
+                    >
+                      {m.name}
+                    </Link>
+                    <StatusPill status={m.status} />
+                  </div>
+                  {m.description && (
+                    <p className="mt-0.5 text-xs text-slate-400">{m.description}</p>
+                  )}
+                  <dl className="mt-2 flex flex-col gap-0.5 text-xs text-slate-600">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-400">Scope</dt>
+                      <dd className="text-right">{venueName(m.venueId)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-400">Tiers</dt>
+                      <dd className="text-right">{tiersSummary(m, currencyFor(m.venueId))}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+
+            {/* Tablet and up: the full table. */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#e5e7eb] text-left">
+                    <th className="pb-2 pr-4 font-medium text-slate-500">Name</th>
+                    <th className="pb-2 pr-4 font-medium text-slate-500">Scope</th>
+                    <th className="pb-2 pr-4 font-medium text-slate-500">Tiers</th>
+                    <th className="pb-2 font-medium text-slate-500">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[#f1f5f9]">
+                  {memberships.map((m) => (
+                    <tr key={m.id}>
+                      <td className="py-2.5 pr-4 font-medium">
+                        {/* The row's only action: everything a plan can do lives
+                            on its own page, which has room for it. */}
+                        <Link
+                          href={`/memberships/${m.id}`}
+                          className="text-[#17151D] hover:underline"
+                        >
+                          {m.name}
+                        </Link>
+                        {m.description && (
+                          <p className="mt-0.5 text-xs font-normal text-slate-400">{m.description}</p>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 text-slate-700">
+                        {m.venueId ? (
+                          venueName(m.venueId)
+                        ) : (
+                          <span className="text-slate-500">Org-wide</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 whitespace-nowrap text-slate-700">
+                        {tiersSummary(m, currencyFor(m.venueId))}
+                      </td>
+                      <td className="py-2.5">
+                        <StatusPill status={m.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
     </div>
