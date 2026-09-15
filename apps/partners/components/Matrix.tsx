@@ -157,10 +157,22 @@ function SlotCell({ slot, currency, isSelected, locked, onPointerDown, onPointer
 
   return (
     <div
-      onPointerDown={onPointerDown}
+      onPointerDown={(e) => {
+        // A touch pointer is implicitly captured by the element it lands on,
+        // so pointerenter never fires on the cells the finger crosses and a
+        // drag could only ever select its first cell. Hand the capture back.
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        onPointerDown();
+      }}
       onPointerEnter={onPointerEnter}
       className={[
         'relative flex items-center justify-center rounded p-1 cursor-pointer select-none',
+        // Without this the browser reads a sideways drag as a pan of the
+        // scrolling grid, fires pointercancel and throws the selection away.
+        // Panning stays available from the day headers and the time gutter.
+        'touch-none',
         'min-h-[40px] transition-shadow duration-100',
         isSelected ? 'ring-2 ring-amber-400 ring-offset-1' : '',
       ].join(' ')}
