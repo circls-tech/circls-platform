@@ -1,5 +1,6 @@
 'use client';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { MembershipCard } from '@/components/cards/MembershipCard';
 import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -25,6 +26,7 @@ export default function MembershipsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <BackBar fallbackHref="/" />
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">Memberships</h1>
         <p className="mb-8 text-sm text-text-secondary">
           {areaLabel ? (

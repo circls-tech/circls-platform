@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AuthProvider } from '@/lib/firebase/auth_context';
 import { CheckoutProvider } from '@/lib/checkout/CheckoutProvider';
 import { LocationProvider } from '@/lib/location/LocationProvider';
+import { NavDepthTracker } from '@/lib/nav/NavDepthTracker';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -13,7 +14,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={client}>
       <AuthProvider>
         <LocationProvider>
-          <CheckoutProvider>{children}</CheckoutProvider>
+          <CheckoutProvider>
+            <NavDepthTracker />
+            {children}
+          </CheckoutProvider>
         </LocationProvider>
       </AuthProvider>
     </QueryClientProvider>

@@ -1,11 +1,12 @@
 'use client';
 import { useRouter } from 'next/navigation';
+import { canGoBack } from '@/lib/nav/history_depth';
 
 /**
- * A subtle, on-brand "← Back" affordance for sub-pages. Prefers the browser
- * history via next/navigation so it returns the user wherever they came from.
- * When there is no history to return to — a scanned QR, a shared link, a new
- * tab — it falls back to `fallbackHref` so the button is never a dead end.
+ * A subtle, on-brand "← Back" affordance. Returns the visitor to the previous
+ * page they saw *within circls*. When there is no such page — a scanned QR, a
+ * shared link, a search result, a new tab — it falls back to `fallbackHref`, so
+ * the button is never a dead end.
  */
 export function BackBar({
   fallbackHref = '/',
@@ -17,9 +18,11 @@ export function BackBar({
   const router = useRouter();
 
   function goBack() {
-    // A fresh tab has a history length of 1; anything more means there is
-    // somewhere within this session to go back to.
-    if (typeof window !== 'undefined' && window.history.length > 1) {
+    // Only step back through pages we navigated to ourselves. window.history
+    // counts other origins too, and router.back() won't traverse to one, so
+    // trusting it left the button inert for anyone arriving from a search
+    // result or a shared link.
+    if (canGoBack()) {
       router.back();
       return;
     }

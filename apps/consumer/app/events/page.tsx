@@ -1,5 +1,6 @@
 'use client';
 import { Header } from '@/components/Header';
+import { BackBar } from '@/components/BackBar';
 import { EventCard } from '@/components/cards/EventCard';
 import { CardSkeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -37,6 +38,7 @@ export default function EventsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <BackBar fallbackHref="/" />
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">What&apos;s on</h1>
         <p className="mb-8 text-sm text-text-secondary">
           {coords ? (
