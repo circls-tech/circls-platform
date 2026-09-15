@@ -28,9 +28,19 @@ export interface MembershipMembersProps {
   membershipId: string;
   /** Live tiers of the plan — a hand-added member is placed on one. */
   tiers: Membership['tiers'];
+  /** Whether the walk-in form is open. Omit to let this component own it; pass
+   *  it when a Reception button elsewhere on the page opens the desk. */
+  walkInOpen?: boolean;
+  onWalkInOpenChange?: (open: boolean) => void;
 }
 
-export function MembershipMembers({ tenantId, membershipId, tiers }: MembershipMembersProps) {
+export function MembershipMembers({
+  tenantId,
+  membershipId,
+  tiers,
+  walkInOpen,
+  onWalkInOpenChange,
+}: MembershipMembersProps) {
   const { data, isLoading, error } = useMembershipPurchases(tenantId, membershipId);
   const { resolveTz } = useTimezone();
   const dateFmt = useMemo(
@@ -47,7 +57,13 @@ export function MembershipMembers({ tenantId, membershipId, tiers }: MembershipM
   const addMember = useAddMember(tenantId);
   const updateMember = useUpdateMember(tenantId);
   const refundMember = useRefundMember(tenantId);
-  const [adding, setAdding] = useState(false);
+  // Controlled when a Reception button owns the state, uncontrolled otherwise.
+  const [ownAdding, setOwnAdding] = useState(false);
+  const adding = walkInOpen ?? ownAdding;
+  const setAdding = (open: boolean) => {
+    if (walkInOpen === undefined) setOwnAdding(open);
+    onWalkInOpenChange?.(open);
+  };
   const [form, setForm] = useState({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRange, setEditRange] = useState({ startsAt: '', endsAt: '' });

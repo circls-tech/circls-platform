@@ -1,6 +1,6 @@
 The **schedule builder** turns an arena's opening hours into bookable slots. You define a date range, a set of **pricing bands** (time ranges, each at its own price) and a slot length, fine-tune on a visual grid, then release the slots so consumers can book them.
 
-Open it from an arena (the **Reception** / schedule link) or from the onboarding wizard. The URL looks like `/arenas/{arenaId}/schedule`.
+Open it from the reception view's **Schedule builder →** link or from the onboarding wizard. The URL looks like `/arenas/{arenaId}/schedule`.
 
 ## 1. Configure the template
 
@@ -63,7 +63,7 @@ After a successful release, follow **Go to reception view →** to see and manag
 
 ## Reception view — managing live slots
 
-The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Like the builder grid, its slot times and day columns follow the **timezone selector in the top bar** — leave it on **Auto** to read the schedule in the venue's own zone, or pick a zone to view the same slots in your local time. This is display-only; it never changes when a slot actually is.
+The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Reach it from the **Reception** button on the arena's card on its venue page — the same button appears on events and membership plans, where it opens the walk-in form instead. Like the builder grid, its slot times and day columns follow the **timezone selector in the top bar** — leave it on **Auto** to read the schedule in the venue's own zone, or pick a zone to view the same slots in your local time. This is display-only; it never changes when a slot actually is.
 
 Each slot has a status:
 

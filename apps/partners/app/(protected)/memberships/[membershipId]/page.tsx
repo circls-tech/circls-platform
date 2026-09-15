@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -17,6 +17,7 @@ import type { Membership } from '@/lib/api/types';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
+import { ReceptionButton } from '@/components/ReceptionButton';
 import {
   MembershipPlanFields,
   planDraftFrom,
@@ -54,6 +55,10 @@ export default function MembershipDetailPage() {
   const activate = useActivateMembership(tenantId);
   const deactivate = useDeactivateMembership(tenantId);
 
+  // Owned here so the Reception button in the header can open the walk-in desk
+  // that lives further down the page.
+  const membersRef = useRef<HTMLDivElement>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<MembershipPlanDraft | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -125,6 +130,18 @@ export default function MembershipDetailPage() {
             {membership.name}
           </h1>
           <StatusPill status={membership.status} />
+          {/* Signing someone up at the counter is the thing staff come here to
+              do most often, so it sits beside the name rather than below the
+              members table. Only a live plan can be sold. */}
+          <span className="ml-auto">
+            <ReceptionButton
+              disabled={membership.status !== 'active'}
+              onClick={() => {
+                setWalkInOpen(true);
+                membersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            />
+          </span>
         </div>
         <p className="mt-0.5 text-sm text-slate-500">{venueLabel}</p>
       </div>
@@ -257,13 +274,17 @@ export default function MembershipDetailPage() {
         )}
       </Card>
 
-      <Card title="Members" subtitle="Everyone holding this plan, however they joined.">
-        <MembershipMembers
-          tenantId={tenantId}
-          membershipId={membership.id}
-          tiers={membership.tiers}
-        />
-      </Card>
+      <div ref={membersRef}>
+        <Card title="Members" subtitle="Everyone holding this plan, however they joined.">
+          <MembershipMembers
+            tenantId={tenantId}
+            membershipId={membership.id}
+            tiers={membership.tiers}
+            walkInOpen={walkInOpen}
+            onWalkInOpenChange={setWalkInOpen}
+          />
+        </Card>
+      </div>
     </div>
   );
 }

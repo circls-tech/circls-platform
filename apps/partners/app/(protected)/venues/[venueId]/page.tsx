@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react';
 import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import { ReceptionButton } from '@/components/ReceptionButton';
 import { useArenas, useCreateArena, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
@@ -73,28 +74,33 @@ export default function VenuePage() {
       {isLoading && <p className="text-gray-500">Loading…</p>}
       <ul className="flex flex-col gap-2">
         {arenas?.map((a) => (
-          <li key={a.id}>
-            <Link
-              href={`/arenas/${a.id}?tenantId=${tenantId}`}
-              className="block rounded border border-gray-200 bg-white p-3 hover:border-brand-400"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{a.name}</span>
-                <span className="text-xs text-gray-400">
-                  {a.sport ?? 'sport n/a'}
-                </span>
-                <span className="ml-auto">
-                  <StatusPill status={a.status} />
-                </span>
+          <li
+            key={a.id}
+            className="rounded border border-gray-200 bg-white p-3 hover:border-brand-400"
+          >
+            <div className="flex items-center gap-2">
+              {/* The row has always opened reception; it just never said so.
+                  The name still goes there, and the button now names it —
+                  which is why these are siblings rather than nested links. */}
+              <Link
+                href={`/arenas/${a.id}?tenantId=${tenantId}`}
+                className="font-medium hover:underline"
+              >
+                {a.name}
+              </Link>
+              <span className="text-xs text-gray-400">{a.sport ?? 'sport n/a'}</span>
+              <span className="ml-auto flex items-center gap-2">
+                <StatusPill status={a.status} />
+                <ReceptionButton href={`/arenas/${a.id}?tenantId=${tenantId}`} />
+              </span>
+            </div>
+            {a.tags && a.tags.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {a.tags.map((tag) => (
+                  <Badge key={tag} tone="neutral" label={tag} />
+                ))}
               </div>
-              {a.tags && a.tags.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {a.tags.map((tag) => (
-                    <Badge key={tag} tone="neutral" label={tag} />
-                  ))}
-                </div>
-              )}
-            </Link>
+            )}
           </li>
         ))}
         {arenas?.length === 0 && <p className="text-sm text-gray-500">No arenas yet.</p>}
