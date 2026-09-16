@@ -106,4 +106,48 @@ describe.skipIf(!runIntegration)('consumer org-scoped events', () => {
     expect(row).not.toHaveProperty('postBookingRedirect');
     expect(JSON.stringify(rows)).not.toContain('forms.gle/private');
   });
+
+  it('keeps the per-event billing rates and the archive flag out of the public payloads', async () => {
+    // These are commercial terms between Circls and the partner. The consumer
+    // event endpoints are unauthenticated, so a raw `events` row publishes them.
+    const [e] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId: null,
+        addressJson: { line1: '4 Rate Rd', city: 'Pune' },
+        tzName: 'Asia/Kolkata',
+        name: 'Billing Leak Event',
+        startsAt: new Date('2030-09-03T10:00:00Z'),
+        endsAt: new Date('2030-09-03T12:00:00Z'),
+        pricePaise: 0,
+        partnerCommissionBps: 750,
+        consumerCommissionBps: 250,
+        advancePayoutBps: 5000,
+        archivedAt: new Date('2030-01-01T00:00:00Z'),
+        status: 'published',
+      })
+      .returning();
+
+    const leaked = [
+      'partnerCommissionBps',
+      'consumerCommissionBps',
+      'advancePayoutBps',
+      'archivedAt',
+    ];
+
+    const detail = await getPublicEventById(e!.id);
+    expect(detail).toBeTruthy();
+    for (const key of leaked) expect(detail).not.toHaveProperty(key);
+
+    const listRow = (await listPublicUpcomingEvents({ limit: 100 })).find(
+      (r) => r.id === e!.id,
+    );
+    expect(listRow).toBeTruthy();
+    for (const key of leaked) expect(listRow).not.toHaveProperty(key);
+
+    // Raw-JSON belt and braces: the bps values must not appear at all.
+    expect(JSON.stringify(detail)).not.toContain('750');
+    expect(JSON.stringify(detail)).not.toContain('5000');
+  });
 });

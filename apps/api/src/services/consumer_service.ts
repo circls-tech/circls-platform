@@ -280,19 +280,43 @@ function groupBySeries<T>(rows: T[], getEvent: (r: T) => Event): Array<T & { ser
  * columns and the tenant/org name. `loc*` fields are what the UI renders.
  */
 /**
- * An event row with the partner-only columns removed. Right now that is just
- * `postBookingRedirect` — a WhatsApp invite or form link belongs to people who
- * booked, so it travels with the booking (`BookEventResult.postBookingRedirect`
- * and `MyBookingDetail.event`) and never with a listing.
+ * An event row with the partner-only columns removed: the organiser's
+ * post-booking link (it travels with the booking, never with a listing) and
+ * the per-event billing terms + archive flag, which are commercial data
+ * between Circls and the partner. The consumer event endpoints are
+ * unauthenticated, so a raw `Event` publishes all of it.
  *
  * EVERY consumer-facing path that returns event columns must go through
- * {@link toPublicEventColumns}; returning a raw `Event` publishes the link.
+ * {@link toPublicEventColumns}.
  */
-export type PublicEventColumns = Omit<Event, 'postBookingRedirect'>;
+export type PublicEventColumns = Omit<
+  Event,
+  | 'postBookingRedirect'
+  | 'partnerCommissionBps'
+  | 'consumerCommissionBps'
+  | 'advancePayoutBps'
+  | 'archivedAt'
+>;
 
 /** Drop the partner-only columns from an event row. See {@link PublicEventColumns}. */
-function toPublicEventColumns<T extends Event>(row: T): Omit<T, 'postBookingRedirect'> {
-  const { postBookingRedirect: _redirect, ...publicColumns } = row;
+function toPublicEventColumns<T extends Event>(
+  row: T,
+): Omit<
+  T,
+  | 'postBookingRedirect'
+  | 'partnerCommissionBps'
+  | 'consumerCommissionBps'
+  | 'advancePayoutBps'
+  | 'archivedAt'
+> {
+  const {
+    postBookingRedirect: _redirect,
+    partnerCommissionBps: _partnerBps,
+    consumerCommissionBps: _consumerBps,
+    advancePayoutBps: _advanceBps,
+    archivedAt: _archivedAt,
+    ...publicColumns
+  } = row;
   return publicColumns;
 }
 
