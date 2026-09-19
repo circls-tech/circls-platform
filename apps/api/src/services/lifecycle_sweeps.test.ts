@@ -151,16 +151,16 @@ describe.skipIf(!runIntegration)('lifecycle sweeps', () => {
     });
   });
 
-  // The whole story for a partner: a member lapses, the sweep expires them, a
-  // partner extends their dates — and they must get through the door again.
-  // A pass keeps its own copy of its validity window, so without re-deriving
-  // it the door still said "Expired" after the membership was renewed.
-  describe('renewing an expired member with an entry pass', () => {
-    it('moves the pass window with the dates, so the door lets them back in', async () => {
-      const stamp = Date.now();
+  // A member's QR pass has to agree with their membership at the door. It keeps
+  // its own copy of its validity window and its own status, so every change to
+  // the membership that matters at the door has to reach the pass too.
+  describe('entry passes follow the membership', () => {
+    /** A member on a free, pass-enabled plan, holding a freshly issued pass. */
+    async function passHolder() {
+      const stamp = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
       const [buyer] = await db
         .insert(users)
-        .values({ firebaseUid: `sweep-buyer-${stamp}`, email: `sweep-buyer-${stamp}@x.com` })
+        .values({ firebaseUid: `sweep-pass-${stamp}`, email: `sweep-pass-${stamp}@x.com` })
         .returning();
       const plan = await createMembership({
         tenantId,
@@ -180,11 +180,25 @@ describe.skipIf(!runIntegration)('lifecycle sweeps', () => {
            })}::jsonb
          where id = ${plan.id}::uuid
       `);
-
       const { userMembershipId } = await purchaseMembership({
         membershipId: plan.id,
         userId: buyer!.id,
       });
+      const [pass] = (await db.execute(sql`
+        select code, valid_until from qr_tickets
+         where user_membership_id = ${userMembershipId}::uuid
+      `)) as unknown as { code: string; valid_until: Date }[];
+      expect(pass).toBeTruthy();
+      return { planId: plan.id, userMembershipId, pass: pass! };
+    }
+
+    const scan = (code: string) =>
+      validateQrTicket({ tenantId, actorUserId }, code, { consume: false });
+
+    // The whole story for a partner: a member lapses, the sweep expires them,
+    // a partner extends their dates — and they must get through the door again.
+    it('moves the pass window with renewed dates, so the door lets them back in', async () => {
+      const { planId, userMembershipId, pass } = await passHolder();
 
       // Make it a membership that ran out three days ago — pass included.
       const lapsed = ago(3 * DAY);
@@ -197,74 +211,59 @@ describe.skipIf(!runIntegration)('lifecycle sweeps', () => {
         update qr_tickets set valid_until = ${lapsed.toISOString()}::timestamptz
          where user_membership_id = ${userMembershipId}::uuid
       `);
-      const [pass] = (await db.execute(sql`
-        select code from qr_tickets where user_membership_id = ${userMembershipId}::uuid
-      `)) as unknown as { code: string }[];
-      expect(pass).toBeTruthy();
 
       await expireLapsedMemberships();
-      expect(
-        (await validateQrTicket({ tenantId, actorUserId }, pass!.code, { consume: false }))
-          .outcome,
-      ).toBe('expired');
+      expect((await scan(pass.code)).outcome).toBe('expired');
 
       const renewedTo = ahead(30 * DAY);
-      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
         endsAt: renewedTo,
       });
 
-      const scan = await validateQrTicket({ tenantId, actorUserId }, pass!.code, {
-        consume: false,
-      });
-      expect(scan.outcome).toBe('valid');
-      expect(new Date(scan.ticket!.validUntil!).getTime()).toBe(renewedTo.getTime());
+      const after = await scan(pass.code);
+      expect(after.outcome).toBe('valid');
+      expect(new Date(after.ticket!.validUntil!).getTime()).toBe(renewedTo.getTime());
     });
 
-    // Cancelling doesn't revoke the pass, so moving its window would hand a
-    // live pass to someone who is no longer a member.
-    it("leaves a cancelled member's pass where it was when their dates are edited", async () => {
-      const stamp = Date.now();
-      const [buyer] = await db
-        .insert(users)
-        .values({ firebaseUid: `sweep-cx-${stamp}`, email: `sweep-cx-${stamp}@x.com` })
-        .returning();
-      const plan = await createMembership({
-        tenantId,
-        actorUserId,
-        name: `Cancelled pass plan ${stamp}`,
-        pricePaise: 0,
-        durationDays: 30,
-      });
-      await db.execute(sql`
-        update memberships
-           set qr_ticket_config = ${JSON.stringify({
-             enabled: true,
-             multiUse: true,
-             maxScans: null,
-             validFromOffsetMin: null,
-             validUntilOffsetMin: null,
-           })}::jsonb
-         where id = ${plan.id}::uuid
-      `);
-      const { userMembershipId } = await purchaseMembership({
-        membershipId: plan.id,
-        userId: buyer!.id,
-      });
-      const [before] = (await db.execute(sql`
-        select valid_until from qr_tickets where user_membership_id = ${userMembershipId}::uuid
-      `)) as unknown as { valid_until: Date }[];
+    // Before this, a free membership's pass had no booking to be revoked
+    // through, so a cancelled member kept scanning valid until its end date.
+    it('revokes the pass when the member is cancelled', async () => {
+      const { planId, userMembershipId, pass } = await passHolder();
+      expect((await scan(pass.code)).outcome).toBe('valid');
 
-      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
         status: 'cancelled',
       });
-      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+      expect((await scan(pass.code)).outcome).toBe('revoked');
+    });
+
+    it('gives the pass back when a cancelled member is reactivated', async () => {
+      const { planId, userMembershipId, pass } = await passHolder();
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
+        status: 'cancelled',
+      });
+
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
+        status: 'active',
+      });
+      expect((await scan(pass.code)).outcome).toBe('valid');
+    });
+
+    it("leaves a cancelled member's pass where it was when their dates are edited", async () => {
+      const { planId, userMembershipId, pass } = await passHolder();
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
+        status: 'cancelled',
+      });
+      await updateMember({ tenantId, actorUserId }, userMembershipId, planId, {
         endsAt: ahead(90 * DAY),
       });
 
       const [after] = (await db.execute(sql`
-        select valid_until from qr_tickets where user_membership_id = ${userMembershipId}::uuid
+        select valid_until from qr_tickets
+         where user_membership_id = ${userMembershipId}::uuid
       `)) as unknown as { valid_until: Date }[];
-      expect(new Date(after!.valid_until).getTime()).toBe(new Date(before!.valid_until).getTime());
+      expect(new Date(after!.valid_until).getTime()).toBe(new Date(pass.valid_until).getTime());
+      expect((await scan(pass.code)).outcome).toBe('revoked');
     });
   });
 

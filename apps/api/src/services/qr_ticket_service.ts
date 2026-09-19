@@ -368,6 +368,38 @@ export async function refreshQrWindowForUserMembership(
     );
 }
 
+/**
+ * Revoke a member's pass when their membership is cancelled.
+ *
+ * Keyed on the user_membership rather than a booking: a free membership's pass
+ * has no booking behind it, so the booking-keyed revoke never reached it and a
+ * cancelled member kept getting through the door until the pass's end date.
+ */
+export async function revokeQrTicketsForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  await dbx
+    .update(qrTickets)
+    .set({ status: 'revoked' })
+    .where(and(eq(qrTickets.userMembershipId, userMembershipId), eq(qrTickets.status, 'active')));
+}
+
+/**
+ * Undo that revoke when a cancelled member is reactivated, so the member the
+ * partner just restored isn't still turned away at the door. Only revoked
+ * passes come back; a used-up single-use pass stays used.
+ */
+export async function restoreQrTicketsForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  await dbx
+    .update(qrTickets)
+    .set({ status: 'active' })
+    .where(and(eq(qrTickets.userMembershipId, userMembershipId), eq(qrTickets.status, 'revoked')));
+}
+
 /** Revoke any still-active tickets of a cancelled booking. */
 export async function revokeQrTicketsForBooking(
   bookingId: string,

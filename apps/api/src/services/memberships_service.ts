@@ -40,6 +40,8 @@ import {
   issueQrTicketsForUserMembership,
   qrTicketDataUrl,
   refreshQrWindowForUserMembership,
+  restoreQrTicketsForUserMembership,
+  revokeQrTicketsForUserMembership,
 } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import {
@@ -669,6 +671,15 @@ export async function updateMember(
         ...(nextStatus ? { status: nextStatus } : {}),
       })
       .where(eq(userMemberships.id, userMembershipId));
+
+    // The pass follows the membership: a cancelled member loses it, and one
+    // the partner reactivates gets it back. Restore runs before the window
+    // refresh below, which skips revoked passes.
+    if (nextStatus === 'cancelled' && existing.um.status !== 'cancelled') {
+      await revokeQrTicketsForUserMembership(userMembershipId, tx);
+    } else if (nextStatus === 'active' && existing.um.status === 'cancelled') {
+      await restoreQrTicketsForUserMembership(userMembershipId, tx);
+    }
 
     const datesMoved =
       startsAt.getTime() !== existing.um.startsAt.getTime() ||
