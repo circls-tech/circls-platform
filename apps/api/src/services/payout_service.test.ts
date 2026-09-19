@@ -591,18 +591,39 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         detail: 'Monthly',
       });
 
-      // Named for what it is, and never treated as the partner's fee.
+      // The partner never had this sale, so its refund is not deducted — it is
+      // shown for the record, named for what it is, with no fee against it.
       expect(line('Late UPI Payer')).toMatchObject({
         grossPaise: 0,
+        refundsPaise: 0,
+        netPaise: 0,
+        uncreditedRefundPaise: 60037,
         refundTiming: 'never_credited',
         refundFeePaise: 0,
         paidInPayout: null,
       });
+      expect(bd.uncreditedRefundsPaise).toBe(60037);
+
+      // The payout itself: Yugal's and Himanshu's refunds deducted, the
+      // late-UPI refund not.
+      expect(Number(current!.refundsPaise)).toBe(61451 + 61417);
 
       // Still reconciles to the penny, and one line per booking.
       expect(bd.unattributedPaise).toBe(0);
       expect(bd.byBooking).toHaveLength(5);
       expect(bd.byBooking.reduce((sum, l) => sum + l.netPaise, 0)).toBe(bd.amountPaise);
+
+      // A payout reconciled before this fix deducted that refund. Its stored
+      // amount is then short by exactly the uncredited refund, and the
+      // breakdown says so: the residual is −60037, which is what is owed.
+      await db.execute(sql`
+        update payouts set amount_paise = amount_paise - 60037,
+                           refunds_paise = refunds_paise + 60037
+         where id = ${current!.id}::uuid
+      `);
+      const before = (await getPayoutBreakdown(current!.id))!;
+      expect(before.unattributedPaise).toBe(-60037);
+      expect(before.unattributedPaise).toBe(-before.uncreditedRefundsPaise);
     } finally {
       await db.execute(sql`delete from event_booking_tickets where booking_id in
                              (select id from bookings where tenant_id = ${tid}::uuid)`);
