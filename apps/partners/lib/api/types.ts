@@ -82,6 +82,9 @@ export interface Venue {
   lat: number | null;
   lng: number | null;
   status: ListingStatus;
+  /** What the venue was before its partner closed it; reopening restores it.
+   *  Null while open, and for venues closed before this was recorded. */
+  statusBeforeClose?: ListingStatus | null;
   tags: string[];
   // Trust metadata (PR #109). Present on GET /v1/venues/:id; nullable.
   description?: string | null;
@@ -186,6 +189,8 @@ export interface Arena {
   /** QR ticket rules for bookings on this arena; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   status: ListingStatus;
+  /** What the arena was before its partner closed it; reopening restores it. */
+  statusBeforeClose?: ListingStatus | null;
   tags: string[];
 }
 

@@ -30,10 +30,13 @@ const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
 export interface StatusPillProps {
   status: string;
   className?: string;
+  /** Overrides the default wording where a status means something more
+   *  specific in context — a partner's own `suspended` venue is "Closed". */
+  label?: string;
 }
 
 /** Small status badge for a listing (venue / arena / event / membership). */
-export function StatusPill({ status, className }: StatusPillProps) {
+export function StatusPill({ status, className, label }: StatusPillProps) {
   const meta = STATUS_META[status] ?? { label: status, tone: 'neutral' as BadgeTone };
-  return <Badge tone={meta.tone} label={meta.label} className={className} />;
+  return <Badge tone={meta.tone} label={label ?? meta.label} className={className} />;
 }

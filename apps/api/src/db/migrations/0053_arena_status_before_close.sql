@@ -1,0 +1,11 @@
+-- Remember what an arena was before its partner closed it.
+--
+-- Same reasoning as 0052 for venues: closed is the existing `suspended`
+-- status, a partner can close an arena from any state, and reopening must
+-- restore that state rather than assume `active` — otherwise an arena closed
+-- while awaiting Circls review, or after a rejection, would come back live.
+--
+-- Nullable, no backfill. Arenas had no way to be closed before this, so no
+-- existing row is closed by a partner; any `suspended` arena that exists has
+-- nothing recorded and reopens into review.
+ALTER TABLE "arenas" ADD COLUMN "status_before_close" "arena_status";

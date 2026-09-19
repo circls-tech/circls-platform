@@ -4,6 +4,22 @@ import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues, useCreateVenue } from '@/lib/api/queries';
 import { Badge, Button, Card, Input, Modal, StatusPill, TagsInput } from '@/lib/ui';
+import type { Venue } from '@/lib/api/types';
+
+type VenueShelf = 'open' | 'closed';
+
+/**
+ * Closed and rejected venues live on their own tab. Neither is on the consumer
+ * portal, and mixed in with live ones they buried the venues a partner is
+ * actually running. Awaiting review stays with the open ones: it is on its way
+ * to live, and the partner is still working on it.
+ */
+const OFF_SHELF: ReadonlySet<Venue['status']> = new Set(['suspended', 'rejected']);
+
+const SHELF_TABS: { key: VenueShelf; label: string }[] = [
+  { key: 'open', label: 'Active' },
+  { key: 'closed', label: 'Closed & rejected' },
+];
 
 function AddVenueModal({
   tenantId,
@@ -93,6 +109,7 @@ function VenueList({
   onAddVenue: () => void;
 }) {
   const { data: venues, isLoading } = useVenues(tenantId);
+  const [shelf, setShelf] = useState<VenueShelf>('open');
 
   if (isLoading) {
     return <p className="text-sm text-slate-500">Loading venues…</p>;
@@ -111,37 +128,77 @@ function VenueList({
     );
   }
 
+  const offShelf = venues.filter((v) => OFF_SHELF.has(v.status));
+  const shown = shelf === 'closed' ? offShelf : venues.filter((v) => !OFF_SHELF.has(v.status));
+  const counts: Record<VenueShelf, number> = {
+    open: venues.length - offShelf.length,
+    closed: offShelf.length,
+  };
+
   return (
-    <ul className="flex flex-col gap-3">
-      {venues.map((v) => (
-        <li key={v.id}>
-          <Link
-            href={`/venues/${v.id}?tenantId=${tenantId}`}
-            className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-1" role="tablist" aria-label="Venue shelf">
+        {SHELF_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={shelf === t.key}
+            onClick={() => setShelf(t.key)}
+            className={[
+              'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+              shelf === t.key
+                ? 'border-[#17151D] bg-[#BCE3A0] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+            ].join(' ')}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-[family-name:var(--font-display)] text-lg font-bold text-[#17151D]">{v.name}</p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {v.tzName}
-                  {v.lat != null && v.lng != null
-                    ? ` · ${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`
-                    : ''}
-                </p>
+            {t.label} <span className="font-normal text-slate-500">({counts[t.key]})</span>
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 && (
+        <p className="text-sm text-slate-500">
+          {shelf === 'closed'
+            ? 'No closed or rejected venues.'
+            : 'No active venues. Closed and rejected ones are on the other tab.'}
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-3">
+        {shown.map((v) => (
+          <li key={v.id}>
+            <Link
+              href={`/venues/${v.id}?tenantId=${tenantId}`}
+              className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-[family-name:var(--font-display)] text-lg font-bold text-[#17151D]">{v.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {v.tzName}
+                    {v.lat != null && v.lng != null
+                      ? ` · ${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`
+                      : ''}
+                  </p>
+                </div>
+                <StatusPill
+                  status={v.status}
+                  {...(v.status === 'suspended' ? { label: 'Closed' } : {})}
+                />
               </div>
-              <StatusPill status={v.status} />
-            </div>
-            {v.tags && v.tags.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {v.tags.map((tag) => (
-                  <Badge key={tag} tone="neutral" label={tag} />
-                ))}
-              </div>
-            )}
-          </Link>
-        </li>
-      ))}
-    </ul>
+              {v.tags && v.tags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {v.tags.map((tag) => (
+                    <Badge key={tag} tone="neutral" label={tag} />
+                  ))}
+                </div>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
