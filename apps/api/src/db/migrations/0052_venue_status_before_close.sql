@@ -1,0 +1,17 @@
+-- Remember what a venue was before its partner closed it.
+--
+-- WHY: "closed" is the existing `suspended` status, and a partner can close a
+-- venue from any state — including while it is still awaiting Circls review,
+-- or after review rejected it. Reopening therefore cannot simply return it to
+-- `active`: a venue closed while pending would come back live having never
+-- been approved, and a rejected one would overturn the rejection. The partner
+-- API has in fact accepted `status: 'active'` from any state until now, which
+-- let a partner publish a venue without review.
+--
+-- Closing stashes the prior status here and reopening restores it, so a venue
+-- only ever comes back to where it was.
+--
+-- Nullable with no backfill: a venue suspended before this change has no
+-- record of what it was, so reopening it sends it back to `pending_review` —
+-- the one choice that can never publish something Circls hasn't approved.
+ALTER TABLE "venues" ADD COLUMN "status_before_close" "venue_status";

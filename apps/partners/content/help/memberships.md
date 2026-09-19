@@ -80,7 +80,7 @@ purchase time — later edits never change passes that are already issued.
 
 Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
 
-A purchased membership runs for the plan's **duration in days** from the purchase date. A full day after it ends, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired.
+A purchased membership runs for the plan's **duration in days** from the purchase date. Once it has been over for a full day, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. circls checks twice a day, at 5 am and 5 pm IST, so this happens within a day and a half of the end date. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired.
 
 An expired member keeps their seat on the tier, exactly as before — expiry does not free up capacity. They drop out of the customer's own **My memberships** list, just as a cancelled one does.
 

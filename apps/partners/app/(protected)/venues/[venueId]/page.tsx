@@ -6,7 +6,8 @@ import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
-import { useArenas, useCreateArena, useVenue } from '@/lib/api/queries';
+import { CloseReopenControl } from '@/components/CloseReopenControl';
+import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { Badge, StatusPill, TagsInput } from '@/lib/ui';
@@ -17,6 +18,7 @@ export default function VenuePage() {
   const { data: venue } = useVenue(venueId);
   const { data: arenas, isLoading } = useArenas(venueId);
   const createArena = useCreateArena(venueId);
+  const setVenueOpen = useSetVenueOpen(venueId);
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -52,6 +54,26 @@ export default function VenuePage() {
       <Link href={`/tenants/${tenantId}`} className="text-sm text-gray-500">
         ← Venues
       </Link>
+      {venue && (
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
+            {venue.name}
+          </h1>
+          <StatusPill
+            status={venue.status}
+            {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
+          />
+          <span className="ml-auto">
+            <CloseReopenControl
+              noun="venue"
+              target={venue}
+              venueId={venue.id}
+              tenantId={tenantId}
+              setOpen={setVenueOpen}
+            />
+          </span>
+        </div>
+      )}
       {venue && <VenueDetailsForm venue={venue} />}
       <VenueImages venueId={venueId} />
       <div className="flex items-center justify-between gap-3">
@@ -90,7 +112,10 @@ export default function VenuePage() {
               </Link>
               <span className="text-xs text-gray-400">{a.sport ?? 'sport n/a'}</span>
               <span className="ml-auto flex items-center gap-2">
-                <StatusPill status={a.status} />
+                <StatusPill
+                  status={a.status}
+                  {...(a.status === 'suspended' ? { label: 'Closed' } : {})}
+                />
                 <ReceptionButton href={`/arenas/${a.id}?tenantId=${tenantId}`} />
               </span>
             </div>

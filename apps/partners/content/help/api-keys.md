@@ -28,6 +28,13 @@ curl -H "Authorization: Bearer ck_live_xxxxxxxxxxxxxxxxxxxxxxxx" \
   https://api.circls.app/api/v1/...
 ```
 
+### What an integration can book
+
+The API offers exactly what customers can book on circls: arenas that are **live**, in venues that are **live**. Anything closed, awaiting review or rejected is left out.
+
+- **Availability** for a venue lists only its live arenas. Asking for a venue that isn't live returns `409 venue_not_bookable`; asking for a specific arena that isn't live returns `409 arena_not_bookable`.
+- **Booking** checks every slot in the request, not just the first. If any slot is on an arena or venue that isn't live, the whole booking is refused with the same codes and nothing is reserved.
+
 ### Revoking a key
 
 In **Existing keys**, click **Revoke** next to a key and confirm. Revocation is immediate and permanent — any integration still using that key starts receiving `401 Unauthorized` straight away. Rotate keys by generating a new one, switching your integration over, then revoking the old one.
