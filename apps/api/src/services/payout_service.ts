@@ -411,6 +411,63 @@ export interface PayoutBreakdown {
   byItem: PayoutBreakdownLine[];
   /** Who paid: one line per customer. */
   byConsumer: PayoutBreakdownLine[];
+  /**
+   * Who paid, one line per booking — so each line can say what it was for,
+   * which tier, and how its refunds relate to the money actually paid out.
+   * Sorted by customer, so a person's bookings sit together.
+   */
+  byBooking: PayoutBookingLine[];
+}
+
+/** Where a line's refunds sit relative to its charge being paid out. */
+export type RefundTiming =
+  /** No refund on this line in this payout. */
+  | 'none'
+  /** The charge was paid out in this same payout, so they net off here. */
+  | 'same_payout'
+  /**
+   * The charge was paid out in an earlier payout and the refund claws it back
+   * now — which is why such a line can show a gross of 0 against a refund.
+   */
+  | 'earlier_payout'
+  /** Refunded before the charge was paid out; the charge arrives later. */
+  | 'not_yet_paid'
+  /**
+   * The charge was never going to be paid out to the partner — it has no
+   * settlement hold and was never released. Happens when a payment succeeds
+   * after its booking was already cancelled (a late UPI success, say): the
+   * customer is refunded automatically and the partner never had the sale.
+   */
+  | 'never_credited';
+
+export interface PayoutBookingLine {
+  bookingId: string | null;
+  consumerId: string | null;
+  customerName: string;
+  contact: string | null;
+  /** 'event' | 'membership' | 'slot', or null when it can't be attributed. */
+  itemType: string | null;
+  /** What it was for: the event, the plan, or the venue. */
+  itemName: string | null;
+  venueName: string | null;
+  /** Tickets by tier for an event ("2× Gold"), the plan tier for a
+   *  membership, or the court(s) for a venue booking. */
+  detail: string | null;
+  grossPaise: number;
+  refundsPaise: number;
+  commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
+  netPaise: number;
+  /**
+   * The part of this line's refunds that is more than the partner was paid for
+   * the booking: the gateway fee on the original charge, which the customer
+   * gets back but partners bear on a refund. Zero when there's no refund.
+   */
+  refundFeePaise: number;
+  refundTiming: RefundTiming;
+  /** For an 'earlier_payout' refund: the payout that paid the original charge. */
+  paidInPayout: { id: string; periodStart: string; periodEnd: string } | null;
 }
 
 interface AttributedRow {
@@ -479,6 +536,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       unattributedPaise: Number(po['amount_paise']),
       byItem: [],
       byConsumer: [],
+      byBooking: [],
     };
   }
 
@@ -626,6 +684,38 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     add(consumerLine, r);
   }
 
+  const details = await loadBookingDetails(
+    rows.flatMap((r) => (r.bookingId ? [r.bookingId] : [])),
+    { tenantId, currency, start, end },
+  );
+  const byBooking: PayoutBookingLine[] = rows.map((r) => {
+    const d = r.bookingId ? details.get(r.bookingId) : undefined;
+    return {
+      bookingId: r.bookingId,
+      consumerId: r.consumerId,
+      customerName: r.consumerName ?? 'Guest',
+      contact: r.consumerContact,
+      itemType: r.itemType,
+      itemName: r.itemName,
+      venueName: r.venueName,
+      detail: d?.detail ?? null,
+      grossPaise: r.gross,
+      refundsPaise: r.refunds,
+      commissionPaise: r.commission,
+      advancesPaise: r.advances,
+      advanceRecoupedPaise: r.advanceRecouped,
+      netPaise: r.gross - r.refunds - r.commission + r.advances - r.advanceRecouped,
+      refundFeePaise: r.refunds > 0 ? (d?.refundFeePaise ?? 0) : 0,
+      refundTiming: r.refunds > 0 ? (d?.refundTiming ?? 'not_yet_paid') : 'none',
+      paidInPayout: r.refunds > 0 ? (d?.paidInPayout ?? null) : null,
+    };
+  });
+  byBooking.sort(
+    (a, b) =>
+      a.customerName.localeCompare(b.customerName) ||
+      (a.itemName ?? '').localeCompare(b.itemName ?? ''),
+  );
+
   const byNet = (a: PayoutBreakdownLine, b: PayoutBreakdownLine) => b.netPaise - a.netPaise;
   const itemLines = [...byItem.values()].sort(byNet);
   const attributedPaise = itemLines.reduce((sum, l) => sum + l.netPaise, 0);
@@ -639,7 +729,156 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     unattributedPaise: amountPaise - attributedPaise,
     byItem: itemLines,
     byConsumer: [...byConsumer.values()].sort(byNet),
+    byBooking,
   };
+}
+
+interface BookingDetail {
+  detail: string | null;
+  refundFeePaise: number;
+  refundTiming: RefundTiming;
+  paidInPayout: PayoutBookingLine['paidInPayout'];
+}
+
+/**
+ * Per-booking context for the "who paid" lines: what exactly was bought, and
+ * how any refund in this payout relates to the original charge.
+ *
+ * Looks at each booking's charge across all time, not just this payout's
+ * window — a refund here is often against a charge that was paid out weeks
+ * earlier, and that is precisely what a partner needs to see.
+ */
+async function loadBookingDetails(
+  bookingIds: string[],
+  w: { tenantId: string; currency: string; start: string; end: string },
+): Promise<Map<string, BookingDetail>> {
+  const out = new Map<string, BookingDetail>();
+  if (bookingIds.length === 0) return out;
+  const idList = sql.join(
+    bookingIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+
+  const raw = (await db.execute(sql`
+    with charge as (
+      select p.booking_id,
+             sum(p.amount_paise)::bigint                                as cash,
+             sum(coalesce(p.settle_base_paise, p.amount_paise))::bigint as base,
+             -- A booking can carry more than one charge. If any of them is
+             -- paid out in this payout the refund nets off here; only when
+             -- none is does it claw back an earlier payout (the latest one).
+             bool_or(p.settlement_released_at >= ${w.start}::timestamptz
+                 and p.settlement_released_at <  ${w.end}::timestamptz)  as in_window,
+             max(p.settlement_released_at)
+               filter (where p.settlement_released_at < ${w.start}::timestamptz) as released_before,
+             -- Whether any charge was ever going to reach the partner: one
+             -- with a settlement hold is released in time; one already
+             -- released has been. Neither means the partner never had it.
+             bool_or(p.settlement_hold_until is not null
+                  or p.settlement_released_at is not null)             as creditable
+        from payments p
+       where p.booking_id in (${idList})
+         and p.kind = 'charge'
+         and p.status in ('captured', 'refunded', 'partially_refunded')
+       group by p.booking_id
+    ),
+    refund as (
+      -- Refund rows store negative amounts; flip them to positive here.
+      select p.booking_id,
+             (-sum(p.amount_paise))::bigint                                as cash,
+             (-sum(coalesce(p.settle_base_paise, p.amount_paise)))::bigint as settle
+        from payments p
+       where p.booking_id in (${idList})
+         and p.tenant_id = ${w.tenantId}::uuid
+         and p.currency = ${w.currency}
+         and p.kind = 'refund'
+         and p.status <> 'failed'
+         and p.created_at >= ${w.start}::timestamptz
+         and p.created_at <  ${w.end}::timestamptz
+       group by p.booking_id
+    )
+    select b.id as booking_id,
+           case b.item_type
+             when 'event' then (
+               select string_agg(t.quantity || '× ' || tt.name, ', ' order by tt.sort_order, tt.name)
+                 from event_booking_tickets t
+                 join event_ticket_tiers tt on tt.id = t.tier_id
+                where t.booking_id = b.id)
+             when 'membership' then (
+               select mt.name
+                 from user_memberships um
+                 join membership_tiers mt on mt.id = um.membership_tier_id
+                where um.id = (b.item_data->>'userMembershipId')::uuid
+                   or um.payment_id in (select p.id from payments p
+                                         where p.booking_id = b.id and p.kind = 'charge')
+                limit 1)
+             when 'slot' then coalesce(
+               (select string_agg(distinct a.name, ', ')
+                  from slots s join arenas a on a.id = s.arena_id
+                 where s.booking_id = b.id),
+               -- A cancelled booking's slots are released, so fall back to the
+               -- arena recorded on the booking itself.
+               (select a.name from arenas a where a.id = b.slot_arena_id))
+           end                                                    as detail,
+           c.cash                                                 as charge_cash,
+           c.base                                                 as charge_base,
+           case when not coalesce(c.creditable, false) then 'never'
+                when c.in_window                   then 'within'
+                when c.released_before is not null then 'before'
+                else 'unpaid' end                                 as charge_when,
+           r.cash                                                 as refund_cash,
+           r.settle                                               as refund_settle,
+           (select json_build_object('id', po.id,
+                                     'periodStart', po.period_start,
+                                     'periodEnd', po.period_end)
+              from payouts po
+             where po.tenant_id = ${w.tenantId}::uuid
+               and po.currency = ${w.currency}
+               and c.released_before >= po.period_start
+               and c.released_before <  po.period_end
+             order by po.period_start desc
+             limit 1)                                             as paid_in
+      from bookings b
+      left join charge c on c.booking_id = b.id
+      left join refund r on r.booking_id = b.id
+     where b.id in (${idList})
+  `)) as unknown as Record<string, unknown>[];
+
+  for (const row of raw) {
+    const chargeCash = Number(row['charge_cash'] ?? 0);
+    const chargeBase = row['charge_base'] === null ? null : Number(row['charge_base']);
+    const refundCash = Number(row['refund_cash'] ?? 0);
+    const refundSettle = Number(row['refund_settle'] ?? 0);
+
+    const when = row['charge_when'] as 'never' | 'before' | 'within' | 'unpaid';
+
+    // What the partner loses beyond what they were paid for the refunded share
+    // of the booking. Proportional by cash, the same way computeSettleRefundPaise
+    // sizes a partial refund.
+    let refundFeePaise = 0;
+    // No fee on a never-credited refund: the partner never had the sale, so
+    // nothing about it is theirs to bear.
+    if (when !== 'never' && refundSettle > 0 && chargeCash > 0 && chargeBase !== null) {
+      const baseShare = Math.round((chargeBase * refundCash) / chargeCash);
+      refundFeePaise = Math.max(0, refundSettle - baseShare);
+    }
+
+    const paidIn = row['paid_in'] as { id: string; periodStart: string; periodEnd: string } | null;
+    out.set(row['booking_id'] as string, {
+      detail: (row['detail'] as string | null) ?? null,
+      refundFeePaise,
+      refundTiming:
+        when === 'never'
+          ? 'never_credited'
+          : when === 'within'
+            ? 'same_payout'
+            : when === 'before'
+              ? 'earlier_payout'
+              : 'not_yet_paid',
+      paidInPayout: when === 'before' && paidIn ? paidIn : null,
+    });
+  }
+  return out;
 }
 
 export interface ExecutePayoutInput {

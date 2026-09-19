@@ -420,6 +420,206 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
     expect(breakdown!.unattributedPaise).toBe(0);
   });
 
+  // The Saur Grapes payout (17–24 Aug 2026), rebuilt with its real numbers.
+  // The partner expected ₹10,800 and saw less; every rupee of the gap was two
+  // lines the old per-customer view couldn't explain:
+  //  - Yugal: a ₹600 ticket charged at ₹614.51 (grossed up for the gateway
+  //    fee), refunded in full in the same week. Net −₹14.51 — the fee.
+  //  - Himanshu: paid out the week before, refunded this week. Gross 0 against
+  //    a ₹614.17 refund — a clawback of an earlier payout.
+  it('explains each booking: what it was for, its tier, and how its refund lands', async () => {
+    const stamp = `${Date.now()}-${extraTenantIds.length}`;
+    const [t] = await db
+      .insert(tenants)
+      .values({ name: 'Saur Grapes', slug: `saurgrapes-${stamp}`, commissionBps: 0 })
+      .returning();
+    const tid = t!.id;
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId: tid, name: 'Grape Grounds', tzName: 'Asia/Kolkata' })
+      .returning();
+
+    const PRIOR_RELEASE = '2026-05-13T10:00:00.000Z'; // week of 11–18 May
+    const PRIOR_NOW = new Date('2026-05-22T09:30:00Z'); // settles 11–18 May
+    const REFUND_AT = '2026-05-21T10:00:00.000Z'; // week of 18–25 May
+
+    try {
+      const [ev] = (await db.execute(sql`
+        insert into events (tenant_id, venue_id, name, starts_at, ends_at, status)
+        values (${tid}::uuid, ${v!.id}::uuid, 'Grape Stomp',
+                '2026-05-30T10:00:00Z', '2026-05-30T13:00:00Z', 'published')
+        returning id
+      `)) as unknown as { id: string }[];
+      const [gold] = (await db.execute(sql`
+        insert into event_ticket_tiers (event_id, tenant_id, name, price_paise, sort_order)
+        values (${ev!.id}::uuid, ${tid}::uuid, 'Gold', 140000, 0)
+        returning id
+      `)) as unknown as { id: string }[];
+
+      const booking = async (
+        name: string,
+        itemType: 'event' | 'membership',
+        itemData: Record<string, string>,
+      ) => {
+        const [b] = await db
+          .insert(bookings)
+          .values({
+            tenantId: tid,
+            venueId: v!.id,
+            itemType,
+            itemData,
+            channel: 'circls',
+            paymentMethod: 'razorpay_route',
+            status: 'confirmed',
+            customerName: name,
+            customerContact: '+91-9000000222',
+            totalPaise: 0,
+            createdByUserId: userId,
+          })
+          .returning();
+        return b!.id;
+      };
+      const charge = (bookingId: string, cash: number, base: number, releasedAt: string) =>
+        db.execute(sql`
+          insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+                                status, kind, settlement_released_at, created_at)
+          values (${bookingId}::uuid, ${tid}::uuid, 'stub', ${cash}, ${base},
+                  'captured', 'charge', ${releasedAt}::timestamptz, ${releasedAt}::timestamptz)
+        `);
+      // settle_base left null: the legacy fallback deducts the full customer
+      // cash, gateway fee included — exactly the Saur Grapes rows.
+      const refund = (bookingId: string, cash: number) =>
+        db.execute(sql`
+          insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+                                status, kind, settlement_released_at, created_at)
+          values (${bookingId}::uuid, ${tid}::uuid, 'stub', ${-cash}, null,
+                  'captured', 'refund', null, ${REFUND_AT}::timestamptz)
+        `);
+
+      // Himanshu's ticket was paid out the week before…
+      const himanshu = await booking('Himanshu Pazare', 'event', { eventId: ev!.id });
+      await charge(himanshu, 61417, 60000, PRIOR_RELEASE);
+      await reconcileWeeklyPayouts(PRIOR_NOW);
+      const [prior] = await db.select().from(payouts).where(sql`tenant_id = ${tid}::uuid`);
+      expect(prior).toBeTruthy();
+
+      // …and refunded this week, alongside Yugal's same-week refund.
+      await refund(himanshu, 61417);
+      const yugal = await booking('Yugal Shelke', 'event', { eventId: ev!.id });
+      await charge(yugal, 61451, 60000, RELEASED_IN_WINDOW);
+      await refund(yugal, 61451);
+
+      // One more ordinary sale, with a tier on it.
+      const sharvaree = await booking('Sharvaree Ganvir', 'event', { eventId: ev!.id });
+      await db.execute(sql`
+        insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+        values (${sharvaree}::uuid, ${gold!.id}::uuid, 1, 140000)
+      `);
+      await charge(sharvaree, 140000, 140000, RELEASED_IN_WINDOW);
+
+      // And a membership, whose tier comes from the member row.
+      const [plan] = (await db.execute(sql`
+        insert into memberships (tenant_id, name, duration_days) values (${tid}::uuid, 'Vine Club', 30)
+        returning id
+      `)) as unknown as { id: string }[];
+      const [tier] = (await db.execute(sql`
+        insert into membership_tiers (membership_id, tenant_id, name, duration_days, price_paise)
+        values (${plan!.id}::uuid, ${tid}::uuid, 'Monthly', 30, 50000) returning id
+      `)) as unknown as { id: string }[];
+      const [um] = (await db.execute(sql`
+        insert into user_memberships (membership_id, membership_tier_id, external_name, starts_at, ends_at)
+        values (${plan!.id}::uuid, ${tier!.id}::uuid, 'Maria George',
+                '2026-05-20T00:00:00Z', '2026-06-19T00:00:00Z') returning id
+      `)) as unknown as { id: string }[];
+      const maria = await booking('Maria George', 'membership', {
+        membershipId: plan!.id,
+        userMembershipId: um!.id,
+      });
+      await charge(maria, 50000, 50000, RELEASED_IN_WINDOW);
+
+      // A payment that succeeded after its booking was cancelled (a late UPI
+      // success): refunded automatically, never given a settlement hold, so
+      // the partner never had it.
+      const lateUpi = await booking('Late UPI Payer', 'event', { eventId: ev!.id });
+      await db.execute(sql`
+        insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+                              status, kind, settlement_released_at, created_at)
+        values (${lateUpi}::uuid, ${tid}::uuid, 'stub', 60037, 60000,
+                'refunded', 'charge', null, ${REFUND_AT}::timestamptz)
+      `);
+      await refund(lateUpi, 60037);
+
+      await reconcileWeeklyPayouts(NOW);
+      const [current] = await db
+        .select()
+        .from(payouts)
+        .where(sql`tenant_id = ${tid}::uuid and id <> ${prior!.id}::uuid`);
+      const bd = (await getPayoutBreakdown(current!.id))!;
+      const line = (name: string) => bd.byBooking.find((l) => l.customerName === name)!;
+
+      // Yugal: paid out and refunded in the same payout; the −₹14.51 is the fee.
+      expect(line('Yugal Shelke')).toMatchObject({
+        grossPaise: 60000,
+        refundsPaise: 61451,
+        netPaise: -1451,
+        refundFeePaise: 1451,
+        refundTiming: 'same_payout',
+        paidInPayout: null,
+      });
+
+      // Himanshu: nothing paid this week, and the line says where the money went.
+      const h = line('Himanshu Pazare');
+      expect(h).toMatchObject({
+        grossPaise: 0,
+        refundsPaise: 61417,
+        refundFeePaise: 1417,
+        refundTiming: 'earlier_payout',
+      });
+      expect(h.paidInPayout?.id).toBe(prior!.id);
+
+      // What each booking was for, and on which tier.
+      expect(line('Sharvaree Ganvir')).toMatchObject({
+        itemType: 'event',
+        itemName: 'Grape Stomp',
+        detail: '1× Gold',
+        refundTiming: 'none',
+        refundFeePaise: 0,
+      });
+      expect(line('Maria George')).toMatchObject({
+        itemType: 'membership',
+        itemName: 'Vine Club',
+        detail: 'Monthly',
+      });
+
+      // Named for what it is, and never treated as the partner's fee.
+      expect(line('Late UPI Payer')).toMatchObject({
+        grossPaise: 0,
+        refundTiming: 'never_credited',
+        refundFeePaise: 0,
+        paidInPayout: null,
+      });
+
+      // Still reconciles to the penny, and one line per booking.
+      expect(bd.unattributedPaise).toBe(0);
+      expect(bd.byBooking).toHaveLength(5);
+      expect(bd.byBooking.reduce((sum, l) => sum + l.netPaise, 0)).toBe(bd.amountPaise);
+    } finally {
+      await db.execute(sql`delete from event_booking_tickets where booking_id in
+                             (select id from bookings where tenant_id = ${tid}::uuid)`);
+      await db.execute(sql`delete from payouts where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from payments where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from bookings where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from user_memberships where membership_id in
+                             (select id from memberships where tenant_id = ${tid}::uuid)`);
+      await db.execute(sql`delete from membership_tiers where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from memberships where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from event_ticket_tiers where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from events where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from venues where tenant_id = ${tid}::uuid`);
+      await db.execute(sql`delete from tenants where id = ${tid}::uuid`);
+    }
+  });
+
   it('returns null for a payout that does not exist', async () => {
     expect(await getPayoutBreakdown('00000000-0000-0000-0000-000000000000')).toBeNull();
   });
