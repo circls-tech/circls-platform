@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
-import { NotFound } from '../lib/errors.js';
+import { Conflict, NotFound } from '../lib/errors.js';
+import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 
@@ -36,7 +37,6 @@ export interface UpdateVenueInput extends VenueMetadataInput {
   lng?: number | null;
   addressJson?: Record<string, unknown> | null;
   tags?: string[];
-  status?: 'active' | 'suspended';
 }
 
 /** Copy trust-metadata fields that were explicitly provided onto a values/set object. */
@@ -170,7 +170,6 @@ export async function updateVenue(
   if (patch.lng !== undefined) set.lng = patch.lng;
   if (patch.addressJson !== undefined) set.addressJson = patch.addressJson;
   if (patch.tags !== undefined) set.tags = patch.tags;
-  if (patch.status !== undefined) set.status = patch.status;
   applyMetadata(set, patch);
 
   // When the postal address is touched, re-mirror address_json and re-derive
@@ -211,4 +210,92 @@ export async function updateVenue(
     .returning();
   if (!v) throw new NotFound('Venue not found', 'venue_not_found');
   return v;
+}
+
+/**
+ * Close a venue: take it off the consumer portal without deleting anything.
+ *
+ * Closed is the existing `suspended` status. A partner can close from any state
+ * — withdrawing a venue still in review, or shelving a rejected one — so the
+ * prior status is kept in `status_before_close` for reopening to restore.
+ *
+ * Existing bookings are untouched: they were paid for, and deciding what to do
+ * with them is the partner's call. New online bookings stop, because consumer
+ * checkout already refuses a venue that isn't visible.
+ *
+ * Closing an already-closed venue is a no-op rather than an error, so a retry
+ * or a double click can't overwrite the stashed status with `suspended`.
+ */
+export async function closeVenue(ctx: AuditCtx, venueId: string): Promise<Venue> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(venues)
+      .where(and(eq(venues.id, venueId), eq(venues.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update');
+    if (!existing) throw new NotFound('Venue not found', 'venue_not_found');
+    if (existing.status === 'suspended') return existing;
+
+    const [updated] = await tx
+      .update(venues)
+      .set({ status: 'suspended', statusBeforeClose: existing.status })
+      .where(eq(venues.id, venueId))
+      .returning();
+
+    await writeAudit(
+      tx,
+      ctx,
+      'venue.closed',
+      'venue',
+      venueId,
+      { status: existing.status },
+      { status: 'suspended' },
+    );
+    return updated!;
+  });
+}
+
+/**
+ * Reopen a closed venue, back to exactly where it was.
+ *
+ * A venue that was live comes straight back live. One closed while awaiting
+ * review returns to review, and a rejected one stays rejected — reopening must
+ * never be a way round Circls review. A venue closed before the prior status
+ * was recorded has nothing to restore, so it goes back to review: the one
+ * outcome that can't publish something Circls hasn't approved.
+ */
+export async function reopenVenue(ctx: AuditCtx, venueId: string): Promise<Venue> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(venues)
+      .where(and(eq(venues.id, venueId), eq(venues.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update');
+    if (!existing) throw new NotFound('Venue not found', 'venue_not_found');
+    if (existing.status !== 'suspended') {
+      throw new Conflict('Only a closed venue can be reopened', 'venue_not_closed', {
+        status: existing.status,
+      });
+    }
+
+    const restored = existing.statusBeforeClose ?? 'pending_review';
+    const [updated] = await tx
+      .update(venues)
+      .set({ status: restored, statusBeforeClose: null })
+      .where(eq(venues.id, venueId))
+      .returning();
+
+    await writeAudit(
+      tx,
+      ctx,
+      'venue.reopened',
+      'venue',
+      venueId,
+      { status: 'suspended' },
+      { status: restored },
+    );
+    return updated!;
+  });
 }

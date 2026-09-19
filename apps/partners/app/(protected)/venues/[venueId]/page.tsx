@@ -6,6 +6,7 @@ import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
+import { VenueOpenControl } from '@/components/VenueOpenControl';
 import { useArenas, useCreateArena, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
@@ -52,6 +53,20 @@ export default function VenuePage() {
       <Link href={`/tenants/${tenantId}`} className="text-sm text-gray-500">
         ← Venues
       </Link>
+      {venue && (
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
+            {venue.name}
+          </h1>
+          <StatusPill
+            status={venue.status}
+            {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
+          />
+          <span className="ml-auto">
+            <VenueOpenControl venue={venue} tenantId={tenantId} />
+          </span>
+        </div>
+      )}
       {venue && <VenueDetailsForm venue={venue} />}
       <VenueImages venueId={venueId} />
       <div className="flex items-center justify-between gap-3">

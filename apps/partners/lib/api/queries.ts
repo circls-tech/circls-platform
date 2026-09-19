@@ -187,6 +187,23 @@ export interface UpdateVenueInput {
   country?: string | null;
 }
 
+/**
+ * Close a venue (take it off the consumer portal) or reopen it. Reopening
+ * restores whatever it was before closing, which may be review rather than
+ * live — read the returned venue's status rather than assuming.
+ */
+export function useSetVenueOpen(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'close' | 'reopen') =>
+      apiFetch<Venue>(`/v1/venues/${venueId}/${action}`, { method: 'POST' }),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: ['venue', venueId] });
+      if (v?.tenantId) void qc.invalidateQueries({ queryKey: ['venues', v.tenantId] });
+    },
+  });
+}
+
 export function useUpdateVenue(venueId: string) {
   const qc = useQueryClient();
   return useMutation({

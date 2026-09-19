@@ -59,10 +59,25 @@ Both venues and arenas move through the same set of statuses:
 | --- | --- |
 | **pending review** | New or recently edited listing awaiting the circls team's approval. Not yet visible to consumers. |
 | **active** | Approved and live. Visible and bookable by consumers. |
-| **suspended** | Temporarily taken down — by you or by circls. Not bookable while suspended. |
+| **closed** (suspended) | Taken off the consumer portal — see [Closing a venue](#closing-a-venue). Not bookable online while closed. |
 | **rejected** | The listing was not approved. Review the feedback, make changes, and it can be re-reviewed. |
 
 Consumers only ever see **active** arenas inside **active** venues. If something isn't showing up publicly, check its status here first.
+
+The **Venues** page has two tabs. **Active** holds your live venues and any awaiting review; **Closed & rejected** holds the ones that aren't on the consumer portal, so they don't crowd the venues you're running.
+
+## Closing a venue
+
+Use **Close venue** at the top of a venue's page when it's shutting — for renovation, for the season, or for good. Closing takes it off the consumer portal and stops new online bookings. Nothing is deleted.
+
+**Closing doesn't cancel existing bookings.** The confirmation tells you how many upcoming bookings the venue still has; contact or cancel those customers from **View bookings**.
+
+**Reopen venue** puts it back exactly where it was before you closed it:
+
+- A venue that was **live** goes live again straight away.
+- One you closed while it was **awaiting review** goes back to review.
+- A **rejected** venue comes back rejected — reopening never gets round circls review.
+- A venue closed before circls recorded this goes back to review, to be safe.
 
 ## Customer questions
 
@@ -72,4 +87,4 @@ Customers can ask **questions** on your arenas — publicly (visible to everyone
 
 - Set the correct **timezone** before releasing slots — it governs how every time is interpreted.
 - Add clear photos and descriptive tags; they improve how your venue ranks and reads in the consumer app.
-- Suspend rather than delete when a space is temporarily unavailable, so your schedule and history are preserved.
+- Close rather than delete when a venue is temporarily unavailable, so your schedule and history are preserved.
