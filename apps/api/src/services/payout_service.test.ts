@@ -479,21 +479,32 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
           .returning();
         return b!.id;
       };
-      const charge = (bookingId: string, cash: number, base: number, releasedAt: string) =>
-        db.execute(sql`
+      const charge = async (
+        bookingId: string,
+        cash: number,
+        base: number,
+        releasedAt: string,
+      ): Promise<string> => {
+        const [row] = (await db.execute(sql`
           insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
                                 status, kind, settlement_released_at, created_at)
           values (${bookingId}::uuid, ${tid}::uuid, 'stub', ${cash}, ${base},
                   'captured', 'charge', ${releasedAt}::timestamptz, ${releasedAt}::timestamptz)
-        `);
+          returning id
+        `)) as unknown as { id: string }[];
+        return row!.id;
+      };
       // settle_base left null: the legacy fallback deducts the full customer
       // cash, gateway fee included — exactly the Saur Grapes rows.
-      const refund = (bookingId: string, cash: number) =>
+      // refund_service records which charge a refund is against; only legacy
+      // rows leave it out, and then any charge on the booking counts.
+      const refund = (bookingId: string, cash: number, chargeId?: string) =>
         db.execute(sql`
           insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
-                                status, kind, settlement_released_at, created_at)
+                                status, kind, settlement_released_at, created_at, metadata)
           values (${bookingId}::uuid, ${tid}::uuid, 'stub', ${-cash}, null,
-                  'captured', 'refund', null, ${REFUND_AT}::timestamptz)
+                  'captured', 'refund', null, ${REFUND_AT}::timestamptz,
+                  ${JSON.stringify(chargeId ? { chargePaymentId: chargeId } : {})}::jsonb)
         `);
 
       // Himanshu's ticket was paid out the week before…
@@ -549,6 +560,21 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
       `);
       await refund(lateUpi, 60037);
 
+      // A booking that ended up with two charges — a retried payment — one
+      // held and refunded normally, one captured after cancellation and
+      // auto-refunded. Both refunds fall in this window.
+      const twice = await booking('Twice Charged', 'event', { eventId: ev!.id });
+      const heldCharge = await charge(twice, 61451, 60000, RELEASED_IN_WINDOW);
+      await refund(twice, 61451, heldCharge);
+      const [lateCharge] = (await db.execute(sql`
+        insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+                              status, kind, settlement_released_at, created_at)
+        values (${twice}::uuid, ${tid}::uuid, 'stub', 60037, 60000,
+                'refunded', 'charge', null, ${REFUND_AT}::timestamptz)
+        returning id
+      `)) as unknown as { id: string }[];
+      await refund(twice, 60037, lateCharge!.id);
+
       await reconcileWeeklyPayouts(NOW);
       const [current] = await db
         .select()
@@ -602,28 +628,55 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         refundFeePaise: 0,
         paidInPayout: null,
       });
-      expect(bd.uncreditedRefundsPaise).toBe(60037);
+      expect(bd.uncreditedRefundsPaise).toBe(60037 * 2);
+      // What the payout stored vs what the breakdown deducts: equal here,
+      // because this payout was reconciled with the rule in place.
+      expect(bd.storedRefundsPaise).toBe(bd.attributedRefundsPaise);
 
-      // The payout itself: Yugal's and Himanshu's refunds deducted, the
-      // late-UPI refund not.
-      expect(Number(current!.refundsPaise)).toBe(61451 + 61417);
+      // Both kinds on one booking: only the deducted refund shapes the line's
+      // money and its fee (61451 − 60000); the uncredited one is carried
+      // alongside, and the uncredited charge is kept out of the fee's base.
+      expect(line('Twice Charged')).toMatchObject({
+        grossPaise: 60000,
+        refundsPaise: 61451,
+        netPaise: -1451,
+        refundFeePaise: 1451,
+        uncreditedRefundPaise: 60037,
+        refundTiming: 'same_payout',
+      });
+
+      // The payout itself: Yugal's, Himanshu's and the twice-charged booking's
+      // held refund deducted; neither uncredited refund.
+      expect(Number(current!.refundsPaise)).toBe(61451 + 61417 + 61451);
 
       // Still reconciles to the penny, and one line per booking.
       expect(bd.unattributedPaise).toBe(0);
-      expect(bd.byBooking).toHaveLength(5);
+      expect(bd.byBooking).toHaveLength(6);
       expect(bd.byBooking.reduce((sum, l) => sum + l.netPaise, 0)).toBe(bd.amountPaise);
 
       // A payout reconciled before this fix deducted that refund. Its stored
       // amount is then short by exactly the uncredited refund, and the
       // breakdown says so: the residual is −60037, which is what is owed.
+      const uncredited = 60037 * 2;
       await db.execute(sql`
-        update payouts set amount_paise = amount_paise - 60037,
-                           refunds_paise = refunds_paise + 60037
+        update payouts set amount_paise = amount_paise - ${uncredited},
+                           refunds_paise = refunds_paise + ${uncredited}
          where id = ${current!.id}::uuid
       `);
       const before = (await getPayoutBreakdown(current!.id))!;
-      expect(before.unattributedPaise).toBe(-60037);
-      expect(before.unattributedPaise).toBe(-before.uncreditedRefundsPaise);
+      expect(before.unattributedPaise).toBe(-uncredited);
+      expect(before.storedRefundsPaise - before.attributedRefundsPaise).toBe(uncredited);
+
+      // And it still holds when the payout carries another residual too — a
+      // commission clamp, say — which reading the residual alone would miss.
+      await db.execute(sql`
+        update payouts set amount_paise = amount_paise + 500 where id = ${current!.id}::uuid
+      `);
+      const alsoClamped = (await getPayoutBreakdown(current!.id))!;
+      expect(alsoClamped.unattributedPaise).not.toBe(-alsoClamped.uncreditedRefundsPaise);
+      expect(alsoClamped.storedRefundsPaise - alsoClamped.attributedRefundsPaise).toBe(
+        uncredited,
+      );
     } finally {
       await db.execute(sql`delete from event_booking_tickets where booking_id in
                              (select id from bookings where tenant_id = ${tid}::uuid)`);

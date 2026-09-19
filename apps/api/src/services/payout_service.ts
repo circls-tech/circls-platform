@@ -442,11 +442,19 @@ export interface PayoutBreakdown {
   unattributedPaise: number;
   /**
    * Refunds in the window that were not deducted because their charge never
-   * reached the partner. A payout reconciled before that rule existed did
-   * deduct them, so its unattributedPaise is exactly −this: the partner was
-   * under-paid by this much.
+   * reached the partner.
    */
   uncreditedRefundsPaise: number;
+  /** What the payout row itself recorded as refunds. */
+  storedRefundsPaise: number;
+  /**
+   * What the breakdown deducts as refunds now. When the payout stored more
+   * than this — by exactly uncreditedRefundsPaise — it was reconciled before
+   * uncredited refunds were excluded, and the partner is owed the difference.
+   * Comparing these two is exact, unlike reading the residual, which also
+   * carries the commission clamp and unattributable payments.
+   */
+  attributedRefundsPaise: number;
   /** What the partner is being paid for: events, memberships, venue bookings. */
   byItem: PayoutBreakdownLine[];
   /** Who paid: one line per customer. */
@@ -568,7 +576,7 @@ function emptyLine(
  */
 export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakdown | null> {
   const [po] = (await db.execute<Record<string, unknown>>(sql`
-    select id, tenant_id, currency, period_start, period_end, amount_paise
+    select id, tenant_id, currency, period_start, period_end, amount_paise, refunds_paise
       from payouts where id = ${payoutId}::uuid
   `)) as unknown as Record<string, unknown>[];
   if (!po) return null;
@@ -583,6 +591,8 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       attributedPaise: 0,
       unattributedPaise: Number(po['amount_paise']),
       uncreditedRefundsPaise: 0,
+      storedRefundsPaise: Number(po['refunds_paise'] ?? 0),
+      attributedRefundsPaise: 0,
       byItem: [],
       byConsumer: [],
       byBooking: [],
@@ -801,6 +811,8 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     attributedPaise,
     unattributedPaise: amountPaise - attributedPaise,
     uncreditedRefundsPaise: rows.reduce((sum, r) => sum + r.uncredited, 0),
+    storedRefundsPaise: Number(po['refunds_paise'] ?? 0),
+    attributedRefundsPaise: rows.reduce((sum, r) => sum + r.refunds, 0),
     byItem: itemLines,
     byConsumer: [...byConsumer.values()].sort(byNet),
     byBooking,
@@ -854,6 +866,10 @@ async function loadBookingDetails(
        where p.booking_id in (${idList})
          and p.kind = 'charge'
          and p.status in ('captured', 'refunded', 'partially_refunded')
+         -- Only charges that reach the partner: on a booking that carries
+         -- both kinds, summing an uncredited charge into the base would
+         -- skew the refunded share the fee is worked out from.
+         and (p.settlement_hold_until is not null or p.settlement_released_at is not null)
        group by p.booking_id
     ),
     refund as (
@@ -869,6 +885,10 @@ async function loadBookingDetails(
          and p.status <> 'failed'
          and p.created_at >= ${w.start}::timestamptz
          and p.created_at <  ${w.end}::timestamptz
+         -- Deducted refunds only. A booking can carry both kinds at once (a
+         -- retried payment leaves two charges), and folding an uncredited
+         -- refund in here would overstate the fee on the deducted one.
+         and ${CREDITABLE_CHARGE}
        group by p.booking_id
     )
     select b.id as booking_id,

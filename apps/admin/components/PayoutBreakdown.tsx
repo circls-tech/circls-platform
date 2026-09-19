@@ -164,7 +164,7 @@ function BookingTable({
                     Refunded before it was paid out
                   </span>
                 )}
-                {l.refundTiming === 'never_credited' && (
+                {l.uncreditedRefundPaise > 0 && (
                   <span className="block text-xs font-normal text-red-700">
                     {fmtMinor(l.uncreditedRefundPaise)} refunded automatically — never credited to
                     the partner, so not deducted
@@ -234,8 +234,16 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
   // deducts them; a payout reconciled before that did, which shows up as a
   // residual of exactly −that amount — the partner is owed it.
   const neverCreditedPaise = data.uncreditedRefundsPaise;
+  // Whether this payout deducted them: compare what it stored as refunds with
+  // what the breakdown deducts now. Reading the residual instead would miss
+  // any payout that also carries a commission clamp or an unattributable
+  // payment, which is exactly the payout an admin needs told about.
   const deductedBeforeFix =
-    neverCreditedPaise > 0 && data.unattributedPaise === -neverCreditedPaise;
+    neverCreditedPaise > 0 &&
+    data.storedRefundsPaise - data.attributedRefundsPaise === neverCreditedPaise;
+  // Residual left once that shortfall is accounted for.
+  const otherResidualPaise =
+    data.unattributedPaise + (deductedBeforeFix ? neverCreditedPaise : 0);
 
   return (
     <div className="space-y-3 border-t border-slate-200 bg-slate-50/60 p-4">
@@ -273,7 +281,7 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
         </p>
       </div>
 
-      {!reconciles && !deductedBeforeFix && (
+      {!reconciles && otherResidualPaise !== 0 && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           These lines don&apos;t add up to the amount paid. That is expected when a
           payment has no booking behind it, or when the commission cap applied to

@@ -173,6 +173,11 @@ export interface AdminPayoutBreakdown {
   unattributedPaise: number;
   /** Refunds not deducted because their charge never reached the partner. */
   uncreditedRefundsPaise: number;
+  /** What the payout row recorded as refunds. */
+  storedRefundsPaise: number;
+  /** What the breakdown deducts as refunds now; a shortfall of exactly
+   *  uncreditedRefundsPaise means the payout predates that rule. */
+  attributedRefundsPaise: number;
   byItem: AdminPayoutBreakdownLine[];
   byConsumer: AdminPayoutBreakdownLine[];
   /** Who paid, one line per booking. */
