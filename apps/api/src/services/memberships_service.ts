@@ -596,6 +596,8 @@ export async function updateMember(
   input: UpdateMemberInput,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // Locked so the expiry sweep can't flip this row between the read and the
+    // write below; it waits, then re-checks ends_at against what we committed.
     const [existing] = await tx
       .select({ um: userMemberships, tenantId: memberships.tenantId })
       .from(userMemberships)
@@ -606,7 +608,8 @@ export async function updateMember(
           eq(userMemberships.membershipId, membershipId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update', { of: userMemberships });
     if (!existing || existing.tenantId !== ctx.tenantId) {
       throw new NotFound('Member not found', 'member_not_found');
     }

@@ -332,8 +332,9 @@ async function issueQrTicketsForUserMembershipLocked(
  * member's dates without this left their pass expiring on the old date: the
  * customer saw an active membership while the door turned them away.
  *
- * A revoked pass is left as it is; a cancelled member stays locked out however
- * their dates are edited.
+ * A cancelled member's pass is left alone: cancelling does not revoke it, so
+ * moving its window here would hand a live pass to someone who is no longer a
+ * member. A revoked pass is left alone for the same reason.
  */
 export async function refreshQrWindowForUserMembership(
   userMembershipId: string,
@@ -350,7 +351,7 @@ export async function refreshQrWindowForUserMembership(
     .leftJoin(membershipTiers, eq(membershipTiers.id, userMemberships.membershipTierId))
     .where(eq(userMemberships.id, userMembershipId))
     .limit(1);
-  if (!row) return;
+  if (!row || row.um.status === 'cancelled') return;
   // Same precedence as issuance: the tier's config wins over the plan's.
   const cfg = row.tierCfg ?? row.planCfg;
   if (!cfg) return;

@@ -219,6 +219,53 @@ describe.skipIf(!runIntegration)('lifecycle sweeps', () => {
       expect(scan.outcome).toBe('valid');
       expect(new Date(scan.ticket!.validUntil!).getTime()).toBe(renewedTo.getTime());
     });
+
+    // Cancelling doesn't revoke the pass, so moving its window would hand a
+    // live pass to someone who is no longer a member.
+    it("leaves a cancelled member's pass where it was when their dates are edited", async () => {
+      const stamp = Date.now();
+      const [buyer] = await db
+        .insert(users)
+        .values({ firebaseUid: `sweep-cx-${stamp}`, email: `sweep-cx-${stamp}@x.com` })
+        .returning();
+      const plan = await createMembership({
+        tenantId,
+        actorUserId,
+        name: `Cancelled pass plan ${stamp}`,
+        pricePaise: 0,
+        durationDays: 30,
+      });
+      await db.execute(sql`
+        update memberships
+           set qr_ticket_config = ${JSON.stringify({
+             enabled: true,
+             multiUse: true,
+             maxScans: null,
+             validFromOffsetMin: null,
+             validUntilOffsetMin: null,
+           })}::jsonb
+         where id = ${plan.id}::uuid
+      `);
+      const { userMembershipId } = await purchaseMembership({
+        membershipId: plan.id,
+        userId: buyer!.id,
+      });
+      const [before] = (await db.execute(sql`
+        select valid_until from qr_tickets where user_membership_id = ${userMembershipId}::uuid
+      `)) as unknown as { valid_until: Date }[];
+
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        status: 'cancelled',
+      });
+      await updateMember({ tenantId, actorUserId }, userMembershipId, plan.id, {
+        endsAt: ahead(90 * DAY),
+      });
+
+      const [after] = (await db.execute(sql`
+        select valid_until from qr_tickets where user_membership_id = ${userMembershipId}::uuid
+      `)) as unknown as { valid_until: Date }[];
+      expect(new Date(after!.valid_until).getTime()).toBe(new Date(before!.valid_until).getTime());
+    });
   });
 
   describe('event auto-archive', () => {
