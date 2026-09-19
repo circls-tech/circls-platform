@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import {
@@ -27,6 +27,7 @@ import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
 import { EventImages } from '@/components/EventImages';
 import { EventRegistrations } from '@/components/EventRegistrations';
+import { ReceptionButton } from '@/components/ReceptionButton';
 import {
   TiersEditor,
   emptyTier,
@@ -133,6 +134,10 @@ export default function OrgEventDetailPage() {
   const publishSeries = usePublishEventSeries(tenantId);
   const cancelSeries = useCancelEventSeries(tenantId);
 
+  // Owned here so the Reception button in the header can open the walk-in desk
+  // that lives further down the page.
+  const registrationsRef = useRef<HTMLDivElement>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -405,6 +410,19 @@ export default function OrgEventDetailPage() {
               )}
               <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
               <StatusPill status={ev.status} />
+              {/* Taking someone's details at the door is a front-desk job, so
+                  it belongs beside the event's name — not below the whole
+                  registrations table. Gated exactly as the desk itself is. */}
+              <ReceptionButton
+                disabled={!(ev.status === 'published' && authed)}
+                onClick={() => {
+                  setWalkInOpen(true);
+                  registrationsRef.current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  });
+                }}
+              />
             </div>
           </div>
 
@@ -861,18 +879,22 @@ export default function OrgEventDetailPage() {
           {/* A series shares one gallery, stored on its first date. */}
           <EventImages eventId={ev.seriesId && series ? series.events[0]!.id : eventId} />
 
-          <EventRegistrations
-            bookings={bookings?.rows}
-            isLoading={bookingsLoading}
-            tiers={ev.tiers}
-            eventName={ev.name}
-            tenantId={tenantId}
-            eventId={eventId}
-            questions={ev.questions}
-            canAddRegistration={ev.status === 'published' && authed}
-            tz={effectiveTz}
-            currency={currency}
-          />
+          <div ref={registrationsRef}>
+            <EventRegistrations
+              bookings={bookings?.rows}
+              isLoading={bookingsLoading}
+              tiers={ev.tiers}
+              eventName={ev.name}
+              tenantId={tenantId}
+              eventId={eventId}
+              questions={ev.questions}
+              canAddRegistration={ev.status === 'published' && authed}
+              tz={effectiveTz}
+              currency={currency}
+              walkInOpen={walkInOpen}
+              onWalkInOpenChange={setWalkInOpen}
+            />
+          </div>
         </>
       )}
     </div>

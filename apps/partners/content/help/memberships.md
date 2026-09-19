@@ -84,7 +84,7 @@ A purchased membership runs for the plan's **duration in days** from the purchas
 
 ### Adding someone who joined elsewhere
 
-Signed someone up at the desk, over the phone, or on paper? Click **Add member** in that list. You give their name, an optional contact, which tier they are on, and — if you want something other than the tier's normal run — the dates their membership covers.
+Signed someone up at the desk, over the phone, or on paper? Click **Reception** beside the plan's name — or **Add member** in that list; both open the same form, and Reception is there so counter staff can reach it in one click. You give their name, an optional contact, which tier they are on, and — if you want something other than the tier's normal run — the dates their membership covers.
 
 They are a real member where it counts: the seat comes out of that tier's capacity, so a tier can sell out because of them, and they appear in the list marked **added by you**.
 

@@ -249,6 +249,10 @@ export interface EventRegistrationsProps {
   tz: string;
   /** Display currency for amounts (see lib/currency). */
   currency: CurrencyCode;
+  /** Whether the walk-in form is open. Omit to let this component own it;
+   *  pass it when a Reception button elsewhere on the page opens the desk. */
+  walkInOpen?: boolean;
+  onWalkInOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -266,9 +270,18 @@ export function EventRegistrations({
   canAddRegistration,
   tz,
   currency,
+  walkInOpen,
+  onWalkInOpenChange,
 }: EventRegistrationsProps) {
   const cancel = useCancelBookingWithReason();
-  const [addingRegistration, setAddingRegistration] = useState(false);
+  // Controlled when a Reception button owns the state, uncontrolled otherwise,
+  // so the venue-scoped copy of this page keeps working untouched.
+  const [ownWalkIn, setOwnWalkIn] = useState(false);
+  const addingRegistration = walkInOpen ?? ownWalkIn;
+  const setAddingRegistration = (open: boolean) => {
+    if (walkInOpen === undefined) setOwnWalkIn(open);
+    onWalkInOpenChange?.(open);
+  };
   const [pendingCancel, setPendingCancel] = useState<EventBooking | null>(null);
   const [lastCancelled, setLastCancelled] = useState<{ name: string | null; refundPaise: number } | null>(null);
 

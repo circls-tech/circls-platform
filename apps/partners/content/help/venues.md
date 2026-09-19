@@ -37,7 +37,7 @@ Arenas are created and listed on the venue detail page.
    - **Sport** (optional).
    - **Capacity** (optional) — the number of people the space holds.
    - **Tags** (optional).
-3. Save. Each arena card shows its name, sport, slot duration and status.
+3. Save. Each arena card shows its name, sport, slot duration and status, plus a **Reception** button that opens its live slot grid — see [Schedules and reception](/help/schedule).
 
 A new arena's default slot length is 60 minutes; change it in the [schedule builder](/help/schedule). Arenas also start in **pending review**.
 

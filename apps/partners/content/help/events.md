@@ -249,7 +249,7 @@ Use these tables to check turnout and reconcile payments.
 
 ### Adding someone who registered elsewhere
 
-Took a registration at the door, over the phone, or through your own form? Click **Add registration** on a live event to put them on the roll.
+Took a registration at the door, over the phone, or through your own form? Click **Reception** beside the event's name — or **Add registration** in the registrations list — to put them on the roll. Both open the same form; Reception is there so door staff can find it without scrolling. It is available only while the event is live.
 
 You are asked for the same things the customer would have given: their name, an optional contact, which tickets they took, and answers to any **required** registration question — those are enforced here exactly as they are in the customer flow, so your answer data stays complete.
 
