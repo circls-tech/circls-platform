@@ -80,7 +80,9 @@ purchase time — later edits never change passes that are already issued.
 
 Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
 
-A purchased membership runs for the plan's **duration in days** from the purchase date, then automatically becomes **expired**. Individual memberships can be **active**, **expired** or **cancelled**.
+A purchased membership runs for the plan's **duration in days** from the purchase date. A full day after it ends, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired.
+
+An expired member keeps their seat on the tier, exactly as before — expiry does not free up capacity. They drop out of the customer's own **My memberships** list, just as a cancelled one does.
 
 ### Adding someone who joined elsewhere
 
@@ -92,12 +94,14 @@ They are a real member where it counts: the seat comes out of that tier's capaci
 
 ### Correcting dates, and cancelling
 
-**Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Extending a member's dates extends what their QR pass gets them through the door with, because pass validity is read from the membership itself rather than copied onto the pass when it was issued.
+**Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Changing a member's dates moves their QR pass with them, so the door always agrees with the membership. Extending an **expired** member's end date into the future renews them: they become **active** again and their pass works at the door.
 
 Two actions end a membership, and which you want depends on the money:
 
 - **Refund** hands back what the member paid and ends the membership. It is offered only where circls actually took the money — a hand-added member paid you directly and a free plan has nothing to give back, so neither shows it. The refund is made in full regardless of how much of the membership has run, the same way a staff-cancelled event registration is, and it is recorded in the audit log.
 - **Cancel** ends the membership and frees its seat on the tier, so someone else can take it, but returns no money. Use it when the refund happened elsewhere, or when there was nothing to refund.
+
+Either way, the member's QR pass stops working straight away — the door reads it as **revoked**. Editing a cancelled member's dates does not bring it back. If you reactivate a cancelled member, their pass works again.
 
 ## Customer questions
 

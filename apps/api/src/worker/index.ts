@@ -7,6 +7,7 @@ import { releaseDueSettlements } from '../services/settlement_hold_service.js';
 import { sweepAbandonedCarts } from '../services/booking_service_track_b.js';
 import { reconcileWeeklyPayouts } from '../services/payout_service.js';
 import { deliverPendingOutboundWebhooks } from '../services/webhook_subscriptions_service.js';
+import { autoArchiveEndedEvents, expireLapsedMemberships } from '../services/lifecycle_sweeps.js';
 
 /**
  * In-process pg-boss worker. One queue per scheduled job; each handler delegates
@@ -63,6 +64,24 @@ const JOBS: ScheduledJob[] = [
     run: async () => {
       const reconciled = await reconcileWeeklyPayouts();
       logger.info({ reconciled }, 'payout_reconciliation_complete');
+    },
+  },
+  {
+    // Hourly rather than daily: the rule is "a full day after the end", and a
+    // daily run would let that stretch to nearly two.
+    queue: 'membership-expiry',
+    cron: '17 * * * *',
+    run: async () => {
+      const expired = await expireLapsedMemberships();
+      if (expired > 0) logger.info({ expired }, 'membership_expiry_complete');
+    },
+  },
+  {
+    queue: 'event-auto-archive',
+    cron: '23 * * * *',
+    run: async () => {
+      const archived = await autoArchiveEndedEvents();
+      if (archived > 0) logger.info({ archived }, 'event_auto_archive_complete');
     },
   },
   {

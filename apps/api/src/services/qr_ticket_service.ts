@@ -323,6 +323,83 @@ async function issueQrTicketsForUserMembershipLocked(
     .returning();
 }
 
+/**
+ * Re-derive a membership pass's validity window after the membership's dates
+ * change.
+ *
+ * A pass stores its own `valid_from` / `valid_until`, computed once at issue,
+ * and the door scan reads those — not the membership row. So extending a
+ * member's dates without this left their pass expiring on the old date: the
+ * customer saw an active membership while the door turned them away.
+ *
+ * A cancelled member's pass is left alone: cancelling does not revoke it, so
+ * moving its window here would hand a live pass to someone who is no longer a
+ * member. A revoked pass is left alone for the same reason.
+ */
+export async function refreshQrWindowForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  const [row] = await dbx
+    .select({
+      um: userMemberships,
+      planCfg: memberships.qrTicketConfig,
+      tierCfg: membershipTiers.qrTicketConfig,
+    })
+    .from(userMemberships)
+    .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+    .leftJoin(membershipTiers, eq(membershipTiers.id, userMemberships.membershipTierId))
+    .where(eq(userMemberships.id, userMembershipId))
+    .limit(1);
+  if (!row || row.um.status === 'cancelled') return;
+  // Same precedence as issuance: the tier's config wins over the plan's.
+  const cfg = row.tierCfg ?? row.planCfg;
+  if (!cfg) return;
+
+  const { validFrom, validUntil } = computeWindow(cfg, row.um.startsAt, row.um.endsAt);
+  await dbx
+    .update(qrTickets)
+    .set({ validFrom, validUntil })
+    .where(
+      and(
+        eq(qrTickets.userMembershipId, userMembershipId),
+        sql`${qrTickets.status} <> 'revoked'`,
+      ),
+    );
+}
+
+/**
+ * Revoke a member's pass when their membership is cancelled.
+ *
+ * Keyed on the user_membership rather than a booking: a free membership's pass
+ * has no booking behind it, so the booking-keyed revoke never reached it and a
+ * cancelled member kept getting through the door until the pass's end date.
+ */
+export async function revokeQrTicketsForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  await dbx
+    .update(qrTickets)
+    .set({ status: 'revoked' })
+    .where(and(eq(qrTickets.userMembershipId, userMembershipId), eq(qrTickets.status, 'active')));
+}
+
+/**
+ * Undo that revoke when a cancelled member is reactivated, so the member the
+ * partner just restored isn't still turned away at the door. Only revoked
+ * passes come back; a used-up single-use pass stays used.
+ */
+export async function restoreQrTicketsForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  await dbx
+    .update(qrTickets)
+    .set({ status: 'active' })
+    .where(and(eq(qrTickets.userMembershipId, userMembershipId), eq(qrTickets.status, 'revoked')));
+}
+
 /** Revoke any still-active tickets of a cancelled booking. */
 export async function revokeQrTicketsForBooking(
   bookingId: string,

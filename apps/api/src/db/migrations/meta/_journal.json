@@ -344,6 +344,20 @@
       "when": 1783130000000,
       "tag": "0049_external_members",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783210000000,
+      "tag": "0050_event_auto_archived_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783290000000,
+      "tag": "0051_revoke_cancelled_member_passes",
+      "breakpoints": true
     }
   ]
 }

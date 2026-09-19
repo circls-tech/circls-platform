@@ -210,6 +210,8 @@ Use the **Active** / **Archived** / **All** tabs at the top of the Events page t
 
 You can archive a draft, cancelled, rejected or ended event. You cannot archive one that is live or awaiting review — end or cancel it first, so nothing still selling can be hidden from your own list.
 
+**Finished events archive themselves.** A full day after an event's end time, circls moves it to **Archived** for you. A live event that has run is marked **ended** on the way. Events awaiting review are left alone. If you **Restore** one, it stays restored — circls only ever archives an event once.
+
 For a recurring event, end and archive each date from that date's own page: a series shows as a single row, so a button there couldn't tell which date you meant.
 
 ## Adding event photos

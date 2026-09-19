@@ -36,7 +36,13 @@ import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
-import { issueQrTicketsForUserMembership, qrTicketDataUrl } from './qr_ticket_service.js';
+import {
+  issueQrTicketsForUserMembership,
+  qrTicketDataUrl,
+  refreshQrWindowForUserMembership,
+  restoreQrTicketsForUserMembership,
+  revokeQrTicketsForUserMembership,
+} from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import {
   buildBillingMetadata,
@@ -581,9 +587,9 @@ export interface UpdateMemberInput {
 /**
  * Correct a member's validity window, or cancel their membership.
  *
- * Extending a window changes what the member can get through the door with, so
- * this deliberately does not touch their entry pass: QR validity is derived
- * from the membership row, not copied onto the ticket.
+ * Extending a window changes what the member can get through the door with.
+ * A pass carries its own copy of its validity window, computed at issue, so
+ * the pass is re-derived here whenever the dates move.
  */
 export async function updateMember(
   ctx: AuditCtx,
@@ -592,6 +598,8 @@ export async function updateMember(
   input: UpdateMemberInput,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // Locked so the expiry sweep can't flip this row between the read and the
+    // write below; it waits, then re-checks ends_at against what we committed.
     const [existing] = await tx
       .select({ um: userMemberships, tenantId: memberships.tenantId })
       .from(userMemberships)
@@ -602,7 +610,8 @@ export async function updateMember(
           eq(userMemberships.membershipId, membershipId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update', { of: userMemberships });
     if (!existing || existing.tenantId !== ctx.tenantId) {
       throw new NotFound('Member not found', 'member_not_found');
     }
@@ -643,14 +652,39 @@ export async function updateMember(
       }
     }
 
+    // Extending an expired member's window into the future renews them. The
+    // expiry sweep only ever moves active → expired, so without this a partner
+    // who fixed someone's dates would leave them expired — out of the
+    // customer's "My memberships" — with no visible reason. No capacity check:
+    // an expired member never gave up their seat.
+    const renewing =
+      input.status === undefined &&
+      existing.um.status === 'expired' &&
+      endsAt.getTime() > Date.now();
+    const nextStatus = input.status ?? (renewing ? 'active' : undefined);
+
     await tx
       .update(userMemberships)
       .set({
         startsAt,
         endsAt,
-        ...(input.status ? { status: input.status } : {}),
+        ...(nextStatus ? { status: nextStatus } : {}),
       })
       .where(eq(userMemberships.id, userMembershipId));
+
+    // The pass follows the membership: a cancelled member loses it, and one
+    // the partner reactivates gets it back. Restore runs before the window
+    // refresh below, which skips revoked passes.
+    if (nextStatus === 'cancelled' && existing.um.status !== 'cancelled') {
+      await revokeQrTicketsForUserMembership(userMembershipId, tx);
+    } else if (nextStatus === 'active' && existing.um.status === 'cancelled') {
+      await restoreQrTicketsForUserMembership(userMembershipId, tx);
+    }
+
+    const datesMoved =
+      startsAt.getTime() !== existing.um.startsAt.getTime() ||
+      endsAt.getTime() !== existing.um.endsAt.getTime();
+    if (datesMoved) await refreshQrWindowForUserMembership(userMembershipId, tx);
 
     await writeAudit(
       tx,
@@ -666,7 +700,7 @@ export async function updateMember(
       {
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
-        status: input.status ?? existing.um.status,
+        status: nextStatus ?? existing.um.status,
       },
     );
   });
