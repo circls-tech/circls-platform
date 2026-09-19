@@ -54,6 +54,13 @@ export const venues = pgTable('venues', {
   // DB default stays the legacy 'active' (matches grandfathered rows); the
   // create service sets 'pending_review' explicitly for new listings (B).
   status: venueStatus('status').notNull().default('active'),
+  /**
+   * What the venue was before its partner closed it (closed = `suspended`).
+   * Reopening restores this, so a venue closed while pending review or after
+   * a rejection can't come back live. Null while open, and for venues closed
+   * before this was recorded — those reopen into review.
+   */
+  statusBeforeClose: venueStatus('status_before_close'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

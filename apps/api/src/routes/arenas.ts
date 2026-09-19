@@ -5,11 +5,14 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
+  closeArena,
   createArena,
   getArenaById,
   listArenas,
+  reopenArena,
   updateArenaQrTicketConfig,
 } from '../services/arena_service.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 import { getWeeklySchedule, setWeeklySchedule } from '../services/schedule_service.js';
 import { getVenueById } from '../services/venue_service.js';
@@ -83,6 +86,24 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     await authorizeArena(req, arenaId);
     return updateArenaQrTicketConfig(arenaId, toQrTicketConfig(parsed.data.qrTicketConfig));
   });
+
+  // ── Close / reopen ─────────────────────────────────────────────────────────
+  // Closing an arena stops it being booked online while the rest of the venue
+  // stays open; reopening restores its prior status. See closeArena.
+  for (const action of ['close', 'reopen'] as const) {
+    app.post(`/v1/arenas/:arenaId/${action}`, { preHandler: requireAuth }, async (req) => {
+      const { arenaId } = req.params as { arenaId: string };
+      const arena = await getArenaById(arenaId);
+      if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
+      const venue = await getVenueById(arena.venueId);
+      if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+      const user = await currentUser(req);
+      const ctx = await requireTenantMembership(user.id, venue.tenantId);
+      assertCap(ctx, 'venues.write');
+      const auditCtx = { tenantId: venue.tenantId, actorUserId: user.id };
+      return action === 'close' ? closeArena(auditCtx, arenaId) : reopenArena(auditCtx, arenaId);
+    });
+  }
 
   app.get('/v1/venues/:venueId/arenas', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };

@@ -187,6 +187,59 @@ export interface UpdateVenueInput {
   country?: string | null;
 }
 
+/**
+ * Close a venue (take it off the consumer portal) or reopen it. Reopening
+ * restores whatever it was before closing, which may be review rather than
+ * live — read the returned venue's status rather than assuming.
+ */
+export function useSetVenueOpen(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'close' | 'reopen') =>
+      apiFetch<Venue>(`/v1/venues/${venueId}/${action}`, { method: 'POST' }),
+    onSuccess: (v) => {
+      void qc.invalidateQueries({ queryKey: ['venue', venueId] });
+      if (v?.tenantId) void qc.invalidateQueries({ queryKey: ['venues', v.tenantId] });
+    },
+  });
+}
+
+/** Close or reopen one arena; the rest of its venue is unaffected. */
+export function useSetArenaOpen(arenaId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'close' | 'reopen') =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}/${action}`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
+      void qc.invalidateQueries({ queryKey: ['arenas', venueId] });
+    },
+  });
+}
+
+export interface CloseImpact {
+  upcomingSlotBookings: number;
+  upcomingEvents: number;
+  upcomingEventRegistrations: number;
+}
+
+/**
+ * What closing a venue (or, with `arenaId`, one arena) would affect. Only
+ * fetched while `enabled` — the confirmation dialog is open.
+ */
+export function useCloseImpact(venueId: string, arenaId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['close-impact', venueId, arenaId ?? null],
+    queryFn: () =>
+      apiFetch<CloseImpact>(
+        `/v1/venues/${venueId}/close-impact${arenaId ? `?arenaId=${arenaId}` : ''}`,
+      ),
+    enabled: enabled && Boolean(venueId),
+    // Always re-check when the dialog opens; the answer is time-sensitive.
+    staleTime: 0,
+  });
+}
+
 export function useUpdateVenue(venueId: string) {
   const qc = useQueryClient();
   return useMutation({

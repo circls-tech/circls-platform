@@ -10,9 +10,12 @@ import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { suggestCity } from '../lib/geocoding/gazetteer.js';
 import {
+  closeVenue,
   createVenue,
+  getCloseImpact,
   getVenueById,
   listVenues,
+  reopenVenue,
   updateVenue,
   type VenueMetadataInput,
 } from '../services/venue_service.js';
@@ -165,16 +168,70 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, venue.tenantId);
     assertCap(ctx, 'venues.write');
-    const p = parsed.data;
-    return updateVenue(venue.tenantId, id, {
+    const { status, ...p } = parsed.data;
+
+    // `status` is still accepted here so existing callers keep working, but it
+    // now moves only through close/reopen. It used to be written straight to
+    // the row, so a partner could send `status: 'active'` and publish a venue
+    // Circls had never reviewed, or overturn a rejection.
+    let result = venue;
+    if (status === 'suspended') {
+      result = await closeVenue({ tenantId: venue.tenantId, actorUserId: user.id }, id);
+    } else if (status === 'active' && venue.status !== 'active') {
+      // Only a closed venue can be reopened (409 otherwise), and it comes back
+      // to its prior status — which may be review rather than live. The
+      // returned row carries the status it actually has.
+      result = await reopenVenue({ tenantId: venue.tenantId, actorUserId: user.id }, id);
+    }
+
+    const fields = {
       ...(p.name !== undefined ? { name: p.name } : {}),
       ...(p.tzName !== undefined ? { tzName: p.tzName } : {}),
       ...(p.lat !== undefined ? { lat: p.lat } : {}),
       ...(p.lng !== undefined ? { lng: p.lng } : {}),
       ...(p.addressJson !== undefined ? { addressJson: p.addressJson } : {}),
       ...(p.tags !== undefined ? { tags: p.tags } : {}),
-      ...(p.status !== undefined ? { status: p.status } : {}),
       ...pickMetadata(p),
-    });
+    };
+    return Object.keys(fields).length > 0 ? updateVenue(venue.tenantId, id, fields) : result;
+  });
+
+  // ── Close / reopen ─────────────────────────────────────────────────────────
+  // Closing takes a venue off the consumer portal; reopening puts it back to
+  // exactly the state it was in. See closeVenue / reopenVenue.
+  // What closing would affect: upcoming court bookings, and — for a whole
+  // venue — its upcoming events and their registrations. ?arenaId narrows the
+  // court count to one arena.
+  app.get('/v1/venues/:id/close-impact', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { arenaId } = req.query as { arenaId?: string };
+    if (arenaId !== undefined && !/^[0-9a-f-]{36}$/i.test(arenaId)) {
+      throw new BadRequest('Invalid arenaId', 'bad_request');
+    }
+    const venue = await getVenueById(id);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, venue.tenantId);
+    return getCloseImpact(venue.tenantId, id, arenaId);
+  });
+
+  app.post('/v1/venues/:id/close', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const venue = await getVenueById(id);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'venues.write');
+    return closeVenue({ tenantId: venue.tenantId, actorUserId: user.id }, id);
+  });
+
+  app.post('/v1/venues/:id/reopen', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const venue = await getVenueById(id);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'venues.write');
+    return reopenVenue({ tenantId: venue.tenantId, actorUserId: user.id }, id);
   });
 };

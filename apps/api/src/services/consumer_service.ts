@@ -803,7 +803,12 @@ export async function consumerBookSlots(
   // All slots must belong to one venue/tenant; resolve from the first and
   // verify the rest match (the booking service also asserts single-arena).
   const slotRows = await db
-    .select({ id: slots.id, tenantId: slots.tenantId, venueId: arenas.venueId })
+    .select({
+      id: slots.id,
+      tenantId: slots.tenantId,
+      venueId: arenas.venueId,
+      arenaStatus: arenas.status,
+    })
     .from(slots)
     .innerJoin(arenas, eq(arenas.id, slots.arenaId))
     .where(inArray(slots.id, input.slotIds));
@@ -816,6 +821,13 @@ export async function consumerBookSlots(
     throw new Conflict('Slots span multiple venues', 'mixed_venue_slots');
   }
 
+  // The same rule listPublicArenaSlots applies when showing slots: every arena
+  // must be live, not just the venue. Checking only the venue let a slot on a
+  // closed, rejected or unreviewed arena be bought straight from a cart that
+  // was built before it went off sale.
+  if (slotRows.some((s) => s.arenaStatus !== 'active')) {
+    throw new NotFound('Arena not found', 'arena_not_found');
+  }
   await assertVenueVisible(venueId);
 
   const pricing = input.couponCode

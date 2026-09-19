@@ -48,6 +48,9 @@ export const arenas = pgTable('arenas', {
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: arenaStatus('status').notNull().default('active'),
+  /** What the arena was before its partner closed it (closed = `suspended`);
+   *  reopening restores it. Null while open. See migration 0053. */
+  statusBeforeClose: arenaStatus('status_before_close'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

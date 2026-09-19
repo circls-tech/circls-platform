@@ -18,7 +18,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { eq } = await import('drizzle-orm');
 const { closeDb, db } = await import('../db/client.js');
-const { memberships, tenantMembers } = await import('../db/schema/index.js');
+const { memberships, tenantMembers, venues } = await import('../db/schema/index.js');
 const { buildServer } = await import('../server.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -163,10 +163,13 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
         contactPhone: '+911234567890',
         city: 'Nagpur',
         country: 'India',
-        status: 'active',
       },
     });
     expect(ok.statusCode).toBe(200);
+    // Mark active (admin approval is out of scope here) so it is consumer-visible.
+    // This used to ride along in the PATCH as `status: 'active'`, which is
+    // exactly the review bypass partners can no longer use.
+    await db.update(venues).set({ status: 'active' }).where(eq(venues.id, venueId));
     expect(ok.json().amenities).toEqual(['parking', 'wifi']);
     // Coordinates are derived from the address by the geocoder (stub gazetteer),
     // and the structured address is mirrored into address_json for the consumer.
