@@ -173,6 +173,33 @@ export interface AdminPayoutBreakdown {
   unattributedPaise: number;
   byItem: AdminPayoutBreakdownLine[];
   byConsumer: AdminPayoutBreakdownLine[];
+  /** Who paid, one line per booking. */
+  byBooking: AdminPayoutBookingLine[];
+}
+
+/** How a line's refunds relate to its charge being paid out. */
+export type AdminRefundTiming = 'none' | 'same_payout' | 'earlier_payout' | 'not_yet_paid';
+
+export interface AdminPayoutBookingLine {
+  bookingId: string | null;
+  consumerId: string | null;
+  customerName: string;
+  contact: string | null;
+  itemType: string | null;
+  itemName: string | null;
+  venueName: string | null;
+  /** Tier(s) for an event or membership; court(s) for a venue booking. */
+  detail: string | null;
+  grossPaise: number;
+  refundsPaise: number;
+  commissionPaise: number;
+  advancesPaise: number;
+  advanceRecoupedPaise: number;
+  netPaise: number;
+  /** Gateway fee inside the refund, borne by the partner. */
+  refundFeePaise: number;
+  refundTiming: AdminRefundTiming;
+  paidInPayout: { id: string; periodStart: string; periodEnd: string } | null;
 }
 
 // Tenant-scoped audit log (existing /v1/tenants/:id/audit-log) — no tenantId

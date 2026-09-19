@@ -62,6 +62,19 @@ export default function PayoutsPage() {
   const execute = useExecutePayout();
   // Which payout has its breakdown open. One at a time: the tables are wide.
   const [openBreakdown, setOpenBreakdown] = useState<string | null>(null);
+
+  /**
+   * Jump from a clawback line to the payout that paid the original charge.
+   * That payout is usually the week before, so it is normally already loaded;
+   * if the current filter hides it, widen to All first.
+   */
+  function openPayout(id: string) {
+    if (!rows.some((r) => r.id === id) && filter !== 'all') setFilter('all');
+    setOpenBreakdown(id);
+    requestAnimationFrame(() =>
+      document.getElementById(`payout-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  }
   const reconcile = useReconcilePayouts();
   const [actionError, setActionError] = useState<string | null>(null);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
@@ -207,7 +220,7 @@ export default function PayoutsPage() {
             )}
             {rows.map((r) => (
               <Fragment key={r.id}>
-              <tr className="transition-colors hover:bg-slate-50">
+              <tr id={`payout-${r.id}`} className="transition-colors hover:bg-slate-50">
                 <td className="px-4 py-2.5 font-medium text-slate-900">
                   <button
                     type="button"
@@ -271,7 +284,7 @@ export default function PayoutsPage() {
               {openBreakdown === r.id && (
                 <tr>
                   <td colSpan={9} className="p-0">
-                    <PayoutBreakdown payoutId={r.id} />
+                    <PayoutBreakdown payoutId={r.id} onOpenPayout={openPayout} />
                   </td>
                 </tr>
               )}
