@@ -67,10 +67,11 @@ const JOBS: ScheduledJob[] = [
     },
   },
   {
-    // Hourly rather than daily: the rule is "a full day after the end", and a
-    // daily run would let that stretch to nearly two.
+    // 05:00 and 17:00 IST (UTC+5:30, no DST). Each run acts on anything whose
+    // end passed more than a day ago, so an item is handled between one and
+    // one-and-a-half days after it ends.
     queue: 'membership-expiry',
-    cron: '17 * * * *',
+    cron: '30 11,23 * * *',
     run: async () => {
       const expired = await expireLapsedMemberships();
       if (expired > 0) logger.info({ expired }, 'membership_expiry_complete');
@@ -78,7 +79,7 @@ const JOBS: ScheduledJob[] = [
   },
   {
     queue: 'event-auto-archive',
-    cron: '23 * * * *',
+    cron: '30 11,23 * * *', // 05:00 and 17:00 IST, as above.
     run: async () => {
       const archived = await autoArchiveEndedEvents();
       if (archived > 0) logger.info({ archived }, 'event_auto_archive_complete');
