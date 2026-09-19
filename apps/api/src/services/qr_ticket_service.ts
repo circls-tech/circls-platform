@@ -323,6 +323,50 @@ async function issueQrTicketsForUserMembershipLocked(
     .returning();
 }
 
+/**
+ * Re-derive a membership pass's validity window after the membership's dates
+ * change.
+ *
+ * A pass stores its own `valid_from` / `valid_until`, computed once at issue,
+ * and the door scan reads those — not the membership row. So extending a
+ * member's dates without this left their pass expiring on the old date: the
+ * customer saw an active membership while the door turned them away.
+ *
+ * A revoked pass is left as it is; a cancelled member stays locked out however
+ * their dates are edited.
+ */
+export async function refreshQrWindowForUserMembership(
+  userMembershipId: string,
+  dbx: Database = db,
+): Promise<void> {
+  const [row] = await dbx
+    .select({
+      um: userMemberships,
+      planCfg: memberships.qrTicketConfig,
+      tierCfg: membershipTiers.qrTicketConfig,
+    })
+    .from(userMemberships)
+    .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+    .leftJoin(membershipTiers, eq(membershipTiers.id, userMemberships.membershipTierId))
+    .where(eq(userMemberships.id, userMembershipId))
+    .limit(1);
+  if (!row) return;
+  // Same precedence as issuance: the tier's config wins over the plan's.
+  const cfg = row.tierCfg ?? row.planCfg;
+  if (!cfg) return;
+
+  const { validFrom, validUntil } = computeWindow(cfg, row.um.startsAt, row.um.endsAt);
+  await dbx
+    .update(qrTickets)
+    .set({ validFrom, validUntil })
+    .where(
+      and(
+        eq(qrTickets.userMembershipId, userMembershipId),
+        sql`${qrTickets.status} <> 'revoked'`,
+      ),
+    );
+}
+
 /** Revoke any still-active tickets of a cancelled booking. */
 export async function revokeQrTicketsForBooking(
   bookingId: string,

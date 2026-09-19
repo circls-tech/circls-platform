@@ -86,6 +86,12 @@ export const events = pgTable('events', {
    * way. Never consulted by a consumer query.
    */
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  /**
+   * Set when the lifecycle sweep archived this event rather than a partner.
+   * The sweep only acts on rows where this is null, so it shelves an event at
+   * most once and a partner who restores one is not overruled next hour.
+   */
+  autoArchivedAt: timestamp('auto_archived_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

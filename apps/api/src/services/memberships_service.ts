@@ -36,7 +36,11 @@ import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
 import * as paymentsService from './payments_service.js';
 import { onBookingConfirmed } from './notification_hooks.js';
-import { issueQrTicketsForUserMembership, qrTicketDataUrl } from './qr_ticket_service.js';
+import {
+  issueQrTicketsForUserMembership,
+  qrTicketDataUrl,
+  refreshQrWindowForUserMembership,
+} from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import {
   buildBillingMetadata,
@@ -581,9 +585,9 @@ export interface UpdateMemberInput {
 /**
  * Correct a member's validity window, or cancel their membership.
  *
- * Extending a window changes what the member can get through the door with, so
- * this deliberately does not touch their entry pass: QR validity is derived
- * from the membership row, not copied onto the ticket.
+ * Extending a window changes what the member can get through the door with.
+ * A pass carries its own copy of its validity window, computed at issue, so
+ * the pass is re-derived here whenever the dates move.
  */
 export async function updateMember(
   ctx: AuditCtx,
@@ -643,14 +647,30 @@ export async function updateMember(
       }
     }
 
+    // Extending an expired member's window into the future renews them. The
+    // expiry sweep only ever moves active → expired, so without this a partner
+    // who fixed someone's dates would leave them expired — out of the
+    // customer's "My memberships" — with no visible reason. No capacity check:
+    // an expired member never gave up their seat.
+    const renewing =
+      input.status === undefined &&
+      existing.um.status === 'expired' &&
+      endsAt.getTime() > Date.now();
+    const nextStatus = input.status ?? (renewing ? 'active' : undefined);
+
     await tx
       .update(userMemberships)
       .set({
         startsAt,
         endsAt,
-        ...(input.status ? { status: input.status } : {}),
+        ...(nextStatus ? { status: nextStatus } : {}),
       })
       .where(eq(userMemberships.id, userMembershipId));
+
+    const datesMoved =
+      startsAt.getTime() !== existing.um.startsAt.getTime() ||
+      endsAt.getTime() !== existing.um.endsAt.getTime();
+    if (datesMoved) await refreshQrWindowForUserMembership(userMembershipId, tx);
 
     await writeAudit(
       tx,
@@ -666,7 +686,7 @@ export async function updateMember(
       {
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
-        status: input.status ?? existing.um.status,
+        status: nextStatus ?? existing.um.status,
       },
     );
   });

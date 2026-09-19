@@ -1,0 +1,15 @@
+-- Remember which events the lifecycle sweep archived on its own.
+--
+-- WHY: the worker now shelves events a full day after they end. A partner can
+-- still pull one back off the shelf — but `archived_at` alone cannot tell
+-- "never archived" from "archived, then deliberately restored", so the next
+-- sweep would quietly re-archive every event the partner had just unarchived.
+--
+-- The sweep only touches rows where this is NULL and stamps it when it acts, so
+-- it archives any event at most once and a partner's restore sticks. It also
+-- leaves a record of which archives were automatic rather than chosen.
+--
+-- Nullable with no backfill on purpose: every event that exists today was
+-- either archived by hand or never archived, and both are exactly what NULL
+-- means — eligible for the sweep once its window has passed.
+ALTER TABLE "events" ADD COLUMN "auto_archived_at" timestamp with time zone;
