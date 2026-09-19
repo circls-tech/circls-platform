@@ -431,7 +431,14 @@ export type RefundTiming =
    */
   | 'earlier_payout'
   /** Refunded before the charge was paid out; the charge arrives later. */
-  | 'not_yet_paid';
+  | 'not_yet_paid'
+  /**
+   * The charge was never going to be paid out to the partner — it has no
+   * settlement hold and was never released. Happens when a payment succeeds
+   * after its booking was already cancelled (a late UPI success, say): the
+   * customer is refunded automatically and the partner never had the sale.
+   */
+  | 'never_credited';
 
 export interface PayoutBookingLine {
   bookingId: string | null;
@@ -763,7 +770,12 @@ async function loadBookingDetails(
              bool_or(p.settlement_released_at >= ${w.start}::timestamptz
                  and p.settlement_released_at <  ${w.end}::timestamptz)  as in_window,
              max(p.settlement_released_at)
-               filter (where p.settlement_released_at < ${w.start}::timestamptz) as released_before
+               filter (where p.settlement_released_at < ${w.start}::timestamptz) as released_before,
+             -- Whether any charge was ever going to reach the partner: one
+             -- with a settlement hold is released in time; one already
+             -- released has been. Neither means the partner never had it.
+             bool_or(p.settlement_hold_until is not null
+                  or p.settlement_released_at is not null)             as creditable
         from payments p
        where p.booking_id in (${idList})
          and p.kind = 'charge'
@@ -810,7 +822,8 @@ async function loadBookingDetails(
            end                                                    as detail,
            c.cash                                                 as charge_cash,
            c.base                                                 as charge_base,
-           case when c.in_window                   then 'within'
+           case when not coalesce(c.creditable, false) then 'never'
+                when c.in_window                   then 'within'
                 when c.released_before is not null then 'before'
                 else 'unpaid' end                                 as charge_when,
            r.cash                                                 as refund_cash,
@@ -837,22 +850,31 @@ async function loadBookingDetails(
     const refundCash = Number(row['refund_cash'] ?? 0);
     const refundSettle = Number(row['refund_settle'] ?? 0);
 
+    const when = row['charge_when'] as 'never' | 'before' | 'within' | 'unpaid';
+
     // What the partner loses beyond what they were paid for the refunded share
     // of the booking. Proportional by cash, the same way computeSettleRefundPaise
     // sizes a partial refund.
     let refundFeePaise = 0;
-    if (refundSettle > 0 && chargeCash > 0 && chargeBase !== null) {
+    // No fee on a never-credited refund: the partner never had the sale, so
+    // nothing about it is theirs to bear.
+    if (when !== 'never' && refundSettle > 0 && chargeCash > 0 && chargeBase !== null) {
       const baseShare = Math.round((chargeBase * refundCash) / chargeCash);
       refundFeePaise = Math.max(0, refundSettle - baseShare);
     }
 
-    const when = row['charge_when'] as 'before' | 'within' | 'unpaid';
     const paidIn = row['paid_in'] as { id: string; periodStart: string; periodEnd: string } | null;
     out.set(row['booking_id'] as string, {
       detail: (row['detail'] as string | null) ?? null,
       refundFeePaise,
       refundTiming:
-        when === 'within' ? 'same_payout' : when === 'before' ? 'earlier_payout' : 'not_yet_paid',
+        when === 'never'
+          ? 'never_credited'
+          : when === 'within'
+            ? 'same_payout'
+            : when === 'before'
+              ? 'earlier_payout'
+              : 'not_yet_paid',
       paidInPayout: when === 'before' && paidIn ? paidIn : null,
     });
   }

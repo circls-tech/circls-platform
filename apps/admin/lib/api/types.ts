@@ -178,7 +178,12 @@ export interface AdminPayoutBreakdown {
 }
 
 /** How a line's refunds relate to its charge being paid out. */
-export type AdminRefundTiming = 'none' | 'same_payout' | 'earlier_payout' | 'not_yet_paid';
+export type AdminRefundTiming =
+  | 'none'
+  | 'same_payout'
+  | 'earlier_payout'
+  | 'not_yet_paid'
+  | 'never_credited';
 
 export interface AdminPayoutBookingLine {
   bookingId: string | null;
@@ -196,7 +201,7 @@ export interface AdminPayoutBookingLine {
   advancesPaise: number;
   advanceRecoupedPaise: number;
   netPaise: number;
-  /** Gateway fee inside the refund, borne by the partner. */
+  /** The partner's share of the gateway fee, borne on this refund. */
   refundFeePaise: number;
   refundTiming: AdminRefundTiming;
   paidInPayout: { id: string; periodStart: string; periodEnd: string } | null;

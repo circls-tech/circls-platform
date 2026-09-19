@@ -537,6 +537,18 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
       });
       await charge(maria, 50000, 50000, RELEASED_IN_WINDOW);
 
+      // A payment that succeeded after its booking was cancelled (a late UPI
+      // success): refunded automatically, never given a settlement hold, so
+      // the partner never had it.
+      const lateUpi = await booking('Late UPI Payer', 'event', { eventId: ev!.id });
+      await db.execute(sql`
+        insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
+                              status, kind, settlement_released_at, created_at)
+        values (${lateUpi}::uuid, ${tid}::uuid, 'stub', 60037, 60000,
+                'refunded', 'charge', null, ${REFUND_AT}::timestamptz)
+      `);
+      await refund(lateUpi, 60037);
+
       await reconcileWeeklyPayouts(NOW);
       const [current] = await db
         .select()
@@ -579,9 +591,17 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         detail: 'Monthly',
       });
 
+      // Named for what it is, and never treated as the partner's fee.
+      expect(line('Late UPI Payer')).toMatchObject({
+        grossPaise: 0,
+        refundTiming: 'never_credited',
+        refundFeePaise: 0,
+        paidInPayout: null,
+      });
+
       // Still reconciles to the penny, and one line per booking.
       expect(bd.unattributedPaise).toBe(0);
-      expect(bd.byBooking).toHaveLength(4);
+      expect(bd.byBooking).toHaveLength(5);
       expect(bd.byBooking.reduce((sum, l) => sum + l.netPaise, 0)).toBe(bd.amountPaise);
     } finally {
       await db.execute(sql`delete from event_booking_tickets where booking_id in

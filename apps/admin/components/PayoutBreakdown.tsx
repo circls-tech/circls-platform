@@ -164,9 +164,14 @@ function BookingTable({
                     Refunded before it was paid out
                   </span>
                 )}
+                {l.refundTiming === 'never_credited' && (
+                  <span className="block text-xs font-normal text-red-700">
+                    Refunded automatically — never credited to the partner
+                  </span>
+                )}
                 {l.refundFeePaise > 0 && (
                   <span className="block text-xs font-normal text-slate-500">
-                    incl. {fmtMinor(l.refundFeePaise)} gateway fee
+                    Partner bears {fmtMinor(l.refundFeePaise)} of the gateway fee
                   </span>
                 )}
               </td>
@@ -224,6 +229,11 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
   const feePaise = data.byBooking
     .filter((l) => l.refundTiming !== 'earlier_payout')
     .reduce((sum, l) => sum + l.refundFeePaise, 0);
+  // Refunds on payments the partner never had: they should not reduce a
+  // payout at all, so they are called out on their own.
+  const neverCreditedPaise = data.byBooking
+    .filter((l) => l.refundTiming === 'never_credited')
+    .reduce((sum, l) => sum + l.refundsPaise, 0);
 
   return (
     <div className="space-y-3 border-t border-slate-200 bg-slate-50/60 p-4">
@@ -266,6 +276,15 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
           These lines don&apos;t add up to the amount paid. That is expected when a
           payment has no booking behind it, or when the commission cap applied to
           the week&apos;s total rather than to individual lines.
+        </p>
+      )}
+
+      {neverCreditedPaise > 0 && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+          <span className="font-medium tabular-nums">{fmtMinor(neverCreditedPaise)}</span> of
+          refunds here are on payments the partner was never credited — they succeeded after the
+          booking was cancelled and were refunded automatically. They should not reduce this
+          payout.
         </p>
       )}
 
