@@ -79,6 +79,10 @@ Use **Close venue** at the top of a venue's page when it's shutting — for reno
 - A **rejected** venue comes back rejected — reopening never gets round circls review.
 - A venue closed before circls recorded this goes back to review, to be safe.
 
+### Closing one arena
+
+To take a single court or space out of use while the rest of the venue stays open, use **Close arena** on that arena's reception page. It works exactly like closing a venue: the arena stops taking online bookings, nothing is deleted or cancelled, the confirmation counts that arena's upcoming bookings, and **Reopen arena** puts it back where it was. A closed arena shows as **Closed** in its venue's arena list.
+
 ## Customer questions
 
 Customers can ask **questions** on your arenas — publicly (visible to everyone browsing the venue) or privately. They land in the **Questions** inbox in the sidebar, tagged with the arena they're about, and answering there is how you respond. See [Answering customer questions](/help/questions).

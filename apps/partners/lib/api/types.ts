@@ -189,6 +189,8 @@ export interface Arena {
   /** QR ticket rules for bookings on this arena; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   status: ListingStatus;
+  /** What the arena was before its partner closed it; reopening restores it. */
+  statusBeforeClose?: ListingStatus | null;
   tags: string[];
 }
 

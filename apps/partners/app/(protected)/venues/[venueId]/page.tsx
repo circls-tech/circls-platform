@@ -6,8 +6,8 @@ import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
-import { VenueOpenControl } from '@/components/VenueOpenControl';
-import { useArenas, useCreateArena, useVenue } from '@/lib/api/queries';
+import { CloseReopenControl } from '@/components/CloseReopenControl';
+import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { Badge, StatusPill, TagsInput } from '@/lib/ui';
@@ -18,6 +18,7 @@ export default function VenuePage() {
   const { data: venue } = useVenue(venueId);
   const { data: arenas, isLoading } = useArenas(venueId);
   const createArena = useCreateArena(venueId);
+  const setVenueOpen = useSetVenueOpen(venueId);
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -63,7 +64,13 @@ export default function VenuePage() {
             {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
           />
           <span className="ml-auto">
-            <VenueOpenControl venue={venue} tenantId={tenantId} />
+            <CloseReopenControl
+              noun="venue"
+              target={venue}
+              venueId={venue.id}
+              tenantId={tenantId}
+              setOpen={setVenueOpen}
+            />
           </span>
         </div>
       )}
@@ -105,7 +112,10 @@ export default function VenuePage() {
               </Link>
               <span className="text-xs text-gray-400">{a.sport ?? 'sport n/a'}</span>
               <span className="ml-auto flex items-center gap-2">
-                <StatusPill status={a.status} />
+                <StatusPill
+                  status={a.status}
+                  {...(a.status === 'suspended' ? { label: 'Closed' } : {})}
+                />
                 <ReceptionButton href={`/arenas/${a.id}?tenantId=${tenantId}`} />
               </span>
             </div>

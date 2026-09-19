@@ -65,6 +65,8 @@ After a successful release, follow **Go to reception view →** to see and manag
 
 The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Reach it from the **Reception** button on the arena's card on its venue page — the same button appears on events and membership plans, where it opens the walk-in form instead. Like the builder grid, its slot times and day columns follow the **timezone selector in the top bar** — leave it on **Auto** to read the schedule in the venue's own zone, or pick a zone to view the same slots in your local time. This is display-only; it never changes when a slot actually is.
 
+The header shows the arena's name and status, and has **Close arena** — see [Closing one arena](/help/venues#closing-one-arena).
+
 Each slot has a status:
 
 | Status | Meaning |

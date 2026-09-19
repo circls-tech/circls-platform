@@ -7,18 +7,35 @@
  * inventory invariants (GIST exclusion, hold semantics, atomic claim) are
  * identical regardless of which surface created the booking.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { env } from '../config/env.js';
-import { bookings, slots } from '../db/schema/index.js';
-import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
+import { arenas as arenasTable, bookings, slots } from '../db/schema/index.js';
+import { BadRequest, Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { requireApiKey } from '../middleware/require_api_key.js';
 import { bookSlots } from '../services/booking_service.js';
 import { getArenaById, listArenas } from '../services/arena_service.js';
 import { listSlots } from '../services/slot_service.js';
 import { getVenueById } from '../services/venue_service.js';
+import { getPublicVenue } from '../services/consumer_service.js';
+
+/**
+ * The public API sells only what the consumer portal would: a live arena in a
+ * venue that is live and belongs to an active organisation. It used to check
+ * the key's tenant and nothing else, so a closed, rejected or never-reviewed
+ * venue or arena could still be listed and booked through an API key.
+ *
+ * Runs after the tenant check on purpose, so a key can't probe the status of
+ * another organisation's venue. The errors are specific (409, not 404) because
+ * by this point the caller owns the venue and should be told why it's refused.
+ */
+async function assertVenueBookable(venueId: string): Promise<void> {
+  if (!(await getPublicVenue(venueId))) {
+    throw new Conflict('This venue is not open for booking', 'venue_not_bookable');
+  }
+}
 
 const bookSlotsSchema = z.object({
   slotIds: z.array(z.string().uuid()).min(1),
@@ -68,15 +85,21 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
       // arenaId is supplied we must confirm it belongs to this (already
       // tenant-checked) venue — listSlots() has no tenant filter, so passing an
       // unverified arenaId would leak any other tenant's slots (H5).
+      await assertVenueBookable(venueId);
       const arenas = await listArenas(venueId);
       const arenaList = arenaId ? arenas.filter((a) => a.id === arenaId) : arenas;
       if (arenaId && arenaList.length === 0) {
         throw new NotFound('Arena not found for venue', 'arena_not_found');
       }
+      if (arenaId && arenaList[0]!.status !== 'active') {
+        throw new Conflict('This arena is not open for booking', 'arena_not_bookable');
+      }
+      // Across the whole venue, offer only live arenas' slots.
+      const liveArenas = arenaList.filter((a) => a.status === 'active');
 
       // Same listSlots path as the internal route — no duplicated SQL.
       const arenaSlots = await Promise.all(
-        arenaList.map(async (a) => ({
+        liveArenas.map(async (a) => ({
           arenaId: a.id,
           slots: (await listSlots(a.id, from, to)).filter((s) => s.status === 'open'),
         })),
@@ -136,6 +159,20 @@ export const publicBookingRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const tenantId = venue.tenantId;
+
+      // Every slot, not just the first: a booking can span arenas, so one
+      // closed arena could otherwise ride along with a live one.
+      const slotArenas = await db
+        .selectDistinct({ id: arenasTable.id, status: arenasTable.status, venueId: arenasTable.venueId })
+        .from(slots)
+        .innerJoin(arenasTable, eq(arenasTable.id, slots.arenaId))
+        .where(and(inArray(slots.id, slotIds), eq(slots.tenantId, tenantId)));
+      if (slotArenas.some((a) => a.status !== 'active')) {
+        throw new Conflict('This arena is not open for booking', 'arena_not_bookable');
+      }
+      for (const vId of new Set([venue.id, ...slotArenas.map((a) => a.venueId)])) {
+        await assertVenueBookable(vId);
+      }
       // The API key itself is the "actor" — no human user. We don't have a
       // dedicated `api_key_user` row yet, so we use the api_key.id as the actor
       // marker in audit. The audit table allows null actorUserId, but bookings

@@ -365,6 +365,13 @@
       "when": 1783370000000,
       "tag": "0052_venue_status_before_close",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1783450000000,
+      "tag": "0053_arena_status_before_close",
+      "breakpoints": true
     }
   ]
 }

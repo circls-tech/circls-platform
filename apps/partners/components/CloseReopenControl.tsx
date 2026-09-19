@@ -2,48 +2,66 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { useSetVenueOpen, useVenueBookings } from '@/lib/api/queries';
-import type { Venue } from '@/lib/api/types';
+import { useVenueBookings } from '@/lib/api/queries';
+import type { ListingStatus } from '@/lib/api/types';
 import { Button, Modal } from '@/lib/ui';
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
-/** Where reopening will take this venue, in the partner's words. */
-function reopenOutcome(v: Venue): string {
-  switch (v.statusBeforeClose) {
+/** Where reopening will take a venue or arena, in the partner's words. */
+function reopenOutcome(statusBeforeClose: ListingStatus | null | undefined): string {
+  switch (statusBeforeClose) {
     case 'active':
       return 'It goes live again straight away.';
     case 'rejected':
       return "It comes back as rejected — reopening doesn't overturn Circls review.";
     default:
-      // pending_review, or a venue closed before its prior state was recorded.
+      // pending_review, or closed before its prior state was recorded.
       return 'It goes back to Circls review before customers can see it again.';
   }
 }
 
+export interface CloseReopenControlProps {
+  noun: 'venue' | 'arena';
+  target: { name: string; status: ListingStatus; statusBeforeClose?: ListingStatus | null };
+  /** The venue whose bookings are counted; with `arenaId`, only that arena's. */
+  venueId: string;
+  arenaId?: string;
+  tenantId: string;
+  setOpen: { mutateAsync: (action: 'close' | 'reopen') => Promise<unknown>; isPending: boolean };
+}
+
 /**
- * Close a venue, or reopen a closed one.
+ * Close a venue or an arena, or reopen a closed one.
  *
- * Closing takes the venue off the consumer portal and stops new online
- * bookings; it deletes nothing and cancels nothing. Both directions ask first:
- * closing hides a live listing, and reopening may not go where the partner
- * expects, so each spells out exactly what happens.
+ * Closing takes it off sale — the whole venue from the consumer portal, or
+ * one arena while the rest of its venue stays open — and deletes and cancels
+ * nothing. Both directions ask first: closing hides a live listing, and
+ * reopening may not go where the partner expects, so each spells out exactly
+ * what happens.
  */
-export function VenueOpenControl({ venue, tenantId }: { venue: Venue; tenantId: string }) {
-  const setOpen = useSetVenueOpen(venue.id);
+export function CloseReopenControl({
+  noun,
+  target,
+  venueId,
+  arenaId,
+  tenantId,
+  setOpen,
+}: CloseReopenControlProps) {
   const [confirming, setConfirming] = useState(false);
   // Fixed when the dialog opens, so the bookings query key doesn't change on
   // every render and refetch in a loop.
   const [windowStart, setWindowStart] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const closed = venue.status === 'suspended';
+  const closed = target.status === 'suspended';
 
   // Only asked for while the close dialog is up; an empty id disables it.
-  const upcoming = useVenueBookings(!closed && confirming ? venue.id : '', {
+  const upcoming = useVenueBookings(!closed && confirming ? venueId : '', {
     from: windowStart ?? new Date(0).toISOString(),
     to: new Date((windowStart ? Date.parse(windowStart) : 0) + YEAR_MS).toISOString(),
     status: 'confirmed',
+    ...(arenaId ? { arenaId } : {}),
   });
   const upcomingCount = upcoming.data?.length ?? null;
 
@@ -63,34 +81,36 @@ export function VenueOpenControl({ venue, tenantId }: { venue: Venue; tenantId: 
     }
   }
 
-  const bookingsHref = `/venues/${venue.id}/bookings${tenantId ? `?tenantId=${tenantId}` : ''}`;
+  const bookingsHref = `/venues/${venueId}/bookings${tenantId ? `?tenantId=${tenantId}` : ''}`;
 
   return (
     <>
       {closed ? (
         <Button petal="#BCE3A0" size="sm" onClick={open}>
-          Reopen venue
+          Reopen {noun}
         </Button>
       ) : (
         <Button variant="secondary" size="sm" onClick={open}>
-          Close venue
+          Close {noun}
         </Button>
       )}
 
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}
-        title={closed ? `Reopen ${venue.name}?` : `Close ${venue.name}?`}
+        title={closed ? `Reopen ${target.name}?` : `Close ${target.name}?`}
         maxWidth="max-w-md"
       >
         <div className="flex flex-col gap-3 text-sm text-slate-600">
           {closed ? (
-            <p>{reopenOutcome(venue)}</p>
+            <p>{reopenOutcome(target.statusBeforeClose)}</p>
           ) : (
             <>
               <p>
-                Customers won&apos;t find this venue or be able to book it online while it&apos;s
-                closed. Nothing is deleted, and you can reopen it at any time.
+                {noun === 'venue'
+                  ? "Customers won't find this venue or be able to book it online while it's closed."
+                  : "Customers won't be able to book this arena online while it's closed. The rest of the venue stays open."}{' '}
+                Nothing is deleted, and you can reopen it at any time.
               </p>
               {upcoming.isLoading ? (
                 <p className="text-slate-400">Checking upcoming bookings…</p>
@@ -125,7 +145,7 @@ export function VenueOpenControl({ venue, tenantId }: { venue: Venue; tenantId: 
               loading={setOpen.isPending}
               onClick={() => void confirm()}
             >
-              {closed ? 'Reopen venue' : 'Close venue'}
+              {closed ? `Reopen ${noun}` : `Close ${noun}`}
             </Button>
           </div>
         </div>

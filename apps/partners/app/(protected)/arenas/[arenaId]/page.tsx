@@ -7,11 +7,13 @@ import { Matrix } from '@/components/Matrix';
 import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import { CloseReopenControl } from '@/components/CloseReopenControl';
 import {
   useArena,
   useArenaSlots,
   useBulkSlots,
   useCancelBookingById,
+  useSetArenaOpen,
   useUpdateArenaQrConfig,
   useVenues,
 } from '@/lib/api/queries';
@@ -19,7 +21,7 @@ import type { QrTicketConfig } from '@/lib/api/types';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { Button, Card } from '@/lib/ui';
+import { Button, Card, StatusPill } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -53,6 +55,7 @@ export default function ArenaReceptionPage() {
   // ── Resolve venue timezone ──
   const { activeTenantId } = useOrg();
   const { data: arena } = useArena(arenaId);
+  const setArenaOpen = useSetArenaOpen(arenaId, arena?.venueId ?? '');
   const { data: venues } = useVenues(activeTenantId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
   const currency = useCurrency({ venueId: arena?.venueId });
@@ -182,14 +185,35 @@ export default function ArenaReceptionPage() {
             <span className="font-medium text-slate-700">Reception</span>
           </div>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
+          {arena && (
+            <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+              <span className="font-medium">{arena.name}</span>
+              <StatusPill
+                status={arena.status}
+                {...(arena.status === 'suspended' ? { label: 'Closed' } : {})}
+              />
+            </div>
+          )}
         </div>
 
-        <Link
-          href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-        >
-          Schedule builder →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            Schedule builder →
+          </Link>
+          {arena && (
+            <CloseReopenControl
+              noun="arena"
+              target={arena}
+              venueId={arena.venueId}
+              arenaId={arena.id}
+              tenantId={tenantId}
+              setOpen={setArenaOpen}
+            />
+          )}
+        </div>
       </div>
 
       {/* Loading / error / empty */}

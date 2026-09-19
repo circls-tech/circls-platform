@@ -204,6 +204,19 @@ export function useSetVenueOpen(venueId: string) {
   });
 }
 
+/** Close or reopen one arena; the rest of its venue is unaffected. */
+export function useSetArenaOpen(arenaId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'close' | 'reopen') =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}/${action}`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
+      void qc.invalidateQueries({ queryKey: ['arenas', venueId] });
+    },
+  });
+}
+
 export function useUpdateVenue(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
