@@ -132,10 +132,10 @@ export default function MembershipDetailPage() {
           <StatusPill status={membership.status} />
           {/* Signing someone up at the counter is the thing staff come here to
               do most often, so it sits beside the name rather than below the
-              members table. Only a live plan can be sold. */}
+              members table. Ungated, like the Add member desk it opens: a
+              partner can record an off-platform member on any plan. */}
           <span className="ml-auto">
             <ReceptionButton
-              disabled={membership.status !== 'active'}
               onClick={() => {
                 setWalkInOpen(true);
                 membersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
