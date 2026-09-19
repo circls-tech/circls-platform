@@ -2,11 +2,9 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { useVenueBookings } from '@/lib/api/queries';
+import { useCloseImpact } from '@/lib/api/queries';
 import type { ListingStatus } from '@/lib/api/types';
 import { Button, Modal } from '@/lib/ui';
-
-const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 /** Where reopening will take a venue or arena, in the partner's words. */
 function reopenOutcome(statusBeforeClose: ListingStatus | null | undefined): string {
@@ -24,7 +22,8 @@ function reopenOutcome(statusBeforeClose: ListingStatus | null | undefined): str
 export interface CloseReopenControlProps {
   noun: 'venue' | 'arena';
   target: { name: string; status: ListingStatus; statusBeforeClose?: ListingStatus | null };
-  /** The venue whose bookings are counted; with `arenaId`, only that arena's. */
+  /** The venue whose bookings are counted; with `arenaId`, only that arena's
+   *  court bookings (events belong to the venue, not an arena). */
   venueId: string;
   arenaId?: string;
   tenantId: string;
@@ -49,25 +48,20 @@ export function CloseReopenControl({
   setOpen,
 }: CloseReopenControlProps) {
   const [confirming, setConfirming] = useState(false);
-  // Fixed when the dialog opens, so the bookings query key doesn't change on
-  // every render and refetch in a loop.
-  const [windowStart, setWindowStart] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const closed = target.status === 'suspended';
 
-  // Only asked for while the close dialog is up; an empty id disables it.
-  const upcoming = useVenueBookings(!closed && confirming ? venueId : '', {
-    from: windowStart ?? new Date(0).toISOString(),
-    to: new Date((windowStart ? Date.parse(windowStart) : 0) + YEAR_MS).toISOString(),
-    status: 'confirmed',
-    ...(arenaId ? { arenaId } : {}),
-  });
-  const upcomingCount = upcoming.data?.length ?? null;
+  // Only asked for while the close dialog is up. Event registrations are
+  // counted too: the bookings list can't see them (they have no slots), yet
+  // closing a venue takes its events off the consumer portal.
+  const impact = useCloseImpact(venueId, arenaId, !closed && confirming);
+  const courts = impact.data?.upcomingSlotBookings ?? 0;
+  const events = impact.data?.upcomingEvents ?? 0;
+  const registrations = impact.data?.upcomingEventRegistrations ?? 0;
 
   function open() {
     setErr(null);
-    setWindowStart(new Date().toISOString());
     setConfirming(true);
   }
 
@@ -112,23 +106,54 @@ export function CloseReopenControl({
                   : "Customers won't be able to book this arena online while it's closed. The rest of the venue stays open."}{' '}
                 Nothing is deleted, and you can reopen it at any time.
               </p>
-              {upcoming.isLoading ? (
+              {impact.isLoading ? (
                 <p className="text-slate-400">Checking upcoming bookings…</p>
-              ) : upcomingCount === 0 ? (
-                <p>There are no upcoming bookings.</p>
-              ) : upcomingCount !== null ? (
-                <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                  <span className="font-semibold">
-                    {upcomingCount} upcoming booking{upcomingCount === 1 ? '' : 's'}
-                  </span>{' '}
-                  {upcomingCount === 1 ? 'stays' : 'stay'} booked — closing doesn&apos;t cancel
-                  anything. Contact or cancel those customers from{' '}
+              ) : impact.isError ? (
+                <p className="text-slate-500">
+                  Couldn&apos;t check upcoming bookings. Check{' '}
                   <Link href={bookingsHref} className="font-medium underline">
                     View bookings
-                  </Link>
-                  .
+                  </Link>{' '}
+                  before closing.
                 </p>
-              ) : null}
+              ) : courts === 0 && events === 0 ? (
+                <p>
+                  There are no upcoming bookings{noun === 'venue' ? ' or events' : ''}.
+                </p>
+              ) : (
+                <>
+                  {courts > 0 && (
+                    <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                      <span className="font-semibold">
+                        {courts} upcoming court booking{courts === 1 ? '' : 's'}
+                      </span>{' '}
+                      {courts === 1 ? 'stays' : 'stay'} booked — closing doesn&apos;t cancel
+                      anything. Contact or cancel those customers from{' '}
+                      <Link href={bookingsHref} className="font-medium underline">
+                        View bookings
+                      </Link>
+                      .
+                    </p>
+                  )}
+                  {events > 0 && (
+                    <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                      <span className="font-semibold">
+                        {events} upcoming event{events === 1 ? '' : 's'}
+                      </span>{' '}
+                      {registrations > 0 && (
+                        <>
+                          with{' '}
+                          <span className="font-semibold">
+                            {registrations} registration{registrations === 1 ? '' : 's'}
+                          </span>{' '}
+                        </>
+                      )}
+                      will come off the consumer portal while the venue is closed. Existing
+                      registrations stay valid, but no one new can register.
+                    </p>
+                  )}
+                </>
+              )}
             </>
           )}
 

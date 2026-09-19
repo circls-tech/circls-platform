@@ -227,6 +227,98 @@ describe.skipIf(!runIntegration)('venues', () => {
       expect(res.statusCode).toBe(409);
     });
 
+    // The bookings list can't see event registrations (they have no slots),
+    // but closing a venue takes its events off the consumer portal — so the
+    // close dialog has to be told about them.
+    it('reports upcoming court bookings, events and registrations a close would affect', async () => {
+      const id = await venueIn('active');
+      const [owner] = (await db.execute(
+        sql`select id from users where firebase_uid = 'fbuid_vowner'`,
+      )) as unknown as { id: string }[];
+      const arena = await app.inject({
+        method: 'POST',
+        url: `/v1/venues/${id}/arenas`,
+        headers: bearer('owner'),
+        payload: { name: 'Impact Court' },
+      });
+      const arenaId = arena.json().id as string;
+      const otherArena = await app.inject({
+        method: 'POST',
+        url: `/v1/venues/${id}/arenas`,
+        headers: bearer('owner'),
+        payload: { name: 'Quiet Court' },
+      });
+
+      // A court booking tomorrow, and one that already finished.
+      for (const [start, end] of [
+        ["now() + interval '1 day'", "now() + interval '1 day 1 hour'"],
+        ["now() - interval '2 days'", "now() - interval '2 days' + interval '1 hour'"],
+      ] as const) {
+        await db.execute(sql`
+          insert into bookings (tenant_id, venue_id, item_type, channel, payment_method, status,
+                                total_paise, created_by_user_id, slot_arena_id, time_range)
+          values (${tenantId}::uuid, ${id}::uuid, 'slot', 'walkin', 'external', 'confirmed',
+                  1000, ${owner!.id}::uuid, ${arenaId}::uuid,
+                  tstzrange(${sql.raw(start)}, ${sql.raw(end)}, '[)'))
+        `);
+      }
+
+      // An event next week with two confirmed registrations and one cancelled.
+      const [ev] = (await db.execute(sql`
+        insert into events (tenant_id, venue_id, name, starts_at, ends_at, status)
+        values (${tenantId}::uuid, ${id}::uuid, 'Impact Night',
+                now() + interval '7 days', now() + interval '7 days 3 hours', 'published')
+        returning id
+      `)) as unknown as { id: string }[];
+      for (const status of ['confirmed', 'confirmed', 'cancelled']) {
+        await db.execute(sql`
+          insert into bookings (tenant_id, venue_id, item_type, item_data, channel, payment_method,
+                                status, total_paise, created_by_user_id)
+          values (${tenantId}::uuid, ${id}::uuid, 'event',
+                  jsonb_build_object('eventId', ${ev!.id}::text), 'circls', 'external',
+                  ${status}::booking_status, 1000, ${owner!.id}::uuid)
+        `);
+      }
+
+      const venueImpact = await app.inject({
+        method: 'GET',
+        url: `/v1/venues/${id}/close-impact`,
+        headers: bearer('owner'),
+      });
+      expect(venueImpact.statusCode).toBe(200);
+      expect(venueImpact.json()).toEqual({
+        upcomingSlotBookings: 1,
+        upcomingEvents: 1,
+        upcomingEventRegistrations: 2,
+      });
+
+      // One arena: only its own courts, and never events — they belong to the venue.
+      const arenaImpact = await app.inject({
+        method: 'GET',
+        url: `/v1/venues/${id}/close-impact?arenaId=${arenaId}`,
+        headers: bearer('owner'),
+      });
+      expect(arenaImpact.json()).toEqual({
+        upcomingSlotBookings: 1,
+        upcomingEvents: 0,
+        upcomingEventRegistrations: 0,
+      });
+      const quiet = await app.inject({
+        method: 'GET',
+        url: `/v1/venues/${id}/close-impact?arenaId=${otherArena.json().id}`,
+        headers: bearer('owner'),
+      });
+      expect(quiet.json().upcomingSlotBookings).toBe(0);
+
+      // Someone outside the organisation can't read it.
+      const outsider = await app.inject({
+        method: 'GET',
+        url: `/v1/venues/${id}/close-impact`,
+        headers: bearer('other'),
+      });
+      expect(outsider.statusCode).toBe(403);
+    });
+
     it('still accepts a PATCH that renames and closes in one go', async () => {
       const id = await venueIn('active');
       const res = await app.inject({

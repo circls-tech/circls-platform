@@ -217,6 +217,29 @@ export function useSetArenaOpen(arenaId: string, venueId: string) {
   });
 }
 
+export interface CloseImpact {
+  upcomingSlotBookings: number;
+  upcomingEvents: number;
+  upcomingEventRegistrations: number;
+}
+
+/**
+ * What closing a venue (or, with `arenaId`, one arena) would affect. Only
+ * fetched while `enabled` — the confirmation dialog is open.
+ */
+export function useCloseImpact(venueId: string, arenaId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['close-impact', venueId, arenaId ?? null],
+    queryFn: () =>
+      apiFetch<CloseImpact>(
+        `/v1/venues/${venueId}/close-impact${arenaId ? `?arenaId=${arenaId}` : ''}`,
+      ),
+    enabled: enabled && Boolean(venueId),
+    // Always re-check when the dialog opens; the answer is time-sensitive.
+    staleTime: 0,
+  });
+}
+
 export function useUpdateVenue(venueId: string) {
   const qc = useQueryClient();
   return useMutation({

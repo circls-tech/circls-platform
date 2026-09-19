@@ -12,6 +12,7 @@ import { suggestCity } from '../lib/geocoding/gazetteer.js';
 import {
   closeVenue,
   createVenue,
+  getCloseImpact,
   getVenueById,
   listVenues,
   reopenVenue,
@@ -198,6 +199,22 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
   // ── Close / reopen ─────────────────────────────────────────────────────────
   // Closing takes a venue off the consumer portal; reopening puts it back to
   // exactly the state it was in. See closeVenue / reopenVenue.
+  // What closing would affect: upcoming court bookings, and — for a whole
+  // venue — its upcoming events and their registrations. ?arenaId narrows the
+  // court count to one arena.
+  app.get('/v1/venues/:id/close-impact', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { arenaId } = req.query as { arenaId?: string };
+    if (arenaId !== undefined && !/^[0-9a-f-]{36}$/i.test(arenaId)) {
+      throw new BadRequest('Invalid arenaId', 'bad_request');
+    }
+    const venue = await getVenueById(id);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    await requireTenantMembership(user.id, venue.tenantId);
+    return getCloseImpact(venue.tenantId, id, arenaId);
+  });
+
   app.post('/v1/venues/:id/close', { preHandler: requireAuth }, async (req) => {
     const { id } = req.params as { id: string };
     const venue = await getVenueById(id);

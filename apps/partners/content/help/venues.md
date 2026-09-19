@@ -70,7 +70,7 @@ The **Venues** page has two tabs. **Active** holds your live venues and any awai
 
 Use **Close venue** at the top of a venue's page when it's shutting — for renovation, for the season, or for good. Closing takes it off the consumer portal and stops new online bookings. Nothing is deleted.
 
-**Closing doesn't cancel existing bookings.** The confirmation tells you how many upcoming bookings the venue still has; contact or cancel those customers from **View bookings**.
+**Closing doesn't cancel existing bookings.** The confirmation tells you how many upcoming court bookings the venue still has — contact or cancel those customers from **View bookings** — and how many upcoming events it hosts, with their registrations. Those events come off the consumer portal while the venue is closed: existing registrations stay valid, but no one new can register.
 
 **Reopen venue** puts it back exactly where it was before you closed it:
 

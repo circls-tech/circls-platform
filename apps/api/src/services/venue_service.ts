@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
@@ -298,4 +298,69 @@ export async function reopenVenue(ctx: AuditCtx, venueId: string): Promise<Venue
     );
     return updated!;
   });
+}
+
+export interface CloseImpact {
+  /** Confirmed court bookings that haven't finished yet. */
+  upcomingSlotBookings: number;
+  /** Live events at the venue that haven't ended. Venue-wide only: events
+   *  belong to a venue, not an arena, so an arena close never touches them. */
+  upcomingEvents: number;
+  /** Confirmed registrations across those events. */
+  upcomingEventRegistrations: number;
+}
+
+/**
+ * What is still booked that closing would affect — for the confirmation a
+ * partner reads before closing a venue or one of its arenas.
+ *
+ * Event registrations are counted separately because the bookings list can't
+ * see them: it matches bookings to a time window through their slots, and an
+ * event booking has none. Yet closing a venue takes its events off the
+ * consumer portal (every public event query requires the venue to be live),
+ * so a partner has to be told about them.
+ *
+ * Callers must have authorised the venue for the requesting tenant.
+ */
+export async function getCloseImpact(
+  tenantId: string,
+  venueId: string,
+  arenaId?: string,
+): Promise<CloseImpact> {
+  const arenaClause = arenaId
+    ? sql` and (s.arena_id = ${arenaId}::uuid or b.slot_arena_id = ${arenaId}::uuid)`
+    : sql``;
+  const [slot] = (await db.execute(sql`
+    select count(distinct b.id)::int as n
+      from bookings b
+      left join slots s on s.booking_id = b.id and s.deleted_at is null
+     where b.tenant_id = ${tenantId}::uuid
+       and b.venue_id = ${venueId}::uuid
+       and b.item_type = 'slot'
+       and b.status = 'confirmed'
+       and coalesce(upper(s.time_range), upper(b.time_range)) > now()${arenaClause}
+  `)) as unknown as { n: number }[];
+
+  if (arenaId) {
+    return { upcomingSlotBookings: slot?.n ?? 0, upcomingEvents: 0, upcomingEventRegistrations: 0 };
+  }
+
+  const [ev] = (await db.execute(sql`
+    select count(distinct e.id)::int as events,
+           count(b.id)::int          as registrations
+      from events e
+      left join bookings b on b.item_type = 'event'
+                          and b.status = 'confirmed'
+                          and b.item_data->>'eventId' = e.id::text
+     where e.tenant_id = ${tenantId}::uuid
+       and e.venue_id = ${venueId}::uuid
+       and e.status = 'published'
+       and e.ends_at > now()
+  `)) as unknown as { events: number; registrations: number }[];
+
+  return {
+    upcomingSlotBookings: slot?.n ?? 0,
+    upcomingEvents: ev?.events ?? 0,
+    upcomingEventRegistrations: ev?.registrations ?? 0,
+  };
 }
