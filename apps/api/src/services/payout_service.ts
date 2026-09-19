@@ -21,6 +21,22 @@ import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 
 /**
+ * True when a refund row `p` is against a charge that was ever going to reach
+ * the partner: one with a settlement hold, or one already released. The same
+ * rule as the reconciler's refund filter, as raw SQL over alias `p`, so the
+ * breakdown can never classify a refund differently from the payout it
+ * explains.
+ */
+const CREDITABLE_CHARGE = sql`exists (
+  select 1 from payments ch
+   where ch.kind = 'charge'
+     and ch.booking_id = p.booking_id
+     and (p.metadata->>'chargePaymentId' is null
+          or ch.id::text = p.metadata->>'chargePaymentId')
+     and (ch.settlement_hold_until is not null or ch.settlement_released_at is not null)
+)`;
+
+/**
  * Clamp a settlement period's raw commission so net (= gross − refunds −
  * commission) can never go negative from the commission alone, and never
  * below zero.
@@ -135,6 +151,15 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
     )
     .groupBy(payments.tenantId, payments.currency);
 
+  // Refunds are deducted only when their charge was ever going to reach the
+  // partner — it has a settlement hold (released in time) or has already been
+  // released. A payment that succeeds after its booking was cancelled (a late
+  // UPI success) is refunded automatically and never held, so its gross never
+  // reaches a payout; deducting its refund charged the partner for a sale they
+  // never had. Saur Grapes lost ₹614.17 to exactly this in the week of 17 Aug.
+  // The refund row names its charge in metadata.chargePaymentId; older rows
+  // without it fall back to any charge on the same booking.
+  //
   // Refunds: refund rows created this week. Deduct at the settle value —
   // refunded customer cash plus any Circls-funded discount clawed back
   // (refund_service stores it negated in settle_base_paise; see
@@ -153,6 +178,14 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         sql`${payments.status} <> 'failed'`,
         gte(payments.createdAt, start),
         lt(payments.createdAt, end),
+        sql`exists (
+          select 1 from payments ch
+           where ch.kind = 'charge'
+             and ch.booking_id = ${payments.bookingId}
+             and (${payments.metadata}->>'chargePaymentId' is null
+                  or ch.id::text = ${payments.metadata}->>'chargePaymentId')
+             and (ch.settlement_hold_until is not null or ch.settlement_released_at is not null)
+        )`,
       ),
     )
     .groupBy(payments.tenantId, payments.currency);
@@ -407,6 +440,21 @@ export interface PayoutBreakdown {
    * than per line. Surfaced rather than hidden so the numbers can be trusted.
    */
   unattributedPaise: number;
+  /**
+   * Refunds in the window that were not deducted because their charge never
+   * reached the partner.
+   */
+  uncreditedRefundsPaise: number;
+  /** What the payout row itself recorded as refunds. */
+  storedRefundsPaise: number;
+  /**
+   * What the breakdown deducts as refunds now. When the payout stored more
+   * than this — by exactly uncreditedRefundsPaise — it was reconciled before
+   * uncredited refunds were excluded, and the partner is owed the difference.
+   * Comparing these two is exact, unlike reading the residual, which also
+   * carries the commission clamp and unattributable payments.
+   */
+  attributedRefundsPaise: number;
   /** What the partner is being paid for: events, memberships, venue bookings. */
   byItem: PayoutBreakdownLine[];
   /** Who paid: one line per customer. */
@@ -468,6 +516,12 @@ export interface PayoutBookingLine {
   refundTiming: RefundTiming;
   /** For an 'earlier_payout' refund: the payout that paid the original charge. */
   paidInPayout: { id: string; periodStart: string; periodEnd: string } | null;
+  /**
+   * A refund in this window that is NOT deducted, because its charge never
+   * reached the partner (refundTiming 'never_credited'). Shown for the
+   * record; it is in no total.
+   */
+  uncreditedRefundPaise: number;
 }
 
 interface AttributedRow {
@@ -484,6 +538,8 @@ interface AttributedRow {
   advances: number;
   advanceRecouped: number;
   refunds: number;
+  /** Refunds in the window the reconciler does not deduct — see CREDITABLE_CHARGE. */
+  uncredited: number;
 }
 
 function emptyLine(
@@ -520,7 +576,7 @@ function emptyLine(
  */
 export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakdown | null> {
   const [po] = (await db.execute<Record<string, unknown>>(sql`
-    select id, tenant_id, currency, period_start, period_end, amount_paise
+    select id, tenant_id, currency, period_start, period_end, amount_paise, refunds_paise
       from payouts where id = ${payoutId}::uuid
   `)) as unknown as Record<string, unknown>[];
   if (!po) return null;
@@ -534,6 +590,9 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       amountPaise: Number(po['amount_paise']),
       attributedPaise: 0,
       unattributedPaise: Number(po['amount_paise']),
+      uncreditedRefundsPaise: 0,
+      storedRefundsPaise: Number(po['refunds_paise'] ?? 0),
+      attributedRefundsPaise: 0,
       byItem: [],
       byConsumer: [],
       byBooking: [],
@@ -558,7 +617,8 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
              case when p.advance_released_at is not null
                   then coalesce(p.advance_paise, 0) else 0 end as advance_recouped,
              0::bigint as advances,
-             0::bigint as refunds
+             0::bigint as refunds,
+             0::bigint as uncredited
         from payments p
         join tenants t on t.id = p.tenant_id
        where p.tenant_id = ${tenantId}::uuid
@@ -569,7 +629,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
          and p.settlement_released_at <  ${end}::timestamptz
       union all
       select p.booking_id, 0::bigint, 0::bigint, 0::bigint,
-             coalesce(p.advance_paise, 0) as advances, 0::bigint
+             coalesce(p.advance_paise, 0) as advances, 0::bigint, 0::bigint
         from payments p
        where p.tenant_id = ${tenantId}::uuid
          and p.currency = ${currency}
@@ -579,7 +639,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
          and p.advance_released_at <  ${end}::timestamptz
       union all
       select p.booking_id, 0::bigint, 0::bigint, 0::bigint, 0::bigint,
-             -coalesce(p.settle_base_paise, p.amount_paise) as refunds
+             -coalesce(p.settle_base_paise, p.amount_paise) as refunds, 0::bigint
         from payments p
        where p.tenant_id = ${tenantId}::uuid
          and p.currency = ${currency}
@@ -587,6 +647,21 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
          and p.status <> 'failed'
          and p.created_at >= ${start}::timestamptz
          and p.created_at <  ${end}::timestamptz
+         and ${CREDITABLE_CHARGE}
+      union all
+      -- Refunds the reconciler does not deduct: their charge never reached the
+      -- partner. Carried as a separate amount so the line still appears and
+      -- says why, without touching any total.
+      select p.booking_id, 0::bigint, 0::bigint, 0::bigint, 0::bigint, 0::bigint,
+             -coalesce(p.settle_base_paise, p.amount_paise) as uncredited
+        from payments p
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency = ${currency}
+         and p.kind = 'refund'
+         and p.status <> 'failed'
+         and p.created_at >= ${start}::timestamptz
+         and p.created_at <  ${end}::timestamptz
+         and not ${CREDITABLE_CHARGE}
     )
     select c.booking_id,
            b.item_type,
@@ -608,7 +683,8 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
            sum(c.commission)::bigint       as commission,
            sum(c.advances)::bigint         as advances,
            sum(c.advance_recouped)::bigint as advance_recouped,
-           sum(c.refunds)::bigint          as refunds
+           sum(c.refunds)::bigint          as refunds,
+           sum(c.uncredited)::bigint       as uncredited
       from contrib c
       left join bookings b   on b.id = c.booking_id
       left join venues v     on v.id = b.venue_id
@@ -636,6 +712,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     advances: Number(r['advances'] ?? 0),
     advanceRecouped: Number(r['advance_recouped'] ?? 0),
     refunds: Number(r['refunds'] ?? 0),
+    uncredited: Number(r['uncredited'] ?? 0),
   }));
 
   const byItem = new Map<string, PayoutBreakdownLine>();
@@ -706,8 +783,14 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       advanceRecoupedPaise: r.advanceRecouped,
       netPaise: r.gross - r.refunds - r.commission + r.advances - r.advanceRecouped,
       refundFeePaise: r.refunds > 0 ? (d?.refundFeePaise ?? 0) : 0,
-      refundTiming: r.refunds > 0 ? (d?.refundTiming ?? 'not_yet_paid') : 'none',
+      refundTiming:
+        r.refunds > 0
+          ? (d?.refundTiming ?? 'not_yet_paid')
+          : r.uncredited > 0
+            ? 'never_credited'
+            : 'none',
       paidInPayout: r.refunds > 0 ? (d?.paidInPayout ?? null) : null,
+      uncreditedRefundPaise: r.uncredited,
     };
   });
   byBooking.sort(
@@ -727,6 +810,9 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     amountPaise,
     attributedPaise,
     unattributedPaise: amountPaise - attributedPaise,
+    uncreditedRefundsPaise: rows.reduce((sum, r) => sum + r.uncredited, 0),
+    storedRefundsPaise: Number(po['refunds_paise'] ?? 0),
+    attributedRefundsPaise: rows.reduce((sum, r) => sum + r.refunds, 0),
     byItem: itemLines,
     byConsumer: [...byConsumer.values()].sort(byNet),
     byBooking,
@@ -780,6 +866,10 @@ async function loadBookingDetails(
        where p.booking_id in (${idList})
          and p.kind = 'charge'
          and p.status in ('captured', 'refunded', 'partially_refunded')
+         -- Only charges that reach the partner: on a booking that carries
+         -- both kinds, summing an uncredited charge into the base would
+         -- skew the refunded share the fee is worked out from.
+         and (p.settlement_hold_until is not null or p.settlement_released_at is not null)
        group by p.booking_id
     ),
     refund as (
@@ -795,6 +885,10 @@ async function loadBookingDetails(
          and p.status <> 'failed'
          and p.created_at >= ${w.start}::timestamptz
          and p.created_at <  ${w.end}::timestamptz
+         -- Deducted refunds only. A booking can carry both kinds at once (a
+         -- retried payment leaves two charges), and folding an uncredited
+         -- refund in here would overstate the fee on the deducted one.
+         and ${CREDITABLE_CHARGE}
        group by p.booking_id
     )
     select b.id as booking_id,

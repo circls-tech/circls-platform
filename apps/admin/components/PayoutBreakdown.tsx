@@ -164,9 +164,10 @@ function BookingTable({
                     Refunded before it was paid out
                   </span>
                 )}
-                {l.refundTiming === 'never_credited' && (
+                {l.uncreditedRefundPaise > 0 && (
                   <span className="block text-xs font-normal text-red-700">
-                    Refunded automatically — never credited to the partner
+                    {fmtMinor(l.uncreditedRefundPaise)} refunded automatically — never credited to
+                    the partner, so not deducted
                   </span>
                 )}
                 {l.refundFeePaise > 0 && (
@@ -229,11 +230,20 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
   const feePaise = data.byBooking
     .filter((l) => l.refundTiming !== 'earlier_payout')
     .reduce((sum, l) => sum + l.refundFeePaise, 0);
-  // Refunds on payments the partner never had: they should not reduce a
-  // payout at all, so they are called out on their own.
-  const neverCreditedPaise = data.byBooking
-    .filter((l) => l.refundTiming === 'never_credited')
-    .reduce((sum, l) => sum + l.refundsPaise, 0);
+  // Refunds on payments the partner never had. The reconciler no longer
+  // deducts them; a payout reconciled before that did, which shows up as a
+  // residual of exactly −that amount — the partner is owed it.
+  const neverCreditedPaise = data.uncreditedRefundsPaise;
+  // Whether this payout deducted them: compare what it stored as refunds with
+  // what the breakdown deducts now. Reading the residual instead would miss
+  // any payout that also carries a commission clamp or an unattributable
+  // payment, which is exactly the payout an admin needs told about.
+  const deductedBeforeFix =
+    neverCreditedPaise > 0 &&
+    data.storedRefundsPaise - data.attributedRefundsPaise === neverCreditedPaise;
+  // Residual left once that shortfall is accounted for.
+  const otherResidualPaise =
+    data.unattributedPaise + (deductedBeforeFix ? neverCreditedPaise : 0);
 
   return (
     <div className="space-y-3 border-t border-slate-200 bg-slate-50/60 p-4">
@@ -271,7 +281,7 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
         </p>
       </div>
 
-      {!reconciles && (
+      {!reconciles && otherResidualPaise !== 0 && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           These lines don&apos;t add up to the amount paid. That is expected when a
           payment has no booking behind it, or when the commission cap applied to
@@ -279,14 +289,28 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
         </p>
       )}
 
-      {neverCreditedPaise > 0 && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
-          <span className="font-medium tabular-nums">{fmtMinor(neverCreditedPaise)}</span> of
-          refunds here are on payments the partner was never credited — they succeeded after the
-          booking was cancelled and were refunded automatically. They should not reduce this
-          payout.
-        </p>
-      )}
+      {neverCreditedPaise > 0 &&
+        (deductedBeforeFix ? (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+            This payout was calculated before a fix and deducted{' '}
+            <span className="font-medium tabular-nums">{fmtMinor(neverCreditedPaise)}</span> of
+            refunds on payments the partner was never credited — they succeeded after the booking
+            was cancelled and were refunded automatically. The partner is owed that amount: the
+            correct payout is{' '}
+            <span className="font-medium tabular-nums">
+              {fmtMinor(data.amountPaise + neverCreditedPaise)}
+            </span>
+            .
+          </p>
+        ) : (
+          <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <span className="font-medium tabular-nums text-slate-800">
+              {fmtMinor(neverCreditedPaise)}
+            </span>{' '}
+            of refunds this week were on payments the partner was never credited, so they are not
+            deducted.
+          </p>
+        ))}
 
       {(clawbackPaise > 0 || feePaise > 0) && (
         <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">

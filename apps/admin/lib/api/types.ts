@@ -171,6 +171,13 @@ export interface AdminPayoutBreakdown {
   attributedPaise: number;
   /** amountPaise − attributedPaise; normally 0. Shown, never hidden. */
   unattributedPaise: number;
+  /** Refunds not deducted because their charge never reached the partner. */
+  uncreditedRefundsPaise: number;
+  /** What the payout row recorded as refunds. */
+  storedRefundsPaise: number;
+  /** What the breakdown deducts as refunds now; a shortfall of exactly
+   *  uncreditedRefundsPaise means the payout predates that rule. */
+  attributedRefundsPaise: number;
   byItem: AdminPayoutBreakdownLine[];
   byConsumer: AdminPayoutBreakdownLine[];
   /** Who paid, one line per booking. */
@@ -205,6 +212,9 @@ export interface AdminPayoutBookingLine {
   refundFeePaise: number;
   refundTiming: AdminRefundTiming;
   paidInPayout: { id: string; periodStart: string; periodEnd: string } | null;
+  /** A refund in the window that is not deducted: its charge never reached
+   *  the partner. In no total. */
+  uncreditedRefundPaise: number;
 }
 
 // Tenant-scoped audit log (existing /v1/tenants/:id/audit-log) — no tenantId
