@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAdminPayoutBreakdown } from '@/lib/api/queries';
 import type { AdminPayoutBookingLine, AdminPayoutBreakdownLine } from '@/lib/api/types';
 
@@ -103,7 +103,7 @@ function BookingTable({
   onOpenPayout,
 }: {
   lines: AdminPayoutBookingLine[];
-  onOpenPayout?: ((payoutId: string) => void) | undefined;
+  onOpenPayout: (payout: NonNullable<AdminPayoutBookingLine['paidInPayout']>) => void;
 }) {
   if (lines.length === 0) {
     return <p className="px-4 py-6 text-center text-sm text-slate-400">No bookings in this period.</p>;
@@ -147,19 +147,13 @@ function BookingTable({
                   <span className="block text-xs font-normal text-amber-700">
                     Clawback — paid out{' '}
                     {l.paidInPayout ? (
-                      onOpenPayout ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenPayout(l.paidInPayout!.id)}
-                          className="underline hover:text-amber-900"
-                        >
-                          {fmtDay(l.paidInPayout.periodStart)} → {fmtDay(l.paidInPayout.periodEnd)}
-                        </button>
-                      ) : (
-                        <>
-                          {fmtDay(l.paidInPayout.periodStart)} → {fmtDay(l.paidInPayout.periodEnd)}
-                        </>
-                      )
+                      <button
+                        type="button"
+                        onClick={() => onOpenPayout(l.paidInPayout!)}
+                        className="underline hover:text-amber-900"
+                      >
+                        {fmtDay(l.paidInPayout.periodStart)} → {fmtDay(l.paidInPayout.periodEnd)}
+                      </button>
                     ) : (
                       'in an earlier week'
                     )}
@@ -197,16 +191,16 @@ function BookingTable({
  * the payments behind the payout, and if they don't add up to what was paid the
  * admin needs to see that rather than trust a total that quietly disagrees.
  */
-export function PayoutBreakdown({
-  payoutId,
-  onOpenPayout,
-}: {
-  payoutId: string;
-  /** Opens another payout's breakdown — used by clawback lines to jump to
-   *  the payout that paid the original charge. */
-  onOpenPayout?: (payoutId: string) => void;
-}) {
+export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
   const [tab, setTab] = useState<'item' | 'consumer'>('item');
+  // The earlier payout a clawback line points at, shown in a dialog. It used
+  // to jump to that payout's row in the list, which silently did nothing when
+  // the row wasn't on a loaded page — common, since the list pages 50 rows
+  // across every tenant. The breakdown fetches by id, so it can show any
+  // payout without the list knowing about it.
+  const [earlier, setEarlier] = useState<NonNullable<
+    AdminPayoutBookingLine['paidInPayout']
+  > | null>(null);
   const { data, isLoading, isError, error } = useAdminPayoutBreakdown(payoutId);
 
   if (isLoading) return <p className="px-4 py-6 text-sm text-slate-400">Loading breakdown…</p>;
@@ -305,9 +299,61 @@ export function PayoutBreakdown({
             showContact={false}
           />
         ) : (
-          <BookingTable lines={data.byBooking} onOpenPayout={onOpenPayout} />
+          <BookingTable lines={data.byBooking} onOpenPayout={setEarlier} />
         )}
       </div>
+
+      {earlier && <EarlierPayoutDialog payout={earlier} onClose={() => setEarlier(null)} />}
     </div>
+  );
+}
+
+/**
+ * The payout that originally paid a clawed-back charge. A native <dialog>
+ * opened with showModal(), so focus, Escape and the backdrop come from the
+ * browser rather than a hand-rolled overlay.
+ */
+function EarlierPayoutDialog({
+  payout,
+  onClose,
+}: {
+  payout: NonNullable<AdminPayoutBookingLine['paidInPayout']>;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => {
+        // A click on the backdrop lands on the dialog element itself.
+        if (e.target === ref.current) ref.current?.close();
+      }}
+      className="mx-auto mt-16 w-[min(64rem,95vw)] rounded-lg border border-slate-200 p-0 shadow-xl backdrop:bg-slate-900/40"
+      aria-label={`Payout for ${fmtDay(payout.periodStart)} to ${fmtDay(payout.periodEnd)}`}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            Payout for {fmtDay(payout.periodStart)} → {fmtDay(payout.periodEnd)}
+          </p>
+          <p className="text-xs text-slate-500">
+            The payout that paid the original charge this refund claws back.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => ref.current?.close()}
+          className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Close
+        </button>
+      </div>
+      <PayoutBreakdown payoutId={payout.id} />
+    </dialog>
   );
 }
