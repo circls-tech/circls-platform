@@ -16,7 +16,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 }));
 
 const { closeDb, db } = await import('../db/client.js');
-const { arenas, bookings, venues } = await import('../db/schema/index.js');
+const { arenas, venues } = await import('../db/schema/index.js');
 const { buildServer } = await import('../server.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -40,11 +40,108 @@ interface AnalyticsResponse {
 }
 
 /**
+ * 10:00 IST on (today + offsetDays), as a timestamptz. Built from
+ * (now() AT TIME ZONE 'Asia/Kolkata')::date inside Postgres so the IST day is
+ * deterministic whatever the server's wall-clock zone.
+ */
+const istAt = (offsetDays: number) => sql`
+  (((now() at time zone 'Asia/Kolkata')::date
+    + make_interval(days => ${offsetDays}, mins => 600)) at time zone 'Asia/Kolkata')`;
+
+interface BookingOpts {
+  offsetDays: number;
+  itemType?: 'slot' | 'event' | 'membership';
+  paymentMethod?: 'razorpay_route' | 'external' | 'free';
+  status?: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show';
+  totalPaise?: number | null;
+  currency?: string;
+}
+
+/** A booking row made on a given IST day. Returns its id. */
+async function insertBooking(tenantId: string, opts: BookingOpts): Promise<string> {
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    insert into bookings (tenant_id, item_type, channel, payment_method, status,
+                          total_paise, currency, created_at)
+    values (${tenantId}, ${opts.itemType ?? 'slot'}, 'walkin',
+            ${opts.paymentMethod ?? 'razorpay_route'}, ${opts.status ?? 'confirmed'},
+            ${opts.totalPaise ?? null}, ${opts.currency ?? 'INR'}, ${istAt(opts.offsetDays)})
+    returning id
+  `);
+  return (rows as unknown as Record<string, unknown>[])[0]!['id'] as string;
+}
+
+interface PaymentOpts {
+  offsetDays: number;
+  kind: 'charge' | 'refund';
+  status: 'pending' | 'authorized' | 'captured' | 'failed' | 'refunded' | 'partially_refunded';
+  /** Signed, as the ledger stores it: charges positive, refunds negative. */
+  amountPaise: number;
+  currency?: string;
+}
+
+/** A payment row dated on a given IST day. */
+async function insertPayment(
+  tenantId: string,
+  bookingId: string,
+  opts: PaymentOpts,
+): Promise<void> {
+  await db.execute(sql`
+    insert into payments (booking_id, tenant_id, provider, amount_paise, currency,
+                          status, kind, created_at)
+    values (${bookingId}::uuid, ${tenantId}::uuid, 'stub', ${opts.amountPaise},
+            ${opts.currency ?? 'INR'}, ${opts.status}, ${opts.kind}, ${istAt(opts.offsetDays)})
+  `);
+}
+
+/** A booking paid online: the booking row plus its captured charge, same day. */
+async function insertPaidBooking(
+  tenantId: string,
+  opts: BookingOpts & { chargePaise: number },
+): Promise<string> {
+  const id = await insertBooking(tenantId, { ...opts, totalPaise: opts.chargePaise });
+  await insertPayment(tenantId, id, {
+    offsetDays: opts.offsetDays,
+    kind: 'charge',
+    status: 'captured',
+    amountPaise: opts.chargePaise,
+    ...(opts.currency ? { currency: opts.currency } : {}),
+  });
+  return id;
+}
+
+/**
+ * A free, coupon-less membership purchase: memberships_service writes only a
+ * `user_memberships` row for these, no booking. Returns the purchase id.
+ */
+async function insertFreeMembership(
+  tenantId: string,
+  opts: { offsetDays: number; cancelled?: boolean },
+): Promise<string> {
+  const [u] = (await db.execute<Record<string, unknown>>(sql`
+    insert into users (firebase_uid, email)
+    values (${`an-mem-${Date.now()}-${Math.random()}`}, ${`an-mem-${Date.now()}-${Math.random()}@x.com`})
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  const [m] = (await db.execute<Record<string, unknown>>(sql`
+    insert into memberships (tenant_id, name, price_paise, duration_days)
+    values (${tenantId}::uuid, ${`Free plan ${Date.now()}`}, 0, 30)
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  const [um] = (await db.execute<Record<string, unknown>>(sql`
+    insert into user_memberships (membership_id, user_id, starts_at, ends_at, status, created_at)
+    values (${m!['id'] as string}::uuid, ${u!['id'] as string}::uuid,
+            now(), now() + interval '30 days',
+            ${opts.cancelled ? 'cancelled' : 'active'}, ${istAt(opts.offsetDays)})
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  return um!['id'] as string;
+}
+
+/**
  * Insert one slot whose IST session date is `today + offsetDays` (IST) starting
- * at IST `hour:00` for `durMin` minutes. Building the tstzrange from
- * (now() AT TIME ZONE 'Asia/Kolkata')::date inside Postgres makes the IST date
- * deterministic regardless of the server wall-clock. Distinct hours per arena
- * avoid the slots GIST exclusion (overlapping live slots on one arena).
+ * at IST `hour:00` for `durMin` minutes. Slots feed occupancy only — money no
+ * longer comes from them. Distinct hours per arena avoid the slots GIST
+ * exclusion (overlapping live slots on one arena).
  */
 async function insertSlot(
   tenantId: string,
@@ -78,20 +175,6 @@ async function insertSlot(
       ${opts.deleted ? sql`now()` : null}
     )
   `);
-}
-
-/**
- * Insert a minimal walk-in booking row and return its generated id. The slots
- * carry the arena + times (bookings.time_range / slot_arena_id stay null), so
- * the bookings GIST exclusion never applies; this just satisfies the
- * slots.booking_id → bookings.id FK.
- */
-async function createBooking(tenantId: string): Promise<string> {
-  const [b] = await db
-    .insert(bookings)
-    .values({ tenantId, itemType: 'slot', channel: 'walkin', paymentMethod: 'external', status: 'confirmed' })
-    .returning({ id: bookings.id });
-  return b!.id;
 }
 
 /** Create a tenant via the route (owner becomes a member) + a venue + arena directly. */
@@ -129,7 +212,8 @@ async function istWindowDates(): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Main analytics suite: a fully-seeded tenant with the expected aggregates
+// Main analytics suite: a tenant selling across all three item types, paid
+// both online and at the desk, with refunds and failures mixed in.
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('tenant analytics', () => {
   let app: FastifyInstance;
@@ -146,38 +230,72 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     arenaId = s.arenaId;
     windowDates = await istWindowDates();
 
-    const B1 = await createBooking(tenantId);
-    const B2 = await createBooking(tenantId);
-    const B3 = await createBooking(tenantId);
-    const B4 = await createBooking(tenantId);
-    const B5 = await createBooking(tenantId);
-    const B6 = await createBooking(tenantId);
+    // ── Today ──────────────────────────────────────────────────────────────
+    // An event seat sold online: ₹500 captured.
+    await insertPaidBooking(tenantId, { offsetDays: 0, itemType: 'event', chargePaise: 50000 });
+    // A membership sold at the desk: no payment row, the booking carries it.
+    await insertBooking(tenantId, {
+      offsetDays: 0,
+      itemType: 'membership',
+      paymentMethod: 'external',
+      totalPaise: 20000,
+    });
+    // A free registration: a booking, but no money.
+    await insertBooking(tenantId, {
+      offsetDays: 0,
+      itemType: 'event',
+      paymentMethod: 'free',
+      totalPaise: 0,
+    });
+    // A checkout that failed, and one still open: neither is money, and
+    // neither is a booking that stands.
+    const failed = await insertBooking(tenantId, { offsetDays: 0, status: 'cancelled', totalPaise: 99900 });
+    await insertPayment(tenantId, failed, {
+      offsetDays: 0,
+      kind: 'charge',
+      status: 'failed',
+      amountPaise: 99900,
+    });
+    const openCheckout = await insertBooking(tenantId, { offsetDays: 0, status: 'pending', totalPaise: 77700 });
+    await insertPayment(tenantId, openCheckout, {
+      offsetDays: 0,
+      kind: 'charge',
+      status: 'pending',
+      amountPaise: 77700,
+    });
+    // A desk booking the partner cancelled: circls has no refund to record, so
+    // the booking standing is the only signal, and it no longer does.
+    await insertBooking(tenantId, {
+      offsetDays: 0,
+      paymentMethod: 'external',
+      status: 'cancelled',
+      totalPaise: 44400,
+    });
 
-    // --- Today (offset 0)
-    // Two booked slots share booking B1 → distinct bookings counts them once.
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 6, status: 'booked', pricePaise: 10000, bookingId: B1 });
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 7, status: 'booked', pricePaise: 12000, bookingId: B1 });
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 8, status: 'booked', pricePaise: 5000, bookingId: B2 });
+    // ── today-2: a court sold online for ₹300 … ────────────────────────────
+    const court = await insertPaidBooking(tenantId, { offsetDays: -2, chargePaise: 30000 });
+    // … and refunded ₹100 of it today. The refund is dated today; today-2
+    // keeps its ₹300.
+    await insertPayment(tenantId, court, {
+      offsetDays: 0,
+      kind: 'refund',
+      status: 'captured',
+      amountPaise: -10000,
+    });
+
+    // ── today-6: the inclusive edge of the window ──────────────────────────
+    await insertPaidBooking(tenantId, { offsetDays: -6, itemType: 'membership', chargePaise: 1000 });
+
+    // ── today-9: outside the window entirely ───────────────────────────────
+    await insertPaidBooking(tenantId, { offsetDays: -9, chargePaise: 999999 });
+
+    // ── Slots, for occupancy only ──────────────────────────────────────────
+    const slotBooking = await insertBooking(tenantId, { offsetDays: 0 });
+    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 6, status: 'booked', pricePaise: 10000, bookingId: slotBooking });
     await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 9, status: 'open', pricePaise: 9999 });
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 10, status: 'open', pricePaise: 9999 });
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 11, status: 'blocked', pricePaise: 9999 }); // excluded from occupancy denom
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 12, status: 'held', pricePaise: 9999 }); // counts in occupancy denom
-
-    // --- today-2
-    await insertSlot(tenantId, arenaId, { offsetDays: -2, hour: 6, status: 'booked', pricePaise: 30000, bookingId: B3 });
-    await insertSlot(tenantId, arenaId, { offsetDays: -2, hour: 7, status: 'open', pricePaise: 1 });
-
-    // --- today-5
-    await insertSlot(tenantId, arenaId, { offsetDays: -5, hour: 6, status: 'booked', pricePaise: 7000, bookingId: B4 });
-
-    // --- today-6 (inclusive edge of the 7-day window)
-    await insertSlot(tenantId, arenaId, { offsetDays: -6, hour: 6, status: 'booked', pricePaise: 1000, bookingId: B5 });
-
-    // --- today-9 (OUTSIDE window): must not affect revenue7d / occupancy / trend
-    await insertSlot(tenantId, arenaId, { offsetDays: -9, hour: 6, status: 'booked', pricePaise: 999999, bookingId: B6 });
-
-    // --- soft-deleted booked slot today: must be ignored everywhere
-    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 14, status: 'booked', pricePaise: 88888, bookingId: B6, deleted: true });
+    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 11, status: 'blocked', pricePaise: 9999 }); // out of the denominator
+    await insertSlot(tenantId, arenaId, { offsetDays: 0, hour: 12, status: 'held', pricePaise: 9999 });
+    await insertSlot(tenantId, arenaId, { offsetDays: -9, hour: 6, status: 'booked', pricePaise: 999999 }); // out of the window
   });
 
   afterAll(async () => {
@@ -195,62 +313,58 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     return res.json() as AnalyticsResponse;
   }
 
-  it('bookingsToday counts distinct booked booking_id with IST date = today', async () => {
+  it('bookingsToday counts every kind of booking made today, cancelled ones aside', async () => {
     const a = await fetchAnalytics();
-    expect(a.bookingsToday).toBe(2); // {B1 (x2 slots), B2}
-    expect(typeof a.bookingsToday).toBe('number');
+    // event (online) + membership (desk) + free registration + the slot
+    // booking. The cancelled desk sale, the failed checkout and the open one
+    // are all excluded.
+    expect(a.bookingsToday).toBe(4);
   });
 
-  it('revenueToday sums booked price for today only, bucketed by currency (INR default)', async () => {
+  it('revenueToday is money taken today, less refunds made today', async () => {
     const a = await fetchAnalytics();
-    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 27000 }]); // 10000 + 12000 + 5000
+    // 50000 online event + 20000 desk membership − 10000 refund = 60000.
+    // The free registration, failed charge, pending charge and cancelled desk
+    // sale contribute nothing.
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 60000 }]);
   });
 
-  it('revenue7d includes older booked slots within the window, excludes the out-of-window one', async () => {
+  it('revenue7d spans the window and excludes what falls outside it', async () => {
     const a = await fetchAnalytics();
-    // today 27000 + today-2 30000 + today-5 7000 + today-6 1000 = 65000 (today-9 excluded)
-    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 65000 }]);
+    // today 60000 + today-2 30000 + today-6 1000 = 91000 (today-9 excluded).
+    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 91000 }]);
   });
 
-  it('occupancy7dPct = booked / (open+held+booked) over the window, blocked excluded, rounded to 1dp', async () => {
+  it('occupancy7dPct is still slot utilisation, blocked excluded, rounded to 1dp', async () => {
     const a = await fetchAnalytics();
-    // booked rows in window = 3(today)+1+1+1 = 6
-    // denominator (open|held|booked) = today 6 (3 booked+2 open+1 held; blocked excluded)
-    //   + today-2 2 + today-5 1 + today-6 1 = 10
-    // 100 * 6 / 10 = 60.0
-    expect(a.occupancy7dPct).toBe(60);
+    // In-window bookable slots: 1 booked + 1 open + 1 held = 3; blocked is out
+    // of the denominator and the today-9 slot is out of the window.
+    expect(a.occupancy7dPct).toBe(33.3);
   });
 
-  it('trend7d is one INR series with exactly 7 entries oldest→newest and the right IST dates', async () => {
+  it('trend7d is one INR series with exactly 7 entries oldest→newest', async () => {
     const a = await fetchAnalytics();
     expect(a.trend7d).toHaveLength(1);
     expect(a.trend7d[0]!.currency).toBe('INR');
     expect(a.trend7d[0]!.days).toHaveLength(7);
     expect(a.trend7d[0]!.days.map((p) => p.date)).toEqual(windowDates);
-    // last entry is today (IST)
-    expect(a.trend7d[0]!.days[6]!.date).toBe(windowDates[6]);
   });
 
-  it('trend7d carries the right per-day bookings/revenue and zeros on empty days', async () => {
+  it('trend7d dates money by the day it moved, and zeroes the quiet days', async () => {
     const a = await fetchAnalytics();
     const byDate = new Map(a.trend7d[0]!.days.map((p) => [p.date, p]));
 
-    // today-6
+    // today-6: the ₹10 membership.
     expect(byDate.get(windowDates[0]!)).toMatchObject({ bookings: 1, revenuePaise: 1000 });
-    // today-5
-    expect(byDate.get(windowDates[1]!)).toMatchObject({ bookings: 1, revenuePaise: 7000 });
-    // today-4 (empty)
+    expect(byDate.get(windowDates[1]!)).toMatchObject({ bookings: 0, revenuePaise: 0 });
     expect(byDate.get(windowDates[2]!)).toMatchObject({ bookings: 0, revenuePaise: 0 });
-    // today-3 (empty)
     expect(byDate.get(windowDates[3]!)).toMatchObject({ bookings: 0, revenuePaise: 0 });
-    // today-2
+    // today-2: the court, still worth its full ₹300 despite today's refund.
     expect(byDate.get(windowDates[4]!)).toMatchObject({ bookings: 1, revenuePaise: 30000 });
-    // today-1 (empty)
     expect(byDate.get(windowDates[5]!)).toMatchObject({ bookings: 0, revenuePaise: 0 });
-    // today
-    expect(byDate.get(windowDates[6]!)).toMatchObject({ bookings: 2, revenuePaise: 27000 });
+    // today: the refund lands here, on the day it was made.
+    expect(byDate.get(windowDates[6]!)).toMatchObject({ bookings: 4, revenuePaise: 60000 });
 
-    // every entry's counts are plain numbers
     for (const p of a.trend7d[0]!.days) {
       expect(typeof p.bookings).toBe('number');
       expect(typeof p.revenuePaise).toBe('number');
@@ -273,12 +387,153 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tenant isolation: B's booked slots must not affect A's analytics
+// The four ways the old slot-based measure disagreed with the Activity feed.
+// Each of these was a live mismatch a partner could see on their dashboard.
+// ---------------------------------------------------------------------------
+describe.skipIf(!runIntegration)('tenant analytics vs the activity feed', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    // closeDb deferred to the final suite below.
+  });
+
+  async function analyticsFor(tenantId: string): Promise<AnalyticsResponse> {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/tenants/${tenantId}/analytics`,
+      headers: bearer('owner'),
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json() as AnalyticsResponse;
+  }
+
+  it('counts a free membership sale, which has no bookings row at all', async () => {
+    // memberships_service skips the synthetic booking when a purchase is free
+    // and uncouponed, so these exist only in user_memberships. The Activity
+    // feed unions them in; reading `bookings` alone would list a free plan's
+    // sign-ups on that page and never move this count.
+    const s = await setup(app, 'owner', `anfree-${Date.now()}`);
+    await insertFreeMembership(s.tenantId, { offsetDays: 0 });
+    await insertFreeMembership(s.tenantId, { offsetDays: -3 });
+    // A cancelled one is left out, as a cancelled booking is.
+    await insertFreeMembership(s.tenantId, { offsetDays: 0, cancelled: true });
+
+    const a = await analyticsFor(s.tenantId);
+    expect(a.bookingsToday).toBe(1);
+    // No money moved, so the series exists for the count alone.
+    expect(a.revenueToday).toEqual([]);
+    const days = a.trend7d[0]!.days;
+    expect(days[6]!.bookings).toBe(1);
+    expect(days[3]!.bookings).toBe(1);
+    expect(days[6]!.revenuePaise).toBe(0);
+  });
+
+  it('does not count a paid membership twice over', async () => {
+    // A paid purchase DOES write a booking, carrying the user_membership id in
+    // item_data. The union must exclude it or every paid sale counts twice.
+    const s = await setup(app, 'owner', `andup-${Date.now()}`);
+    const umId = await insertFreeMembership(s.tenantId, { offsetDays: 0 });
+    await db.execute(sql`
+      insert into bookings (tenant_id, item_type, channel, payment_method, status,
+                            total_paise, currency, item_data, created_at)
+      values (${s.tenantId}::uuid, 'membership', 'circls', 'razorpay_route', 'confirmed',
+              50000, 'INR', ${JSON.stringify({ userMembershipId: umId })}::jsonb,
+              ${istAt(0)})
+    `);
+    const a = await analyticsFor(s.tenantId);
+    expect(a.bookingsToday).toBe(1);
+  });
+
+  it('an organiser who sells no court time still sees their revenue', async () => {
+    // The Saur Grapes shape: events only, not a single slot. The old measure
+    // read `slots` alone, so this dashboard was a permanent zero.
+    const s = await setup(app, 'owner', `anev-${Date.now()}`);
+    await insertPaidBooking(s.tenantId, { offsetDays: 0, itemType: 'event', chargePaise: 114000 });
+    const a = await analyticsFor(s.tenantId);
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 114000 }]);
+    expect(a.bookingsToday).toBe(1);
+  });
+
+  it('a court booked today for next month counts today, not next month', async () => {
+    const s = await setup(app, 'owner', `andate-${Date.now()}`);
+    const id = await insertPaidBooking(s.tenantId, { offsetDays: 0, chargePaise: 25000 });
+    // The session is 30 days out; the money moved today.
+    await insertSlot(s.tenantId, s.arenaId, {
+      offsetDays: 30,
+      hour: 6,
+      status: 'booked',
+      pricePaise: 25000,
+      bookingId: id,
+    });
+    const a = await analyticsFor(s.tenantId);
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 25000 }]);
+  });
+
+  it('revenue is what was charged, not the slot price it was charged against', async () => {
+    const s = await setup(app, 'owner', `ancoup-${Date.now()}`);
+    // A ₹500 slot sold for ₹400 with a coupon: nothing writes the discount
+    // back to the slot, so the list price was never the money taken.
+    const id = await insertBooking(s.tenantId, { offsetDays: 0, totalPaise: 40000 });
+    await insertPayment(s.tenantId, id, {
+      offsetDays: 0,
+      kind: 'charge',
+      status: 'captured',
+      amountPaise: 40000,
+    });
+    await insertSlot(s.tenantId, s.arenaId, {
+      offsetDays: 0,
+      hour: 6,
+      status: 'booked',
+      pricePaise: 50000,
+      bookingId: id,
+    });
+    const a = await analyticsFor(s.tenantId);
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 40000 }]);
+  });
+
+  it('cancelling a paid booking today does not erase the day it was sold', async () => {
+    const s = await setup(app, 'owner', `ancan-${Date.now()}`);
+    const id = await insertPaidBooking(s.tenantId, { offsetDays: -3, chargePaise: 60000 });
+    // Freeing the slots is what the old measure keyed on, and it wiped the
+    // sale out of history retroactively.
+    await insertSlot(s.tenantId, s.arenaId, {
+      offsetDays: -3,
+      hour: 6,
+      status: 'open',
+      pricePaise: 60000,
+    });
+    await db.execute(sql`update bookings set status = 'cancelled' where id = ${id}::uuid`);
+    // Refunded in full today.
+    await insertPayment(s.tenantId, id, {
+      offsetDays: 0,
+      kind: 'refund',
+      status: 'captured',
+      amountPaise: -60000,
+    });
+
+    const a = await analyticsFor(s.tenantId);
+    const days = a.trend7d[0]!.days;
+    // The sale still stands on its own day; today carries the refund.
+    expect(days[3]!.revenuePaise).toBe(60000);
+    expect(days[6]!.revenuePaise).toBe(-60000);
+    // Over the window the two cancel out, which is the truth.
+    expect(a.revenue7d).toEqual([]);
+    expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: -60000 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant isolation: B's money must not affect A's analytics
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('tenant analytics isolation', () => {
   let app: FastifyInstance;
   let tenantAId: string;
-  let arenaAId: string;
 
   beforeAll(async () => {
     app = await buildServer();
@@ -286,33 +541,24 @@ describe.skipIf(!runIntegration)('tenant analytics isolation', () => {
 
     const sA = await setup(app, 'owner', `aniso-a-${Date.now()}`);
     tenantAId = sA.tenantId;
-    arenaAId = sA.arenaId;
-
     const sB = await setup(app, 'ownerB', `aniso-b-${Date.now()}`);
 
-    // A: a single booked slot today worth 5000.
-    await insertSlot(tenantAId, arenaAId, {
+    // A: one online sale today worth ₹50.
+    await insertPaidBooking(tenantAId, { offsetDays: 0, chargePaise: 5000 });
+    await insertSlot(tenantAId, sA.arenaId, {
       offsetDays: 0,
       hour: 6,
       status: 'booked',
       pricePaise: 5000,
-      bookingId: await createBooking(tenantAId),
+      bookingId: await insertBooking(tenantAId, { offsetDays: 0 }),
     });
 
-    // B: lots of booked revenue today — must NOT leak into A's totals.
-    await insertSlot(sB.tenantId, sB.arenaId, {
-      offsetDays: 0,
-      hour: 6,
-      status: 'booked',
-      pricePaise: 777000,
-      bookingId: await createBooking(sB.tenantId),
-    });
-    await insertSlot(sB.tenantId, sB.arenaId, {
+    // B: lots of money today and a desk sale — must NOT leak into A's totals.
+    await insertPaidBooking(sB.tenantId, { offsetDays: 0, chargePaise: 777000 });
+    await insertBooking(sB.tenantId, {
       offsetDays: -3,
-      hour: 6,
-      status: 'booked',
-      pricePaise: 333000,
-      bookingId: await createBooking(sB.tenantId),
+      paymentMethod: 'external',
+      totalPaise: 333000,
     });
   });
 
@@ -321,7 +567,7 @@ describe.skipIf(!runIntegration)('tenant analytics isolation', () => {
     // closeDb deferred to the final suite below.
   });
 
-  it("B's booked slots do not affect A's analytics", async () => {
+  it("B's money does not affect A's analytics", async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/v1/tenants/${tenantAId}/analytics`,
@@ -329,16 +575,16 @@ describe.skipIf(!runIntegration)('tenant analytics isolation', () => {
     });
     expect(res.statusCode).toBe(200);
     const a = res.json() as AnalyticsResponse;
-    expect(a.bookingsToday).toBe(1);
+    expect(a.bookingsToday).toBe(2); // the paid booking + the slot's own booking
     expect(a.revenueToday).toEqual([{ currency: 'INR', amountMinor: 5000 }]);
-    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 5000 }]); // only A's today slot
+    expect(a.revenue7d).toEqual([{ currency: 'INR', amountMinor: 5000 }]);
     expect(a.occupancy7dPct).toBe(100); // 1 booked / 1 bookable
     expect(a.trend7d[0]!.days[6]!.revenuePaise).toBe(5000);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Zero-state: a fresh tenant returns all zeros and a 7-zero trend
+// Zero-state: a fresh tenant returns all zeros and an empty trend
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('tenant analytics zero-state', () => {
   let app: FastifyInstance;
@@ -365,7 +611,6 @@ describe.skipIf(!runIntegration)('tenant analytics zero-state', () => {
     expect(res.statusCode).toBe(200);
     const a = res.json() as AnalyticsResponse;
     expect(a.bookingsToday).toBe(0);
-    // No booked slots → no currency has revenue → empty buckets/series.
     expect(a.revenueToday).toEqual([]);
     expect(a.revenue7d).toEqual([]);
     expect(a.occupancy7dPct).toBe(0);
@@ -374,8 +619,8 @@ describe.skipIf(!runIntegration)('tenant analytics zero-state', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Mixed currencies: a tenant with an India venue and a USA venue gets separate
-// INR and USD buckets — never a paise+cents sum.
+// Mixed currencies: read off the payment, never guessed from the venue's
+// country — a tenant selling in both India and the USA gets separate buckets.
 // ---------------------------------------------------------------------------
 describe.skipIf(!runIntegration)('tenant analytics mixed currencies', () => {
   let app: FastifyInstance;
@@ -384,32 +629,15 @@ describe.skipIf(!runIntegration)('tenant analytics mixed currencies', () => {
   beforeAll(async () => {
     app = await buildServer();
     await app.ready();
-    const s = await setup(app, 'owner', `anmix-${Date.now()}`); // venue w/o country → INR
+    const s = await setup(app, 'owner', `anmix-${Date.now()}`);
     tenantId = s.tenantId;
 
-    // Second venue in the USA → its slots bucket as USD.
-    const [usVenue] = await db
-      .insert(venues)
-      .values({ tenantId, name: 'US Venue', country: 'USA' })
-      .returning();
-    const [usArena] = await db
-      .insert(arenas)
-      .values({ venueId: usVenue!.id, name: 'US Arena' })
-      .returning();
-
-    await insertSlot(tenantId, s.arenaId, {
+    await insertPaidBooking(tenantId, { offsetDays: 0, chargePaise: 5000 }); // ₹50.00
+    await insertPaidBooking(tenantId, {
       offsetDays: 0,
-      hour: 6,
-      status: 'booked',
-      pricePaise: 5000, // ₹50.00
-      bookingId: await createBooking(tenantId),
-    });
-    await insertSlot(tenantId, usArena!.id, {
-      offsetDays: 0,
-      hour: 6,
-      status: 'booked',
-      pricePaise: 2599, // $25.99
-      bookingId: await createBooking(tenantId),
+      itemType: 'event',
+      chargePaise: 2599, // $25.99
+      currency: 'USD',
     });
   });
 

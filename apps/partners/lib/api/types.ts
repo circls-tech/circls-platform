@@ -316,13 +316,17 @@ export interface BookingDetail {
 }
 
 export interface AnalyticsTrendDay {
-  /** 'YYYY-MM-DD' */
+  /** 'YYYY-MM-DD' (IST) */
   date: string;
+  /** Bookings made that day — courts, events and memberships. */
   bookings: number;
+  /** Money taken that day, less refunds made that day. Negative on a day whose
+   *  refunds outweighed its sales. */
   revenuePaise: number;
 }
 
-/** A revenue bucket: amount in the currency's minor units (paise/cents). */
+/** A revenue bucket: amount in the currency's minor units (paise/cents).
+ *  Can be negative — see AnalyticsTrendDay.revenuePaise. */
 export interface MoneyByCurrency {
   currency: string;
   amountMinor: number;
@@ -335,14 +339,22 @@ export interface AnalyticsTrendSeries {
   days: AnalyticsTrendDay[];
 }
 
+/**
+ * The dashboard's Overview. Money is what was actually taken — captured
+ * payments less refunds, plus what the partner took at the desk — dated by
+ * the day it moved, so these reconcile with the Activity feed. Occupancy
+ * alone stays slot-based and session-dated: it measures court time, not money.
+ */
 export interface Analytics {
+  /** Bookings made today, across courts, events and memberships. */
   bookingsToday: number;
-  /** One entry per currency with revenue today; [] when none. */
+  /** One entry per currency with money taken today; [] when none. */
   revenueToday: MoneyByCurrency[];
-  /** One entry per currency with revenue in the window; [] when none. */
+  /** One entry per currency with money taken in the window; [] when none. */
   revenue7d: MoneyByCurrency[];
+  /** Share of bookable court time taken over the window. */
   occupancy7dPct: number;
-  /** One series per currency with revenue in the window; [] when none. */
+  /** One series per currency with money taken in the window; [] when none. */
   trend7d: AnalyticsTrendSeries[];
 }
 

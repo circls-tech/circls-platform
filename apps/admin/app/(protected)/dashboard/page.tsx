@@ -109,12 +109,12 @@ export default function AdminDashboard() {
           <Tile
             label="Active users (24h)"
             value={data.activeUsers24h}
-            sub="with activity"
+            sub="signed in or booked"
           />
           <Tile
             label="Active users (30d)"
             value={data.activeUsers30d}
-            sub="with activity"
+            sub="signed in or booked"
           />
         </div>
       </section>

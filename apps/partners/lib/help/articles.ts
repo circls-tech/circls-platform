@@ -36,7 +36,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     category: 'Setup',
     summary:
       'The regional (India / US) Partner Terms every organisation accepts — at onboarding for new organisations, and via the acceptance screen for existing ones before creating new venues, events or memberships.',
-    order: 14,
+    order: 15,
   },
   {
     slug: 'venues',
@@ -56,13 +56,22 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 3,
   },
   {
+    slug: 'dashboard',
+    title: 'The Dashboard: what your numbers mean',
+    category: 'Bookings',
+    summary:
+      'What each Overview tile counts — revenue is money actually taken, less refunds, dated when it moved — and why a figure can differ from the Activity feed.',
+    quickLink: true,
+    order: 12,
+  },
+  {
     slug: 'activity',
     title: 'The Activity page: your organisation’s live feed',
     category: 'Bookings',
     summary:
       'See everything happening across your organisation — a feed of bookings, event registrations and membership purchases, a per-day bookings calendar, and memberships starting or ending soon.',
     quickLink: true,
-    order: 12,
+    order: 13,
   },
   {
     slug: 'bookings',
@@ -128,7 +137,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     summary:
       'Customer questions and Help-assistant support requests on your events, arenas and membership plans arrive in one Questions inbox — answer them with the customer context panel at hand, manage thread statuses, moderate public replies, and archive abusive threads.',
     quickLink: true,
-    order: 13,
+    order: 14,
   },
   {
     slug: 'coupons',
