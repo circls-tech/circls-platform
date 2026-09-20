@@ -105,9 +105,20 @@ function StatCard({ label, value, sublabel, loading, petal, icon }: StatCardProp
 
 // ── 7-day Trend Chart ─────────────────────────────────────────────────────────
 
+/**
+ * Money taken per day over the week. A day can be negative — refunds are
+ * dated when they were made, not backdated onto the sale — so the chart has a
+ * baseline with bars hanging below it. Both directions share one scale, and
+ * the two halves are only as tall as the data needs, so a week with no refunds
+ * looks exactly as it did before.
+ */
 function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency: CurrencyCode }) {
-  const maxRevenue = Math.max(...trend.map((d) => d.revenuePaise), 0);
-  const allZero = maxRevenue === 0;
+  const MAX_BAR_HEIGHT_PX = 96; // h-24
+  const MIN_BAR_HEIGHT_PX = 6; // min visible for a non-zero day
+
+  const maxTaken = Math.max(...trend.map((d) => d.revenuePaise), 0);
+  const maxGivenBack = Math.max(...trend.map((d) => -d.revenuePaise), 0);
+  const scale = Math.max(maxTaken, maxGivenBack);
 
   /** Format 'YYYY-MM-DD' → short weekday or day number */
   function dayLabel(date: string): string {
@@ -116,49 +127,65 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
     return d.toLocaleDateString('en-IN', { weekday: 'short' });
   }
 
-  const MAX_BAR_HEIGHT_PX = 96; // h-24
-  const MIN_BAR_HEIGHT_PX = 6;  // min visible for non-zero days
-
-  if (allZero) {
-    return (
-      <p className="text-sm text-slate-400 py-2">No bookings in the last 7 days yet.</p>
-    );
+  if (scale === 0) {
+    return <p className="text-sm text-slate-400 py-2">Nothing taken in the last 7 days yet.</p>;
   }
 
-  return (
-    <div className="flex items-end gap-3 h-36 pt-2">
-      {trend.map((day) => {
-        const heightPx =
-          day.revenuePaise === 0
-            ? 2 // baseline bar for zero-revenue days
-            : Math.max(
-                MIN_BAR_HEIGHT_PX,
-                Math.round((day.revenuePaise / maxRevenue) * MAX_BAR_HEIGHT_PX),
-              );
+  const px = (amount: number) =>
+    Math.max(MIN_BAR_HEIGHT_PX, Math.round((Math.abs(amount) / scale) * MAX_BAR_HEIGHT_PX));
+  // Each half is sized from its own extreme, but never smaller than the bar it
+  // has to hold: a ₹1 refund against a ₹1,000 week rounds to no height at all,
+  // and the day would vanish rather than read as the small loss it was.
+  const half = (extreme: number) => (extreme === 0 ? 0 : px(extreme));
+  const abovePx = half(maxTaken);
+  const belowPx = half(maxGivenBack);
 
-        const tooltipText = `${dayLabel(day.date)}: ${formatMoney(day.revenuePaise, currency)} · ${day.bookings} booking${day.bookings === 1 ? '' : 's'}`;
+  return (
+    <div className="flex gap-3 pt-2">
+      {trend.map((day) => {
+        const taken = day.revenuePaise;
+        const tooltipText = `${dayLabel(day.date)}: ${formatMoney(taken, currency)} · ${day.bookings} booking${day.bookings === 1 ? '' : 's'}`;
 
         return (
-          <div
-            key={day.date}
-            className="flex flex-1 flex-col items-center gap-1.5"
-          >
-            {day.revenuePaise > 0 && (
-              <span className="font-[family-name:var(--font-display)] text-[11px] font-bold leading-none text-[#17151D]">
-                {formatMoney(day.revenuePaise, currency)}
-              </span>
-            )}
+          <div key={day.date} className="flex flex-1 flex-col items-center gap-1">
+            <span className="h-3 font-[family-name:var(--font-display)] text-[11px] font-bold leading-none text-[#17151D]">
+              {taken !== 0 ? formatMoney(taken, currency) : ''}
+            </span>
+
+            {/* Taken: grows up from the baseline. */}
             <div
-              className={[
-                'w-full transition-all',
-                day.revenuePaise === 0
-                  ? 'rounded-full bg-brand-100'
-                  : 'rounded-t-md border-2 border-[#17151D] bg-brand-600 hover:bg-brand-700',
-              ].join(' ')}
-              style={{ height: `${heightPx}px` }}
-              title={tooltipText}
-            />
-            <span className="text-[10px] font-semibold text-[#17151D] leading-none">
+              className="flex w-full flex-col justify-end"
+              style={{ height: `${abovePx}px` }}
+            >
+              {taken > 0 && (
+                <div
+                  className="w-full rounded-t-md border-2 border-[#17151D] bg-brand-600 transition-all hover:bg-brand-700"
+                  style={{ height: `${px(taken)}px` }}
+                  title={tooltipText}
+                />
+              )}
+            </div>
+
+            <div className="w-full border-t-2 border-[#17151D]" />
+
+            {/* Given back: hangs below it. Absent entirely in a week with no
+                refunds, so the chart keeps its usual shape. */}
+            {belowPx > 0 && (
+              <div
+                className="flex w-full flex-col justify-start"
+                style={{ height: `${belowPx}px` }}
+              >
+                {taken < 0 && (
+                  <div
+                    className="w-full rounded-b-md border-2 border-t-0 border-[#17151D] bg-[#FFB0A3] transition-all"
+                    style={{ height: `${px(taken)}px` }}
+                    title={tooltipText}
+                  />
+                )}
+              </div>
+            )}
+
+            <span className="text-[10px] font-semibold leading-none text-[#17151D]">
               {dayLabel(day.date)}
             </span>
           </div>
@@ -236,12 +263,14 @@ export default function DashboardPage() {
   const { data: tenants, isLoading } = useMyTenants();
   const { activeTenantId, tenants: orgTenants } = useOrg();
 
-  // NOTE: org-wide analytics (bookingsToday, revenue, occupancy) are computed
-  // in IST (Asia/Kolkata) on the backend. Multi-venue timezone support for the
-  // dashboard is a known deferred limitation — the backend would need to accept
-  // a tz parameter and perform per-venue aggregation to fix this. Revenue IS
-  // aggregated per currency on the backend: a tenant with both US and India
-  // venues gets one bucket/trend series per currency.
+  // Revenue is money actually taken — captured payments less refunds, plus
+  // what the partner took at the desk — dated by when it moved, so these tiles
+  // reconcile with the Activity feed. Days are still cut on IST midnight
+  // whatever the venue's timezone: multi-venue timezone support is a known
+  // deferred limitation, and would need the backend to take a tz parameter and
+  // aggregate per venue. Revenue IS bucketed per currency, read off each
+  // payment: an org selling in both the US and India gets one bucket and one
+  // trend series per currency.
   const { data: analytics, isLoading: analyticsLoading } = useAnalytics(
     activeTenantId ?? '',
   );
@@ -289,7 +318,7 @@ export default function DashboardPage() {
           <StatCard
             label="Bookings today"
             value={String(bookingsToday)}
-            sublabel="Confirmed bookings for today"
+            sublabel="Booked today — courts, events and memberships"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FCE38A"
             icon="calendar"
@@ -297,7 +326,7 @@ export default function DashboardPage() {
           <StatCard
             label="Revenue today"
             value={revenueToday}
-            sublabel="Revenue collected today"
+            sublabel="Taken today, less refunds made today"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FFB0A3"
             icon="currency"
@@ -305,7 +334,7 @@ export default function DashboardPage() {
           <StatCard
             label="Revenue · 7d"
             value={revenue7d}
-            sublabel="Total revenue last 7 days"
+            sublabel="Taken in the last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#F9B4D4"
             icon="trend"
@@ -313,7 +342,7 @@ export default function DashboardPage() {
           <StatCard
             label="Occupancy · 7d"
             value={`${occupancy7dPct}%`}
-            sublabel="Slot utilisation last 7 days"
+            sublabel="Court time booked, last 7 days"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#A9C9F2"
             icon="chart"

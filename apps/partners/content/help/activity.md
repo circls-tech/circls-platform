@@ -4,6 +4,11 @@ The **Activity** page (in the left sidebar) is a single place to see what is hap
 
 Everything on the page respects the timezone selected in the top bar.
 
+The Dashboard totals the same business into its Overview tiles. The two answer
+slightly different questions — this feed lists what was booked, the Dashboard
+totals the money that actually moved — so see **The Dashboard: what your
+numbers mean** for why a figure can differ.
+
 ## Recent activity feed
 
 The **Recent activity** table lists who booked what, newest first. Each row shows:

@@ -2,19 +2,46 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 
 /**
- * Tenant analytics — all metrics are SLOT-based and tenant-scoped
- * (slots.tenant_id = tenantId, deleted_at is null), bucketed/filtered by each
- * slot's IST *session date*: `(lower(time_range) AT TIME ZONE 'Asia/Kolkata')::date`.
+ * Tenant analytics — the partner dashboard's Overview tiles and 7-day chart.
+ *
+ * MONEY IS WHAT WAS ACTUALLY TAKEN, on the day it was taken. Two sources, in
+ * one ledger:
+ *
+ *   1. Payments circls processed — captured charges, less refunds. A refund is
+ *      its own dated row carrying a negative amount, so refunding today does
+ *      not erase the day the sale happened: yesterday keeps its bar and today
+ *      takes the hit. Failed and still-pending charges are not money.
+ *   2. Bookings the partner took at the desk (`payment_method = 'external'`).
+ *      circls never saw that money so there is no payment row, but the booking
+ *      records what was charged, and to the partner it is revenue like any
+ *      other. Cancelling one removes it: circls has no refund to record, so the
+ *      booking standing or not is the only signal there is.
+ *
+ * This replaces a slot-only, session-dated, list-price measure that could not
+ * agree with the Activity feed (see PR #197): it ignored events and memberships
+ * entirely — an events-only organiser saw a permanent zero — dated revenue by
+ * when the court was booked FOR rather than when it was paid, priced at the
+ * schedule's list price rather than what was charged, and dropped a booking
+ * from history the moment it was cancelled.
+ *
+ * Counts follow the same rule: `bookingsToday` is everything booked today —
+ * courts, events and memberships — which is what the Activity feed lists.
+ *
+ * OCCUPANCY REMAINS SLOT-BASED and session-dated, because that is what it
+ * measures: how much of the bookable court time was taken. Events and
+ * memberships have no slots to occupy.
+ *
+ * Money is aggregated PER CURRENCY, read off each payment (or desk booking)
+ * rather than guessed from the venue's country: a tenant selling in both India
+ * and the USA gets separate INR and USD buckets rather than a meaningless
+ * paise+cents sum. Counts (bookings, occupancy) stay global.
  *
  * Windows are computed in IST inside Postgres so they never drift with the
  * server's wall-clock zone:
  *   today          = (now() AT TIME ZONE 'Asia/Kolkata')::date
  *   7-day window   = [today - 6 days, today]  (7 calendar days, inclusive)
- *
- * Money is aggregated PER CURRENCY (derived from each slot's venue country,
- * mirroring lib/gateway.ts currencyForCountry): a tenant with venues in both
- * India and the USA gets separate INR and USD buckets rather than a
- * meaningless paise+cents sum. Counts (bookings, occupancy) stay global.
+ * Per-venue timezones remain a known limitation: a US venue's "today" is still
+ * cut on IST midnight.
  *
  * Raw `db.execute` is used (mirroring slot_service.listSlots) so the IST-date
  * cast happens in SQL; bigint minor units and counts are quantized to JS
@@ -24,14 +51,15 @@ import { db } from '../db/client.js';
 export interface MoneyByCurrency {
   /** ISO 4217, e.g. 'INR' | 'USD'. */
   currency: string;
-  /** Minor units (paise / cents) of `currency`. */
+  /** Minor units (paise / cents) of `currency`. Can be negative on a day whose
+   *  refunds outweighed its sales. */
   amountMinor: number;
 }
 
 export interface AnalyticsTrendPoint {
-  date: string; // 'YYYY-MM-DD' (IST session date)
-  bookings: number; // distinct booked booking_id that IST day (this currency's venues)
-  revenuePaise: number; // Σ booked price that IST day, in the series' currency minor units
+  date: string; // 'YYYY-MM-DD' (IST)
+  bookings: number; // bookings made that IST day, in this currency
+  revenuePaise: number; // net money taken that IST day, in the series' currency minor units
 }
 
 /** A full 7-day trend for one currency (a tenant usually has exactly one). */
@@ -41,111 +69,152 @@ export interface AnalyticsTrendSeries {
 }
 
 export interface Analytics {
+  /** Bookings made today — courts, events and memberships. */
   bookingsToday: number;
-  /** One entry per currency with revenue today; [] when none. */
+  /** One entry per currency with money taken today; [] when none. */
   revenueToday: MoneyByCurrency[];
-  /** One entry per currency with revenue in the 7-day window; [] when none. */
+  /** One entry per currency with money taken in the 7-day window; [] when none. */
   revenue7d: MoneyByCurrency[];
+  /** Share of bookable court time taken over the window. Slots only. */
   occupancy7dPct: number;
-  /** One series per currency with booked revenue in the window; [] when none. */
+  /** One series per currency with money taken in the window; [] when none. */
   trend7d: AnalyticsTrendSeries[];
 }
 
+/** The IST calendar day a timestamp falls on. */
+const istDay = (col: ReturnType<typeof sql>) => sql`(${col} AT TIME ZONE 'Asia/Kolkata')::date`;
+
+/** "Today" in IST, decided by Postgres rather than by the API's wall clock. */
+const TODAY = sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`;
+
 /**
- * The slot's settlement currency, from its venue's country. Must stay in sync
- * with lib/gateway.ts `currencyForCountry` / `isUsCountry`.
+ * A booking that stands. `cancelled` fell through and `pending` has not
+ * happened yet — an abandoned checkout is not a sale, and counting one would
+ * put a booking on the dashboard that no money will ever follow.
  */
-const slotCurrency = sql`
-  case when upper(btrim(coalesce(v.country, '')))
-         in ('USA', 'US', 'UNITED STATES', 'UNITED STATES OF AMERICA')
-       then 'USD' else 'INR' end`;
+const BOOKING_STANDS = sql`b.status in ('confirmed', 'completed', 'no_show')`;
+
+/**
+ * Every movement of money for a tenant, one row per movement: the IST day it
+ * happened, its currency, and a signed minor-unit amount. Summing it gives
+ * what the partner actually took.
+ */
+function moneyLedger(tenantId: string) {
+  return sql`
+    select ${istDay(sql`p.created_at`)} as d,
+           p.currency                   as currency,
+           p.amount_paise               as amount
+      from payments p
+     where p.tenant_id = ${tenantId}
+       and (
+         -- A charge that reached the customer's account. 'refunded' and
+         -- 'partially_refunded' charges stay: the money WAS taken, and the
+         -- refund that followed is its own row below.
+         (p.kind = 'charge' and p.status in ('captured', 'refunded', 'partially_refunded'))
+         -- Refund rows carry a negative amount_paise already.
+         or (p.kind = 'refund' and p.status <> 'failed')
+       )
+    union all
+    select ${istDay(sql`b.created_at`)} as d,
+           b.currency                   as currency,
+           b.total_paise                as amount
+      from bookings b
+     where b.tenant_id = ${tenantId}
+       and b.payment_method = 'external'
+       and ${BOOKING_STANDS}
+       and b.total_paise is not null
+  `;
+}
+
+/**
+ * Bookings made per IST day and currency — courts, events and memberships
+ * alike, which is exactly what the Activity feed lists. The tile answers
+ * "what did I sell", so only bookings that stand are counted.
+ */
+function bookingsByDay(tenantId: string) {
+  return sql`
+    select ${istDay(sql`b.created_at`)} as d,
+           b.currency                   as currency,
+           count(*)                     as n
+      from bookings b
+     where b.tenant_id = ${tenantId}
+       and ${BOOKING_STANDS}
+       and ${istDay(sql`b.created_at`)} between ${TODAY} - 6 and ${TODAY}
+     group by 1, 2
+  `;
+}
 
 export async function getAnalytics(tenantId: string): Promise<Analytics> {
-  // The IST session date of a slot's start, reused throughout.
-  const istDate = sql`(lower(s.time_range) AT TIME ZONE 'Asia/Kolkata')::date`;
-  // "Today" and the inclusive 7-day window, computed in IST by Postgres.
-  const today = sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`;
-
-  // ---- Counts: bookingsToday / occupancy7dPct (currency-agnostic).
-  // FILTER restricts each aggregate to the rows it cares about; counts are 0
-  // (not null) for empty sets except the occupancy denominator, guarded with
-  // nullif.
+  // ---- Counts: bookingsToday (all item types) / occupancy7dPct (slots only).
   const scalarRows = await db.execute<Record<string, unknown>>(sql`
     select
-      count(distinct s.booking_id)
-        filter (where s.status = 'booked' and ${istDate} = ${today})                       as bookings_today,
-      round(
-        100.0 * count(*) filter (where s.status = 'booked'
-                  and ${istDate} between ${today} - 6 and ${today})
-        / nullif(count(*) filter (where s.status in ('open', 'held', 'booked')
-                  and ${istDate} between ${today} - 6 and ${today}), 0)
-      , 1)                                                                                   as occupancy_7d_pct
-    from slots s
-    where s.tenant_id = ${tenantId}
-      and s.deleted_at is null
+      (select count(*)
+         from bookings b
+        where b.tenant_id = ${tenantId}
+          and ${BOOKING_STANDS}
+          and ${istDay(sql`b.created_at`)} = ${TODAY})                                    as bookings_today,
+      (select round(
+         100.0 * count(*) filter (where s.status = 'booked')
+         / nullif(count(*) filter (where s.status in ('open', 'held', 'booked')), 0)
+       , 1)
+         from slots s
+        where s.tenant_id = ${tenantId}
+          and s.deleted_at is null
+          and ${istDay(sql`lower(s.time_range)`)} between ${TODAY} - 6 and ${TODAY})       as occupancy_7d_pct
   `);
   const scalar = (scalarRows as unknown as Record<string, unknown>[])[0] ?? {};
 
-  // ---- Revenue per currency (today + 7-day window in one grouped pass).
+  // ---- Money per currency (today + 7-day window in one grouped pass).
   const revenueRows = await db.execute<Record<string, unknown>>(sql`
-    select
-      ${slotCurrency}                                                                        as currency,
-      coalesce(sum(s.price_paise) filter (where ${istDate} = ${today}), 0)                   as revenue_today,
-      coalesce(sum(s.price_paise), 0)                                                        as revenue_7d
-    from slots s
-    join arenas a on a.id = s.arena_id
-    join venues v on v.id = a.venue_id
-    where s.tenant_id = ${tenantId}
-      and s.deleted_at is null
-      and s.status = 'booked'
-      and ${istDate} between ${today} - 6 and ${today}
-    group by 1
-    order by 1
+    with money as (${moneyLedger(tenantId)})
+    select currency,
+           coalesce(sum(amount) filter (where d = ${TODAY}), 0)                            as revenue_today,
+           coalesce(sum(amount), 0)                                                        as revenue_7d
+      from money
+     where d between ${TODAY} - 6 and ${TODAY}
+     group by 1
+     order by 1
   `);
   const revenueToday: MoneyByCurrency[] = [];
   const revenue7d: MoneyByCurrency[] = [];
   for (const row of revenueRows as unknown as Record<string, unknown>[]) {
     const currency = row['currency'] as string;
     const todayMinor = Number(row['revenue_today']);
-    if (todayMinor > 0) revenueToday.push({ currency, amountMinor: todayMinor });
-    revenue7d.push({ currency, amountMinor: Number(row['revenue_7d']) });
+    const windowMinor = Number(row['revenue_7d']);
+    // A zero bucket says nothing; a negative one — a day of refunds — does.
+    if (todayMinor !== 0) revenueToday.push({ currency, amountMinor: todayMinor });
+    if (windowMinor !== 0) revenue7d.push({ currency, amountMinor: windowMinor });
   }
 
   // ---- trend7d: per currency with activity, exactly 7 rows oldest→newest.
-  // days × active-currencies CROSS JOIN, so zero-activity days surface as 0
-  // within each currency's series.
+  // days × active-currencies CROSS JOIN, so quiet days surface as 0 within
+  // each currency's series. A currency counts as active if it saw either money
+  // or a booking — a day of free registrations is still a day of bookings.
   const trendRows = await db.execute<Record<string, unknown>>(sql`
     with days as (
-      select generate_series(${today} - 6, ${today}, interval '1 day')::date as d
+      select generate_series(${TODAY} - 6, ${TODAY}, interval '1 day')::date as d
     ),
-    booked as (
-      select ${istDate}                          as d,
-             ${slotCurrency}                     as currency,
-             s.booking_id                        as booking_id,
-             s.price_paise                       as price_paise
-      from slots s
-      join arenas a on a.id = s.arena_id
-      join venues v on v.id = a.venue_id
-      where s.tenant_id = ${tenantId}
-        and s.deleted_at is null
-        and s.status = 'booked'
-        and ${istDate} between ${today} - 6 and ${today}
+    money as (${moneyLedger(tenantId)}),
+    mday as (
+      select d, currency, sum(amount) as amount
+        from money
+       where d between ${TODAY} - 6 and ${TODAY}
+       group by 1, 2
     ),
-    curs as (select distinct currency from booked),
-    agg as (
-      select d, currency,
-             count(distinct booking_id)          as bookings,
-             coalesce(sum(price_paise), 0)       as revenue_paise
-      from booked
-      group by d, currency
+    bday as (${bookingsByDay(tenantId)}),
+    curs as (
+      select currency from mday
+      union
+      select currency from bday
     )
     select curs.currency                          as currency,
            to_char(days.d, 'YYYY-MM-DD')          as date,
-           coalesce(agg.bookings, 0)              as bookings,
-           coalesce(agg.revenue_paise, 0)         as revenue_paise
-    from days cross join curs
-    left join agg on agg.d = days.d and agg.currency = curs.currency
-    order by curs.currency, days.d
+           coalesce(bday.n, 0)                    as bookings,
+           coalesce(mday.amount, 0)               as revenue_paise
+      from days cross join curs
+      left join mday on mday.d = days.d and mday.currency = curs.currency
+      left join bday on bday.d = days.d and bday.currency = curs.currency
+     order by curs.currency, days.d
   `);
 
   const seriesByCurrency = new Map<string, AnalyticsTrendPoint[]>();
