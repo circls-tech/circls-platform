@@ -610,10 +610,28 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
              WHERE created_at >= now() - interval '24 hours')                             AS users_new_24h,
           (SELECT count(*) FROM users
              WHERE created_at >= now() - interval '7 days')                               AS users_new_7d,
-          (SELECT count(DISTINCT user_id) FROM consumer_activity
-             WHERE created_at >= now() - interval '24 hours')                             AS active_users_24h,
-          (SELECT count(DISTINCT user_id) FROM consumer_activity
-             WHERE created_at >= now() - interval '30 days')                              AS active_users_30d,
+          -- Active = signed in, or booked. Both tiles read consumer_activity
+          -- until now, which no client has ever written to, so they showed 0
+          -- from the day they shipped. login_events alone would not do: it
+          -- records fresh sign-ins only, so someone who signed in weeks ago,
+          -- stayed signed in and booked today would not count. When behavioural
+          -- telemetry is finally wired into the consumer app, add
+          -- consumer_activity back as a third arm here — and an index on its
+          -- created_at, which it does not have.
+          (SELECT count(*) FROM (
+             SELECT user_id FROM login_events
+              WHERE created_at >= now() - interval '24 hours'
+             UNION
+             SELECT customer_user_id FROM bookings
+              WHERE customer_user_id IS NOT NULL
+                AND created_at >= now() - interval '24 hours')                 a)         AS active_users_24h,
+          (SELECT count(*) FROM (
+             SELECT user_id FROM login_events
+              WHERE created_at >= now() - interval '30 days'
+             UNION
+             SELECT customer_user_id FROM bookings
+              WHERE customer_user_id IS NOT NULL
+                AND created_at >= now() - interval '30 days')                  a)         AS active_users_30d,
           (SELECT count(*) FROM login_events
              WHERE created_at >= now() - interval '24 hours')                             AS logins_24h,
           (SELECT count(*) FROM login_events
