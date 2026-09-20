@@ -110,6 +110,34 @@ async function insertPaidBooking(
 }
 
 /**
+ * A free, coupon-less membership purchase: memberships_service writes only a
+ * `user_memberships` row for these, no booking. Returns the purchase id.
+ */
+async function insertFreeMembership(
+  tenantId: string,
+  opts: { offsetDays: number; cancelled?: boolean },
+): Promise<string> {
+  const [u] = (await db.execute<Record<string, unknown>>(sql`
+    insert into users (firebase_uid, email)
+    values (${`an-mem-${Date.now()}-${Math.random()}`}, ${`an-mem-${Date.now()}-${Math.random()}@x.com`})
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  const [m] = (await db.execute<Record<string, unknown>>(sql`
+    insert into memberships (tenant_id, name, price_paise, duration_days)
+    values (${tenantId}::uuid, ${`Free plan ${Date.now()}`}, 0, 30)
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  const [um] = (await db.execute<Record<string, unknown>>(sql`
+    insert into user_memberships (membership_id, user_id, starts_at, ends_at, status, created_at)
+    values (${m!['id'] as string}::uuid, ${u!['id'] as string}::uuid,
+            now(), now() + interval '30 days',
+            ${opts.cancelled ? 'cancelled' : 'active'}, ${istAt(opts.offsetDays)})
+    returning id
+  `)) as unknown as Record<string, unknown>[];
+  return um!['id'] as string;
+}
+
+/**
  * Insert one slot whose IST session date is `today + offsetDays` (IST) starting
  * at IST `hour:00` for `durMin` minutes. Slots feed occupancy only — money no
  * longer comes from them. Distinct hours per arena avoid the slots GIST
@@ -384,6 +412,43 @@ describe.skipIf(!runIntegration)('tenant analytics vs the activity feed', () => 
     expect(res.statusCode).toBe(200);
     return res.json() as AnalyticsResponse;
   }
+
+  it('counts a free membership sale, which has no bookings row at all', async () => {
+    // memberships_service skips the synthetic booking when a purchase is free
+    // and uncouponed, so these exist only in user_memberships. The Activity
+    // feed unions them in; reading `bookings` alone would list a free plan's
+    // sign-ups on that page and never move this count.
+    const s = await setup(app, 'owner', `anfree-${Date.now()}`);
+    await insertFreeMembership(s.tenantId, { offsetDays: 0 });
+    await insertFreeMembership(s.tenantId, { offsetDays: -3 });
+    // A cancelled one is left out, as a cancelled booking is.
+    await insertFreeMembership(s.tenantId, { offsetDays: 0, cancelled: true });
+
+    const a = await analyticsFor(s.tenantId);
+    expect(a.bookingsToday).toBe(1);
+    // No money moved, so the series exists for the count alone.
+    expect(a.revenueToday).toEqual([]);
+    const days = a.trend7d[0]!.days;
+    expect(days[6]!.bookings).toBe(1);
+    expect(days[3]!.bookings).toBe(1);
+    expect(days[6]!.revenuePaise).toBe(0);
+  });
+
+  it('does not count a paid membership twice over', async () => {
+    // A paid purchase DOES write a booking, carrying the user_membership id in
+    // item_data. The union must exclude it or every paid sale counts twice.
+    const s = await setup(app, 'owner', `andup-${Date.now()}`);
+    const umId = await insertFreeMembership(s.tenantId, { offsetDays: 0 });
+    await db.execute(sql`
+      insert into bookings (tenant_id, item_type, channel, payment_method, status,
+                            total_paise, currency, item_data, created_at)
+      values (${s.tenantId}::uuid, 'membership', 'circls', 'razorpay_route', 'confirmed',
+              50000, 'INR', ${JSON.stringify({ userMembershipId: umId })}::jsonb,
+              ${istAt(0)})
+    `);
+    const a = await analyticsFor(s.tenantId);
+    expect(a.bookingsToday).toBe(1);
+  });
 
   it('an organiser who sells no court time still sees their revenue', async () => {
     // The Saur Grapes shape: events only, not a single slot. The old measure

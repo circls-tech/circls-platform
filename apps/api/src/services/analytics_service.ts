@@ -88,6 +88,19 @@ const istDay = (col: ReturnType<typeof sql>) => sql`(${col} AT TIME ZONE 'Asia/K
 const TODAY = sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`;
 
 /**
+ * An instant safely before the window starts, as a plain timestamptz.
+ *
+ * The window itself is expressed on the IST *date* of each row, which no index
+ * can serve — without this the scans would read a tenant's entire history on
+ * every dashboard load and grow forever. This bound is on the raw column, so
+ * (tenant_id, created_at) can seek straight to the week. A day of slack either
+ * side of the IST offset keeps it a pure optimisation: the date predicate
+ * still decides what is in the window.
+ */
+const WINDOW_FLOOR = sql`
+  (((now() AT TIME ZONE 'Asia/Kolkata')::date - 8) AT TIME ZONE 'Asia/Kolkata')`;
+
+/**
  * A booking that stands. `cancelled` fell through and `pending` has not
  * happened yet — an abandoned checkout is not a sale, and counting one would
  * put a booking on the dashboard that no money will ever follow.
@@ -106,6 +119,7 @@ function moneyLedger(tenantId: string) {
            p.amount_paise               as amount
       from payments p
      where p.tenant_id = ${tenantId}
+       and p.created_at >= ${WINDOW_FLOOR}
        and (
          -- A charge that reached the customer's account. 'refunded' and
          -- 'partially_refunded' charges stay: the money WAS taken, and the
@@ -120,6 +134,7 @@ function moneyLedger(tenantId: string) {
            b.total_paise                as amount
       from bookings b
      where b.tenant_id = ${tenantId}
+       and b.created_at >= ${WINDOW_FLOOR}
        and b.payment_method = 'external'
        and ${BOOKING_STANDS}
        and b.total_paise is not null
@@ -127,20 +142,51 @@ function moneyLedger(tenantId: string) {
 }
 
 /**
- * Bookings made per IST day and currency — courts, events and memberships
- * alike, which is exactly what the Activity feed lists. The tile answers
+ * One row per sale, dated and in its currency — courts, events and
+ * memberships alike, which is what the Activity feed lists. The tile answers
  * "what did I sell", so only bookings that stand are counted.
+ *
+ * Nearly all of it is the `bookings` ledger. The exception is a free,
+ * coupon-less membership purchase: memberships_service skips the synthetic
+ * booking for those, so they exist only as `user_memberships` rows. The feed
+ * unions them in for exactly that reason, and so must this, or a plan with a
+ * free tier would list its sign-ups on the Activity page and never move the
+ * dashboard's count.
+ *
+ * The union mirrors the feed's shape, including its inner join on `users`: a
+ * member the partner added by hand has no account behind them and appears on
+ * neither. It parts from the feed on one point — a cancelled membership is
+ * left out, as a cancelled booking is.
  */
-function bookingsByDay(tenantId: string) {
+function salesLedger(tenantId: string) {
   return sql`
     select ${istDay(sql`b.created_at`)} as d,
-           b.currency                   as currency,
-           count(*)                     as n
+           b.currency                   as currency
       from bookings b
      where b.tenant_id = ${tenantId}
+       and b.created_at >= ${WINDOW_FLOOR}
        and ${BOOKING_STANDS}
-       and ${istDay(sql`b.created_at`)} between ${TODAY} - 6 and ${TODAY}
-     group by 1, 2
+    union all
+    select ${istDay(sql`um.created_at`)} as d,
+           -- These carry no money and so no currency of their own. The
+           -- tenant's country decides which series they are counted under,
+           -- the same mapping lib/gateway.ts uses.
+           case when upper(btrim(coalesce(t.country, '')))
+                     in ('USA', 'US', 'UNITED STATES', 'UNITED STATES OF AMERICA')
+                then 'USD' else 'INR' end as currency
+      from user_memberships um
+      join memberships m on m.id = um.membership_id
+      join tenants t     on t.id = m.tenant_id
+      join users u       on u.id = um.user_id
+     where m.tenant_id = ${tenantId}
+       and um.created_at >= ${WINDOW_FLOOR}
+       and um.status <> 'cancelled'
+       and not exists (
+         select 1 from bookings b2
+          where b2.tenant_id = ${tenantId}
+            and b2.item_type = 'membership'
+            and b2.item_data->>'userMembershipId' = um.id::text
+       )
   `;
 }
 
@@ -148,11 +194,8 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
   // ---- Counts: bookingsToday (all item types) / occupancy7dPct (slots only).
   const scalarRows = await db.execute<Record<string, unknown>>(sql`
     select
-      (select count(*)
-         from bookings b
-        where b.tenant_id = ${tenantId}
-          and ${BOOKING_STANDS}
-          and ${istDay(sql`b.created_at`)} = ${TODAY})                                    as bookings_today,
+      (select count(*) from (${salesLedger(tenantId)}) sales
+        where sales.d = ${TODAY})                                                         as bookings_today,
       (select round(
          100.0 * count(*) filter (where s.status = 'booked')
          / nullif(count(*) filter (where s.status in ('open', 'held', 'booked')), 0)
@@ -201,7 +244,12 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
        where d between ${TODAY} - 6 and ${TODAY}
        group by 1, 2
     ),
-    bday as (${bookingsByDay(tenantId)}),
+    bday as (
+      select d, currency, count(*) as n
+        from (${salesLedger(tenantId)}) sales
+       where d between ${TODAY} - 6 and ${TODAY}
+       group by 1, 2
+    ),
     curs as (
       select currency from mday
       union

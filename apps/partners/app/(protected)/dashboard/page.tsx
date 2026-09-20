@@ -166,7 +166,18 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
               )}
             </div>
 
-            <div className="w-full border-t-2 border-[#17151D]" />
+            {/* The baseline, and on a day that took nothing it is also the
+                only thing to hover: free registrations still have a count
+                worth reading, and a day whose refunds cancelled its sales
+                should say so rather than look like no day at all. */}
+            {taken === 0 ? (
+              <div
+                className="w-full border-t-2 border-[#17151D] py-0.5"
+                title={tooltipText}
+              />
+            ) : (
+              <div className="w-full border-t-2 border-[#17151D]" />
+            )}
 
             {/* Given back: hangs below it. Absent entirely in a week with no
                 refunds, so the chart keeps its usual shape. */}

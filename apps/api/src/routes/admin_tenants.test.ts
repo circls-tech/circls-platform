@@ -398,6 +398,32 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
       expect(after['activeUsers24h']).toBe(before['activeUsers24h']! + 1);
     });
 
+    it('drops someone who has since deleted their account', async () => {
+      // Deletion wipes that person's consumer_activity but leaves their logins
+      // and their bookings' customer_user_id behind, so without the tombstone
+      // check they would keep counting for a month after asking to be forgotten.
+      const before = await stats();
+      const [u] = (await db.execute<Record<string, unknown>>(sql`
+        INSERT INTO users (firebase_uid, email)
+        VALUES (${`act-gone-${Date.now()}`}, ${`act-gone-${Date.now()}@x.com`})
+        RETURNING id
+      `)) as unknown as Record<string, unknown>[];
+      const id = u!['id'] as string;
+      await db.execute(sql`
+        INSERT INTO login_events (user_id, source) VALUES (${id}::uuid, 'consumer')
+      `);
+      await db.execute(sql`
+        INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id)
+        VALUES (${tenantAId}::uuid, 'event', 'circls', 'free', 'confirmed', ${id}::uuid)
+      `);
+      expect((await stats())['activeUsers24h']).toBe(before['activeUsers24h']! + 1);
+
+      await db.execute(sql`UPDATE users SET deleted_at = now() WHERE id = ${id}::uuid`);
+      const after = await stats();
+      expect(after['activeUsers24h']).toBe(before['activeUsers24h']!);
+      expect(after['activeUsers30d']).toBe(before['activeUsers30d']!);
+    });
+
     it('ignores what happened before the window', async () => {
       const before = await stats();
       const [u] = (await db.execute<Record<string, unknown>>(sql`

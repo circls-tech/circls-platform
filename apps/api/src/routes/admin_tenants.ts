@@ -618,20 +618,28 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           -- telemetry is finally wired into the consumer app, add
           -- consumer_activity back as a third arm here — and an index on its
           -- created_at, which it does not have.
+          --
+          -- Deleted accounts are excluded. Deletion wipes that person's
+          -- consumer_activity but leaves their logins and their bookings'
+          -- customer_user_id in place, so without the tombstone check they
+          -- would go on counting as active for a month after asking to be
+          -- forgotten — which the measure this replaces never did.
           (SELECT count(*) FROM (
-             SELECT user_id FROM login_events
-              WHERE created_at >= now() - interval '24 hours'
+             SELECT le.user_id FROM login_events le
+               JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+              WHERE le.created_at >= now() - interval '24 hours'
              UNION
-             SELECT customer_user_id FROM bookings
-              WHERE customer_user_id IS NOT NULL
-                AND created_at >= now() - interval '24 hours')                 a)         AS active_users_24h,
+             SELECT b.customer_user_id FROM bookings b
+               JOIN users u ON u.id = b.customer_user_id AND u.deleted_at IS NULL
+              WHERE b.created_at >= now() - interval '24 hours')               a)         AS active_users_24h,
           (SELECT count(*) FROM (
-             SELECT user_id FROM login_events
-              WHERE created_at >= now() - interval '30 days'
+             SELECT le.user_id FROM login_events le
+               JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+              WHERE le.created_at >= now() - interval '30 days'
              UNION
-             SELECT customer_user_id FROM bookings
-              WHERE customer_user_id IS NOT NULL
-                AND created_at >= now() - interval '30 days')                  a)         AS active_users_30d,
+             SELECT b.customer_user_id FROM bookings b
+               JOIN users u ON u.id = b.customer_user_id AND u.deleted_at IS NULL
+              WHERE b.created_at >= now() - interval '30 days')                a)         AS active_users_30d,
           (SELECT count(*) FROM login_events
              WHERE created_at >= now() - interval '24 hours')                             AS logins_24h,
           (SELECT count(*) FROM login_events
