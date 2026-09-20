@@ -80,7 +80,9 @@ purchase time — later edits never change passes that are already issued.
 
 Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
 
-A purchased membership runs for the plan's **duration in days** from the purchase date. Once it has been over for a full day, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. circls checks twice a day, at 5 am and 5 pm IST, so this happens within a day and a half of the end date. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired.
+The section opens on **Active** — the people whose membership is running right now. **Expired** and **Cancelled** are tabs beside it, each showing how many it holds, so a plan that has been selling for a year doesn't bury its current members under everyone who has ever held it. Cancelling a member moves them to the **Cancelled** tab straight away, so their row leaves the list you are looking at.
+
+A purchased membership runs for the plan's **duration in days** from the purchase date. Once it has been over for a full day, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. circls checks twice a day, at 5 am and 5 pm IST, so this happens within a day and a half of the end date. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired. A member whose end date has just passed stays on the **Active** tab until that check runs.
 
 An expired member keeps their seat on the tier, exactly as before — expiry does not free up capacity. They drop out of the customer's own **My memberships** list, just as a cancelled one does.
 
@@ -94,7 +96,7 @@ They are a real member where it counts: the seat comes out of that tier's capaci
 
 ### Correcting dates, and cancelling
 
-**Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Changing a member's dates moves their QR pass with them, so the door always agrees with the membership. Extending an **expired** member's end date into the future renews them: they become **active** again and their pass works at the door.
+**Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Changing a member's dates moves their QR pass with them, so the door always agrees with the membership. Extending an **expired** member's end date into the future renews them: they become **active** again and their pass works at the door — which is why the button reads **Renew** on the **Expired** tab. It opens the same two date boxes; the renewed member moves back to **Active**.
 
 Two actions end a membership, and which you want depends on the money:
 

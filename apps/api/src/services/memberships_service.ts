@@ -113,14 +113,28 @@ export interface MembershipPurchaseRow {
   createdAt: string;
 }
 
+/** The member states a partner can list separately. */
+export const MEMBER_STATUSES = ['active', 'expired', 'cancelled'] as const;
+
+export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+
+/** How many members a plan holds in each state, whatever the listing shows. */
+export type MemberStatusCounts = Record<MemberStatus, number>;
+
 /**
  * Buyers of a membership (partner-facing). Joins user_memberships → users; the
  * buyer's display name / phone / email are surfaced for the partner's records.
  * Tenant-scoped via the parent membership.
+ *
+ * `status` narrows the list to one state. The filter is applied in SQL rather
+ * than in the portal because the query is capped: on a plan that has churned
+ * through hundreds of members, the newest 500 rows are mostly lapsed ones, and
+ * filtering after the cap would hide active members the partner needs.
  */
 export async function listMembershipPurchases(
   tenantId: string,
   membershipId: string,
+  status?: MemberStatus,
 ): Promise<MembershipPurchaseRow[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
     select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
@@ -131,6 +145,7 @@ export async function listMembershipPurchases(
     left join users u on u.id = um.user_id
     left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
+      ${status ? sql`and um.status = ${status}` : sql``}
     order by um.created_at desc
     limit 500
   `);
@@ -152,6 +167,30 @@ export async function listMembershipPurchases(
     endsAt: new Date(r['ends_at'] as string).toISOString(),
     createdAt: new Date(r['created_at'] as string).toISOString(),
   }));
+}
+
+/**
+ * How many members the plan holds in each state. Counted separately from the
+ * listing so a tab can show its size without loading its rows — and so the
+ * counts stay honest when the listing hits its cap.
+ */
+export async function countMembersByStatus(
+  tenantId: string,
+  membershipId: string,
+): Promise<MemberStatusCounts> {
+  const raw = await db.execute<Record<string, unknown>>(sql`
+    select um.status, count(*)::int as n
+      from user_memberships um
+      join memberships m on m.id = um.membership_id
+     where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
+     group by um.status
+  `);
+  const counts: MemberStatusCounts = { active: 0, expired: 0, cancelled: 0 };
+  for (const r of raw as unknown as Record<string, unknown>[]) {
+    const key = r['status'] as MemberStatus;
+    if (key in counts) counts[key] = Number(r['n']);
+  }
+  return counts;
 }
 
 export interface CreateMembershipInput {

@@ -8,12 +8,38 @@ import {
   useRefundMember,
   useUpdateMember,
 } from '@/lib/api/memberships';
-import type { Membership, MembershipPurchase } from '@/lib/api/types';
+import type {
+  Membership,
+  MembershipPurchase,
+  MemberStatus,
+  MemberStatusCounts,
+} from '@/lib/api/types';
 import { Button, Input, StatusPill } from '@/lib/ui';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
 }
+
+/**
+ * Members are listed one state at a time. A plan that has run for a while
+ * holds far more lapsed members than current ones, and mixed together they
+ * buried the people the partner is actually serving — the same reason venues
+ * moved their closed ones onto a tab of their own.
+ */
+const MEMBER_TABS: { key: MemberStatus; label: string }[] = [
+  { key: 'active', label: 'Active' },
+  { key: 'expired', label: 'Expired' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
+/** What an empty tab means, in the partner's words. */
+const EMPTY_TAB: Record<MemberStatus, string> = {
+  active: 'No active members. Expired and cancelled ones are on the other tabs.',
+  expired: 'No expired members.',
+  cancelled: 'No cancelled members.',
+};
+
+const NO_COUNTS: MemberStatusCounts = { active: 0, expired: 0, cancelled: 0 };
 
 /**
  * Everyone holding a plan: those who bought it, and those the partner added by
@@ -41,7 +67,12 @@ export function MembershipMembers({
   walkInOpen,
   onWalkInOpenChange,
 }: MembershipMembersProps) {
-  const { data, isLoading, error } = useMembershipPurchases(tenantId, membershipId);
+  const [tab, setTab] = useState<MemberStatus>('active');
+  const { data, isLoading, isFetching, error } = useMembershipPurchases(
+    tenantId,
+    membershipId,
+    tab,
+  );
   const { resolveTz } = useTimezone();
   const dateFmt = useMemo(
     () =>
@@ -70,6 +101,8 @@ export function MembershipMembers({
   const [err, setErr] = useState<string | null>(null);
 
   const rows = data?.rows ?? [];
+  const counts = data?.counts ?? NO_COUNTS;
+  const total = counts.active + counts.expired + counts.cancelled;
 
   /** <input type="date"> wants YYYY-MM-DD; the API speaks ISO instants. */
   const toDateInput = (iso: string) => iso.slice(0, 10);
@@ -186,6 +219,10 @@ export function MembershipMembers({
         </span>
       );
     }
+    // Same editor either way — an expired membership is renewed by moving its
+    // end date into the future — but on a lapsed member that is what the
+    // partner came to do, so the button says so.
+    const expired = p2.status === 'expired';
     return (
       <span className="flex flex-wrap items-center gap-1">
         <Button
@@ -198,8 +235,9 @@ export function MembershipMembers({
               endsAt: toDateInput(p2.endsAt),
             });
           }}
+          {...(expired ? { title: 'Move the end date into the future to renew them' } : {})}
         >
-          Edit dates
+          {expired ? 'Renew' : 'Edit dates'}
         </Button>
         {/* Only where circls took money. A hand-added or free membership has
             nothing to give back, so offering Refund would be a lie. */}
@@ -251,6 +289,11 @@ export function MembershipMembers({
           aria-label="Valid to"
           className="rounded-md border border-slate-200 px-2 py-1 text-xs"
         />
+        {p2.status === 'expired' && (
+          <span className="block w-full whitespace-normal text-xs text-slate-500">
+            An end date in the future makes them active again.
+          </span>
+        )}
       </span>
     );
   }
@@ -335,7 +378,10 @@ export function MembershipMembers({
     </div>
   );
 
-  if (rows.length === 0) {
+  // Nobody in any state: the tabs would be three empty boxes. The rows are
+  // checked as well so a plan is never declared empty over a list it just
+  // returned.
+  if (total === 0 && rows.length === 0) {
     return (
       <div className="flex flex-col gap-3">
         {addBar}
@@ -347,13 +393,49 @@ export function MembershipMembers({
   return (
     <div className="flex flex-col gap-3">
       {addBar}
-      <p className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-        {rows.length} {rows.length === 1 ? 'member' : 'members'}
-      </p>
 
-      {/* The modal is centred in the viewport, so the list scrolls rather than
-          pushing the panel off-screen on a short one. */}
-      <div className="max-h-[60vh] overflow-y-auto">
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Member status">
+        {MEMBER_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => {
+              setTab(t.key);
+              // The row being edited is about to leave the screen.
+              setEditingId(null);
+            }}
+            className={[
+              'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+              tab === t.key
+                ? 'border-[#17151D] bg-[#BCE3A0] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+            ].join(' ')}
+          >
+            {t.label} <span className="font-normal text-slate-500">({counts[t.key]})</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === 'expired' && rows.length > 0 && (
+        <p className="text-xs text-slate-500">
+          An expired member still holds their seat on the tier. Renew one by moving
+          its end date into the future.
+        </p>
+      )}
+
+      {rows.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">{EMPTY_TAB[tab]}</p>
+      ) : (
+      /* Long lists scroll inside the card rather than pushing everything below
+         them off the page. */
+      <div
+        className={`max-h-[60vh] overflow-y-auto transition-opacity ${
+          isFetching ? 'opacity-60' : ''
+        }`}
+        aria-busy={isFetching}
+      >
         {/* Phones: one card per buyer — a six-column table is unreadable there. */}
         <ul className="flex flex-col gap-2 md:hidden">
           {rows.map((p) => (
@@ -433,6 +515,7 @@ export function MembershipMembers({
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }
