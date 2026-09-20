@@ -43,6 +43,7 @@ const { closeDb, db, pingDb } = await import('../db/client.js');
 const { tenants, users } = await import('../db/schema/index.js');
 const { eq, sql } = await import('drizzle-orm');
 const {
+  countMembersByStatus,
   createMembership,
   listMembershipPurchases,
   listMembershipsForTenant,
@@ -433,5 +434,79 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
     await expect(
       purchaseMembership({ membershipId: m.id, userId: actorUserId, membershipTierId: soloTier.id }),
     ).rejects.toMatchObject({ code: 'membership_tier_sold_out' });
+  });
+
+  // The partner's members list shows one state at a time — a plan that has run
+  // for a year holds far more lapsed members than current ones.
+  describe('listing members by status', () => {
+    let planId: string;
+
+    beforeAll(async () => {
+      const plan = await createMembership({
+        tenantId,
+        actorUserId,
+        name: `Tabbed ${Date.now()}`,
+        pricePaise: 0,
+        durationDays: 30,
+      });
+      planId = plan.id;
+
+      for (const name of ['Current Chitra', 'Current Chandan']) {
+        await addExternalMember({ tenantId, actorUserId }, { membershipId: planId, name });
+      }
+      // Expiry is the sweep's doing, and it only ever writes the status.
+      const { userMembershipId: lapsed } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: planId, name: 'Lapsed Lata' },
+      );
+      await db.execute(sql`
+        update user_memberships set status = 'expired' where id = ${lapsed}::uuid
+      `);
+      const { userMembershipId: ended } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: planId, name: 'Cancelled Kabir' },
+      );
+      await updateMember({ tenantId, actorUserId }, ended, planId, { status: 'cancelled' });
+    });
+
+    it('returns only the members in the state asked for', async () => {
+      const active = await listMembershipPurchases(tenantId, planId, 'active');
+      expect(active.map((r) => r.buyerName).sort()).toEqual(['Current Chandan', 'Current Chitra']);
+
+      const expired = await listMembershipPurchases(tenantId, planId, 'expired');
+      expect(expired.map((r) => r.buyerName)).toEqual(['Lapsed Lata']);
+
+      const cancelled = await listMembershipPurchases(tenantId, planId, 'cancelled');
+      expect(cancelled.map((r) => r.buyerName)).toEqual(['Cancelled Kabir']);
+    });
+
+    it('still lists everyone when no state is asked for', async () => {
+      const all = await listMembershipPurchases(tenantId, planId);
+      expect(all).toHaveLength(4);
+    });
+
+    it('counts every state, including the ones not being listed', async () => {
+      expect(await countMembersByStatus(tenantId, planId)).toEqual({
+        active: 2,
+        expired: 1,
+        cancelled: 1,
+      });
+    });
+
+    it("counts nothing for another org's plan", async () => {
+      const [other] = await db
+        .insert(tenants)
+        .values({ name: 'OtherCo4', slug: `otherco4-${Date.now()}` })
+        .returning();
+      // Same plan id, different tenant: the join must refuse it outright
+      // rather than counting somebody else's members.
+      expect(await countMembersByStatus(other!.id, planId)).toEqual({
+        active: 0,
+        expired: 0,
+        cancelled: 0,
+      });
+      expect(await listMembershipPurchases(other!.id, planId, 'active')).toEqual([]);
+      await db.execute(sql`delete from tenants where id = ${other!.id}`);
+    });
   });
 });

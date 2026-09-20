@@ -6,6 +6,8 @@ import type {
   Membership,
   MembershipBenefits,
   MembershipPurchase,
+  MemberStatus,
+  MemberStatusCounts,
   PresignedUpload,
   QrTicketConfig,
   UserMembership,
@@ -100,15 +102,29 @@ export function useUpdateMember(tenantId: string) {
   });
 }
 
-export function useMembershipPurchases(tenantId: string, membershipId: string) {
+/**
+ * Members of a plan, in one state. The counts cover all three states whichever
+ * one is being listed, so the tabs can show their sizes without fetching them.
+ *
+ * The status is the last part of the key, so the mutations above — which
+ * invalidate the key without it — still refresh every tab.
+ */
+export function useMembershipPurchases(
+  tenantId: string,
+  membershipId: string,
+  status: MemberStatus,
+) {
   const { user } = useAuth();
   return useQuery({
-    queryKey: ['membership-purchases', tenantId, membershipId],
+    queryKey: ['membership-purchases', tenantId, membershipId, status],
     queryFn: () =>
-      apiFetch<{ rows: MembershipPurchase[] }>(
-        `/v1/tenants/${tenantId}/memberships/${membershipId}/purchases`,
+      apiFetch<{ rows: MembershipPurchase[]; counts: MemberStatusCounts; limit: number }>(
+        `/v1/tenants/${tenantId}/memberships/${membershipId}/purchases?status=${status}`,
       ),
     enabled: Boolean(user) && Boolean(tenantId) && Boolean(membershipId),
+    // Switching tabs keeps the previous tab's rows on screen until the new
+    // ones arrive, so the panel doesn't collapse to a spinner and back.
+    placeholderData: (prev) => prev,
   });
 }
 

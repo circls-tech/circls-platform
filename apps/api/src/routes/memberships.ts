@@ -14,12 +14,15 @@ import {
 } from '../lib/qr_ticket_config_schema.js';
 import {
   addExternalMember,
+  countMembersByStatus,
   createMembership,
   refundMember,
   finalizeMembershipCover,
   getMembership,
   listMembershipPurchases,
   listMembershipsForTenant,
+  MEMBER_LIST_LIMIT,
+  MEMBER_STATUSES,
   listUserMemberships,
   presignMembershipCover,
   purchaseMembership,
@@ -228,12 +231,27 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     return setMembershipActive({ tenantId, actorUserId: user.id }, id, false);
   });
 
-  // Partner-facing: buyers of a membership.
+  /**
+   * Partner-facing: buyers of a membership. `?status=` narrows the list to one
+   * state; the counts cover every state either way, so the portal can size its
+   * tabs without fetching the rows behind them. `limit` is the cap the rows
+   * were taken under, so a caller can tell a short list from a truncated one.
+   */
+  const purchasesQuery = z.object({ status: z.enum(MEMBER_STATUSES).optional() });
+
   app.get('/v1/tenants/:tenantId/memberships/:id/purchases', { preHandler: requireAuth }, async (req) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
+    const parsed = purchasesQuery.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid member filter', 'bad_request', { issues: parsed.error.issues });
+    }
     const user = await currentUser(req);
     await requireTenantMembership(user.id, tenantId);
-    return { rows: await listMembershipPurchases(tenantId, id) };
+    const [rows, counts] = await Promise.all([
+      listMembershipPurchases(tenantId, id, parsed.data.status),
+      countMembersByStatus(tenantId, id),
+    ]);
+    return { rows, counts, limit: MEMBER_LIST_LIMIT };
   });
 
   /**
