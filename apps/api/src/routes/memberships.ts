@@ -21,6 +21,7 @@ import {
   getMembership,
   listMembershipPurchases,
   listMembershipsForTenant,
+  MEMBER_LIST_LIMIT,
   MEMBER_STATUSES,
   listUserMemberships,
   presignMembershipCover,
@@ -233,7 +234,8 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
   /**
    * Partner-facing: buyers of a membership. `?status=` narrows the list to one
    * state; the counts cover every state either way, so the portal can size its
-   * tabs without fetching the rows behind them.
+   * tabs without fetching the rows behind them. `limit` is the cap the rows
+   * were taken under, so a caller can tell a short list from a truncated one.
    */
   const purchasesQuery = z.object({ status: z.enum(MEMBER_STATUSES).optional() });
 
@@ -249,7 +251,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       listMembershipPurchases(tenantId, id, parsed.data.status),
       countMembersByStatus(tenantId, id),
     ]);
-    return { rows, counts };
+    return { rows, counts, limit: MEMBER_LIST_LIMIT };
   });
 
   /**

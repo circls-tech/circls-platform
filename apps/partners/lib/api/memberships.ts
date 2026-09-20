@@ -118,7 +118,7 @@ export function useMembershipPurchases(
   return useQuery({
     queryKey: ['membership-purchases', tenantId, membershipId, status],
     queryFn: () =>
-      apiFetch<{ rows: MembershipPurchase[]; counts: MemberStatusCounts }>(
+      apiFetch<{ rows: MembershipPurchase[]; counts: MemberStatusCounts; limit: number }>(
         `/v1/tenants/${tenantId}/memberships/${membershipId}/purchases?status=${status}`,
       ),
     enabled: Boolean(user) && Boolean(tenantId) && Boolean(membershipId),

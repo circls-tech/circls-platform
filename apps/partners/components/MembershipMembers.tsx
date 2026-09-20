@@ -103,6 +103,13 @@ export function MembershipMembers({
   const rows = data?.rows ?? [];
   const counts = data?.counts ?? NO_COUNTS;
   const total = counts.active + counts.expired + counts.cancelled;
+  // The listing is capped; the counts are not. The cap comes back with the
+  // rows, so a truncated list is told apart from a merely short one exactly,
+  // and never from a count that moved between the two queries. Skipped
+  // mid-fetch, while the rows still belong to the tab being left.
+  const listed = counts[tab];
+  const truncated =
+    !isFetching && data != null && rows.length >= data.limit && listed > rows.length;
 
   /** <input type="date"> wants YYYY-MM-DD; the API speaks ISO instants. */
   const toDateInput = (iso: string) => iso.slice(0, 10);
@@ -139,6 +146,10 @@ export function MembershipMembers({
       });
       setForm({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
       setAdding(false);
+      // A new member is always active. Staying on Expired or Cancelled would
+      // close the form onto an unchanged list — no row, no confirmation — and
+      // the obvious next move is to add the person again.
+      setTab('active');
     } catch (e2) {
       setErr((e2 as Error).message);
     }
@@ -422,6 +433,12 @@ export function MembershipMembers({
         <p className="text-xs text-slate-500">
           An expired member still holds their seat on the tier. Renew one by moving
           its end date into the future.
+        </p>
+      )}
+
+      {truncated && (
+        <p className="text-xs text-slate-500">
+          Showing the {rows.length} most recently added of {listed}.
         </p>
       )}
 

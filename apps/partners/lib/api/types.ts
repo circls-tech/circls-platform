@@ -609,13 +609,13 @@ export interface UserMembership {
   };
 }
 
-/** A consumer purchase of a membership plan (partner-facing). */
 /** The three states one member's pass can be in. */
 export type MemberStatus = 'active' | 'expired' | 'cancelled';
 
 /** How many members the plan holds in each state, whatever the list shows. */
 export type MemberStatusCounts = Record<MemberStatus, number>;
 
+/** A consumer purchase of a membership plan (partner-facing). */
 export interface MembershipPurchase {
   userMembershipId: string;
   buyerName: string;

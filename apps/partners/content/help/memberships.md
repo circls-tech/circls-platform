@@ -80,7 +80,9 @@ purchase time — later edits never change passes that are already issued.
 
 Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
 
-The section opens on **Active** — the people whose membership is running right now. **Expired** and **Cancelled** are tabs beside it, each showing how many it holds, so a plan that has been selling for a year doesn't bury its current members under everyone who has ever held it. Cancelling a member moves them to the **Cancelled** tab straight away, so their row leaves the list you are looking at.
+The section opens on **Active** — the people whose membership is running right now. **Expired** and **Cancelled** are tabs beside it, each showing how many it holds, so a plan that has been selling for a year doesn't bury its current members under everyone who has ever held it. Cancelling a member moves them to the **Cancelled** tab straight away, so their row leaves the list you are looking at, and adding one takes you back to **Active**, where they land.
+
+A very long tab shows its most recently added members rather than all of them, and says so above the list — *Showing the 500 most recently added of 640*.
 
 A purchased membership runs for the plan's **duration in days** from the purchase date. Once it has been over for a full day, circls marks it **expired** automatically — the day's grace means nobody is caught out on their last evening. circls checks twice a day, at 5 am and 5 pm IST, so this happens within a day and a half of the end date. Individual memberships can be **active**, **expired** or **cancelled**; a cancelled one is never changed to expired. A member whose end date has just passed stays on the **Active** tab until that check runs.
 

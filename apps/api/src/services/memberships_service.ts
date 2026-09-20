@@ -121,6 +121,10 @@ export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 /** How many members a plan holds in each state, whatever the listing shows. */
 export type MemberStatusCounts = Record<MemberStatus, number>;
 
+/** Most rows one members listing returns. Reported to the caller so it can say
+ *  when there are more than it was given. */
+export const MEMBER_LIST_LIMIT = 500;
+
 /**
  * Buyers of a membership (partner-facing). Joins user_memberships → users; the
  * buyer's display name / phone / email are surfaced for the partner's records.
@@ -147,7 +151,7 @@ export async function listMembershipPurchases(
     where m.tenant_id = ${tenantId} and um.membership_id = ${membershipId}
       ${status ? sql`and um.status = ${status}` : sql``}
     order by um.created_at desc
-    limit 500
+    limit ${MEMBER_LIST_LIMIT}
   `);
   const rows = raw as unknown as Record<string, unknown>[];
   return rows.map((r) => ({
