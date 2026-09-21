@@ -43,11 +43,11 @@ A new arena's default slot length is 60 minutes; change it in the [schedule buil
 
 ## Uploading photos
 
-Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue detail page.
+Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue detail page. With more than one photo, visitors browse the gallery on the public venue page with the arrows or by swiping, and listing cards cycle through the photos on their own.
 
 - Click **Add photos** and select one or more images. Accepted formats are **JPEG, PNG and WebP**.
 - You can upload up to **12 photos** per venue. Uploads run one at a time with a progress indicator.
-- The **first photo becomes the cover image** shown in listings. Use **←** and **→** to reorder, or **Make cover** to send a photo straight to the front.
+- The **first photo becomes the cover image**, shown first in listings before the rest cycle through. Use **←** and **→** to reorder, or **Make cover** to send a photo straight to the front.
 - Each thumbnail shows how that photo is cropped on a listing card. If something important is cut off, click **Crop** and drag the marker onto the part that matters — the preview updates live. Cropping never changes your file, and the full photo is always shown uncropped on the public venue page.
 - Click **Delete** under a photo to remove it. Deletion is permanent and removes the file from storage; if you delete the cover, the next photo becomes the cover.
 
