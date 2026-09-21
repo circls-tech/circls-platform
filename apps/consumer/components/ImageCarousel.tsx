@@ -1,7 +1,16 @@
 'use client';
 
-import { type CSSProperties, type ReactNode, useEffect, useState } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { ImageRef } from '@/lib/api/types';
+import { stepIndex, swipeStep } from '@/lib/carousel';
 
 /**
  * Tallest a hero is allowed to get once its aspect ratio is honoured. Capped
@@ -17,10 +26,33 @@ import type { ImageRef } from '@/lib/api/types';
  */
 const HERO_MAX_HEIGHT = 'min(520px, 48vh)';
 
+/** A horizontal drag shorter than this is a tap (or a wobble), not a swipe. */
+const SWIPE_THRESHOLD_PX = 40;
+
 /** CSS `object-position` for a photo's focal point (0.5/0.5 = centre crop). */
 function focalPosition(img: ImageRef): string {
   return `${img.focalX * 100}% ${img.focalY * 100}%`;
 }
+
+function Chevron({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {dir === 'left' ? <path d="m15 6-6 6 6 6" /> : <path d="m9 6 6 6-6 6" />}
+    </svg>
+  );
+}
+
+const ARROW_CLASS =
+  'absolute top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-ink/60 text-white transition-colors hover:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-white';
 
 /**
  * Card image that renders uploaded photos. With one photo it shows it static;
@@ -32,13 +64,17 @@ function focalPosition(img: ImageRef): string {
  * Two variants:
  *   - `card` (default) — fixed-height `object-cover` box, cropped around each
  *     photo's focal point. Grids stay tidy because every card is the same size.
+ *     Cards sit inside links and scroll rails, so they only auto-advance.
  *   - `hero` — detail-page header. When the cover photo's intrinsic size is
  *     known the box takes the cover's aspect ratio (capped at HERO_MAX_HEIGHT)
  *     and photos render `object-contain`, so a portrait poster is shown WHOLE
  *     rather than cropped through its middle. Photos in the same gallery with a
  *     different aspect letterbox against a blurred copy of the cover instead of
  *     bare bars. Photos uploaded before we captured dimensions have none, so
- *     they fall back to the fixed-height crop `className` describes.
+ *     they fall back to the fixed-height crop `className` describes. A hero
+ *     with several photos is browsable: previous/next arrows, tappable dots,
+ *     swipe, and the arrow keys once focused. A manual move restarts the
+ *     auto-advance timer, so the next automatic change is a full interval away.
  *
  * The aspect ratio deliberately comes from the COVER only, not the current
  * slide — sizing the box per-slide would make it jump mid-crossfade.
@@ -62,12 +98,17 @@ export function ImageCarousel({
 }) {
   const [idx, setIdx] = useState(0);
   const multiple = images.length > 1;
+  const interactive = multiple && variant === 'hero';
+  // Where a drag started; null when no drag is in progress.
+  const dragStartX = useRef<number | null>(null);
 
+  // `idx` is a dependency on purpose: every slide change (automatic or manual)
+  // restarts the timer, so a swipe never gets snatched away a moment later.
   useEffect(() => {
     if (!multiple) return;
-    const t = setInterval(() => setIdx((i) => (i + 1) % images.length), intervalMs);
+    const t = setInterval(() => setIdx((i) => stepIndex(i, images.length, 1)), intervalMs);
     return () => clearInterval(t);
-  }, [multiple, images.length, intervalMs]);
+  }, [multiple, images.length, intervalMs, idx]);
 
   if (images.length === 0) return <>{fallback}</>;
 
@@ -81,10 +122,59 @@ export function ImageCarousel({
     ? { aspectRatio: `${aspect.width} / ${aspect.height}`, maxHeight: HERO_MAX_HEIGHT }
     : undefined;
 
+  function go(delta: -1 | 1) {
+    setIdx((i) => stepIndex(i, images.length, delta));
+  }
+
+  // Swipe = pointer down, then up at least SWIPE_THRESHOLD_PX away horizontally.
+  // `touch-pan-y` leaves vertical scrolling to the browser, which cancels the
+  // pointer (and so the swipe) when it takes over a gesture. No pointer capture:
+  // it would swallow the clicks on the arrow and dot buttons underneath.
+  function onPointerDown(e: PointerEvent<HTMLDivElement>) {
+    dragStartX.current = e.clientX;
+  }
+  function onPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (dragStartX.current === null) return;
+    const step = swipeStep(e.clientX - dragStartX.current, SWIPE_THRESHOLD_PX);
+    dragStartX.current = null;
+    if (step !== 0) go(step);
+  }
+  function cancelDrag() {
+    dragStartX.current = null;
+  }
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      go(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      go(1);
+    }
+  }
+
+  const interactiveProps = interactive
+    ? {
+        role: 'region',
+        'aria-roledescription': 'carousel',
+        'aria-label': `${alt} photos`,
+        tabIndex: 0,
+        onPointerDown,
+        onPointerUp,
+        onPointerCancel: cancelDrag,
+        onPointerLeave: cancelDrag,
+        onKeyDown,
+      }
+    : {};
+
   return (
     <div
-      className={`relative overflow-hidden bg-ink ${aspect ? 'w-full' : className}`}
+      className={`relative overflow-hidden bg-ink ${aspect ? 'w-full' : className} ${
+        interactive
+          ? 'touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80'
+          : ''
+      }`}
       style={boxStyle}
+      {...interactiveProps}
     >
       {/* Blurred cover fills the gaps when a contained photo doesn't match the
           box — reads as intentional depth rather than black bars. */}
@@ -102,6 +192,7 @@ export function ImageCarousel({
           src={img.url}
           alt={alt}
           loading="lazy"
+          draggable={false}
           style={contain ? undefined : { objectPosition: focalPosition(img) }}
           className={`absolute inset-0 h-full w-full transition-opacity duration-700 ${
             contain ? 'object-contain' : 'object-cover'
@@ -114,16 +205,53 @@ export function ImageCarousel({
       {(!contain || label) && (
         <div className="absolute inset-0 bg-gradient-to-t from-ink/60 to-transparent" />
       )}
+      {interactive && (
+        <>
+          <button
+            type="button"
+            onClick={() => go(-1)}
+            aria-label="Previous photo"
+            className={`${ARROW_CLASS} left-2`}
+          >
+            <Chevron dir="left" />
+          </button>
+          <button
+            type="button"
+            onClick={() => go(1)}
+            aria-label="Next photo"
+            className={`${ARROW_CLASS} right-2`}
+          >
+            <Chevron dir="right" />
+          </button>
+        </>
+      )}
       {multiple && (
         <div className="absolute bottom-2 right-2 flex gap-1">
-          {images.map((img, i) => (
-            <span
-              key={img.url}
-              className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                i === idx ? 'bg-white' : 'bg-white/40'
-              }`}
-            />
-          ))}
+          {images.map((img, i) => {
+            const dot = (
+              <span
+                className={`block h-1.5 w-1.5 rounded-full transition-colors ${
+                  i === idx ? 'bg-white' : 'bg-white/40'
+                }`}
+              />
+            );
+            return interactive ? (
+              <button
+                key={img.url}
+                type="button"
+                onClick={() => setIdx(i)}
+                aria-label={`Photo ${i + 1} of ${images.length}`}
+                aria-current={i === idx ? 'true' : undefined}
+                className="flex h-5 w-5 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              >
+                {dot}
+              </button>
+            ) : (
+              <span key={img.url} className="flex h-1.5 w-1.5">
+                {dot}
+              </span>
+            );
+          })}
         </div>
       )}
       {label && (

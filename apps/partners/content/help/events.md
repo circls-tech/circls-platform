@@ -221,7 +221,7 @@ You can add photos in two places:
 - **On the create form** — pick up to 12 photos before clicking **Create event**; they upload automatically once the event exists.
 - **On the event detail page** — use the **Photos** section to add, reorder, re-crop or delete photos at any time.
 
-JPEG, PNG or WebP, up to 10 MB each. Photos appear to consumers in the listing, so a strong lead image helps registrations. For recurring events the whole series shares one gallery.
+JPEG, PNG or WebP, up to 10 MB each. Photos appear to consumers in the listing, so a strong lead image helps registrations. For recurring events the whole series shares one gallery. On the public event page, visitors browse the gallery with the arrows or by swiping; listing cards cycle through the photos on their own.
 
 ### Choosing the cover
 

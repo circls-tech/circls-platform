@@ -43,7 +43,7 @@ A new arena's default slot length is 60 minutes; change it in the [schedule buil
 
 ## Uploading photos
 
-Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue detail page.
+Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue detail page. On the public venue page, visitors browse the gallery with the arrows or by swiping; listing cards cycle through the photos on their own.
 
 - Click **Add photos** and select one or more images. Accepted formats are **JPEG, PNG and WebP**.
 - You can upload up to **12 photos** per venue. Uploads run one at a time with a progress indicator.
