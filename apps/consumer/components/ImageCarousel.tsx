@@ -2,6 +2,7 @@
 
 import {
   type CSSProperties,
+  type FocusEvent,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -29,30 +30,43 @@ const HERO_MAX_HEIGHT = 'min(520px, 48vh)';
 /** A horizontal drag shorter than this is a tap (or a wobble), not a swipe. */
 const SWIPE_THRESHOLD_PX = 40;
 
+/**
+ * Focus treatment for the hero's controls. The `!` variants matter: globals.css
+ * has an unlayered `*:focus-visible` rule (coral outline + 14px radius) that
+ * beats Tailwind's layered utilities, so without them a focused arrow shows two
+ * outlines and loses its circle.
+ */
+const FOCUS_CLASS = 'focus:outline-none! focus-visible:ring-2 focus-visible:ring-white';
+
 /** CSS `object-position` for a photo's focal point (0.5/0.5 = centre crop). */
 function focalPosition(img: ImageRef): string {
   return `${img.focalX * 100}% ${img.focalY * 100}%`;
 }
 
-function Chevron({ dir }: { dir: 'left' | 'right' }) {
+function ArrowButton({ dir, onClick }: { dir: 'left' | 'right'; onClick: () => void }) {
+  const left = dir === 'left';
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={left ? 'Previous photo' : 'Next photo'}
+      className={`absolute top-1/2 ${left ? 'left-2' : 'right-2'} flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full! bg-ink/60 text-white transition-colors hover:bg-ink/85 ${FOCUS_CLASS}`}
     >
-      {dir === 'left' ? <path d="m15 6-6 6 6 6" /> : <path d="m9 6 6 6-6 6" />}
-    </svg>
+      <svg
+        viewBox="0 0 24 24"
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d={left ? 'm15 6-6 6 6 6' : 'm9 6 6 6-6 6'} />
+      </svg>
+    </button>
   );
 }
-
-const ARROW_CLASS =
-  'absolute top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-ink/60 text-white transition-colors hover:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-white';
 
 /**
  * Card image that renders uploaded photos. With one photo it shows it static;
@@ -73,8 +87,12 @@ const ARROW_CLASS =
  *     bare bars. Photos uploaded before we captured dimensions have none, so
  *     they fall back to the fixed-height crop `className` describes. A hero
  *     with several photos is browsable: previous/next arrows, tappable dots,
- *     swipe, and the arrow keys once focused. A manual move restarts the
- *     auto-advance timer, so the next automatic change is a full interval away.
+ *     swipe, and the arrow keys once focused.
+ *
+ * Auto-advance pauses while the user is on the gallery (mouse hover, keyboard
+ * focus, a drag in progress) and when they prefer reduced motion; any manual
+ * move re-arms it for a full interval, so a swipe is never undone a moment
+ * later.
  *
  * The aspect ratio deliberately comes from the COVER only, not the current
  * slide — sizing the box per-slide would make it jump mid-crossfade.
@@ -97,18 +115,33 @@ export function ImageCarousel({
   variant?: 'card' | 'hero';
 }) {
   const [idx, setIdx] = useState(0);
+  // Bumped by manual moves that leave `idx` unchanged (tapping the current
+  // dot) so the auto-advance timer still restarts.
+  const [restart, setRestart] = useState(0);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  // The pointer that started a swipe; null when no drag is in progress.
+  const drag = useRef<{ pointerId: number; startX: number } | null>(null);
+
   const multiple = images.length > 1;
   const interactive = multiple && variant === 'hero';
-  // Where a drag started; null when no drag is in progress.
-  const dragStartX = useRef<number | null>(null);
+  const paused = hovered || focused || dragging;
+  // `idx` can outlive a gallery that shrank under it (a refetch after the
+  // partner deleted photos); show the cover rather than nothing.
+  const current = idx < images.length ? idx : 0;
 
-  // `idx` is a dependency on purpose: every slide change (automatic or manual)
-  // restarts the timer, so a swipe never gets snatched away a moment later.
+  // One timeout per slide: every change (automatic or manual) re-arms it, so
+  // the next automatic move is always a full interval away.
   useEffect(() => {
-    if (!multiple) return;
-    const t = setInterval(() => setIdx((i) => stepIndex(i, images.length, 1)), intervalMs);
-    return () => clearInterval(t);
-  }, [multiple, images.length, intervalMs, idx]);
+    if (!multiple || paused) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const t = setTimeout(
+      () => setIdx((i) => stepIndex(i < images.length ? i : 0, images.length, 1)),
+      intervalMs,
+    );
+    return () => clearTimeout(t);
+  }, [multiple, paused, images.length, intervalMs, idx, restart]);
 
   if (images.length === 0) return <>{fallback}</>;
 
@@ -123,26 +156,48 @@ export function ImageCarousel({
     : undefined;
 
   function go(delta: -1 | 1) {
-    setIdx((i) => stepIndex(i, images.length, delta));
+    setIdx((i) => stepIndex(i < images.length ? i : 0, images.length, delta));
+  }
+  function select(i: number) {
+    setIdx(i);
+    setRestart((n) => n + 1);
   }
 
-  // Swipe = pointer down, then up at least SWIPE_THRESHOLD_PX away horizontally.
-  // `touch-pan-y` leaves vertical scrolling to the browser, which cancels the
-  // pointer (and so the swipe) when it takes over a gesture. No pointer capture:
-  // it would swallow the clicks on the arrow and dot buttons underneath.
+  // Swipe = primary pointer down, then up at least SWIPE_THRESHOLD_PX away
+  // horizontally. `touch-pan-y touch-pinch-zoom` leaves vertical scrolling and
+  // pinching to the browser, which cancels the pointer (and so the swipe) when
+  // it takes over a gesture. No pointer capture: it would swallow the clicks on
+  // the arrow and dot buttons underneath.
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
-    dragStartX.current = e.clientX;
+    if (!e.isPrimary || e.button !== 0) return;
+    drag.current = { pointerId: e.pointerId, startX: e.clientX };
+    setDragging(true);
   }
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (dragStartX.current === null) return;
-    const step = swipeStep(e.clientX - dragStartX.current, SWIPE_THRESHOLD_PX);
-    dragStartX.current = null;
+    const d = drag.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    const step = swipeStep(e.clientX - d.startX, SWIPE_THRESHOLD_PX);
     if (step !== 0) go(step);
   }
   function cancelDrag() {
-    dragStartX.current = null;
+    drag.current = null;
+    setDragging(false);
+  }
+  function onPointerEnter(e: PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === 'mouse') setHovered(true);
+  }
+  function onPointerLeave(e: PointerEvent<HTMLDivElement>) {
+    cancelDrag();
+    if (e.pointerType === 'mouse') setHovered(false);
+  }
+  function onBlur(e: FocusEvent<HTMLDivElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
   }
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    // Leave browser shortcuts (Alt/Cmd+Left = Back) alone.
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       go(-1);
@@ -161,7 +216,10 @@ export function ImageCarousel({
         onPointerDown,
         onPointerUp,
         onPointerCancel: cancelDrag,
-        onPointerLeave: cancelDrag,
+        onPointerEnter,
+        onPointerLeave,
+        onFocus: () => setFocused(true),
+        onBlur,
         onKeyDown,
       }
     : {};
@@ -170,7 +228,7 @@ export function ImageCarousel({
     <div
       className={`relative overflow-hidden bg-ink ${aspect ? 'w-full' : className} ${
         interactive
-          ? 'touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80'
+          ? `touch-pan-y touch-pinch-zoom select-none rounded-none! ${FOCUS_CLASS} focus-visible:ring-inset focus-visible:ring-white/80`
           : ''
       }`}
       style={boxStyle}
@@ -190,13 +248,16 @@ export function ImageCarousel({
         <img
           key={img.url}
           src={img.url}
-          alt={alt}
+          alt={multiple ? `${alt} (photo ${i + 1} of ${images.length})` : alt}
+          // Faded-out slides are still in the accessibility tree; hide them so
+          // a screen reader hears one photo, not the whole stack.
+          aria-hidden={i !== current}
           loading="lazy"
           draggable={false}
           style={contain ? undefined : { objectPosition: focalPosition(img) }}
           className={`absolute inset-0 h-full w-full transition-opacity duration-700 ${
             contain ? 'object-contain' : 'object-cover'
-          } ${i === idx ? 'opacity-100' : 'opacity-0'}`}
+          } ${i === current ? 'opacity-100' : 'opacity-0'}`}
         />
       ))}
       {/* The scrim exists to keep `label` legible. Skip it when a contained
@@ -207,55 +268,44 @@ export function ImageCarousel({
       )}
       {interactive && (
         <>
-          <button
-            type="button"
-            onClick={() => go(-1)}
-            aria-label="Previous photo"
-            className={`${ARROW_CLASS} left-2`}
-          >
-            <Chevron dir="left" />
-          </button>
-          <button
-            type="button"
-            onClick={() => go(1)}
-            aria-label="Next photo"
-            className={`${ARROW_CLASS} right-2`}
-          >
-            <Chevron dir="right" />
-          </button>
+          <ArrowButton dir="left" onClick={() => go(-1)} />
+          <ArrowButton dir="right" onClick={() => go(1)} />
         </>
       )}
       {multiple && (
-        <div className="absolute bottom-2 right-2 flex gap-1">
+        // Interactive dots are bigger, so the row may wrap on phones rather
+        // than run into the label in the opposite corner.
+        <div
+          className={`absolute bottom-2 right-2 flex gap-1 ${
+            interactive ? 'max-w-[60%] flex-wrap justify-end' : ''
+          }`}
+        >
           {images.map((img, i) => {
-            const dot = (
-              <span
-                className={`block h-1.5 w-1.5 rounded-full transition-colors ${
-                  i === idx ? 'bg-white' : 'bg-white/40'
-                }`}
-              />
-            );
+            const dotClass = `block h-1.5 w-1.5 rounded-full transition-colors ${
+              i === current ? 'bg-white' : 'bg-white/40'
+            }`;
             return interactive ? (
+              // Not a tab stop: the region's arrow keys are the keyboard path,
+              // so a 12-photo hero doesn't cost 12 extra Tabs.
               <button
                 key={img.url}
                 type="button"
-                onClick={() => setIdx(i)}
+                tabIndex={-1}
+                onClick={() => select(i)}
                 aria-label={`Photo ${i + 1} of ${images.length}`}
-                aria-current={i === idx ? 'true' : undefined}
-                className="flex h-5 w-5 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-current={i === current ? 'true' : undefined}
+                className={`flex h-4 w-4 items-center justify-center rounded-full! ${FOCUS_CLASS}`}
               >
-                {dot}
+                <span className={dotClass} />
               </button>
             ) : (
-              <span key={img.url} className="flex h-1.5 w-1.5">
-                {dot}
-              </span>
+              <span key={img.url} className={dotClass} />
             );
           })}
         </div>
       )}
       {label && (
-        <span className="absolute bottom-2.5 left-3 text-[11px] font-bold uppercase tracking-wider text-white">
+        <span className="pointer-events-none absolute bottom-2.5 left-3 text-[11px] font-bold uppercase tracking-wider text-white">
           {label}
         </span>
       )}
