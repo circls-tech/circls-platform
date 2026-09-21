@@ -76,7 +76,11 @@ describe.skipIf(!runIntegration)('consumer visibility', () => {
     expect(await listPublicArenas(venueId)).toHaveLength(0);
     await db.update(arenas).set({ status: 'active' }).where(eq(arenas.id, arenaId));
     const arenaList = await listPublicArenas(venueId);
-    expect(arenaList.find((a) => a.id === arenaId)).toBeTruthy();
+    const arena = arenaList.find((a) => a.id === arenaId);
+    expect(arena).toBeTruthy();
+    // The arena-level slot duration is descriptive only — real slots carry their
+    // own duration — so the public payload must not advertise it.
+    expect(arena).not.toHaveProperty('slotDurationMin');
     // Now that a bookable arena exists, the venue appears in the public listing.
     const venueList = await listPublicVenues({ search: tag });
     expect(venueList.find((v) => v.id === venueId)).toBeTruthy();
