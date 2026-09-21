@@ -1,7 +1,15 @@
 import { z } from 'zod';
-import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
 
-/** Longest free-text answer we store. */
+/** Hard cap on questions per event (matches the tiers cap). */
+export const MAX_EVENT_QUESTIONS = 20;
+/** Most choices a single choice question may offer. */
+export const MAX_QUESTION_OPTIONS = 20;
+/** Longest option label. */
+export const MAX_OPTION_LENGTH = 120;
+/**
+ * Longest free-text answer we store. A multi-select answer is the ticked
+ * options joined together, so it may run a little longer than this.
+ */
 export const MAX_ANSWER_LENGTH = 2000;
 
 /**
@@ -17,7 +25,9 @@ export const registrationAnswerSchema = z.object({
   questionId: z.string().uuid(),
   answer: z.union([
     z.string().max(MAX_ANSWER_LENGTH),
-    z.array(z.string().max(MAX_ANSWER_LENGTH)).max(20),
+    // Each item must equal one of the question's options, so it is bounded
+    // like an option, not like a free-text answer.
+    z.array(z.string().max(MAX_OPTION_LENGTH)).max(MAX_QUESTION_OPTIONS),
   ]),
 });
 

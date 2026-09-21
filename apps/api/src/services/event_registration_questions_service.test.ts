@@ -6,8 +6,9 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 // Dynamic imports AFTER vi.mock (none here), gated so non-integration runs skip
 // the real DB import entirely.
 const { closeDb, db } = await import('../db/client.js');
-const { listQuestions, MULTI_ANSWER_SEPARATOR, replaceQuestions, saveRegistrationAnswers } =
-  await import('./event_registration_questions_service.js');
+const { listQuestions, replaceQuestions, saveRegistrationAnswers } = await import(
+  './event_registration_questions_service.js'
+);
 
 describe.skipIf(!runIntegration)('event_registration_questions_service', () => {
   let tenantId: string;
@@ -125,6 +126,10 @@ describe.skipIf(!runIntegration)('event_registration_questions_service', () => {
     await expect(save([{ questionId: single!.id, answer: ['S', 'M'] }])).rejects.toThrow(
       /takes a single answer/,
     );
+    // Shape is checked before emptiness: an empty list is still the wrong shape.
+    await expect(save([{ questionId: single!.id, answer: [] }])).rejects.toThrow(
+      /takes a single answer/,
+    );
     // Nothing ticked on a required question is "not answered".
     await expect(save([{ questionId: multi!.id, answer: [] }])).rejects.toThrow(
       /requires an answer/,
@@ -137,6 +142,7 @@ describe.skipIf(!runIntegration)('event_registration_questions_service', () => {
            where booking_id = ${bookingId} and question_id = ${multi!.id}`,
     )) as unknown as { answer: string }[];
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.answer).toBe(['Vegan', 'Nut-free'].join(MULTI_ANSWER_SEPARATOR));
+    // The literal format is what the help article and the CSV promise.
+    expect(rows[0]!.answer).toBe('Vegan, Nut-free');
   });
 });

@@ -6,16 +6,13 @@ import { ApiError } from '@/lib/api/client';
 import { type CurrencyCode, formatMoney } from '@/lib/currency';
 import type { EventQuestion, EventTier } from '@/lib/api/types';
 import { Button, Input, Modal } from '@/lib/ui';
-
-/** The string form of an answer for text inputs ('' when unanswered or multi-select). */
-function textAnswer(v: string | string[] | undefined): string {
-  return typeof v === 'string' ? v : '';
-}
-
-/** Unanswered: no text, or no option ticked. */
-function answerIsBlank(v: string | string[] | undefined): boolean {
-  return Array.isArray(v) ? v.length === 0 : !(v ?? '').trim();
-}
+import {
+  isAnswerBlank,
+  type RegistrationAnswers,
+  textAnswer,
+  toAnswerPayload,
+  toggleAnswerOption,
+} from '@/lib/events/answers';
 
 export interface AddRegistrationModalProps {
   open: boolean;
@@ -52,9 +49,7 @@ export function AddRegistrationModal({
   const [contact, setContact] = useState('');
   const [note, setNote] = useState('');
   const [qty, setQty] = useState<Record<string, number>>({});
-  // Free-text / single-choice answers are strings; a multi-select answer is the
-  // list of ticked options.
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [answers, setAnswers] = useState<RegistrationAnswers>({});
   const [error, setError] = useState<string | null>(null);
 
   const totalTickets = Object.values(qty).reduce((sum, n) => sum + n, 0);
@@ -74,17 +69,11 @@ export function AddRegistrationModal({
   }
 
   const missingRequired = questions
-    .filter((q) => q.required && answerIsBlank(answers[q.id]))
+    .filter((q) => q.required && isAnswerBlank(answers[q.id]))
     .map((q) => q.label);
 
   function toggleOption(questionId: string, option: string, on: boolean) {
-    setAnswers((p) => {
-      const current = p[questionId];
-      const chosen = new Set(Array.isArray(current) ? current : []);
-      if (on) chosen.add(option);
-      else chosen.delete(option);
-      return { ...p, [questionId]: [...chosen] };
-    });
+    setAnswers((p) => toggleAnswerOption(p, questionId, option, on));
   }
 
   async function submit(e: FormEvent) {
@@ -105,12 +94,7 @@ export function AddRegistrationModal({
           ...(contact.trim() ? { contact: contact.trim() } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
           lines,
-          answers: questions.flatMap((q): { questionId: string; answer: string | string[] }[] => {
-            const a = answers[q.id];
-            if (Array.isArray(a)) return a.length > 0 ? [{ questionId: q.id, answer: a }] : [];
-            const text = (a ?? '').trim();
-            return text ? [{ questionId: q.id, answer: text }] : [];
-          }),
+          answers: toAnswerPayload(questions, answers),
         },
       });
       close();

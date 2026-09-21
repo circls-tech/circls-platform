@@ -10,7 +10,7 @@ describe('registration question drafts', () => {
   it('sends options for both choice types and none for free text', () => {
     expect(
       questionsToPayload([
-        { label: ' Size ', type: 'select', required: true, optionsText: 'S, M ,L,' },
+        { label: ' Size ', type: 'select', required: true, optionsText: 'S, M ,L,S,' },
         { label: 'Diet', type: 'multiselect', required: false, optionsText: 'Vegan,Halal' },
         { label: 'Notes', type: 'text', required: false, optionsText: 'ignored' },
         { label: '  ', type: 'text', required: false, optionsText: '' },

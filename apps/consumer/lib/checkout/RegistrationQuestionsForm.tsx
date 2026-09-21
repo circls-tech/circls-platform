@@ -3,22 +3,22 @@
 import { useState } from 'react';
 import type { PublicEventQuestion } from '@/lib/api/types';
 import { Button, Input } from '@/lib/ui';
+import { Field, fieldAria } from '@/lib/ui/Input';
 import { isAnswerBlank, type RegistrationAnswers } from './answers';
 
 const FIELD_CLASS =
   'w-full rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-[var(--color-ink)]';
 
-/** Same label treatment as the shared Input, so every question reads alike. */
-const LABEL_CLASS = 'font-display text-xs font-bold uppercase tracking-wide text-ink';
-
-/** Label text the way Input formats it: the question, plus "(optional)" when it is. */
-function labelText(q: PublicEventQuestion): string {
-  return q.required ? q.label : `${q.label} (optional)`;
-}
+const TICK_HINT = 'Tick all that apply.';
 
 /** The string form of an answer for text inputs ('' when unanswered or multi-select). */
 function textValue(value: string | string[] | undefined): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** Label text the way Input formats it: the question, plus "(optional)" when it is. */
+function labelText(q: PublicEventQuestion): string {
+  return q.required ? q.label : `${q.label} (optional)`;
 }
 
 /**
@@ -27,7 +27,8 @@ function textValue(value: string | string[] | undefined): string {
  * per booking. Mirrors ContactDetailsForm — collected before the payment view,
  * handed back to CheckoutModal which sends them with the booking. Free-text
  * and single-choice questions hold a string; multi-select questions hold the
- * ticked options.
+ * ticked options. Every question is wrapped in the shared Field chrome so the
+ * three kinds read alike and errors are announced.
  */
 export function RegistrationQuestionsForm({
   questions,
@@ -78,61 +79,70 @@ export function RegistrationQuestionsForm({
         The organiser needs a few details for this event.
       </p>
       {serverError && <p className="text-xs font-semibold text-petal-red">{serverError}</p>}
-      {questions.map((q) =>
-        q.type === 'multiselect' ? (
-          <fieldset key={q.id} className="flex flex-col gap-1.5">
-            <legend className={`${LABEL_CLASS} mb-1.5`}>{labelText(q)}</legend>
-            <div className={`${FIELD_CLASS} flex flex-col gap-1.5`}>
-              {(q.options ?? []).map((o) => {
-                const chosen = values[q.id];
-                const checked = Array.isArray(chosen) && chosen.includes(o);
-                return (
-                  <label key={o} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => toggle(q.id, o, e.target.checked)}
-                      className="h-4 w-4 accent-[var(--color-ink)]"
-                    />
+      {questions.map((q) => {
+        const id = `question-${q.id}`;
+        const error = errors[q.id];
+        if (q.type === 'multiselect') {
+          return (
+            <Field key={q.id} id={id} group label={labelText(q)} hint={TICK_HINT} error={error}>
+              <div
+                id={id}
+                role="group"
+                aria-labelledby={`${id}-label`}
+                {...fieldAria(id, error, TICK_HINT)}
+                className={`${FIELD_CLASS} flex flex-col gap-1.5`}
+              >
+                {(q.options ?? []).map((o) => {
+                  const chosen = values[q.id];
+                  const checked = Array.isArray(chosen) && chosen.includes(o);
+                  return (
+                    <label key={o} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => toggle(q.id, o, e.target.checked)}
+                        className="h-4 w-4 accent-[var(--color-ink)]"
+                      />
+                      {o}
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+          );
+        }
+        if (q.type === 'select') {
+          return (
+            <Field key={q.id} id={id} label={labelText(q)} error={error}>
+              <select
+                id={id}
+                value={textValue(values[q.id])}
+                onChange={(e) => set(q.id, e.target.value)}
+                {...fieldAria(id, error)}
+                className={FIELD_CLASS}
+              >
+                <option value="">Select…</option>
+                {(q.options ?? []).map((o) => (
+                  <option key={o} value={o}>
                     {o}
-                  </label>
-                );
-              })}
-            </div>
-            {errors[q.id] ? (
-              <p className="text-xs font-semibold text-petal-red">{errors[q.id]}</p>
-            ) : (
-              <p className="text-xs text-text-muted">Tick all that apply.</p>
-            )}
-          </fieldset>
-        ) : q.type === 'select' ? (
-          <div key={q.id} className="flex flex-col gap-1.5">
-            <label className={LABEL_CLASS}>{labelText(q)}</label>
-            <select
-              value={textValue(values[q.id])}
-              onChange={(e) => set(q.id, e.target.value)}
-              className={FIELD_CLASS}
-            >
-              <option value="">Select…</option>
-              {(q.options ?? []).map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-            {errors[q.id] && <p className="text-xs font-semibold text-petal-red">{errors[q.id]}</p>}
-          </div>
-        ) : (
+                  </option>
+                ))}
+              </select>
+            </Field>
+          );
+        }
+        return (
           <Input
             key={q.id}
+            id={id}
             label={labelText(q)}
             value={textValue(values[q.id])}
             onChange={(e) => set(q.id, e.target.value)}
             maxLength={2000}
-            {...(errors[q.id] ? { error: errors[q.id] } : {})}
+            {...(error ? { error } : {})}
           />
-        ),
-      )}
+        );
+      })}
       <Button className="mt-1" onClick={onContinue}>
         Continue
       </Button>

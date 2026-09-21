@@ -10,7 +10,6 @@ import {
   type QuestionType,
 } from '@/lib/events/questions';
 
-const TYPE_ORDER: QuestionType[] = ['text', 'select', 'multiselect'];
 
 /**
  * Registration-questions builder: the organiser's custom questions consumers
@@ -73,7 +72,7 @@ export function EventQuestionsEditor({
                 onChange={(e) => update(i, { type: e.target.value as QuestionType })}
                 className="rounded border border-gray-300 bg-white px-2 py-2 text-sm font-normal text-slate-900"
               >
-                {TYPE_ORDER.map((t) => (
+                {(Object.keys(QUESTION_TYPE_LABELS) as QuestionType[]).map((t) => (
                   <option key={t} value={t}>
                     {QUESTION_TYPE_LABELS[t]}
                   </option>

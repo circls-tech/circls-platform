@@ -1,3 +1,4 @@
+import type { BookEventInput } from '@/lib/api/consumer';
 import type { PublicEventQuestion } from '@/lib/api/types';
 
 /**
@@ -7,11 +8,8 @@ import type { PublicEventQuestion } from '@/lib/api/types';
  */
 export type RegistrationAnswers = Record<string, string | string[]>;
 
-/** One line of the booking call's `answers` field. */
-export interface AnswerPayloadLine {
-  questionId: string;
-  answer: string | string[];
-}
+/** The booking call's `answers` field, as the API client declares it. */
+type AnswerPayload = NonNullable<BookEventInput['answers']>;
 
 /** True when the question has no usable answer yet. */
 export function isAnswerBlank(value: string | string[] | undefined): boolean {
@@ -26,8 +24,8 @@ export function isAnswerBlank(value: string | string[] | undefined): boolean {
 export function toAnswerPayload(
   questions: PublicEventQuestion[],
   answers: RegistrationAnswers | null,
-): AnswerPayloadLine[] {
-  return questions.flatMap((q): AnswerPayloadLine[] => {
+): AnswerPayload {
+  return questions.flatMap((q): AnswerPayload => {
     const value = answers?.[q.id];
     if (Array.isArray(value)) {
       return value.length > 0 ? [{ questionId: q.id, answer: value }] : [];

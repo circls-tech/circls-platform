@@ -179,7 +179,12 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     } catch (e) {
       // A rejected answer is fixable — reopen the questions form (pre-filled)
       // with the server's message instead of dead-ending on the error screen.
-      if (e instanceof ApiError && (e.code === 'answer_required' || e.code === 'invalid_answer_option')) {
+      if (
+        e instanceof ApiError &&
+        (e.code === 'answer_required' ||
+          e.code === 'invalid_answer_option' ||
+          e.code === 'invalid_answer_shape')
+      ) {
         setAnswersError(e.message);
         setAnswers(null);
         setPhase({ kind: 'ready' });

@@ -16,12 +16,11 @@ import {
 } from '../db/schema/event_registration_questions.js';
 import { eventRegistrationAnswers } from '../db/schema/event_registration_answers.js';
 import { BadRequest } from '../lib/errors.js';
+import { MAX_EVENT_QUESTIONS } from '../lib/registration_answers_schema.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Database = typeof db | Tx;
 
-/** Hard cap on questions per event (matches the tiers cap). */
-export const MAX_EVENT_QUESTIONS = 20;
 
 export interface RegistrationQuestionInput {
   label: string;
@@ -53,7 +52,7 @@ export function isChoiceQuestionType(type: RegistrationQuestionType): boolean {
  * the registrations table, the CSV export and the booking page render them
  * as-is.
  */
-export const MULTI_ANSWER_SEPARATOR = ', ';
+const MULTI_ANSWER_SEPARATOR = ', ';
 
 /** Live (non-deleted) questions for an event, ordered for display. */
 export async function listQuestions(
@@ -178,6 +177,8 @@ export async function saveRegistrationAnswers(
  * check in saveRegistrationAnswers then rejects.
  */
 function normaliseAnswer(q: EventRegistrationQuestion, raw: string | string[]): string {
+  // The route de-duplicates options on write; the Set only guards rows
+  // created before it did.
   const options = [...new Set(q.options ?? [])];
   const notAnOption = () =>
     new BadRequest(`Answer to "${q.label}" must be one of its options`, 'invalid_answer_option', {
@@ -193,7 +194,7 @@ function normaliseAnswer(q: EventRegistrationQuestion, raw: string | string[]): 
     return options.filter((o) => chosen.has(o)).join(MULTI_ANSWER_SEPARATOR);
   }
   if (Array.isArray(raw)) {
-    throw new BadRequest(`"${q.label}" takes a single answer`, 'bad_request', {
+    throw new BadRequest(`"${q.label}" takes a single answer`, 'invalid_answer_shape', {
       questionId: q.id,
     });
   }

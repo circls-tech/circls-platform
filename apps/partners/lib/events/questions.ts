@@ -31,12 +31,16 @@ export function emptyQuestion(): QuestionDraft {
   return { label: '', type: 'text', required: false, optionsText: '' };
 }
 
-/** The choices typed into a draft, trimmed, blanks dropped. */
+/** The choices typed into a draft: trimmed, blanks and repeats dropped. */
 export function draftOptions(q: Pick<QuestionDraft, 'optionsText'>): string[] {
-  return q.optionsText
-    .split(',')
-    .map((o) => o.trim())
-    .filter((o) => o.length > 0);
+  return [
+    ...new Set(
+      q.optionsText
+        .split(',')
+        .map((o) => o.trim())
+        .filter((o) => o.length > 0),
+    ),
+  ];
 }
 
 /** Convert drafts to the API payload shape, dropping rows with a blank label. */

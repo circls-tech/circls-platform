@@ -33,8 +33,12 @@ import {
 } from '../services/event_change_requests_service.js';
 import type { EventChangeRequestPatch } from '../db/schema/event_change_requests.js';
 import type { TierInput } from '../services/event_tiers_service.js';
-import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
-import { registrationAnswersField } from '../lib/registration_answers_schema.js';
+import {
+  MAX_EVENT_QUESTIONS,
+  MAX_OPTION_LENGTH,
+  MAX_QUESTION_OPTIONS,
+  registrationAnswersField,
+} from '../lib/registration_answers_schema.js';
 import {
   postBookingRedirectSchema,
   toPostBookingRedirect,
@@ -94,7 +98,18 @@ const questionSchema = z
     label: z.string().min(1).max(300),
     type: z.enum(['text', 'select', 'multiselect']).default('text'),
     required: z.boolean().default(false),
-    options: z.array(z.string().min(1).max(120)).max(20).optional(),
+    // Trimmed and de-duplicated: answers are matched by exact text, and a
+    // multi-select answer is stored as the ticked options joined with ", ",
+    // so an option may not contain a comma either.
+    options: z
+      .array(z.string().trim().min(1).max(MAX_OPTION_LENGTH))
+      .max(MAX_QUESTION_OPTIONS)
+      .transform((opts) => [...new Set(opts)])
+      .optional(),
+  })
+  .refine((q) => !q.options?.some((o) => o.includes(',')), {
+    message: "Options can't contain commas",
+    path: ['options'],
   })
   .refine((q) => q.type === 'text' || (q.options?.length ?? 0) >= 2, {
     message: 'Choice questions need at least 2 options',

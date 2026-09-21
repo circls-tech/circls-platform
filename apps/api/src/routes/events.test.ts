@@ -235,6 +235,23 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
       `)) as unknown as Array<{ type: string; options: string[] }>;
       expect(rows[0]).toMatchObject({ type: 'multiselect', options: ['Vegan', 'Halal'] });
     });
+
+    it('trims and de-duplicates options, and refuses commas in them', async () => {
+      const res = await create([
+        { label: 'Diet', type: 'multiselect', required: false, options: [' Vegan', 'Vegan', 'Halal '] },
+      ]);
+      expect(res.statusCode).toBe(200);
+      const { id } = res.json() as { id: string };
+      const rows = (await db.execute(sql`
+        select options from event_registration_questions where event_id = ${id}
+      `)) as unknown as Array<{ options: string[] }>;
+      expect(rows[0]!.options).toEqual(['Vegan', 'Halal']);
+
+      const comma = await create([
+        { label: 'Diet', type: 'select', required: false, options: ['Rice, beans', 'Rice'] },
+      ]);
+      expect(comma.statusCode).toBe(400);
+    });
   });
 
   describe('external registrations', () => {
