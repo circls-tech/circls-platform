@@ -185,11 +185,16 @@ export interface PublicArena {
   name: string;
   sport: string | null;
   capacity: number | null;
-  slotDurationMin: number;
   tags: string[];
 }
 
-/** Approved arenas for an approved + tenant-active venue. */
+/**
+ * Approved arenas for an approved + tenant-active venue.
+ *
+ * Deliberately omits the arena's `slotDurationMin` column: bookable slots come
+ * from release / weekly-schedule cells that carry their own duration, so the
+ * arena-level value is descriptive only and was misleading in public payloads.
+ */
 export async function listPublicArenas(venueId: string): Promise<PublicArena[]> {
   await assertVenueVisible(venueId);
   const rows = await db
@@ -201,7 +206,6 @@ export async function listPublicArenas(venueId: string): Promise<PublicArena[]> 
     name: a.name,
     sport: a.sport,
     capacity: a.capacity,
-    slotDurationMin: a.slotDurationMin,
     tags: a.tags,
   }));
 }

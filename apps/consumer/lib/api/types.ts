@@ -107,7 +107,6 @@ export interface PublicArena {
   name: string;
   sport: string | null;
   capacity: number | null;
-  slotDurationMin: number;
   tags: string[];
 }
 
