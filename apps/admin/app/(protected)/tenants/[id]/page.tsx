@@ -13,11 +13,12 @@ import {
   useUpdateTenantBilling,
 } from '@/lib/api/queries';
 import type {
+  AdminAuditLogItem,
   AdminTenantDetail,
   AdminTenantEventBillingItem,
-  TenantAuditLogItem,
 } from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
+import { EventsTab, MembershipsTab, VenuesTab } from './listings_tabs';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -33,10 +34,13 @@ function fmtIST(iso: string | null | undefined): string {
   return IST_FMT.format(new Date(iso));
 }
 
-type Tab = 'overview' | 'members' | 'billing' | 'audit';
+type Tab = 'overview' | 'members' | 'venues' | 'events' | 'memberships' | 'billing' | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'members', label: 'Members' },
+  { id: 'venues', label: 'Venues' },
+  { id: 'events', label: 'Events' },
+  { id: 'memberships', label: 'Memberships' },
   { id: 'billing', label: 'Billing' },
   { id: 'audit', label: 'Audit timeline' },
 ];
@@ -156,6 +160,9 @@ export default function TenantDetailPage() {
 
       {tab === 'overview' && <OverviewTab data={data} />}
       {tab === 'members' && <MembersTab data={data} />}
+      {tab === 'venues' && <VenuesTab tenantId={t.id} />}
+      {tab === 'events' && <EventsTab tenantId={t.id} />}
+      {tab === 'memberships' && <MembershipsTab tenantId={t.id} />}
       {tab === 'billing' && <BillingTab data={data} />}
       {tab === 'audit' && <AuditTab tenantId={t.id} />}
     </div>
@@ -600,7 +607,7 @@ function EventOverrideRow({
 function AuditTab({ tenantId }: { tenantId: string }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useTenantAuditLog(tenantId);
-  const rows: TenantAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+  const rows: AdminAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
   if (isLoading) {
     return <p className="text-sm text-slate-400">Loading…</p>;

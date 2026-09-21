@@ -1,11 +1,20 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { and, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client.js';
-import { events, tenantMembers, tenants, users, venues } from '../db/schema/index.js';
+import {
+  events,
+  memberships,
+  membershipTiers,
+  tenantMembers,
+  tenants,
+  users,
+  venues,
+} from '../db/schema/index.js';
 import { writeAudit } from '../lib/audit.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
+import { currencyForCountry } from '../lib/gateway.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -37,6 +46,12 @@ interface AdminTenantListPage {
 function encodeCursor(createdAt: string, id: string): string {
   return `${createdAt}|${id}`;
 }
+/** A string value out of a legacy `address_json` blob, or null. */
+function stringField(blob: Record<string, unknown> | null, key: string): string | null {
+  const v = blob?.[key];
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
 function decodeCursor(cursor: string): { ts: string; id: string } | null {
   const idx = cursor.lastIndexOf('|');
   if (idx === -1) return null;
@@ -73,11 +88,38 @@ const eventsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   /**
    * 'active' (the default) is what an org still has in flight: draft, awaiting
-   * review or live, and not archived. 'all' includes cancelled, rejected,
-   * ended and archived events.
+   * review or live, and not archived — the Billing tab's view. The other three
+   * mirror the partner portal's event shelves: 'unarchived' is everything the
+   * partner still sees on their working list (any status, not archived),
+   * 'archived' is their archive shelf, and 'all' is both.
    */
-  scope: z.enum(['active', 'all']).optional(),
+  scope: z.enum(['active', 'unarchived', 'archived', 'all']).optional(),
 });
+
+/**
+ * Venue shelves, as the partner portal splits them: 'active' is live and
+ * awaiting review, 'closed' is what the partner closed (`suspended`) plus what
+ * Circls rejected — neither is on the consumer portal.
+ */
+const venuesListQuerySchema = z.object({
+  shelf: z.enum(['active', 'closed', 'all']).optional(),
+});
+
+/** Membership shelves: 'active' is live and awaiting review; 'inactive' is
+ *  what the partner switched off plus what Circls rejected. */
+const membershipsListQuerySchema = z.object({
+  shelf: z.enum(['active', 'inactive', 'all']).optional(),
+});
+
+const VENUE_STATUS_BY_SHELF = {
+  active: ['pending_review', 'active'],
+  closed: ['suspended', 'rejected'],
+} as const;
+
+const MEMBERSHIP_STATUS_BY_SHELF = {
+  active: ['pending_review', 'active'],
+  inactive: ['inactive', 'rejected'],
+} as const;
 
 /** All-optional patch of the tenant billing knobs; must not be empty. */
 const tenantBillingBodySchema = z
@@ -428,9 +470,12 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // ── GET /v1/admin/tenants/:id/events — events for the Billing tab ──────────
-  // Cursor-paginated (created_at, id) like the tenants list; carries the
-  // per-event billing overrides so the admin can edit them inline.
+  // ── GET /v1/admin/tenants/:id/events — the tenant page's event lists ──────
+  // Cursor-paginated (created_at, id) like the tenants list. Serves both the
+  // Events tab (a plain listing) and the Billing tab, so rows carry the
+  // per-event billing overrides; those are already readable on the tenant
+  // detail, which is why the read cap is enough here (editing stays behind
+  // the billing cap on the PATCH below).
   app.get(
     '/v1/admin/tenants/:id/events',
     { preHandler: requireAuth },
@@ -438,7 +483,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const platformTenantId = await getPlatformTenantId();
       const ctx = await requireTenantMembership(user.id, platformTenantId);
-      assertCap(ctx, 'admin.tenants.billing');
+      assertCap(ctx, 'admin.tenants.read');
 
       const params = tenantIdParamSchema.safeParse(req.params);
       if (!params.success) {
@@ -451,7 +496,8 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const limit = Math.min(query.data.limit ?? 50, 200);
 
       const conditions = [eq(events.tenantId, params.data.id)];
-      if ((query.data.scope ?? 'active') === 'active') {
+      const scope = query.data.scope ?? 'active';
+      if (scope === 'active') {
         // Live or in flight, and not shelved. The archived check matters for
         // drafts: everything else a partner can archive has already left these
         // three statuses, but an abandoned draft they filed away would
@@ -460,6 +506,10 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           sql`${events.status} in ('draft', 'pending_review', 'published')
               and ${events.archivedAt} is null`,
         );
+      } else if (scope === 'unarchived') {
+        conditions.push(isNull(events.archivedAt));
+      } else if (scope === 'archived') {
+        conditions.push(isNotNull(events.archivedAt));
       }
       if (query.data.cursor) {
         const decoded = decodeCursor(query.data.cursor);
@@ -481,7 +531,10 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           endsAt: events.endsAt,
           status: events.status,
           archivedAt: events.archivedAt,
+          venueId: events.venueId,
           venueName: venues.name,
+          seriesId: events.seriesId,
+          tzName: sql<string | null>`coalesce(${events.tzName}, ${venues.tzName})`,
           partnerCommissionBps: events.partnerCommissionBps,
           consumerCommissionBps: events.consumerCommissionBps,
           advancePayoutBps: events.advancePayoutBps,
@@ -504,7 +557,10 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           endsAt: e.endsAt ? new Date(e.endsAt).toISOString() : null,
           status: e.status,
           archived: e.archivedAt !== null,
+          venueId: e.venueId ?? null,
           venueName: e.venueName ?? null,
+          seriesId: e.seriesId ?? null,
+          tzName: e.tzName ?? null,
           partnerCommissionBps: e.partnerCommissionBps,
           consumerCommissionBps: e.consumerCommissionBps,
           advancePayoutBps: e.advancePayoutBps,
@@ -512,6 +568,153 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         nextCursor:
           hasMore && last ? encodeCursor(new Date(last.createdAt as unknown as string).toISOString(), last.id) : null,
       };
+    },
+  );
+
+  // ── GET /v1/admin/tenants/:id/venues — the tenant page's Venues tab ───────
+  // A flat list: an org has a handful of venues, never enough to page.
+  app.get(
+    '/v1/admin/tenants/:id/venues',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.read');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+      }
+      const query = venuesListQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        throw new BadRequest('Invalid query', 'bad_request', { issues: query.error.issues });
+      }
+      const shelf = query.data.shelf ?? 'active';
+
+      const conditions = [eq(venues.tenantId, params.data.id)];
+      if (shelf !== 'all') {
+        conditions.push(inArray(venues.status, [...VENUE_STATUS_BY_SHELF[shelf]]));
+      }
+
+      const rows = await db
+        .select({
+          id: venues.id,
+          name: venues.name,
+          status: venues.status,
+          tzName: venues.tzName,
+          city: venues.city,
+          state: venues.state,
+          country: venues.country,
+          addressJson: venues.addressJson,
+          lat: venues.lat,
+          lng: venues.lng,
+          tags: venues.tags,
+          createdAt: venues.createdAt,
+        })
+        .from(venues)
+        .where(and(...conditions))
+        .orderBy(desc(venues.createdAt), desc(venues.id));
+
+      return rows.map((v) => ({
+        id: v.id,
+        name: v.name,
+        status: v.status,
+        tzName: v.tzName,
+        // Structured columns first; older venues only have the address blob.
+        city: v.city ?? stringField(v.addressJson, 'city'),
+        state: v.state ?? stringField(v.addressJson, 'state'),
+        country: v.country,
+        lat: v.lat,
+        lng: v.lng,
+        tags: v.tags,
+        createdAt: new Date(v.createdAt as unknown as string).toISOString(),
+      }));
+    },
+  );
+
+  // ── GET /v1/admin/tenants/:id/memberships — the tenant page's Memberships tab
+  // Flat like venues. Tiers are summarised (count + price range) the way the
+  // partner portal's list does it; the full tier detail is not needed here.
+  app.get(
+    '/v1/admin/tenants/:id/memberships',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.read');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+      }
+      const query = membershipsListQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        throw new BadRequest('Invalid query', 'bad_request', { issues: query.error.issues });
+      }
+      const shelf = query.data.shelf ?? 'active';
+
+      const conditions = [eq(memberships.tenantId, params.data.id)];
+      if (shelf !== 'all') {
+        conditions.push(inArray(memberships.status, [...MEMBERSHIP_STATUS_BY_SHELF[shelf]]));
+      }
+
+      // Price range over the plan's live tiers. A plan created before tiers
+      // existed has none, so its legacy price column is the fallback below.
+      const tierStats = db
+        .select({
+          membershipId: membershipTiers.membershipId,
+          tierCount: sql<number>`count(*)::int`.as('tier_count'),
+          minPaise: sql<number>`min(${membershipTiers.pricePaise})::bigint`.as('min_paise'),
+          maxPaise: sql<number>`max(${membershipTiers.pricePaise})::bigint`.as('max_paise'),
+        })
+        .from(membershipTiers)
+        .where(isNull(membershipTiers.deletedAt))
+        .groupBy(membershipTiers.membershipId)
+        .as('tier_stats');
+
+      const rows = await db
+        .select({
+          id: memberships.id,
+          name: memberships.name,
+          description: memberships.description,
+          status: memberships.status,
+          venueId: memberships.venueId,
+          venueName: venues.name,
+          venueCountry: venues.country,
+          tenantCountry: tenants.country,
+          pricePaise: memberships.pricePaise,
+          tierCount: tierStats.tierCount,
+          minPaise: tierStats.minPaise,
+          maxPaise: tierStats.maxPaise,
+          createdAt: memberships.createdAt,
+        })
+        .from(memberships)
+        .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+        .leftJoin(venues, eq(venues.id, memberships.venueId))
+        .leftJoin(tierStats, eq(tierStats.membershipId, memberships.id))
+        .where(and(...conditions))
+        .orderBy(desc(memberships.createdAt), desc(memberships.id));
+
+      return rows.map((m) => {
+        const tierCount = m.tierCount ?? 0;
+        return {
+          id: m.id,
+          name: m.name,
+          description: m.description,
+          status: m.status,
+          venueId: m.venueId ?? null,
+          venueName: m.venueName ?? null,
+          // Same rule as the partner portal: a venue-scoped plan is priced in
+          // the venue's currency, an org-wide one in the tenant's.
+          currency: currencyForCountry(m.venueCountry ?? m.tenantCountry),
+          tierCount,
+          minPricePaise: tierCount > 0 ? Number(m.minPaise) : Number(m.pricePaise),
+          maxPricePaise: tierCount > 0 ? Number(m.maxPaise) : Number(m.pricePaise),
+          createdAt: new Date(m.createdAt as unknown as string).toISOString(),
+        };
+      });
     },
   );
 

@@ -666,6 +666,152 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(row).toBeDefined();
     expect(row!['archived']).toBe(true);
 
+    // The partner-portal shelves: archived lists it, unarchived does not.
+    expect((await listed('?scope=archived')).some((r) => r['id'] === eventId)).toBe(true);
+    expect((await listed('?scope=unarchived')).some((r) => r['id'] === eventId)).toBe(false);
+
     await db.execute(sql`delete from events where id = ${eventId}::uuid`);
+  });
+
+  it('unarchived scope keeps an ended event that active drops', async () => {
+    const evRows = await db.execute<{ id: string }>(sql`
+      INSERT INTO events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name)
+      VALUES (${tenantAId}::uuid, 'Ended Meetup', now() - interval '9 days',
+              now() - interval '9 days' + interval '2 hours', 'completed',
+              '{"city":"Nagpur"}'::jsonb, 'Asia/Kolkata')
+      RETURNING id
+    `);
+    const eventId = ((evRows as unknown as { id: string }[])[0]!).id;
+
+    const listed = async (query: string) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/events${query}`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { rows: Array<Record<string, unknown>> }).rows;
+    };
+
+    expect((await listed('?scope=active')).some((r) => r['id'] === eventId)).toBe(false);
+    const row = (await listed('?scope=unarchived')).find((r) => r['id'] === eventId);
+    expect(row).toBeDefined();
+    expect(row!['archived']).toBe(false);
+    expect(row!['venueId']).toBeNull();
+    expect(row!['seriesId']).toBeNull();
+    expect(row!['tzName']).toBe('Asia/Kolkata');
+    expect((await listed('?scope=archived')).some((r) => r['id'] === eventId)).toBe(false);
+
+    const bad = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantAId}/events?scope=bogus`,
+      headers: bearer('padmin'),
+    });
+    expect(bad.statusCode).toBe(400);
+
+    await db.execute(sql`delete from events where id = ${eventId}::uuid`);
+  });
+
+  it('venues — shelves split live/pending from closed/rejected; non-admin 403', async () => {
+    const vRows = await db.execute<{ id: string; status: string }>(sql`
+      INSERT INTO venues (tenant_id, name, status, city, state, tags)
+      VALUES
+        (${tenantAId}::uuid, 'Shelf Live',     'active',         'Nagpur', 'MH', '{indoor}'),
+        (${tenantAId}::uuid, 'Shelf Pending',  'pending_review', NULL,     NULL, '{}'),
+        (${tenantAId}::uuid, 'Shelf Closed',   'suspended',      NULL,     NULL, '{}'),
+        (${tenantAId}::uuid, 'Shelf Rejected', 'rejected',       NULL,     NULL, '{}')
+      RETURNING id, status
+    `);
+    const inserted = vRows as unknown as { id: string; status: string }[];
+    const ids = new Set(inserted.map((v) => v.id));
+    const byStatus = (s: string) => inserted.find((v) => v.status === s)!.id;
+
+    const listed = async (query: string) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/venues${query}`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as Array<Record<string, unknown>>).filter((r) => ids.has(r['id'] as string));
+    };
+
+    const active = await listed('');
+    expect(active.map((r) => r['status']).sort()).toEqual(['active', 'pending_review']);
+    const live = active.find((r) => r['id'] === byStatus('active'))!;
+    expect(live['city']).toBe('Nagpur');
+    expect(live['state']).toBe('MH');
+    expect(live['tags']).toEqual(['indoor']);
+
+    const closed = await listed('?shelf=closed');
+    expect(closed.map((r) => r['status']).sort()).toEqual(['rejected', 'suspended']);
+
+    expect((await listed('?shelf=all')).length).toBe(4);
+
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantAId}/venues`,
+      headers: bearer('owner'),
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    await db.execute(sql`delete from venues where id in (${sql.join([...ids].map((id) => sql`${id}::uuid`), sql`, `)})`);
+  });
+
+  it('memberships — shelves, tier summary and currency', async () => {
+    const mRows = await db.execute<{ id: string; status: string }>(sql`
+      INSERT INTO memberships (tenant_id, name, duration_days, price_paise, status)
+      VALUES
+        (${tenantAId}::uuid, 'Tiered Plan',  30, 0,     'active'),
+        (${tenantAId}::uuid, 'Legacy Plan',  30, 70000, 'pending_review'),
+        (${tenantAId}::uuid, 'Off Plan',     30, 0,     'inactive'),
+        (${tenantAId}::uuid, 'Bounced Plan', 30, 0,     'rejected')
+      RETURNING id, status
+    `);
+    const inserted = mRows as unknown as { id: string; status: string }[];
+    const ids = new Set(inserted.map((m) => m.id));
+    const tieredId = inserted.find((m) => m.status === 'active')!.id;
+    const legacyId = inserted.find((m) => m.status === 'pending_review')!.id;
+    await db.execute(sql`
+      INSERT INTO membership_tiers (membership_id, tenant_id, name, duration_days, price_paise, deleted_at)
+      VALUES
+        (${tieredId}::uuid, ${tenantAId}::uuid, 'Monthly', 30,  50000,  NULL),
+        (${tieredId}::uuid, ${tenantAId}::uuid, 'Yearly',  365, 200000, NULL),
+        (${tieredId}::uuid, ${tenantAId}::uuid, 'Gone',    30,  1,      now())
+    `);
+
+    const listed = async (query: string) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/memberships${query}`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as Array<Record<string, unknown>>).filter((r) => ids.has(r['id'] as string));
+    };
+
+    const active = await listed('');
+    expect(active.map((r) => r['status']).sort()).toEqual(['active', 'pending_review']);
+
+    // Deleted tiers are left out of the count and the range.
+    const tiered = active.find((r) => r['id'] === tieredId)!;
+    expect(tiered['tierCount']).toBe(2);
+    expect(tiered['minPricePaise']).toBe(50000);
+    expect(tiered['maxPricePaise']).toBe(200000);
+    expect(tiered['venueId']).toBeNull();
+    // Tenant A was created with country 'India'.
+    expect(tiered['currency']).toBe('INR');
+
+    // No tiers: the plan's own legacy price stands in.
+    const legacy = active.find((r) => r['id'] === legacyId)!;
+    expect(legacy['tierCount']).toBe(0);
+    expect(legacy['minPricePaise']).toBe(70000);
+    expect(legacy['maxPricePaise']).toBe(70000);
+
+    const inactive = await listed('?shelf=inactive');
+    expect(inactive.map((r) => r['status']).sort()).toEqual(['inactive', 'rejected']);
+    expect((await listed('?shelf=all')).length).toBe(4);
+
+    await db.execute(sql`delete from memberships where id in (${sql.join([...ids].map((id) => sql`${id}::uuid`), sql`, `)})`);
   });
 });
