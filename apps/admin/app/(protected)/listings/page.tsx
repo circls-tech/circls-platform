@@ -1,5 +1,6 @@
 'use client';
 
+import { formatPrice } from '@/lib/money';
 import { useMemo, useState } from 'react';
 import {
   useAdminChangeRequestDetail,
@@ -44,12 +45,6 @@ function fmtDate(iso: string | null | undefined): string {
 function fmtDatetime(iso: string | null | undefined): string {
   if (!iso) return '—';
   return IST_DATETIME.format(new Date(iso));
-}
-
-function fmtRupees(paise: number | null | undefined): string {
-  if (paise == null) return '—';
-  if (paise === 0) return 'Free';
-  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 function fmtAddress(addressJson: Record<string, unknown> | null | undefined): string {
@@ -164,7 +159,7 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
         {detail.venueId && <Field label="Venue" value={detail.venueName} />}
         <Field label="Starts" value={fmtDatetime(detail.startsAt)} />
         <Field label="Ends" value={fmtDatetime(detail.endsAt)} />
-        <Field label="Price" value={fmtRupees(detail.pricePaise)} />
+        <Field label="Price" value={formatPrice(detail.pricePaise)} />
         <Field label="Capacity" value={detail.capacity != null ? String(detail.capacity) : 'Unlimited'} />
         {!detail.venueId && <Field label="Address" value={fmtAddress(detail.addressJson)} />}
         {detail.tzName && <Field label="Timezone" value={detail.tzName} />}
@@ -187,7 +182,7 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
           label="Scope"
           value={detail.venueId ? `Venue: ${detail.venueName ?? detail.venueId}` : 'Tenant-wide'}
         />
-        <Field label="Price" value={fmtRupees(detail.pricePaise)} />
+        <Field label="Price" value={formatPrice(detail.pricePaise)} />
         <Field
           label="Duration"
           value={detail.durationDays != null ? `${detail.durationDays} days` : null}
@@ -415,7 +410,7 @@ function ChangeDetailContent({ detail }: { detail: AdminChangeRequestDetail }) {
                     return (
                       <tr key={t.id} className="text-rose-700">
                         <td className="py-1.5 pr-3 line-through">{t.name}</td>
-                        <td className="py-1.5 pr-3 line-through">{fmtRupees(t.pricePaise)}</td>
+                        <td className="py-1.5 pr-3 line-through">{formatPrice(t.pricePaise)}</td>
                         <td className="py-1.5 pr-3 line-through">{t.capacity ?? '∞'}</td>
                         <td className="py-1.5">Removed {t.sold > 0 ? `— blocked, ${t.sold} sold` : ''}</td>
                       </tr>
@@ -440,11 +435,11 @@ function ChangeDetailContent({ detail }: { detail: AdminChangeRequestDetail }) {
                       <td className="py-1.5 pr-3">
                         {p.pricePaise !== t.pricePaise ? (
                           <>
-                            <span className="text-slate-400 line-through">{fmtRupees(t.pricePaise)}</span>{' '}
-                            <span className="font-medium">{fmtRupees(p.pricePaise)}</span>
+                            <span className="text-slate-400 line-through">{formatPrice(t.pricePaise)}</span>{' '}
+                            <span className="font-medium">{formatPrice(p.pricePaise)}</span>
                           </>
                         ) : (
-                          fmtRupees(t.pricePaise)
+                          formatPrice(t.pricePaise)
                         )}
                       </td>
                       <td className="py-1.5 pr-3">
@@ -468,7 +463,7 @@ function ChangeDetailContent({ detail }: { detail: AdminChangeRequestDetail }) {
                   .map((t, i) => (
                     <tr key={`new-${i}`} className="text-emerald-700">
                       <td className="py-1.5 pr-3 font-medium">{t.name}</td>
-                      <td className="py-1.5 pr-3">{fmtRupees(t.pricePaise)}</td>
+                      <td className="py-1.5 pr-3">{formatPrice(t.pricePaise)}</td>
                       <td className="py-1.5 pr-3">{t.capacity ?? '∞'}</td>
                       <td className="py-1.5">Added</td>
                     </tr>

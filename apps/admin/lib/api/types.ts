@@ -88,7 +88,15 @@ export interface AdminTenantBillingPatch {
   advancePayoutBps?: number;
 }
 
-/** Row of GET /v1/admin/tenants/:id/events — per-event billing overrides. */
+/**
+ * Which of a tenant's events to list. 'active' is the Billing tab's view
+ * (draft, awaiting review or live, not archived). The other three mirror the
+ * partner portal's shelves: 'unarchived' is their working list whatever the
+ * status, 'archived' their archive shelf, 'all' both.
+ */
+export type AdminTenantEventScope = 'active' | 'unarchived' | 'archived' | 'all';
+
+/** Row of GET /v1/admin/tenants/:id/events — the listing plus its billing overrides. */
 export interface AdminTenantEventBillingItem {
   id: string;
   name: string;
@@ -96,11 +104,16 @@ export interface AdminTenantEventBillingItem {
   /** ISO-8601 — the event's end, so a row reads on its own. */
   endsAt: string | null;
   status: string;
-  /** On the partner's archive shelf. Only ever true under scope=all, since
-   *  active deliberately excludes archived events. */
+  /** On the partner's archive shelf. Never true under scope=active or
+   *  scope=unarchived, which deliberately exclude archived events. */
   archived: boolean;
   /** Venue the event belongs to; null for org-scoped (standalone) events. */
+  venueId: string | null;
   venueName: string | null;
+  /** Set on every date of a recurring series; null for one-offs. */
+  seriesId: string | null;
+  /** The event's own zone, falling back to its venue's. */
+  tzName: string | null;
   partnerCommissionBps: number | null;
   consumerCommissionBps: number | null;
   advancePayoutBps: number | null;
@@ -109,6 +122,44 @@ export interface AdminTenantEventBillingItem {
 export interface AdminTenantEventBillingPage {
   rows: AdminTenantEventBillingItem[];
   nextCursor: string | null;
+}
+
+/** Venue shelves as the partner portal splits them: closed = suspended + rejected. */
+export type AdminTenantVenueShelf = 'active' | 'closed' | 'all';
+
+/** Row of GET /v1/admin/tenants/:id/venues. */
+export interface AdminTenantVenueItem {
+  id: string;
+  name: string;
+  status: 'pending_review' | 'active' | 'suspended' | 'rejected';
+  tzName: string;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  lat: number | null;
+  lng: number | null;
+  tags: string[];
+  createdAt: string;
+}
+
+/** Membership shelves: inactive = switched off by the partner + rejected. */
+export type AdminTenantMembershipShelf = 'active' | 'inactive' | 'all';
+
+/** Row of GET /v1/admin/tenants/:id/memberships. */
+export interface AdminTenantMembershipItem {
+  id: string;
+  name: string;
+  description: string | null;
+  status: 'pending_review' | 'active' | 'inactive' | 'rejected';
+  /** Null = org-wide plan. */
+  venueId: string | null;
+  venueName: string | null;
+  currency: 'INR' | 'USD';
+  /** Live tiers on the plan; 0 for a legacy plan priced on the plan itself. */
+  tierCount: number;
+  minPricePaise: number;
+  maxPricePaise: number;
+  createdAt: string;
 }
 
 /** Patch body for PATCH /v1/admin/events/:id/billing — null clears an override. */
@@ -215,25 +266,6 @@ export interface AdminPayoutBookingLine {
   /** A refund in the window that is not deducted: its charge never reached
    *  the partner. In no total. */
   uncreditedRefundPaise: number;
-}
-
-// Tenant-scoped audit log (existing /v1/tenants/:id/audit-log) — no tenantId
-// field since it's implicit.
-export interface TenantAuditLogItem {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string | null;
-  actorUserId: string | null;
-  actorName: string | null;
-  before: unknown;
-  after: unknown;
-  createdAt: string;
-}
-
-export interface TenantAuditLogPage {
-  rows: TenantAuditLogItem[];
-  nextCursor: string | null;
 }
 
 export interface AdminPayoutRow {

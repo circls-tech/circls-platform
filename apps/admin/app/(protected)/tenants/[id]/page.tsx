@@ -13,11 +13,12 @@ import {
   useUpdateTenantBilling,
 } from '@/lib/api/queries';
 import type {
+  AdminAuditLogItem,
   AdminTenantDetail,
   AdminTenantEventBillingItem,
-  TenantAuditLogItem,
 } from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
+import { EventsTab, MembershipsTab, ShelfTabs, VenuesTab } from './listings_tabs';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -33,10 +34,13 @@ function fmtIST(iso: string | null | undefined): string {
   return IST_FMT.format(new Date(iso));
 }
 
-type Tab = 'overview' | 'members' | 'billing' | 'audit';
+type Tab = 'overview' | 'members' | 'venues' | 'events' | 'memberships' | 'billing' | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'members', label: 'Members' },
+  { id: 'venues', label: 'Venues' },
+  { id: 'events', label: 'Events' },
+  { id: 'memberships', label: 'Memberships' },
   { id: 'billing', label: 'Billing' },
   { id: 'audit', label: 'Audit timeline' },
 ];
@@ -156,6 +160,9 @@ export default function TenantDetailPage() {
 
       {tab === 'overview' && <OverviewTab data={data} />}
       {tab === 'members' && <MembersTab data={data} />}
+      {tab === 'venues' && <VenuesTab tenantId={t.id} />}
+      {tab === 'events' && <EventsTab tenantId={t.id} />}
+      {tab === 'memberships' && <MembershipsTab tenantId={t.id} />}
       {tab === 'billing' && <BillingTab data={data} />}
       {tab === 'audit' && <AuditTab tenantId={t.id} />}
     </div>
@@ -411,9 +418,15 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
   );
 }
 
+const BILLING_EVENT_SCOPES: { key: 'active' | 'all'; label: string }[] = [
+  { key: 'active', label: 'In flight' },
+  { key: 'all', label: 'All' },
+];
+
 function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }) {
-  // Active by default — an org's finished and cancelled events pile up fast and
-  // bury what it currently has running.
+  // In flight by default — an org's finished and cancelled events pile up fast
+  // and bury what it currently has running. Not called "Active" here: the
+  // Events tab's Active shelf is the partner's wider "not archived" list.
   const [scope, setScope] = useState<'active' | 'all'>('active');
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useAdminTenantEvents(tenant.id, scope);
@@ -425,24 +438,12 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
         <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Events
         </h2>
-        <div className="flex gap-1" role="tablist" aria-label="Which events to show">
-          {(['active', 'all'] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={scope === k}
-              onClick={() => setScope(k)}
-              className={
-                scope === k
-                  ? 'rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white'
-                  : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-              }
-            >
-              {k === 'active' ? 'Active' : 'All'}
-            </button>
-          ))}
-        </div>
+        <ShelfTabs
+          value={scope}
+          onChange={setScope}
+          options={BILLING_EVENT_SCOPES}
+          label="Which events to show"
+        />
       </div>
       <p className="text-xs text-slate-400">
         {scope === 'active'
@@ -455,7 +456,7 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
       ) : rows.length === 0 ? (
         <p className="text-sm text-slate-400">
           {scope === 'active'
-            ? 'Nothing active. Switch to All to see finished events.'
+            ? 'Nothing in flight. Switch to All to see finished events.'
             : 'This tenant has no events.'}
         </p>
       ) : (
@@ -600,7 +601,7 @@ function EventOverrideRow({
 function AuditTab({ tenantId }: { tenantId: string }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useTenantAuditLog(tenantId);
-  const rows: TenantAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+  const rows: AdminAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
   if (isLoading) {
     return <p className="text-sm text-slate-400">Loading…</p>;

@@ -24,13 +24,17 @@ import type {
   AdminTenantBillingPatch,
   AdminTenantDetail,
   AdminTenantEventBillingPage,
+  AdminTenantEventScope,
   AdminTenantListPage,
+  AdminTenantMembershipItem,
+  AdminTenantMembershipShelf,
+  AdminTenantVenueItem,
+  AdminTenantVenueShelf,
   Coupon,
   QuestionMessageRow,
   QuestionStatus,
   SupportIssueStatus,
   SupportIssuePriority,
-  TenantAuditLogPage,
   AdminPayoutBreakdown,
 } from './types';
 
@@ -128,7 +132,7 @@ export function useUpdateTenantBilling() {
 
 export function useAdminTenantEvents(
   tenantId: string | null,
-  scope: 'active' | 'all' = 'active',
+  scope: AdminTenantEventScope = 'active',
 ) {
   const { user } = useAuth();
   return useInfiniteQuery({
@@ -140,6 +144,34 @@ export function useAdminTenantEvents(
         `/v1/admin/tenants/${tenantId!}/events${qs({ limit: 50, cursor: pageParam, scope })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export function useAdminTenantVenues(
+  tenantId: string | null,
+  shelf: AdminTenantVenueShelf = 'active',
+) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'venues', shelf],
+    enabled: Boolean(user && tenantId),
+    queryFn: () =>
+      apiFetch<AdminTenantVenueItem[]>(`/v1/admin/tenants/${tenantId!}/venues${qs({ shelf })}`),
+  });
+}
+
+export function useAdminTenantMemberships(
+  tenantId: string | null,
+  shelf: AdminTenantMembershipShelf = 'active',
+) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'memberships', shelf],
+    enabled: Boolean(user && tenantId),
+    queryFn: () =>
+      apiFetch<AdminTenantMembershipItem[]>(
+        `/v1/admin/tenants/${tenantId!}/memberships${qs({ shelf })}`,
+      ),
   });
 }
 
@@ -371,7 +403,12 @@ export function useRejectChangeRequest() {
   });
 }
 
-/** Tenant-scoped audit log (the existing route Track A shipped). */
+/**
+ * One tenant's audit log, for the tenant page. Goes through the admin-wide
+ * route filtered by tenant rather than the partner-facing
+ * `/v1/tenants/:id/audit-log`: that one requires membership of the tenant
+ * itself, which admins (members of the platform tenant only) don't have.
+ */
 export function useTenantAuditLog(tenantId: string | null) {
   const { user } = useAuth();
   return useInfiniteQuery({
@@ -379,8 +416,8 @@ export function useTenantAuditLog(tenantId: string | null) {
     enabled: Boolean(user && tenantId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
-      apiFetch<TenantAuditLogPage>(
-        `/v1/tenants/${tenantId!}/audit-log${qs({ limit: 50, cursor: pageParam })}`,
+      apiFetch<AdminAuditLogPage>(
+        `/v1/admin/audit-log${qs({ tenantId: tenantId!, limit: 50, cursor: pageParam })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });

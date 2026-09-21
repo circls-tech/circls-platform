@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { useTenantAuditLog } from '@/lib/api/queries';
-import type { TenantAuditLogItem } from '@/lib/api/types';
+import type { AdminAuditLogItem } from '@/lib/api/types';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -64,7 +64,7 @@ export default function TenantAuditTimelinePage() {
     error,
   } = useTenantAuditLog(tenantId);
 
-  const rows: TenantAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+  const rows: AdminAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
   return (
     <div className="space-y-4">
