@@ -1,5 +1,6 @@
 'use client';
 
+import { formatAmount } from '@/lib/money';
 import { Fragment, useMemo, useState } from 'react';
 import { useAdminPayouts, useExecutePayout, useReconcilePayouts } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
@@ -29,14 +30,6 @@ const IST_DATE = new Intl.DateTimeFormat('en-IN', {
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   return IST_DATE.format(new Date(iso));
-}
-
-/** Render paise as rupees with 2 decimals (e.g. 123456 → "1,234.56"). */
-function fmtRupees(paise: number): string {
-  return (paise / 100).toLocaleString('en-IN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 }
 
 type StatusFilter = 'all' | 'pending' | 'paid';
@@ -225,28 +218,28 @@ export default function PayoutsPage() {
                   {fmtDate(r.periodStart)} → {fmtDate(r.periodEnd)}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
-                  {fmtRupees(r.grossPaise)}
+                  {formatAmount(r.grossPaise)}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
-                  {fmtRupees(r.refundsPaise)}
+                  {formatAmount(r.refundsPaise)}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
-                  {fmtRupees(r.commissionPaise)}
+                  {formatAmount(r.commissionPaise)}
                 </td>
                 <td
                   className="px-4 py-2.5 text-right tabular-nums text-slate-700"
                   title={
                     r.advanceRecoupedPaise
-                      ? `Recouped from earlier advances: ${fmtRupees(r.advanceRecoupedPaise)}`
+                      ? `Recouped from earlier advances: ${formatAmount(r.advanceRecoupedPaise)}`
                       : undefined
                   }
                 >
                   {r.advancesPaise || r.advanceRecoupedPaise
-                    ? `${fmtRupees(r.advancesPaise)}${r.advanceRecoupedPaise ? ` (−${fmtRupees(r.advanceRecoupedPaise)})` : ''}`
+                    ? `${formatAmount(r.advancesPaise)}${r.advanceRecoupedPaise ? ` (−${formatAmount(r.advanceRecoupedPaise)})` : ''}`
                     : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-900">
-                  {fmtRupees(r.amountPaise)}
+                  {formatAmount(r.amountPaise)}
                 </td>
                 <td className="px-4 py-2.5">
                   <Pill tone={STATUS_TONE[r.status] ?? 'bg-slate-100 text-slate-600'} label={r.status} />

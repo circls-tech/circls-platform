@@ -707,8 +707,9 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           venueId: m.venueId ?? null,
           venueName: m.venueName ?? null,
           // Same rule as the partner portal: a venue-scoped plan is priced in
-          // the venue's currency, an org-wide one in the tenant's.
-          currency: currencyForCountry(m.venueCountry ?? m.tenantCountry),
+          // the venue's currency, an org-wide one in the tenant's. A blank
+          // venue country counts as unset there too, not as "not the US".
+          currency: currencyForCountry(m.venueCountry?.trim() || m.tenantCountry),
           tierCount,
           minPricePaise: tierCount > 0 ? Number(m.minPaise) : Number(m.pricePaise),
           maxPricePaise: tierCount > 0 ? Number(m.maxPaise) : Number(m.pricePaise),

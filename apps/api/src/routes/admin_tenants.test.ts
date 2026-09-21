@@ -712,6 +712,43 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     await db.execute(sql`delete from events where id = ${eventId}::uuid`);
   });
 
+  it('events GET needs only the read cap; editing overrides still needs billing', async () => {
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantAId}/events`,
+      headers: bearer('owner'),
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    // Demote padmin to the read-only platform role for the duration: it has
+    // admin.tenants.read but not admin.tenants.billing.
+    await db.execute(sql`
+      UPDATE tenant_members SET role = 'readonly'
+       WHERE tenant_id = ${platformTenantId}::uuid AND user_id = ${adminUserId}::uuid
+    `);
+    try {
+      const list = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/events?scope=all`,
+        headers: bearer('padmin'),
+      });
+      expect(list.statusCode).toBe(200);
+
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: `/v1/admin/events/00000000-0000-0000-0000-000000000000/billing`,
+        headers: bearer('padmin'),
+        payload: { partnerCommissionBps: 100 },
+      });
+      expect(patch.statusCode).toBe(403);
+    } finally {
+      await db.execute(sql`
+        UPDATE tenant_members SET role = 'manager'
+         WHERE tenant_id = ${platformTenantId}::uuid AND user_id = ${adminUserId}::uuid
+      `);
+    }
+  });
+
   it('venues — shelves split live/pending from closed/rejected; non-admin 403', async () => {
     const vRows = await db.execute<{ id: string; status: string }>(sql`
       INSERT INTO venues (tenant_id, name, status, city, state, tags)

@@ -14,6 +14,7 @@ import type {
   AdminTenantVenueItem,
   AdminTenantVenueShelf,
 } from '@/lib/api/types';
+import { formatPrice } from '@/lib/money';
 
 /**
  * The tenant page's Venues, Events and Memberships tabs: read-only mirrors of
@@ -49,21 +50,12 @@ function fmtEventTime(iso: string | null, tz: string | null): string {
   }
 }
 
-function fmtMoney(paise: number, currency: 'INR' | 'USD'): string {
-  if (paise === 0) return 'Free';
-  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-IN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(paise / 100);
-}
-
 /** "3 tiers · ₹500–₹2,000", as on the partner portal's memberships list. */
 function tiersSummary(m: AdminTenantMembershipItem): string {
   const range =
     m.minPricePaise === m.maxPricePaise
-      ? fmtMoney(m.minPricePaise, m.currency)
-      : `${fmtMoney(m.minPricePaise, m.currency)}–${fmtMoney(m.maxPricePaise, m.currency)}`;
+      ? formatPrice(m.minPricePaise, m.currency)
+      : `${formatPrice(m.minPricePaise, m.currency)}–${formatPrice(m.maxPricePaise, m.currency)}`;
   if (m.tierCount === 0) return range;
   return `${m.tierCount} tier${m.tierCount === 1 ? '' : 's'} · ${range}`;
 }
@@ -102,7 +94,8 @@ function Tag({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ShelfTabs<K extends string>({
+/** A shelf switcher: one of a few mutually exclusive views of a listing. */
+export function ShelfTabs<K extends string>({
   value,
   onChange,
   options,
@@ -135,8 +128,8 @@ function ShelfTabs<K extends string>({
   );
 }
 
-function Th({ children, right }: { children?: React.ReactNode; right?: boolean }) {
-  return <th className={`px-4 py-2 font-medium ${right ? 'text-right' : ''}`}>{children}</th>;
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="px-4 py-2 font-medium">{children}</th>;
 }
 
 function TableShell({ children }: { children: React.ReactNode }) {
@@ -323,7 +316,8 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
                 <td className="px-4 py-2.5">
                   <span className="inline-flex items-center gap-1">
                     <ListingStatusPill status={ev.status} />
-                    {ev.archived && <Tag>Archived</Tag>}
+                    {/* Only All mixes shelves; on Archived every row would carry it. */}
+                    {scope === 'all' && ev.archived && <Tag>Archived</Tag>}
                   </span>
                 </td>
               </tr>

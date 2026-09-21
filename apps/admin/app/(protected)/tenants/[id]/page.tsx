@@ -18,7 +18,7 @@ import type {
   AdminTenantEventBillingItem,
 } from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
-import { EventsTab, MembershipsTab, VenuesTab } from './listings_tabs';
+import { EventsTab, MembershipsTab, ShelfTabs, VenuesTab } from './listings_tabs';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -418,9 +418,15 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
   );
 }
 
+const BILLING_EVENT_SCOPES: { key: 'active' | 'all'; label: string }[] = [
+  { key: 'active', label: 'In flight' },
+  { key: 'all', label: 'All' },
+];
+
 function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }) {
-  // Active by default — an org's finished and cancelled events pile up fast and
-  // bury what it currently has running.
+  // In flight by default — an org's finished and cancelled events pile up fast
+  // and bury what it currently has running. Not called "Active" here: the
+  // Events tab's Active shelf is the partner's wider "not archived" list.
   const [scope, setScope] = useState<'active' | 'all'>('active');
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useAdminTenantEvents(tenant.id, scope);
@@ -432,24 +438,12 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
         <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Events
         </h2>
-        <div className="flex gap-1" role="tablist" aria-label="Which events to show">
-          {(['active', 'all'] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={scope === k}
-              onClick={() => setScope(k)}
-              className={
-                scope === k
-                  ? 'rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white'
-                  : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-              }
-            >
-              {k === 'active' ? 'Active' : 'All'}
-            </button>
-          ))}
-        </div>
+        <ShelfTabs
+          value={scope}
+          onChange={setScope}
+          options={BILLING_EVENT_SCOPES}
+          label="Which events to show"
+        />
       </div>
       <p className="text-xs text-slate-400">
         {scope === 'active'
@@ -462,7 +456,7 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
       ) : rows.length === 0 ? (
         <p className="text-sm text-slate-400">
           {scope === 'active'
-            ? 'Nothing active. Switch to All to see finished events.'
+            ? 'Nothing in flight. Switch to All to see finished events.'
             : 'This tenant has no events.'}
         </p>
       ) : (
