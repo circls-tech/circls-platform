@@ -27,15 +27,33 @@ export interface RegistrationQuestionInput {
   label: string;
   type: RegistrationQuestionType;
   required: boolean;
-  /** Choices for 'select' questions; ignored for free-text. */
+  /** Choices for 'select' / 'multiselect' questions; ignored for free-text. */
   options?: string[] | null | undefined;
 }
 
-/** One answer as submitted by the consumer booking flow. */
+/**
+ * One answer as submitted by the consumer booking flow (or the partner's
+ * off-platform registration). Free-text and single-choice questions take a
+ * string; a multi-select question takes the chosen options as an array (a
+ * lone string counts as one choice).
+ */
 export interface RegistrationAnswerInput {
   questionId: string;
-  answer: string;
+  answer: string | string[];
 }
+
+/** Choice questions carry `options`; free-text questions don't. */
+export function isChoiceQuestionType(type: RegistrationQuestionType): boolean {
+  return type === 'select' || type === 'multiselect';
+}
+
+/**
+ * How a multi-select answer is stored: the chosen options, in the question's
+ * option order, joined with this. Answers stay one text value per question so
+ * the registrations table, the CSV export and the booking page render them
+ * as-is.
+ */
+export const MULTI_ANSWER_SEPARATOR = ', ';
 
 /** Live (non-deleted) questions for an event, ordered for display. */
 export async function listQuestions(
@@ -94,7 +112,7 @@ export async function replaceQuestions(
         label: q.label,
         type: q.type,
         required: q.required,
-        options: q.type === 'select' ? (q.options ?? []) : null,
+        options: isChoiceQuestionType(q.type) ? (q.options ?? []) : null,
         sortOrder: i,
       })),
     )
@@ -104,10 +122,12 @@ export async function replaceQuestions(
 /**
  * Validate a consumer's answers against the event's live questions and insert
  * them for the booking, inside the booking transaction. Rejects unknown
- * question ids, missing/blank answers to required questions, and select answers
- * that aren't one of the question's options. Answers to questions the event
- * doesn't (any longer) ask are rejected rather than silently dropped so the
- * client learns its question list is stale.
+ * question ids, missing/blank answers to required questions, choice answers
+ * that aren't one of the question's options, and a list of answers to a
+ * question that takes one. Answers to questions the event doesn't (any longer)
+ * ask are rejected rather than silently dropped so the client learns its
+ * question list is stale. Multi-select answers are stored as one text value
+ * (see normaliseAnswer).
  */
 export async function saveRegistrationAnswers(
   tx: Tx,
@@ -126,15 +146,7 @@ export async function saveRegistrationAnswers(
     if (answerByQuestion.has(a.questionId)) {
       throw new BadRequest('Duplicate answer for a registration question', 'bad_request');
     }
-    const answer = a.answer.trim();
-    if (q.type === 'select' && answer && !(q.options ?? []).includes(answer)) {
-      throw new BadRequest(
-        `Answer to "${q.label}" must be one of its options`,
-        'invalid_answer_option',
-        { questionId: q.id },
-      );
-    }
-    answerByQuestion.set(a.questionId, answer);
+    answerByQuestion.set(a.questionId, normaliseAnswer(q, a.answer));
   }
 
   for (const q of questions) {
@@ -156,4 +168,36 @@ export async function saveRegistrationAnswers(
   if (values.length > 0) {
     await tx.insert(eventRegistrationAnswers).values(values);
   }
+}
+
+/**
+ * Reduce a submitted answer to the single text value we store, enforcing the
+ * question's shape: free text is trimmed; a single choice must be one of the
+ * options; a multi-select takes any subset of the options, stored
+ * deduplicated in option order. '' means "not answered", which the required
+ * check in saveRegistrationAnswers then rejects.
+ */
+function normaliseAnswer(q: EventRegistrationQuestion, raw: string | string[]): string {
+  const options = [...new Set(q.options ?? [])];
+  const notAnOption = () =>
+    new BadRequest(`Answer to "${q.label}" must be one of its options`, 'invalid_answer_option', {
+      questionId: q.id,
+    });
+  if (q.type === 'multiselect') {
+    const chosen = new Set(
+      (Array.isArray(raw) ? raw : [raw]).map((s) => s.trim()).filter((s) => s.length > 0),
+    );
+    for (const c of chosen) {
+      if (!options.includes(c)) throw notAnOption();
+    }
+    return options.filter((o) => chosen.has(o)).join(MULTI_ANSWER_SEPARATOR);
+  }
+  if (Array.isArray(raw)) {
+    throw new BadRequest(`"${q.label}" takes a single answer`, 'bad_request', {
+      questionId: q.id,
+    });
+  }
+  const answer = raw.trim();
+  if (q.type === 'select' && answer && !options.includes(answer)) throw notAnOption();
+  return answer;
 }

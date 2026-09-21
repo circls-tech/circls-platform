@@ -3,8 +3,11 @@ import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { events } from './events.js';
 import { tenants } from './tenants.js';
 
-/** How a registration question is answered: free text, or one of `options`. */
-export type RegistrationQuestionType = 'text' | 'select';
+/**
+ * How a registration question is answered: free text, exactly one of
+ * `options` ('select'), or any number of them ('multiselect').
+ */
+export type RegistrationQuestionType = 'text' | 'select' | 'multiselect';
 
 /**
  * A custom registration question the organiser asks every consumer who books
@@ -24,7 +27,7 @@ export const eventRegistrationQuestions = pgTable('event_registration_questions'
   label: text('label').notNull(),
   type: text('type').$type<RegistrationQuestionType>().notNull().default('text'),
   required: boolean('required').notNull().default(false),
-  /** Choices for 'select' questions; null for free-text. */
+  /** Choices for 'select' / 'multiselect' questions; null for free-text. */
   options: jsonb('options').$type<string[]>(),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: createdAt(),

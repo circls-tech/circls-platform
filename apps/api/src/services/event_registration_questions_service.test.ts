@@ -6,9 +6,8 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 // Dynamic imports AFTER vi.mock (none here), gated so non-integration runs skip
 // the real DB import entirely.
 const { closeDb, db } = await import('../db/client.js');
-const { listQuestions, replaceQuestions, saveRegistrationAnswers } = await import(
-  './event_registration_questions_service.js'
-);
+const { listQuestions, MULTI_ANSWER_SEPARATOR, replaceQuestions, saveRegistrationAnswers } =
+  await import('./event_registration_questions_service.js');
 
 describe.skipIf(!runIntegration)('event_registration_questions_service', () => {
   let tenantId: string;
@@ -100,5 +99,44 @@ describe.skipIf(!runIntegration)('event_registration_questions_service', () => {
         ]),
       ),
     ).rejects.toThrow(/Unknown registration question/);
+  });
+
+  it('multi-select: stores the ticked options in option order, refusing strays and wrong shapes', async () => {
+    await db.transaction((tx) =>
+      replaceQuestions(tx, eventId, tenantId, [
+        {
+          label: 'Dietary needs?',
+          type: 'multiselect',
+          required: true,
+          options: ['Vegan', 'Halal', 'Nut-free'],
+        },
+        { label: 'T-shirt size?', type: 'select', required: false, options: ['S', 'M'] },
+      ]),
+    );
+    const [multi, single] = await listQuestions(db, eventId);
+    expect(multi!.options).toEqual(['Vegan', 'Halal', 'Nut-free']);
+
+    const save = (answers: { questionId: string; answer: string | string[] }[]) =>
+      db.transaction((tx) => saveRegistrationAnswers(tx, eventId, bookingId, answers));
+
+    await expect(save([{ questionId: multi!.id, answer: ['Vegan', 'Kosher'] }])).rejects.toThrow(
+      /must be one of its options/,
+    );
+    await expect(save([{ questionId: single!.id, answer: ['S', 'M'] }])).rejects.toThrow(
+      /takes a single answer/,
+    );
+    // Nothing ticked on a required question is "not answered".
+    await expect(save([{ questionId: multi!.id, answer: [] }])).rejects.toThrow(
+      /requires an answer/,
+    );
+
+    // Ticked options are stored once each, in the question's order, as one value.
+    await save([{ questionId: multi!.id, answer: ['Nut-free', 'Vegan', 'Nut-free'] }]);
+    const rows = (await db.execute<{ answer: string }>(
+      sql`select answer from event_registration_answers
+           where booking_id = ${bookingId} and question_id = ${multi!.id}`,
+    )) as unknown as { answer: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.answer).toBe(['Vegan', 'Nut-free'].join(MULTI_ANSWER_SEPARATOR));
   });
 });

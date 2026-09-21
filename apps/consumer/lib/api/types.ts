@@ -157,10 +157,10 @@ export interface PostBookingRedirect {
 export interface PublicEventQuestion {
   id: string;
   label: string;
-  /** 'text' = free text; 'select' = pick one of `options`. */
-  type: 'text' | 'select';
+  /** 'text' = free text; 'select' = pick one of `options`; 'multiselect' = pick any. */
+  type: 'text' | 'select' | 'multiselect';
   required: boolean;
-  /** Choices for 'select' questions; null for free-text. */
+  /** Choices for 'select' / 'multiselect' questions; null for free-text. */
   options: string[] | null;
 }
 

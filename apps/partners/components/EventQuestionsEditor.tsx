@@ -1,61 +1,23 @@
 'use client';
 
 import { Button, Input } from '@/lib/ui';
-import type { EventQuestion } from '@/lib/api/types';
-import type { EventQuestionInput } from '@/lib/api/events';
+import {
+  emptyQuestion,
+  isChoiceType,
+  MAX_EVENT_QUESTIONS,
+  QUESTION_TYPE_LABELS,
+  type QuestionDraft,
+  type QuestionType,
+} from '@/lib/events/questions';
 
-/** Cap on questions per event — keep in sync with the API's MAX_EVENT_QUESTIONS. */
-export const MAX_EVENT_QUESTIONS = 20;
-
-/** Form-draft shape: select options are edited as one comma-separated string. */
-export interface QuestionDraft {
-  label: string;
-  type: 'text' | 'select';
-  required: boolean;
-  /** Comma-separated choices; only meaningful when type === 'select'. */
-  optionsText: string;
-}
-
-export function emptyQuestion(): QuestionDraft {
-  return { label: '', type: 'text', required: false, optionsText: '' };
-}
-
-/** Convert drafts to the API payload shape, dropping rows with a blank label. */
-export function questionsToPayload(questions: QuestionDraft[]): EventQuestionInput[] {
-  return questions
-    .map((q) => ({
-      label: q.label.trim(),
-      type: q.type,
-      required: q.required,
-      ...(q.type === 'select'
-        ? {
-            options: q.optionsText
-              .split(',')
-              .map((o) => o.trim())
-              .filter((o) => o.length > 0),
-          }
-        : {}),
-    }))
-    .filter((q) => q.label.length > 0);
-}
-
-/** Hydrate a draft from an event's question (as returned by GET event). */
-export function questionDraftFromApi(
-  q: Pick<EventQuestion, 'label' | 'type' | 'required' | 'options'>,
-): QuestionDraft {
-  return {
-    label: q.label,
-    type: q.type,
-    required: q.required,
-    optionsText: (q.options ?? []).join(', '),
-  };
-}
+const TYPE_ORDER: QuestionType[] = ['text', 'select', 'multiselect'];
 
 /**
  * Registration-questions builder: the organiser's custom questions consumers
  * answer when booking the event ("T-shirt size?", "Dietary restrictions?").
  * Controlled — the parent owns the array. Editable only while the event is
- * draft, like ticket tiers.
+ * draft, like ticket tiers. The draft helpers (payload conversion, option
+ * parsing, validation) live in lib/events/questions.
  */
 export function EventQuestionsEditor({
   value,
@@ -108,11 +70,14 @@ export function EventQuestionsEditor({
               <select
                 value={q.type}
                 disabled={disabled}
-                onChange={(e) => update(i, { type: e.target.value as QuestionDraft['type'] })}
+                onChange={(e) => update(i, { type: e.target.value as QuestionType })}
                 className="rounded border border-gray-300 bg-white px-2 py-2 text-sm font-normal text-slate-900"
               >
-                <option value="text">Free text</option>
-                <option value="select">Multiple choice</option>
+                {TYPE_ORDER.map((t) => (
+                  <option key={t} value={t}>
+                    {QUESTION_TYPE_LABELS[t]}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -127,7 +92,7 @@ export function EventQuestionsEditor({
               Required
             </label>
           </div>
-          {q.type === 'select' && (
+          {isChoiceType(q.type) && (
             <div className="sm:col-span-12">
               <Input
                 label="Options (comma-separated)"
@@ -135,6 +100,11 @@ export function EventQuestionsEditor({
                 value={q.optionsText}
                 disabled={disabled}
                 onChange={(e) => update(i, { optionsText: e.target.value })}
+                hint={
+                  q.type === 'multiselect'
+                    ? 'Attendees can tick any number of these.'
+                    : 'Attendees pick exactly one of these.'
+                }
               />
             </div>
           )}

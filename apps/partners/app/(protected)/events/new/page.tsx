@@ -17,11 +17,12 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
-  EventQuestionsEditor,
+  hasChoiceQuestionWithoutOptions,
   questionsToPayload,
   type QuestionDraft,
-} from '@/components/EventQuestionsEditor';
+} from '@/lib/events/questions';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import {
@@ -145,15 +146,8 @@ export default function NewTenantEventPage() {
       setErr('Give every ticket tier a name.');
       return;
     }
-    if (
-      questions.some(
-        (q) =>
-          q.label.trim() &&
-          q.type === 'select' &&
-          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
-      )
-    ) {
-      setErr('Give every multiple-choice question at least 2 options.');
+    if (hasChoiceQuestionWithoutOptions(questions)) {
+      setErr('Give every choice question at least 2 options.');
       return;
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {

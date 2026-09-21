@@ -21,12 +21,13 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
-  EventQuestionsEditor,
+  hasChoiceQuestionWithoutOptions,
   questionDraftFromApi,
   questionsToPayload,
   type QuestionDraft,
-} from '@/components/EventQuestionsEditor';
+} from '@/lib/events/questions';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -180,15 +181,8 @@ export default function EventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
-    if (
-      questions.some(
-        (q) =>
-          q.label.trim() &&
-          q.type === 'select' &&
-          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
-      )
-    ) {
-      setErrorMsg('Give every multiple-choice question at least 2 options.');
+    if (hasChoiceQuestionWithoutOptions(questions)) {
+      setErrorMsg('Give every choice question at least 2 options.');
       return;
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {

@@ -7,6 +7,16 @@ import { type CurrencyCode, formatMoney } from '@/lib/currency';
 import type { EventQuestion, EventTier } from '@/lib/api/types';
 import { Button, Input, Modal } from '@/lib/ui';
 
+/** The string form of an answer for text inputs ('' when unanswered or multi-select). */
+function textAnswer(v: string | string[] | undefined): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** Unanswered: no text, or no option ticked. */
+function answerIsBlank(v: string | string[] | undefined): boolean {
+  return Array.isArray(v) ? v.length === 0 : !(v ?? '').trim();
+}
+
 export interface AddRegistrationModalProps {
   open: boolean;
   tenantId: string;
@@ -42,7 +52,9 @@ export function AddRegistrationModal({
   const [contact, setContact] = useState('');
   const [note, setNote] = useState('');
   const [qty, setQty] = useState<Record<string, number>>({});
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Free-text / single-choice answers are strings; a multi-select answer is the
+  // list of ticked options.
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const totalTickets = Object.values(qty).reduce((sum, n) => sum + n, 0);
@@ -62,8 +74,18 @@ export function AddRegistrationModal({
   }
 
   const missingRequired = questions
-    .filter((q) => q.required && !(answers[q.id] ?? '').trim())
+    .filter((q) => q.required && answerIsBlank(answers[q.id]))
     .map((q) => q.label);
+
+  function toggleOption(questionId: string, option: string, on: boolean) {
+    setAnswers((p) => {
+      const current = p[questionId];
+      const chosen = new Set(Array.isArray(current) ? current : []);
+      if (on) chosen.add(option);
+      else chosen.delete(option);
+      return { ...p, [questionId]: [...chosen] };
+    });
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -83,9 +105,12 @@ export function AddRegistrationModal({
           ...(contact.trim() ? { contact: contact.trim() } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
           lines,
-          answers: questions
-            .map((q) => ({ questionId: q.id, answer: (answers[q.id] ?? '').trim() }))
-            .filter((a) => a.answer.length > 0),
+          answers: questions.flatMap((q): { questionId: string; answer: string | string[] }[] => {
+            const a = answers[q.id];
+            if (Array.isArray(a)) return a.length > 0 ? [{ questionId: q.id, answer: a }] : [];
+            const text = (a ?? '').trim();
+            return text ? [{ questionId: q.id, answer: text }] : [];
+          }),
         },
       });
       close();
@@ -157,14 +182,38 @@ export function AddRegistrationModal({
               Registration questions
             </span>
             {questions.map((q) =>
-              q.type === 'select' ? (
+              q.type === 'multiselect' ? (
+                <fieldset key={q.id} className="flex flex-col gap-1">
+                  <legend className="mb-1 text-[11px] font-medium uppercase tracking-wide text-[#475569]">
+                    {q.label}
+                    {q.required && <span className="text-red-600"> *</span>}
+                  </legend>
+                  <div className="flex flex-col gap-1 rounded-md border border-slate-200 px-3 py-2">
+                    {(q.options ?? []).map((o) => {
+                      const chosen = answers[q.id];
+                      const checked = Array.isArray(chosen) && chosen.includes(o);
+                      return (
+                        <label key={o} className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleOption(q.id, o, e.target.checked)}
+                          />
+                          {o}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-500">Tick all that apply.</p>
+                </fieldset>
+              ) : q.type === 'select' ? (
                 <label key={q.id} className="flex flex-col gap-1">
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">
                     {q.label}
                     {q.required && <span className="text-red-600"> *</span>}
                   </span>
                   <select
-                    value={answers[q.id] ?? ''}
+                    value={textAnswer(answers[q.id])}
                     onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
                     className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
                   >
@@ -180,7 +229,7 @@ export function AddRegistrationModal({
                 <Input
                   key={q.id}
                   label={q.required ? `${q.label} *` : q.label}
-                  value={answers[q.id] ?? ''}
+                  value={textAnswer(answers[q.id])}
                   onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
                 />
               ),

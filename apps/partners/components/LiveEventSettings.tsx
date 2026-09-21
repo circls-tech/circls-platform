@@ -5,12 +5,13 @@ import type { EventQuestion, EventTier, PostBookingRedirect, QrTicketConfig } fr
 import type { UpdateEventInput } from '@/lib/api/events';
 import { Button, Card, Input } from '@/lib/ui';
 import { MaxPerUserField, maxPerUserFromApi, maxPerUserToPayload } from './MaxPerUserField';
+import { EventQuestionsEditor } from './EventQuestionsEditor';
 import {
-  EventQuestionsEditor,
+  hasChoiceQuestionWithoutOptions,
   questionDraftFromApi,
   questionsToPayload,
   type QuestionDraft,
-} from './EventQuestionsEditor';
+} from '@/lib/events/questions';
 import { QrTicketConfigEditor } from './QrTicketConfigEditor';
 import {
   PostBookingRedirectEditor,
@@ -98,16 +99,8 @@ export function LiveEventSettings({
   async function save() {
     setError(null);
     setSaved(false);
-    if (
-      questionsChanged &&
-      questionDrafts.some(
-        (q) =>
-          q.label.trim() &&
-          q.type === 'select' &&
-          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
-      )
-    ) {
-      setError('Give every multiple-choice question at least 2 options.');
+    if (questionsChanged && hasChoiceQuestionWithoutOptions(questionDrafts)) {
+      setError('Give every choice question at least 2 options.');
       return;
     }
     if (redirectDraft && redirectDraft.url.trim() && !isValidRedirectUrl(redirectDraft.url)) {

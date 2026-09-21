@@ -200,6 +200,43 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(rows.some((r: { venueId: string | null }) => r.venueId === null)).toBe(true);
   });
 
+  describe('registration question types', () => {
+    const create = (questions: unknown[]) =>
+      app.inject({
+        method: 'POST',
+        url: `/v1/tenants/${tenantId}/events`,
+        headers: bearer('owner'),
+        payload: {
+          addressJson: { line1: '9 MG Rd', city: 'Pune' },
+          tzName: 'Asia/Kolkata',
+          name: 'Question Types Event',
+          startsAt: '2030-10-01T10:00:00.000Z',
+          endsAt: '2030-10-01T12:00:00.000Z',
+          tiers: [{ name: 'Door', pricePaise: 50000, capacity: 10 }],
+          questions,
+        },
+      });
+
+    it('refuses a multi-select question with fewer than 2 options', async () => {
+      const res = await create([
+        { label: 'Dietary needs', type: 'multiselect', required: false, options: ['Vegan'] },
+      ]);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('stores a multi-select question with its options', async () => {
+      const res = await create([
+        { label: 'Dietary needs', type: 'multiselect', required: false, options: ['Vegan', 'Halal'] },
+      ]);
+      expect(res.statusCode).toBe(200);
+      const { id } = res.json() as { id: string };
+      const rows = (await db.execute(sql`
+        select type, options from event_registration_questions where event_id = ${id}
+      `)) as unknown as Array<{ type: string; options: string[] }>;
+      expect(rows[0]).toMatchObject({ type: 'multiselect', options: ['Vegan', 'Halal'] });
+    });
+  });
+
   describe('external registrations', () => {
     let eventId: string;
     let tierId: string;
