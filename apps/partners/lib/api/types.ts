@@ -509,10 +509,10 @@ export interface EventTier {
 export interface EventQuestion {
   id: string;
   label: string;
-  /** 'text' = free text; 'select' = one of `options`. */
-  type: 'text' | 'select';
+  /** 'text' = free text; 'select' = one of `options`; 'multiselect' = any of them. */
+  type: 'text' | 'select' | 'multiselect';
   required: boolean;
-  /** Choices for 'select' questions; null for free-text. */
+  /** Choices for 'select' / 'multiselect' questions; null for free-text. */
   options: string[] | null;
   sortOrder: number;
 }

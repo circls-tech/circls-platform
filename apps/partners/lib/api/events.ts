@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import type {
   EventBooking,
+  EventQuestion,
   PostBookingRedirect,
   QrTicketConfig,
   VenueEvent,
@@ -50,10 +51,9 @@ export interface TierInput {
 /** A registration-question payload for event create/update. */
 export interface EventQuestionInput {
   label: string;
-  /** 'text' = free text; 'select' = one of `options`. */
-  type: 'text' | 'select';
+  type: EventQuestion['type'];
   required: boolean;
-  /** Choices for 'select' questions (min 2); omit for free-text. */
+  /** Choices for 'select' / 'multiselect' questions (min 2); omit for free-text. */
   options?: string[];
 }
 
@@ -380,7 +380,8 @@ export interface ExternalRegistrationInput {
   contact?: string;
   note?: string;
   lines: { tierId: string; quantity: number }[];
-  answers?: { questionId: string; answer: string }[];
+  /** Text / single-choice answers as strings; multi-select answers as the ticked options. */
+  answers?: { questionId: string; answer: string | string[] }[];
 }
 
 /**

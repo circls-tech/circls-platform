@@ -35,12 +35,13 @@ import {
   tiersToPayload,
   type TierDraft,
 } from '@/components/TiersEditor';
+import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
-  EventQuestionsEditor,
+  hasChoiceQuestionWithoutOptions,
   questionDraftFromApi,
   questionsToPayload,
   type QuestionDraft,
-} from '@/components/EventQuestionsEditor';
+} from '@/lib/events/questions';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import {
   PostBookingRedirectEditor,
@@ -304,15 +305,8 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Give every ticket tier a name.');
       return;
     }
-    if (
-      questions.some(
-        (q) =>
-          q.label.trim() &&
-          q.type === 'select' &&
-          q.optionsText.split(',').filter((o) => o.trim()).length < 2,
-      )
-    ) {
-      setErrorMsg('Give every multiple-choice question at least 2 options.');
+    if (hasChoiceQuestionWithoutOptions(questions)) {
+      setErrorMsg('Give every choice question at least 2 options.');
       return;
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
@@ -500,9 +494,9 @@ export default function OrgEventDetailPage() {
                         <div key={q.id} className="flex flex-wrap items-baseline gap-2">
                           <span>{q.label}</span>
                           <span className="text-xs text-slate-400">
-                            {q.type === 'select'
-                              ? `Choice of ${(q.options ?? []).join(' / ')}`
-                              : 'Free text'}
+                            {q.type === 'text'
+                              ? 'Free text'
+                              : `${q.type === 'multiselect' ? 'Any of' : 'One of'} ${(q.options ?? []).join(' / ')}`}
                             {q.required ? ' · required' : ''}
                           </span>
                         </div>

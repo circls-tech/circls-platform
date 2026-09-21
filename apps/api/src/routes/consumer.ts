@@ -5,7 +5,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
-import { MAX_EVENT_QUESTIONS } from '../services/event_registration_questions_service.js';
+import { registrationAnswersField } from '../lib/registration_answers_schema.js';
 import {
   consumerBookEvent,
   consumerBookSlots,
@@ -197,9 +197,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       .min(1),
     // Answers to the event's registration questions (validated in the service
     // against the live question set — required questions must be answered).
-    answers: z
-      .array(z.object({ questionId: z.string().uuid(), answer: z.string().max(2000) }))
-      .max(MAX_EVENT_QUESTIONS)
+    answers: registrationAnswersField
       .optional(),
   });
   app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {

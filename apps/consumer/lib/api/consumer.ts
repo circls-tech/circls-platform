@@ -196,8 +196,9 @@ export interface BookEventInput {
   name?: string;
   contact?: string;
   couponCode?: string;
-  /** Answers to the event's registration questions. */
-  answers?: { questionId: string; answer: string }[];
+  /** Answers to the event's registration questions: a string for free-text and
+   *  single-choice questions, the ticked options for multi-select ones. */
+  answers?: { questionId: string; answer: string | string[] }[];
 }
 
 export function useBookEvent() {

@@ -13,6 +13,7 @@ import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
+import { type RegistrationAnswers, toAnswerPayload } from './answers';
 import type { CheckoutItem, CheckoutPrefill } from './types';
 
 type Phase =
@@ -52,8 +53,8 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   // step hasn't been completed yet (the gate below shows the form). savedAnswers
   // keeps the entered values so returning to the form (edit / server rejection)
   // doesn't lose them.
-  const [answers, setAnswers] = useState<Record<string, string> | null>(null);
-  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<RegistrationAnswers | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<RegistrationAnswers>({});
   const [answersError, setAnswersError] = useState<string | null>(null);
   const eventQuestions = item.kind === 'event' ? (item.questions ?? []) : [];
   // A code handed in by the opener (offers strip on the event page) starts
@@ -127,9 +128,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       } else if (item.kind === 'event') {
         const name = prefill.name ?? profile.data?.displayName;
         const contact = prefill.contact ?? user?.phoneNumber ?? profile.data?.email;
-        const answerPayload = eventQuestions
-          .map((q) => ({ questionId: q.id, answer: (answers?.[q.id] ?? '').trim() }))
-          .filter((a) => a.answer.length > 0);
+        const answerPayload = toAnswerPayload(eventQuestions, answers);
         const r = await bookEvent.mutateAsync({
           eventId: item.eventId,
           lines: item.lines.map((l) => ({ tierId: l.tierId, quantity: l.quantity })),
@@ -180,7 +179,12 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     } catch (e) {
       // A rejected answer is fixable — reopen the questions form (pre-filled)
       // with the server's message instead of dead-ending on the error screen.
-      if (e instanceof ApiError && (e.code === 'answer_required' || e.code === 'invalid_answer_option')) {
+      if (
+        e instanceof ApiError &&
+        (e.code === 'answer_required' ||
+          e.code === 'invalid_answer_option' ||
+          e.code === 'invalid_answer_shape')
+      ) {
         setAnswersError(e.message);
         setAnswers(null);
         setPhase({ kind: 'ready' });

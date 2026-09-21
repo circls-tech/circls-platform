@@ -35,7 +35,10 @@ import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from 
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { listQuestions, type RegistrationAnswerInput } from './event_registration_questions_service.js';
-import type { EventRegistrationQuestion } from '../db/schema/event_registration_questions.js';
+import type {
+  EventRegistrationQuestion,
+  RegistrationQuestionType,
+} from '../db/schema/event_registration_questions.js';
 import { purchaseMembership } from './memberships_service.js';
 import type { PurchaseMembershipResult } from './memberships_service.js';
 import { qrTicketDataUrl } from './qr_ticket_service.js';
@@ -392,9 +395,10 @@ function toPublicTier(t: TierWithRemaining): PublicTier {
 export interface PublicRegistrationQuestion {
   id: string;
   label: string;
-  type: 'text' | 'select';
+  /** 'text' = free text; 'select' = pick one option; 'multiselect' = pick any. */
+  type: RegistrationQuestionType;
   required: boolean;
-  /** Choices for 'select' questions; null for free-text. */
+  /** Choices for 'select' / 'multiselect' questions; null for free-text. */
   options: string[] | null;
 }
 

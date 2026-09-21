@@ -109,13 +109,13 @@ For each question you set:
 | Field | Notes |
 | --- | --- |
 | **Question** | What you're asking, e.g. "What is your T-shirt size?". |
-| **Answer type** | **Free text** for an open answer, or **Multiple choice** to make the consumer pick one of your options. |
-| **Options** | Multiple choice only — the choices, comma-separated (at least 2, e.g. "Small, Medium, Large"). |
+| **Answer type** | **Free text** for an open answer; **Single choice** to make the consumer pick exactly one of your options; **Multiple choice** to let them tick any number of them (dietary needs, sessions they'll attend, how they heard about you). |
+| **Options** | Single and multiple choice only — the choices, comma-separated (at least 2, e.g. "Small, Medium, Large"). Options can't contain commas. |
 | **Required** | Ticked = the consumer can't finish booking without answering. Unticked = answering is optional. |
 
 Use the arrows to reorder questions; consumers see them in this order. You can add up to 20 questions, and events don't need any — leave the section empty to skip it.
 
-Questions are editable while the event is a **draft**, locked during review, and editable again once the event is **published** (from the **Live settings** card). Editing a question mid-event keeps the answers people already gave under the old wording — in the registrations CSV, the old and new versions appear as two separate columns. Answers appear with each registration (see **Managing registrations** below).
+Questions are editable while the event is a **draft**, locked during review, and editable again once the event is **published** (from the **Live settings** card). Editing a question mid-event keeps the answers people already gave under the old wording — in the registrations CSV, the old and new versions appear as two separate columns. Answers appear with each registration (see **Managing registrations** below); a multiple-choice answer lists every option the attendee ticked, comma-separated, in the order you defined them.
 
 Don't confuse these with **customer questions** — the public Q&A threads consumers post on your event page (see the end of this guide). Registration questions are asked *by you* and answered privately at booking.
 
