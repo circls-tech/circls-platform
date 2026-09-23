@@ -200,6 +200,42 @@ describe.skipIf(!runIntegration)('GET /v1/admin/audit-log', () => {
     expect(seen.size).toBe(p1.rows.length + p2.rows.length);
   });
 
+  it('keeps combined search and filters tenant-scoped across pages', async () => {
+    // The search and action deliberately match both tenants.
+    const action = `audit.scope.${SUFFIX}`;
+    const ids = [];
+    for (const tenantId of [tenantAId, tenantBId]) {
+      for (const offsetSec of [-30, -20, -10]) {
+        ids.push(await insertAudit({ tenantId, action, entityType: 'slot', actorUserId: adminUserId, offsetSec }));
+      }
+    }
+    try {
+      const filters = new URLSearchParams({
+        tenantId: tenantAId, q: `Audit Co adm-al-`, action,
+        entityType: 'slot', actorUserId: adminUserId, limit: '2',
+        since: new Date(Date.now() - 120_000).toISOString(),
+        until: new Date(Date.now() + 60_000).toISOString(),
+      });
+      const first = await fetchLog(filters.toString());
+      expect(first.rows).toHaveLength(2);
+      expect(first.nextCursor).not.toBeNull();
+      filters.set('cursor', first.nextCursor!);
+      const second = await fetchLog(filters.toString());
+      expect(second.rows).toHaveLength(1);
+      expect(second.nextCursor).toBeNull();
+      const rows = [...first.rows, ...second.rows];
+      expect(new Set(rows.map((row) => row.id)).size).toBe(3);
+      expect(rows.every((row) => row.tenantId === tenantAId && row.action === action && row.actorUserId === adminUserId)).toBe(true);
+
+      const differentTenantSearch = await fetchLog(new URLSearchParams({
+        tenantId: tenantAId, q: `adm-al-b-${SUFFIX}`,
+      }).toString());
+      expect(differentTenantSearch.rows).toHaveLength(0);
+    } finally {
+      for (const id of ids) await db.execute(sql`DELETE FROM audit_log WHERE id = ${id}::uuid`);
+    }
+  });
+
   it('rejects bad limit', async () => {
     const res = await app.inject({
       method: 'GET',
