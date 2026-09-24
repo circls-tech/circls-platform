@@ -224,8 +224,8 @@ function MembersTab({ data }: { data: AdminTenantDetail }) {
   }
   return (
     <div className="space-y-4">
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full min-w-[640px] text-sm">
         <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2 font-medium">Name</th>
@@ -460,7 +460,7 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2 font-medium">Event</th>

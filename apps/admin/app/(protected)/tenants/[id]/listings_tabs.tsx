@@ -135,7 +135,7 @@ function Th({ children }: { children: React.ReactNode }) {
 function TableShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">{children}</table>
+      <table className="w-full min-w-[720px] text-sm">{children}</table>
     </div>
   );
 }
