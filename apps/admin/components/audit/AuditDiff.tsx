@@ -68,6 +68,10 @@ interface DiffLine {
  * Turns the before/after blobs into one line per field that actually moved.
  * Fields present in both but unchanged are dropped — an audit row for a single
  * status flip otherwise buries it under a dozen identical values.
+ *
+ * Many writers store `after` as a partial patch (only the columns they set), so
+ * a key missing from `after` means "untouched", not "cleared", and is skipped.
+ * A key only in `after` is shown as its new value alone.
  */
 function diffLines(before: unknown, after: unknown): DiffLine[] {
   const b = asRecord(before);
@@ -78,10 +82,13 @@ function diffLines(before: unknown, after: unknown): DiffLine[] {
   for (const key of keys) {
     const bv = b?.[key];
     const av = a?.[key];
-    if (b && a && JSON.stringify(bv) === JSON.stringify(av)) continue;
+    if (b && a) {
+      if (!(key in a)) continue;
+      if (JSON.stringify(bv) === JSON.stringify(av)) continue;
+    }
     lines.push({
       key,
-      from: b ? humanizeValue(key, bv) : null,
+      from: b && key in b ? humanizeValue(key, bv) : null,
       to: a ? humanizeValue(key, av) : null,
     });
   }
