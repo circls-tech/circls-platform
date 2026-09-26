@@ -226,8 +226,8 @@ export function useAdminPartnerUsers(filters: AdminUserReportFilters) {
 }
 
 export interface AdminAuditLogFilters {
-  /** Free text: an organisation's name or slug, or a person's name, email or
-   *  phone. Lets the log be used without knowing any UUIDs. */
+  /** Free text: organisation name/slug, person name/email/phone, or
+   *  event/venue/membership name. */
   q?: string;
   tenantId?: string;
   actorUserId?: string;
@@ -238,6 +238,8 @@ export interface AdminAuditLogFilters {
   until?: string;
 }
 
+/** Also serves tenant views with a fixed tenantId. Admins use this route
+ *  because the partner audit endpoint requires membership of that tenant. */
 export function useAdminAuditLog(filters: AdminAuditLogFilters) {
   const { user } = useAuth();
   return useInfiniteQuery({
@@ -400,26 +402,6 @@ export function useRejectChangeRequest() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'change-requests'] });
     },
-  });
-}
-
-/**
- * One tenant's audit log, for the tenant page. Goes through the admin-wide
- * route filtered by tenant rather than the partner-facing
- * `/v1/tenants/:id/audit-log`: that one requires membership of the tenant
- * itself, which admins (members of the platform tenant only) don't have.
- */
-export function useTenantAuditLog(tenantId: string | null) {
-  const { user } = useAuth();
-  return useInfiniteQuery({
-    queryKey: ['admin', 'tenant-audit-log', tenantId],
-    enabled: Boolean(user && tenantId),
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      apiFetch<AdminAuditLogPage>(
-        `/v1/admin/audit-log${qs({ tenantId: tenantId!, limit: 50, cursor: pageParam })}`,
-      ),
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }
 

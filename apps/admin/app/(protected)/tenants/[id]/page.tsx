@@ -3,17 +3,16 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { AuditLog } from '@/components/audit/AuditLog';
 import {
   useAdminTenantDetail,
   useAdminTenantEvents,
   useReactivateTenant,
   useSuspendTenant,
-  useTenantAuditLog,
   useUpdateEventBilling,
   useUpdateTenantBilling,
 } from '@/lib/api/queries';
 import type {
-  AdminAuditLogItem,
   AdminTenantDetail,
   AdminTenantEventBillingItem,
 } from '@/lib/api/types';
@@ -138,14 +137,14 @@ export default function TenantDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-slate-200">
-        <nav className="-mb-px flex gap-6">
+      <div className="overflow-x-auto border-b border-slate-200">
+        <nav className="flex gap-6">
           {TABS.map((tt) => (
             <button
               key={tt.id}
               onClick={() => setTab(tt.id)}
               className={[
-                'border-b-2 px-1 pb-2 pt-1 text-sm font-medium transition-colors',
+                'shrink-0 whitespace-nowrap border-b-2 px-1 pb-2 pt-1 text-sm font-medium transition-colors',
                 tab === tt.id
                   ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-800',
@@ -164,7 +163,7 @@ export default function TenantDetailPage() {
       {tab === 'events' && <EventsTab tenantId={t.id} />}
       {tab === 'memberships' && <MembershipsTab tenantId={t.id} />}
       {tab === 'billing' && <BillingTab data={data} />}
-      {tab === 'audit' && <AuditTab tenantId={t.id} />}
+      {tab === 'audit' && <AuditLog tenantId={t.id} />}
     </div>
   );
 }
@@ -595,57 +594,6 @@ function EventOverrideRow({
         </span>
       </td>
     </tr>
-  );
-}
-
-function AuditTab({ tenantId }: { tenantId: string }) {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
-    useTenantAuditLog(tenantId);
-  const rows: AdminAuditLogItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
-
-  if (isLoading) {
-    return <p className="text-sm text-slate-400">Loading…</p>;
-  }
-  if (rows.length === 0) {
-    return <p className="text-sm text-slate-400">No audit events yet.</p>;
-  }
-  return (
-    <div className="space-y-3">
-      <ul className="space-y-2">
-        {rows.map((r) => (
-          <li
-            key={r.id}
-            className="flex flex-col gap-1 rounded border border-slate-200 bg-white p-3 text-sm shadow-sm sm:flex-row sm:items-center sm:gap-4"
-          >
-            <span className="font-mono text-xs text-slate-500 sm:w-44">{fmtIST(r.createdAt)}</span>
-            <span className="font-medium text-slate-800">{r.action}</span>
-            <span className="text-slate-500">
-              {r.entityType}
-              {r.entityId && (
-                <span className="ml-1 font-mono text-xs text-slate-400">
-                  {r.entityId.slice(0, 8)}…
-                </span>
-              )}
-            </span>
-            <span className="text-xs text-slate-500 sm:ml-auto">
-              {r.actorName ?? r.actorUserId?.slice(0, 8) ?? 'system'}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {hasNextPage && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-          >
-            {isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
 
