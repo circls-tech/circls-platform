@@ -148,7 +148,11 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
     if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
     const user = await currentUser(req);
     await requireTenantMembership(user.id, booking.tenantId);
-    return getBookingDetail(booking.tenantId, id);
+    const detail = await getBookingDetail(booking.tenantId, id);
+    // Same caller test as POST /v1/bookings/:id/cancel's `bySelf`: lets the
+    // portal's refund preview tell a self-cancel (timing tiers) from a staff
+    // refund (full override) without exposing the customer's user id.
+    return { ...detail, viewerIsCustomer: booking.customerUserId === user.id };
   });
 
   // Cancel route lives in routes/cancellations.ts (Phase 14) — handles both

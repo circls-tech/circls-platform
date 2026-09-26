@@ -312,6 +312,9 @@ export interface BookingDetail {
   venueId: string;
   arenaId: string;
   arenaName: string;
+  /** True when the viewer is the booking's own customer — the cancel API's
+   *  `bySelf`. Staff refunds (false) are always full; see refund_preview. */
+  viewerIsCustomer?: boolean;
   slots: BookingSlot[];
 }
 

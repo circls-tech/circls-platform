@@ -48,20 +48,21 @@ automatically. See [QR tickets and door check-in](/help/qr-tickets).
 Refunding a booking also cancels it and releases its slots — the two go together, which is why there is a single action for both.
 
 1. From the booking detail, click **Refund booking**.
-2. The refund page summarises the booking and shows a **refund preview**. The preview is a guide based on how far ahead of the slot you're refunding:
+2. The refund page summarises the booking and shows a **refund preview** of what the customer will get back:
 
-   | Timing / type | Indicative refund |
+   | Booking | Refund |
    | --- | --- |
-   | More than 24 hours before start | Full refund |
-   | 2–24 hours before start | 50% refund |
-   | Less than 2 hours before start | No refund |
-   | Paid at the venue (external) | No online refund |
+   | Paid online | **Full refund**, however close the slot (or event) is — shown as *Full refund (override)* |
+   | Payment never completed | Nothing to refund — the customer was never charged |
+   | Paid at the venue (external) | No online refund — settle cash at the counter |
    | Free booking | Nothing to refund |
 
 3. Enter a **reason for the refund** (required).
 4. Click **Refund booking**.
 
-The **final refund amount is decided by the server at the moment you submit**, so it can differ slightly from the preview. On success you'll see the refund policy that was applied, the final refund amount, and a refund ID if one was issued. The refund and its reason are logged.
+A refund issued by you or your team is always in full, however close to the start: it's a discretionary, out-of-policy refund, recorded as such in the audit log. The one exception is a booking you made yourself, from your own customer account — that follows the customer cancellation tiers (full refund more than 24 hours before the start, 50% between 2 and 24 hours, nothing inside 2 hours), and the preview shows which applies.
+
+The **final refund amount is decided by the server at the moment you submit**, so it can differ from the preview (for example, if the customer's payment completes or fails while the page is open). On success you'll see the refund policy that was applied, the final refund amount, and a refund ID if one was issued. The refund and its reason are logged.
 
 Cancelling a booking from an arena's reception grid is a different, quicker action: it frees the slot without taking you through the refund preview.
 

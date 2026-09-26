@@ -9,25 +9,7 @@ import type { CancelResult } from '@/lib/api/types';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
-
-/**
- * Pure preview of the refund the engine WILL grant. Mirrors the API-side
- * `computeRefundPolicy` so the partner sees the number before they click.
- * Wholly client-side; the backend is still the source of truth on POST.
- */
-function previewRefundPaise(
-  slotStartIso: string | undefined,
-  paymentMethod: string,
-  amountPaise: number,
-): { paise: number; tier: 'full' | 'partial' | 'none' | 'external' | 'free' } {
-  if (paymentMethod === 'external') return { paise: 0, tier: 'external' };
-  if (paymentMethod === 'free' || amountPaise <= 0) return { paise: 0, tier: 'free' };
-  if (!slotStartIso) return { paise: 0, tier: 'none' };
-  const hours = (new Date(slotStartIso).getTime() - Date.now()) / (60 * 60 * 1000);
-  if (hours > 24) return { paise: amountPaise, tier: 'full' };
-  if (hours >= 2) return { paise: Math.floor(amountPaise / 2), tier: 'partial' };
-  return { paise: 0, tier: 'none' };
-}
+import { previewRefund } from '@/lib/bookings/refund_preview';
 
 const TIER_COPY: Record<string, { label: string; description: string }> = {
   full: { label: 'Full refund', description: 'More than 24 hours before the slot starts.' },
@@ -35,7 +17,12 @@ const TIER_COPY: Record<string, { label: string; description: string }> = {
   none: { label: 'No refund', description: 'Less than 2 hours before the slot — out of window.' },
   external: { label: 'No refund', description: 'Cash paid at the venue; refund handled offline.' },
   free: { label: 'No refund', description: 'Free booking — no money was paid.' },
-  override: { label: 'Full refund (override)', description: 'Discretionary refund logged.' },
+  override: {
+    label: 'Full refund (override)',
+    description: 'Refunds issued by your team are in full, whatever the timing. Logged in the audit trail.',
+  },
+  uncaptured: { label: 'No refund', description: 'The payment was never completed — nothing was charged.' },
+  unknown: { label: 'Refund depends on timing', description: 'Tiered by how far ahead of the start this is.' },
 };
 
 export default function RefundBookingPage() {
@@ -69,13 +56,18 @@ export default function RefundBookingPage() {
   const firstSlotStart = booking?.slots[0]?.startAt;
 
   // Pull a charge row for the amount preview; falls back to booking.totalPaise.
-  const chargeAmount = useMemo(() => {
-    const charge = paymentsRows?.find((p) => p.kind === 'charge');
-    if (charge) return Math.max(0, Number(charge.amountPaise));
-    return booking?.totalPaise ?? 0;
-  }, [paymentsRows, booking?.totalPaise]);
+  const charge = paymentsRows?.find((p) => p.kind === 'charge');
+  const chargeAmount = charge ? Math.max(0, Number(charge.amountPaise)) : (booking?.totalPaise ?? 0);
 
-  const preview = previewRefundPaise(firstSlotStart, booking?.paymentMethod ?? 'external', chargeAmount);
+  // Staff refunding a customer's booking is the server's `bySelf=false` case:
+  // a full override refund, whatever the timing.
+  const preview = previewRefund({
+    paymentMethod: booking?.paymentMethod ?? 'external',
+    amountPaise: chargeAmount,
+    bySelf: booking?.viewerIsCustomer === true,
+    slotStartIso: firstSlotStart,
+    chargeStatus: charge?.status,
+  });
 
   const isAlreadyCancelled = booking?.status === 'cancelled';
   const submitting = cancel.isPending;
@@ -170,7 +162,9 @@ export default function RefundBookingPage() {
                       {TIER_COPY[preview.tier]?.description}
                     </p>
                   </div>
-                  <p className="text-lg font-semibold text-slate-800">{money(preview.paise)}</p>
+                  <p className="text-lg font-semibold text-slate-800">
+                    {preview.paise === null ? '—' : money(preview.paise)}
+                  </p>
                 </div>
                 <p className="text-xs text-slate-500">
                   Final refund amount is decided by the server at the moment you submit.
