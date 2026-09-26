@@ -6,8 +6,8 @@
  *   - createPaymentOrder(): called by booking_service.prepareOnlineBookingWithPayment
  *     when paymentMethod='razorpay_route'. Inserts a `pending` charge row, asks
  *     the payment gateway to create the order, and persists the provider_order_id.
- *   - handleRazorpayWebhook() / handleStripeWebhook(): called by the
- *     /webhooks/* routes (signature verified upstream). Both extract their
+ *   - handleRazorpayWebhook() / handleStripeWebhook() / handleCashfreeWebhook():
+ *     called by the /webhooks/* routes (signature verified upstream). Both extract their
  *     provider's envelope and delegate to shared apply* cores, so idempotency
  *     and state transitions behave identically per gateway.
  *   - resolvePaymentContext(): which gateway/currency a booking charges
@@ -33,13 +33,23 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { type Booking, bookings, payments, tenants, venues, type Payment } from '../db/schema/index.js';
+import {
+  type Booking,
+  bookings,
+  payments,
+  tenants,
+  users,
+  venues,
+  type Payment,
+} from '../db/schema/index.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
+import { cashfreeAmountToMinor } from '../lib/cashfree.js';
 import {
   currencyForCountry,
   getGateway,
   providerForCountry,
+  type GatewayCustomer,
   type PaymentProviderId,
 } from '../lib/gateway.js';
 import { notifyBookingConfirmed } from './notification_service.js';
@@ -55,7 +65,8 @@ export interface PaymentContext {
 /**
  * Resolve which gateway settles a booking's money: the venue's country when
  * there is one, else the owning tenant's. Everything non-US (including a
- * missing country) charges INR via Razorpay — the pre-multi-gateway default.
+ * missing country) charges INR via the configured INR gateway
+ * (`INR_PAYMENT_GATEWAY`: Razorpay by default, or Cashfree).
  */
 export async function resolvePaymentContext(
   opts: { venueId?: string | null | undefined; tenantId: string },
@@ -112,10 +123,45 @@ export interface CreatePaymentOrderInput {
   actorUserId: string;
 }
 
+/**
+ * The booking's customer as the gateway sees it. Only Cashfree uses it today
+ * (its orders require customer details); a booking without a linked user
+ * falls back to the booking id as the customer id.
+ */
+async function loadGatewayCustomer(bookingId: string): Promise<GatewayCustomer> {
+  const [row] = await db
+    .select({
+      userId: users.id,
+      phoneE164: users.phoneE164,
+      email: users.email,
+      displayName: users.displayName,
+      customerName: bookings.customerName,
+      customerContact: bookings.customerContact,
+    })
+    .from(bookings)
+    .leftJoin(users, eq(users.id, bookings.customerUserId))
+    .where(eq(bookings.id, bookingId))
+    .limit(1);
+  // Accounts that signed in by email have no phone_e164, but the checkout
+  // still records a contact on the booking — use it when it's a phone number
+  // (it may also be an email). Cashfree shows this number on its checkout.
+  const contact = row?.customerContact?.trim() ?? '';
+  const contactPhone = /^\+?[0-9][0-9\s-]{7,}$/.test(contact) ? contact.replace(/[\s-]/g, '') : null;
+  return {
+    id: row?.userId ?? bookingId,
+    phoneE164: row?.phoneE164 ?? contactPhone,
+    email: row?.email ?? null,
+    name: row?.displayName ?? row?.customerName ?? null,
+  };
+}
+
 export interface CreatePaymentOrderResult {
   paymentId: string;
   providerOrderId: string;
-  /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+  /**
+   * What the browser needs besides the order id: the Stripe PaymentIntent
+   * client secret, or the Cashfree payment session id.
+   */
   clientSecret?: string | undefined;
 }
 
@@ -156,6 +202,8 @@ export async function createPaymentOrder(
     amountMinor: input.amountPaise,
     currency,
     reference: input.bookingId,
+    chargeId: row.id,
+    customer: await loadGatewayCustomer(input.bookingId),
   });
 
   await db
@@ -357,6 +405,101 @@ export async function handleStripeWebhook(event: StripeWebhookEvent): Promise<vo
     default:
       // Unknown events: log and ack so Stripe doesn't retry forever.
       logger.info({ type: event.type, eventId: event.eventId }, 'stripe_webhook_ignored');
+      return;
+  }
+}
+
+/** A Cashfree payment-gateway webhook: `{ type, data, event_time }` on the wire. */
+export interface CashfreeWebhookEvent {
+  type: string;
+  /** `data` — `{ order, payment, … }` for payment events, `{ refund }` for refunds. */
+  data: Record<string, unknown>;
+  /** `x-idempotency-key` header, else a hash of the signed body. */
+  eventId: string;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Cashfree ids arrive as strings or numbers depending on webhook version. */
+function asId(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+/**
+ * Cashfree webhook fan-out. Same shared cores as Razorpay/Stripe:
+ *   PAYMENT_SUCCESS_WEBHOOK                          → capture (orderId = our order_id)
+ *   PAYMENT_FAILED_WEBHOOK / PAYMENT_USER_DROPPED_WEBHOOK → failed attempt
+ *   REFUND_STATUS_WEBHOOK                            → refund resolution (terminal only)
+ * Amounts arrive in rupees and are converted to paise before the amount check.
+ */
+export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promise<void> {
+  const order = asRecord(event.data['order']);
+  const payment = asRecord(event.data['payment']);
+  const orderId = asId(order?.['order_id']);
+
+  switch (event.type) {
+    case 'PAYMENT_SUCCESS_WEBHOOK': {
+      if (!orderId) {
+        logger.warn({ eventId: event.eventId, provider: 'cashfree' }, 'webhook_missing_order_id');
+        return;
+      }
+      const amount = payment?.['payment_amount'];
+      const currency = payment?.['payment_currency'];
+      await applyPaymentCaptured({
+        provider: 'cashfree',
+        orderId,
+        providerPaymentId: asId(payment?.['cf_payment_id']),
+        amount: typeof amount === 'number' ? cashfreeAmountToMinor(amount) : undefined,
+        currency: typeof currency === 'string' ? currency : undefined,
+        eventId: event.eventId,
+      });
+      return;
+    }
+    case 'PAYMENT_FAILED_WEBHOOK':
+    case 'PAYMENT_USER_DROPPED_WEBHOOK': {
+      // A dropped checkout is just an abandoned attempt — the order stays
+      // payable, exactly like a failed one (see the retryable-order model).
+      if (!orderId) {
+        logger.warn({ eventId: event.eventId, provider: 'cashfree' }, 'webhook_missing_order_id');
+        return;
+      }
+      await applyPaymentFailed({ provider: 'cashfree', orderId, eventId: event.eventId });
+      return;
+    }
+    case 'REFUND_STATUS_WEBHOOK': {
+      const refund = asRecord(event.data['refund']);
+      const refundId = asId(refund?.['cf_refund_id']);
+      if (!refundId) {
+        logger.warn({ eventId: event.eventId, provider: 'cashfree' }, 'webhook_missing_refund_id');
+        return;
+      }
+      const status = refund?.['refund_status'];
+      const failed = status === 'CANCELLED' || status === 'REJECTED';
+      // PENDING / ONHOLD / PENDING_APPROVAL don't move the ledger row.
+      if (!failed && status !== 'SUCCESS') {
+        logger.info(
+          { refundId, status, eventId: event.eventId },
+          'cashfree_refund_nonterminal_ignored',
+        );
+        return;
+      }
+      await applyRefundResolution({
+        provider: 'cashfree',
+        refundId,
+        targetStatus: failed ? 'failed' : 'captured',
+        eventId: event.eventId,
+      });
+      return;
+    }
+    default:
+      // Unknown events (incl. AUTO_REFUND_STATUS_WEBHOOK for refunds Cashfree
+      // initiated itself, which have no ledger row): log and ack so Cashfree
+      // doesn't retry.
+      logger.info({ type: event.type, eventId: event.eventId }, 'cashfree_webhook_ignored');
       return;
   }
 }

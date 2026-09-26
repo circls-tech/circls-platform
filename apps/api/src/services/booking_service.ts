@@ -189,9 +189,12 @@ export interface PrepareOnlineBookingResult {
   payment: {
     gateway: PaymentProviderId;
     orderId: string;
-    /** The gateway's browser-safe key: Razorpay key id / Stripe publishable key. */
+    /**
+     * The gateway's browser-safe key: Razorpay key id / Stripe publishable key /
+     * Cashfree SDK mode ('sandbox' | 'production').
+     */
     keyId: string;
-    /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+    /** Stripe PaymentIntent client secret / Cashfree payment session id. */
     clientSecret?: string | undefined;
     /** Amount in the currency's minor unit (paise / cents). */
     amountPaise: number;
@@ -407,7 +410,7 @@ export async function prepareOnlineBookingWithPayment(
     payment: {
       gateway: payCtx.provider,
       orderId: providerOrderId,
-      // Frontend uses this to open checkout (Razorpay JS / Stripe.js). Stub
+      // Frontend uses this to open checkout (Razorpay JS / Stripe.js / Cashfree JS). Stub
       // mode has no key; we surface an empty string so the response shape
       // stays stable and the client shows "reserved".
       keyId: publicKeyIdFor(payCtx.provider),
@@ -465,7 +468,7 @@ export interface BookEventResult {
   gateway?: PaymentProviderId;
   /** The gateway's browser-safe key + amount, so the client can open checkout. */
   keyId?: string;
-  /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+  /** Stripe PaymentIntent client secret / Cashfree payment session id. */
   clientSecret?: string | undefined;
   amountPaise?: number;
   currency?: string;

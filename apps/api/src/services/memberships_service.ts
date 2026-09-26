@@ -424,7 +424,7 @@ export interface PurchaseMembershipResult {
   gateway?: PaymentProviderId;
   /** The gateway's browser-safe key + amount, so the client can open checkout. */
   keyId?: string;
-  /** Stripe only: what the browser needs to confirm the PaymentIntent. */
+  /** Stripe PaymentIntent client secret / Cashfree payment session id. */
   clientSecret?: string | undefined;
   amountPaise?: number;
   currency?: string;

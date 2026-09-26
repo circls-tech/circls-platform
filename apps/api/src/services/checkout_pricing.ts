@@ -30,6 +30,10 @@ export const STRIPE_FEE_FIXED_MINOR = 30;
 const GATEWAY_FEES: Record<PaymentProviderId, { rate: number; fixedMinor: number }> = {
   razorpay: { rate: RAZORPAY_FEE_RATE, fixedMinor: 0 },
   stripe: { rate: STRIPE_FEE_RATE, fixedMinor: STRIPE_FEE_FIXED_MINOR },
+  // Deliberately priced like Razorpay, not at Cashfree's own (lower) rate:
+  // the INR gateway can be switched between quote and charge, and the
+  // customer's total must never depend on which one takes the order.
+  cashfree: { rate: RAZORPAY_FEE_RATE, fixedMinor: 0 },
 };
 
 /** The coupon fields needed to price a discount (a slice of the coupons row). */

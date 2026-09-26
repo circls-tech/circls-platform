@@ -47,6 +47,19 @@ export const envSchema = z
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+
+  // Cashfree (INR, alternative to Razorpay). Webhooks are signed with the
+  // client secret, so there is no separate webhook secret. CASHFREE_ENV picks
+  // the API host + the browser SDK mode; sandbox keys only work against the
+  // sandbox host. Without both keys the adapter runs in stub mode.
+  CASHFREE_CLIENT_ID: z.string().optional(),
+  CASHFREE_CLIENT_SECRET: z.string().optional(),
+  CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  // Which gateway NEW INR orders are created on. Flipping it never strands
+  // existing money: refunds, cancels and webhooks follow the provider stored
+  // on each charge row, so both gateways must stay configured while either
+  // holds refundable charges. Razorpay stays required in prod as the backup.
+  INR_PAYMENT_GATEWAY: z.enum(['razorpay', 'cashfree']).default('razorpay'),
   // Settlement-hold buffer after a slot's/event's end (minutes). Default = 60.
   SETTLEMENT_HOLD_BUFFER_MIN: z.coerce.number().int().min(0).default(60),
   // Settlement-hold buffer after capture for bookings with no natural end
@@ -131,6 +144,27 @@ export const envSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} is required in production`,
+          });
+        }
+      }
+      // Routing INR to Cashfree needs live Cashfree keys against the
+      // production host — otherwise every Indian booking would silently fall
+      // back to stub mode (reserved, never charged) or hit the sandbox.
+      if (val.INR_PAYMENT_GATEWAY === 'cashfree') {
+        for (const key of ['CASHFREE_CLIENT_ID', 'CASHFREE_CLIENT_SECRET'] as const) {
+          if (!val[key] || val[key].length === 0) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [key],
+              message: `${key} is required in production when INR_PAYMENT_GATEWAY=cashfree`,
+            });
+          }
+        }
+        if (val.CASHFREE_ENV !== 'production') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['CASHFREE_ENV'],
+            message: 'CASHFREE_ENV must be production when INR_PAYMENT_GATEWAY=cashfree in production',
           });
         }
       }

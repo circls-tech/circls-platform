@@ -15,7 +15,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { auditLog, bookings, payments, slots } from '../db/schema/index.js';
 import { env } from '../config/env.js';
-import { getGateway } from '../lib/gateway.js';
+import { getGateway, isGatewayProvider } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -117,7 +117,7 @@ export async function sweepAbandonedCarts(): Promise<number> {
   // intent already succeeded because a retry-capture won) is logged and left
   // to the capture safety net.
   for (const charge of ordersToCancel) {
-    if (charge.provider !== 'razorpay' && charge.provider !== 'stripe') continue; // stub/external
+    if (!isGatewayProvider(charge.provider)) continue; // stub/external
     if (!charge.providerOrderId) continue;
     try {
       await getGateway(charge.provider).cancelOrder(charge.providerOrderId);

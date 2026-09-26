@@ -487,6 +487,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /webhooks/cashfree:
+    post:
+      responses:
+        '200':
+          description: Default Response
   /v1/venues/{venueId}/events:
     get:
       parameters:

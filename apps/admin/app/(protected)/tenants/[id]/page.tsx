@@ -617,7 +617,9 @@ function gatewayLabel(country: string | null): string {
   const c = (country ?? '').trim().toUpperCase();
   const isUs =
     c === 'US' || c === 'USA' || c === 'UNITED STATES' || c === 'UNITED STATES OF AMERICA';
-  return isUs ? 'Stripe (USD)' : 'Razorpay (INR)';
+  // The INR gateway (Razorpay or Cashfree) is a platform-wide API setting
+  // (INR_PAYMENT_GATEWAY), not per org — name both rather than guess.
+  return isUs ? 'Stripe (USD)' : 'Razorpay / Cashfree (INR)';
 }
 
 function Field({

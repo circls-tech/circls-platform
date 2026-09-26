@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
 import { openRazorpayCheckout } from '@/lib/checkout';
+import { openCashfreeCheckout } from '@/lib/checkout_cashfree';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
 import { fetchPostBookingRedirect, useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
 import { ApiError } from '@/lib/api/client';
@@ -115,7 +116,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     try {
       // Set on the event path so a paid success can look up its redirect.
       let eventBookingId: string | null = null;
-      let order: { gateway: 'razorpay' | 'stripe'; orderId: string; keyId: string; clientSecret: string; amountPaise: number; currency: string } =
+      let order: { gateway: 'razorpay' | 'stripe' | 'cashfree'; orderId: string; keyId: string; clientSecret: string; amountPaise: number; currency: string } =
         { gateway: 'razorpay', orderId: '', keyId: '', clientSecret: '', amountPaise: breakdown.totalPaise, currency: breakdown.currency ?? 'INR' };
       if (item.kind === 'slot') {
         const r = await bookSlots.mutateAsync({
@@ -147,9 +148,10 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       }
 
       if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.' }); return; }
-      // Stripe opens from the client secret; Razorpay from the order id. Either
-      // way an empty browser key means stub mode → the booking is reserved.
-      const canOpen = order.keyId && (order.gateway === 'stripe' ? order.clientSecret : order.orderId);
+      // Stripe opens from the client secret, Cashfree from its payment session
+      // (also carried in clientSecret); Razorpay from the order id. Either way
+      // an empty browser key means stub mode → the booking is reserved.
+      const canOpen = order.keyId && (order.gateway === 'razorpay' ? order.orderId : order.clientSecret);
       if (!canOpen) { setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' }); return; }
 
       const result = order.gateway === 'stripe'
@@ -158,13 +160,20 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
             payLabel: `Pay ${formatPaiseExact(order.amountPaise, order.currency)}`,
             description: item.title,
           })
+        : order.gateway === 'cashfree'
+        ? await openCashfreeCheckout({ mode: order.keyId, paymentSessionId: order.clientSecret })
         : await openRazorpayCheckout({
             keyId: order.keyId, orderId: order.orderId, amountPaise: order.amountPaise, currency: order.currency,
             description: item.title,
             prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
           });
-      if (result.kind === 'paid') {
-        setPhase({ kind: 'success', message: 'Payment received! See it in My Bookings.' });
+      if (result.kind === 'paid' || result.kind === 'submitted') {
+        setPhase({
+          kind: 'success',
+          message: result.kind === 'paid'
+            ? 'Payment received! See it in My Bookings.'
+            : 'Payment submitted! Your booking shows as confirmed in My Bookings once the payment clears.',
+        });
         // The booking only earns its post-booking link once the webhook flips
         // it to confirmed, which usually lands just after this callback.
         if (eventBookingId) {

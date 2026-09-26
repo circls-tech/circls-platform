@@ -11,12 +11,14 @@ import {
   users,
   venues,
 } from '../db/schema/index.js';
+import { __resetCashfreeForTesting } from '../lib/cashfree.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 import { __resetStripeForTesting } from '../lib/stripe.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { createPricingRule } from './pricing_service.js';
 import {
   createPaymentOrder,
+  handleCashfreeWebhook,
   handleRazorpayWebhook,
   handleStripeWebhook,
   listForBooking,
@@ -43,6 +45,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     await pingDb();
     __resetRazorpayForTesting();
     __resetStripeForTesting();
+    __resetCashfreeForTesting();
 
     const [u] = await db
       .insert(users)
@@ -91,7 +94,7 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   /** Create a fresh pending booking + payment row scoped to a far-future slot. */
   async function seedPendingBookingWithOrder(
     dateIso: string,
-    opts?: { provider?: 'razorpay' | 'stripe'; currency?: string },
+    opts?: { provider?: 'razorpay' | 'stripe' | 'cashfree'; currency?: string },
   ): Promise<{
     bookingId: string;
     orderId: string;
@@ -687,6 +690,128 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
           type: 'customer.created',
           eventId: 'evt_stripe_unknown',
           object: { id: 'cus_1' },
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleCashfreeWebhook', () => {
+    it('PAYMENT_SUCCESS_WEBHOOK captures (rupees → paise) and confirms the booking', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-01T05:00:00.000Z',
+        { provider: 'cashfree' },
+      );
+      expect(orderId).toMatch(/^stub_cforder_/);
+
+      await handleCashfreeWebhook({
+        type: 'PAYMENT_SUCCESS_WEBHOOK',
+        eventId: 'cf_idem_capture_1',
+        data: {
+          order: { order_id: orderId, order_amount: 500, order_currency: 'INR' },
+          // Older webhook versions send cf_payment_id as a number.
+          payment: {
+            cf_payment_id: 9876543210,
+            payment_status: 'SUCCESS',
+            payment_amount: 500.0,
+            payment_currency: 'INR',
+          },
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      expect(pay?.providerPaymentId).toBe('9876543210');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+
+    it('rejects a capture whose amount disagrees with the order (M1)', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-08T05:00:00.000Z',
+        { provider: 'cashfree' },
+      );
+
+      await handleCashfreeWebhook({
+        type: 'PAYMENT_SUCCESS_WEBHOOK',
+        eventId: 'cf_idem_mismatch',
+        data: {
+          order: { order_id: orderId },
+          payment: { cf_payment_id: '111', payment_amount: 499.99, payment_currency: 'INR' },
+        },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending');
+    });
+
+    it('failed and user-dropped attempts keep the payment and booking pending', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-03-15T05:00:00.000Z',
+        { provider: 'cashfree' },
+      );
+
+      await handleCashfreeWebhook({
+        type: 'PAYMENT_FAILED_WEBHOOK',
+        eventId: 'cf_idem_fail_1',
+        data: { order: { order_id: orderId }, payment: { payment_status: 'FAILED' } },
+      });
+      await handleCashfreeWebhook({
+        type: 'PAYMENT_USER_DROPPED_WEBHOOK',
+        eventId: 'cf_idem_drop_1',
+        data: { order: { order_id: orderId }, payment: { payment_status: 'USER_DROPPED' } },
+      });
+
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('pending');
+      expect(pay?.metadata['failedAttempts']).toBe(2);
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('pending');
+    });
+
+    it('REFUND_STATUS_WEBHOOK SUCCESS flips a pending refund row to captured; PENDING is ignored', async () => {
+      const { bookingId } = await seedPendingBookingWithOrder('2032-03-22T05:00:00.000Z', {
+        provider: 'cashfree',
+      });
+      const [r] = await db
+        .insert(payments)
+        .values({
+          bookingId,
+          tenantId,
+          provider: 'cashfree',
+          providerPaymentId: '11325632',
+          amountPaise: -50000,
+          currency: 'INR',
+          status: 'pending',
+          kind: 'refund',
+          metadata: {},
+        })
+        .returning();
+
+      await handleCashfreeWebhook({
+        type: 'REFUND_STATUS_WEBHOOK',
+        eventId: 'cf_idem_refund_pending',
+        data: { refund: { cf_refund_id: 11325632, refund_status: 'PENDING' } },
+      });
+      let [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('pending');
+
+      await handleCashfreeWebhook({
+        type: 'REFUND_STATUS_WEBHOOK',
+        eventId: 'cf_idem_refund_done',
+        data: { refund: { cf_refund_id: 11325632, refund_status: 'SUCCESS' } },
+      });
+      [row] = await db.select().from(payments).where(sql`id = ${r!.id}`);
+      expect(row?.status).toBe('captured');
+    });
+
+    it('acks unknown event types without error', async () => {
+      await expect(
+        handleCashfreeWebhook({
+          type: 'PAYMENT_CHARGES_WEBHOOK',
+          eventId: 'cf_idem_unknown',
+          data: {},
         }),
       ).resolves.toBeUndefined();
     });

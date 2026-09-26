@@ -15,7 +15,7 @@ describe('providerForCountry / currencyForCountry', () => {
     }
   });
 
-  it('routes everything else (incl. missing country) to razorpay/INR', () => {
+  it('routes everything else (incl. missing country) to the INR gateway (razorpay by default)', () => {
     for (const c of ['India', 'IN', 'india', '', null, undefined, 'Uganda']) {
       expect(providerForCountry(c)).toBe('razorpay');
       expect(currencyForCountry(c)).toBe('INR');
@@ -36,6 +36,7 @@ describe('getGateway (stub mode — no keys in test env)', () => {
       amountMinor: 1299,
       currency: 'USD',
       reference: 'booking-1',
+      chargeId: 'charge-1',
     });
     expect(order.id).toMatch(/^stub_pi_\d+$/);
     expect(order.clientSecret).toBe(`${order.id}_secret`);
@@ -48,8 +49,24 @@ describe('getGateway (stub mode — no keys in test env)', () => {
       amountMinor: 50000,
       currency: 'INR',
       reference: 'booking-2',
+      chargeId: 'charge-2',
     });
     expect(order.clientSecret).toBeUndefined();
+  });
+
+  it('cashfree stub mints deterministic ids with a payment session', async () => {
+    const gw = getGateway('cashfree');
+    expect(gw.provider).toBe('cashfree');
+    expect(gw.mode).toBe('stub');
+    const order = await gw.createOrder({
+      amountMinor: 50000,
+      currency: 'INR',
+      reference: 'booking-3',
+      chargeId: 'charge-3',
+    });
+    expect(order.id).toMatch(/^stub_cforder_\d+$/);
+    expect(order.clientSecret).toBe(`${order.id}_session`);
+    expect(order.amountMinor).toBe(50000);
   });
 });
 
@@ -57,5 +74,6 @@ describe('publicKeyIdFor', () => {
   it('is empty in stub mode so the client shows "reserved"', () => {
     expect(publicKeyIdFor('razorpay')).toBe('');
     expect(publicKeyIdFor('stripe')).toBe('');
+    expect(publicKeyIdFor('cashfree')).toBe('');
   });
 });

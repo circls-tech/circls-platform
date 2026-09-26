@@ -18,7 +18,7 @@ import { db } from '../db/client.js';
 import { bookings, events, payments, slots, userMemberships } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
-import { getGateway } from '../lib/gateway.js';
+import { getGateway, isGatewayProvider, type PaymentProviderId } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
 import {
   type BookingPaymentMethod,
@@ -56,7 +56,7 @@ function parseTstzRangeStart(range: string): Date | null {
 export async function cancelPaidBooking(input: CancelInput): Promise<CancelResult> {
   // The gateway order to void after commit, when the cancelled booking's
   // charge was never captured (see below).
-  let orderToCancel: { provider: 'razorpay' | 'stripe'; orderId: string } | undefined;
+  let orderToCancel: { provider: PaymentProviderId; orderId: string } | undefined;
 
   const result = await db.transaction(async (tx) => {
     const [booking] = await tx
@@ -167,10 +167,7 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
         .update(payments)
         .set({ status: 'failed' })
         .where(and(eq(payments.id, charge.id), eq(payments.status, 'pending')));
-      if (
-        (charge.provider === 'razorpay' || charge.provider === 'stripe') &&
-        charge.providerOrderId
-      ) {
+      if (isGatewayProvider(charge.provider) && charge.providerOrderId) {
         orderToCancel = { provider: charge.provider, orderId: charge.providerOrderId };
       }
     }
