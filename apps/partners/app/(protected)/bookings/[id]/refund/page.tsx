@@ -3,33 +3,18 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useBookingDetail, useBookingPayments, useCancelBookingWithReason } from '@/lib/api/queries';
+import { useBookingDetail, useCancelBookingWithReason, useRefundPreview } from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
 import type { CancelResult } from '@/lib/api/types';
+import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
-import { previewRefund } from '@/lib/bookings/refund_preview';
-
-const TIER_COPY: Record<string, { label: string; description: string }> = {
-  full: { label: 'Full refund', description: 'More than 24 hours before the slot starts.' },
-  partial: { label: '50% refund', description: '2–24 hours before the slot starts.' },
-  none: { label: 'No refund', description: 'Less than 2 hours before the slot — out of window.' },
-  external: { label: 'No refund', description: 'Cash paid at the venue; refund handled offline.' },
-  free: { label: 'No refund', description: 'Free booking — no money was paid.' },
-  override: {
-    label: 'Full refund (override)',
-    description: 'Refunds issued by your team are in full, whatever the timing. Logged in the audit trail.',
-  },
-  uncaptured: { label: 'No refund', description: 'The payment was never completed — nothing was charged.' },
-  unknown: { label: 'Refund depends on timing', description: 'Tiered by how far ahead of the start this is.' },
-};
 
 export default function RefundBookingPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data: booking, isLoading, isError, error } = useBookingDetail(id);
-  const { data: paymentsRows } = useBookingPayments(id);
   const cancel = useCancelBookingWithReason();
   const currency = useCurrency({ venueId: booking?.venueId });
   const money = (paise: number) => formatMoney(paise, currency, { decimals: 2 });
@@ -54,22 +39,16 @@ export default function RefundBookingPage() {
   const [result, setResult] = useState<CancelResult | null>(null);
 
   const firstSlotStart = booking?.slots[0]?.startAt;
-
-  // Pull a charge row for the amount preview; falls back to booking.totalPaise.
-  const charge = paymentsRows?.find((p) => p.kind === 'charge');
-  const chargeAmount = charge ? Math.max(0, Number(charge.amountPaise)) : (booking?.totalPaise ?? 0);
-
-  // Staff refunding a customer's booking is the server's `bySelf=false` case:
-  // a full override refund, whatever the timing.
-  const preview = previewRefund({
-    paymentMethod: booking?.paymentMethod ?? 'external',
-    amountPaise: chargeAmount,
-    bySelf: booking?.viewerIsCustomer === true,
-    slotStartIso: firstSlotStart,
-    chargeStatus: charge?.status,
-  });
-
   const isAlreadyCancelled = booking?.status === 'cancelled';
+
+  // The server works the preview out with the cancel's own rules and inputs
+  // (who you are, what was captured, what's already been refunded), so it is
+  // what submitting right now would do.
+  const preview = useRefundPreview(id, Boolean(booking) && !isAlreadyCancelled && !result);
+  const previewCopy = preview.data ? refundTierCopy(preview.data.tier) : null;
+  const previewError =
+    preview.error instanceof ApiError ? preview.error.message : preview.error ? 'Something went wrong.' : null;
+
   const submitting = cancel.isPending;
   const apiError = cancel.error instanceof ApiError ? cancel.error : null;
 
@@ -135,7 +114,7 @@ export default function RefundBookingPage() {
                   <p className="mt-0.5 text-slate-700">{booking.paymentMethod}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total paid</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total</p>
                   <p className="mt-0.5 font-medium text-slate-800">{money(booking.totalPaise)}</p>
                 </div>
                 <div>
@@ -153,19 +132,30 @@ export default function RefundBookingPage() {
             <Card>
               <div className="flex flex-col gap-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Refund preview</p>
-                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">
-                      {TIER_COPY[preview.tier]?.label ?? preview.tier}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {TIER_COPY[preview.tier]?.description}
-                    </p>
+                {preview.data && previewCopy ? (
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{previewCopy.label}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{previewCopy.description}</p>
+                    </div>
+                    <p className="text-lg font-semibold text-slate-800">{money(preview.data.refundPaise)}</p>
                   </div>
-                  <p className="text-lg font-semibold text-slate-800">
-                    {preview.paise === null ? '—' : money(preview.paise)}
+                ) : previewError ? (
+                  <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+                    Couldn&apos;t work out the refund: {previewError}
                   </p>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    <span className="block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                    Working out the refund…
+                  </div>
+                )}
+                {preview.data && preview.data.alreadyRefundedPaise > 0 && (
+                  <p className="text-xs text-slate-500">
+                    {money(preview.data.alreadyRefundedPaise)} of the {money(preview.data.amountPaise)} paid was
+                    already refunded before now.
+                  </p>
+                )}
                 <p className="text-xs text-slate-500">
                   Final refund amount is decided by the server at the moment you submit.
                 </p>
@@ -196,7 +186,7 @@ export default function RefundBookingPage() {
                     variant="danger"
                     size="sm"
                     loading={submitting}
-                    disabled={!reason.trim()}
+                    disabled={!reason.trim() || preview.isLoading}
                   >
                     Refund booking
                   </Button>
@@ -205,7 +195,9 @@ export default function RefundBookingPage() {
             </Card>
           )}
 
-          {isAlreadyCancelled && (
+          {/* Also true once our own refund lands and the booking refetches —
+              the result card below covers that case. */}
+          {isAlreadyCancelled && !result && (
             <Card>
               <p className="py-2 text-sm text-slate-600">This booking is already cancelled.</p>
             </Card>
@@ -215,12 +207,13 @@ export default function RefundBookingPage() {
           {result && (
             <Card>
               <div className="flex flex-col gap-3">
-                <p className="text-sm font-medium text-emerald-700">Booking refunded and cancelled.</p>
+                <p className="text-sm font-medium text-emerald-700">
+                  {result.refundPaise > 0 ? 'Booking refunded and cancelled.' : 'Booking cancelled — nothing was refunded.'}
+                </p>
                 <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3">
                   <div>
-                    <p className="text-sm font-medium text-slate-800">
-                      {TIER_COPY[result.policy]?.label ?? result.policy}
-                    </p>
+                    <p className="text-sm font-medium text-slate-800">{refundTierCopy(result.policy).label}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{refundTierCopy(result.policy).description}</p>
                     {result.refundId && (
                       <p className="mt-0.5 font-mono text-xs text-slate-500">refund: {result.refundId}</p>
                     )}

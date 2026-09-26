@@ -8,6 +8,8 @@ export interface ConfirmDialogProps {
   message: string;
   confirmLabel?: string;
   danger?: boolean;
+  /** Hold the confirm button, e.g. while the message is still being worked out. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -18,6 +20,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Confirm',
   danger = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -32,6 +35,7 @@ export function ConfirmDialog({
           <Button
             variant={danger ? 'danger' : 'primary'}
             size="sm"
+            disabled={confirmDisabled}
             onClick={() => {
               onConfirm();
               onClose();

@@ -84,6 +84,38 @@ export function computeSettleRefundPaise(input: SettleRefundInput): number {
 }
 
 /**
+ * Refunds already made on a booking: the cash refunded so far, and the
+ * settle-side deduction those refunds recorded. Refund rows have
+ * amount_paise < 0; the absolute value is the already-refunded amount.
+ * Anything that isn't 'failed' counts as still owing the money — the provider
+ * call has either succeeded or is in flight. settleDeducted uses the same
+ * coalesce fallback as the payout refund aggregate, so the cumulative settle
+ * math stays consistent across legacy NULL rows.
+ */
+export async function sumPriorRefunds(
+  exec: Pick<RefundExec, 'select'>,
+  bookingId: string,
+): Promise<{ refundedPaise: number; settleDeductedPaise: number }> {
+  const [agg] = await exec
+    .select({
+      refundedSoFar: sql<number>`coalesce(-sum(${payments.amountPaise}), 0)::bigint`,
+      settleDeductedSoFar: sql<number>`coalesce(-sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
+    })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.bookingId, bookingId),
+        eq(payments.kind, 'refund'),
+        sql`${payments.status} <> 'failed'`,
+      ),
+    );
+  return {
+    refundedPaise: Number(agg?.refundedSoFar ?? 0),
+    settleDeductedPaise: Number(agg?.settleDeductedSoFar ?? 0),
+  };
+}
+
+/**
  * Issue a refund against the most-recent charge for `bookingId`.
  *
  * When called inside an enclosing transaction (e.g. by cancellation_service)
@@ -124,27 +156,9 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
 
   if (!charge) throw new NotFound('No charge to refund', 'no_charge_for_booking');
 
-  // 2. Sum any prior refunds against this charge. Refund rows have
-  //    amount_paise < 0; the absolute value is the already-refunded amount.
-  //    Anything that isn't 'failed' counts as still owing the money — the
-  //    provider call has either succeeded or is in flight. settleDeducted uses
-  //    the same coalesce fallback as the payout refund aggregate, so the
-  //    cumulative settle math stays consistent across legacy NULL rows.
-  const [refundedAgg] = await tx
-    .select({
-      refundedSoFar: sql<number>`coalesce(-sum(${payments.amountPaise}), 0)::bigint`,
-      settleDeductedSoFar: sql<number>`coalesce(-sum(coalesce(${payments.settleBasePaise}, ${payments.amountPaise})), 0)::bigint`,
-    })
-    .from(payments)
-    .where(
-      and(
-        eq(payments.bookingId, input.bookingId),
-        eq(payments.kind, 'refund'),
-        sql`${payments.status} <> 'failed'`,
-      ),
-    );
-
-  const alreadyRefunded = Number(refundedAgg?.refundedSoFar ?? 0);
+  // 2. Sum any prior refunds against this charge.
+  const prior = await sumPriorRefunds(tx, input.bookingId);
+  const alreadyRefunded = prior.refundedPaise;
   const remaining = Number(charge.amountPaise) - alreadyRefunded;
   if (input.amountPaise > remaining) {
     throw new Conflict(
@@ -174,7 +188,7 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
     platformDiscountPaise: Number(platformFunded?.discountPaise ?? 0),
     consumerCommissionPaise: Number(charge.consumerCommissionPaise ?? 0),
     totalRefundedPaise: totalRefunded,
-    priorSettleDeductedPaise: Number(refundedAgg?.settleDeductedSoFar ?? 0),
+    priorSettleDeductedPaise: prior.settleDeductedPaise,
   });
 
   // 3. Insert the refund ledger row. Signed amount_paise — negative because

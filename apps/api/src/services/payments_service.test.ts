@@ -836,8 +836,9 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       });
 
       // Nothing was captured, so nothing can be refunded — whatever the
-      // cancellation policy tier would have paid out.
+      // cancellation policy tier would have paid out — and the tier says so.
       expect(res.refundPaise).toBe(0);
+      expect(res.policy).toBe('uncaptured');
       expect(res.refundId).toBeUndefined();
 
       const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);

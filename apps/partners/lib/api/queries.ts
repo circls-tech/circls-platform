@@ -17,6 +17,7 @@ import type {
   Payment,
   PresignedUpload,
   QrTicketConfig,
+  RefundPreview,
   ScheduleTemplate,
   Slot,
   SupportIssue,
@@ -667,6 +668,23 @@ export function useCancelBookingWithReason() {
       void qc.invalidateQueries({ queryKey: ['event-bookings'] });
       void qc.invalidateQueries({ queryKey: ['event'] });
     },
+  });
+}
+
+/**
+ * What cancelling a booking now would refund, decided by the server with the
+ * cancel's own rules and inputs. It depends on the viewer (the booking's own
+ * customer gets the timing tiers, staff a full refund), so the viewer is part
+ * of the key, and it's never served from cache: each look is a fresh read.
+ */
+export function useRefundPreview(bookingId: string | null, enabled = true) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['refund-preview', bookingId, user?.uid],
+    queryFn: () => apiFetch<RefundPreview>(`/v1/bookings/${bookingId}/refund-preview`),
+    enabled: enabled && Boolean(bookingId && user),
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 

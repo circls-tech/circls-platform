@@ -6,7 +6,7 @@ import { tenantMembers } from '../db/schema/index.js';
 import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
-import { cancelPaidBooking } from '../services/cancellation_service.js';
+import { cancelPaidBooking, previewCancellation } from '../services/cancellation_service.js';
 import { getBookingById } from '../services/inventory_service.js';
 
 const cancelBodySchema = z.object({
@@ -14,6 +14,29 @@ const cancelBodySchema = z.object({
   // refund reasoning. Paid cancels usually carry one for the audit trail.
   reason: z.string().min(1).max(500).optional(),
 });
+
+/**
+ * Caller-classification: the booking's own customer (`bySelf` — the timing
+ * tiers apply), or a tenant member acting on their behalf (a full,
+ * out-of-policy refund)? Neither → 403. The cancel and its preview both
+ * classify here, so the preview can't score the caller differently.
+ */
+async function isCancellingOwnBooking(
+  booking: { customerUserId: string | null; tenantId: string },
+  userId: string,
+): Promise<boolean> {
+  if (booking.customerUserId === userId) return true;
+
+  const [member] = await db
+    .select()
+    .from(tenantMembers)
+    .where(and(eq(tenantMembers.userId, userId), eq(tenantMembers.tenantId, booking.tenantId)))
+    .limit(1);
+  if (!member) {
+    throw new Forbidden('Not authorised to cancel this booking', 'tenant_forbidden');
+  }
+  return false;
+}
 
 /**
  * POST /v1/bookings/:id/cancel
@@ -24,8 +47,16 @@ const cancelBodySchema = z.object({
  *   - Tenant staff/admin cancels on behalf of a customer → bySelf=false.
  *     Out-of-policy: refund is full regardless of timing. Audit captures this.
  *
+ * Either way `decideRefund()` bounds it by the money actually held: nothing for
+ * a charge that was never captured, and no more than earlier refunds left.
  * Walk-in (paymentMethod='external') and free bookings get refundPaise=0;
  * the engine still flips the booking to 'cancelled' and frees the slots.
+ *
+ * GET /v1/bookings/:id/refund-preview
+ *
+ * What the POST would refund if this caller made it now: the same
+ * classification, inputs and decision, with no side effects. 409s where the
+ * cancel would (already cancelled, no slot start).
  */
 export const cancellationRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v1/bookings/:id/cancel', { preHandler: requireAuth }, async (req) => {
@@ -42,26 +73,7 @@ export const cancellationRoutes: FastifyPluginAsync = async (app) => {
     if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
 
     const user = await currentUser(req);
-
-    // Caller-classification: customer themselves, or a tenant member acting on
-    // their behalf? Neither → 403.
-    const bySelf = booking.customerUserId === user.id;
-
-    if (!bySelf) {
-      const [member] = await db
-        .select()
-        .from(tenantMembers)
-        .where(
-          and(
-            eq(tenantMembers.userId, user.id),
-            eq(tenantMembers.tenantId, booking.tenantId),
-          ),
-        )
-        .limit(1);
-      if (!member) {
-        throw new Forbidden('Not authorised to cancel this booking', 'tenant_forbidden');
-      }
-    }
+    const bySelf = await isCancellingOwnBooking(booking, user.id);
 
     return cancelPaidBooking({
       bookingId: id,
@@ -69,5 +81,17 @@ export const cancellationRoutes: FastifyPluginAsync = async (app) => {
       reason: parsed.data.reason ?? (bySelf ? 'Cancelled by customer' : 'Cancelled by venue'),
       bySelf,
     });
+  });
+
+  app.get('/v1/bookings/:id/refund-preview', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+
+    const booking = await getBookingById(id);
+    if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
+
+    const user = await currentUser(req);
+    const bySelf = await isCancellingOwnBooking(booking, user.id);
+
+    return previewCancellation(id, bySelf);
   });
 };

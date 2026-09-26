@@ -13,11 +13,13 @@ import {
   useArenaSlots,
   useBulkSlots,
   useCancelBookingById,
+  useRefundPreview,
   useSetArenaOpen,
   useUpdateArenaQrConfig,
   useVenues,
 } from '@/lib/api/queries';
 import type { QrTicketConfig } from '@/lib/api/types';
+import { refundSentence } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
@@ -127,6 +129,14 @@ export default function ArenaReceptionPage() {
   // ── Cancel confirm state ──
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelBookingId, setCancelBookingId] = useState<string>('');
+  // Cancelling here is a staff cancel: a booking paid online is refunded in
+  // full. Show the server's decision before the confirm, not after.
+  const cancelRefund = useRefundPreview(confirmOpen ? cancelBookingId || null : null);
+  const cancelRefundText = cancelRefund.data
+    ? refundSentence(cancelRefund.data, (p) => formatMoney(p, currency, { decimals: 2 }), 'customer')
+    : cancelRefund.isError
+      ? 'Couldn’t work out whether a refund is due — circls decides it when you confirm.'
+      : 'Working out the refund…';
 
   // ── Price-change confirm state ──
   const [priceConfirmOpen, setPriceConfirmOpen] = useState(false);
@@ -303,9 +313,10 @@ export default function ArenaReceptionPage() {
       <ConfirmDialog
         open={confirmOpen}
         title="Cancel booking?"
-        message="This frees the slot(s) and is logged."
+        message={`This frees the slot(s) and is logged. ${cancelRefundText}`}
         confirmLabel="Cancel booking"
         danger
+        confirmDisabled={cancelRefund.isLoading}
         onConfirm={() => {
           if (cancelBookingId) cancel.mutate(cancelBookingId);
         }}

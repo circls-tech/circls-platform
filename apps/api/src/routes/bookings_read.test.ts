@@ -316,7 +316,6 @@ describe.skipIf(!runIntegration)('bookings read endpoints', () => {
       venueId: string;
       arenaId: string;
       arenaName: string;
-      viewerIsCustomer: boolean;
       slots: Array<{ id: string; startAt: string; endAt: string; pricePaise: number; status: string }>;
     };
     expect(d.id).toBe(bookingId);
@@ -331,8 +330,6 @@ describe.skipIf(!runIntegration)('bookings read endpoints', () => {
     expect(d.venueId).toBe(venueId);
     expect(d.arenaId).toBe(arenaId);
     expect(d.arenaName).toBe(arenaName);
-    // A walk-in has no customer account, so staff viewing it are never "self".
-    expect(d.viewerIsCustomer).toBe(false);
     expect(d.slots).toHaveLength(2);
     // Ordered by start.
     expect(d.slots[0]!.startAt).toBe('2031-06-03T00:30:00.000Z');
