@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { useMe, useMyTenants, useTeamMembers } from '@/lib/api/queries';
+import { useMe, useMyRole, useMyTenants } from '@/lib/api/queries';
 import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
@@ -176,8 +176,7 @@ function SidebarUserCard() {
   const { signOut } = useAuth();
   const { data: me } = useMe();
   const { activeTenantId } = useOrg();
-  const { data: members } = useTeamMembers(activeTenantId ?? '');
-  const role = members?.find((m) => m.userId === me?.id)?.role ?? null;
+  const { role } = useMyRole(activeTenantId);
   const name = me?.displayName ?? me?.email ?? '…';
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (

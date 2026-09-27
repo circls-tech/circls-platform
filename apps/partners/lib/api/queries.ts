@@ -916,6 +916,25 @@ export function useTeamMembers(tenantId: string) {
   });
 }
 
+/**
+ * The signed-in user's role in `tenantId`, read off the team list (every
+ * partner role can read it). `role` is null until the lists are in, or when
+ * they aren't a member; `isLoading` tells the two apart.
+ */
+export function useMyRole(tenantId: string | null | undefined): {
+  role: TenantRole | null;
+  isLoading: boolean;
+} {
+  const me = useMe();
+  const members = useTeamMembers(tenantId ?? '');
+  return {
+    role: members.data?.find((m) => m.userId === me.data?.id)?.role ?? null,
+    // isPending rather than isLoading: a query still waiting for its tenant id
+    // is disabled, not fetching, but it has no answer yet either.
+    isLoading: me.isPending || members.isPending,
+  };
+}
+
 export function useUpdateMemberRole(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({

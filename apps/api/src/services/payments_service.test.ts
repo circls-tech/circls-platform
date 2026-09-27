@@ -1012,9 +1012,15 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     it('returns the payment rows for a booking', async () => {
       const dateIso = '2031-12-06T05:00:00.000Z';
       const { bookingId, paymentId } = await seedPendingBookingWithOrder(dateIso);
-      const rows = await listForBooking(bookingId);
+      const rows = await listForBooking(bookingId, tenantId);
       expect(rows.length).toBeGreaterThanOrEqual(1);
       expect(rows.some((r) => r.id === paymentId)).toBe(true);
+    });
+
+    it("returns nothing when asked under another tenant's id", async () => {
+      const dateIso = '2031-12-07T05:00:00.000Z';
+      const { bookingId } = await seedPendingBookingWithOrder(dateIso);
+      expect(await listForBooking(bookingId, crypto.randomUUID())).toEqual([]);
     });
   });
 });

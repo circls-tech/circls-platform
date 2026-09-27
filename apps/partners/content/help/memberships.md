@@ -102,7 +102,7 @@ They are a real member where it counts: the seat comes out of that tier's capaci
 
 Two actions end a membership, and which you want depends on the money:
 
-- **Refund** hands back what the member paid and ends the membership. It is offered only where circls actually took the money — a hand-added member paid you directly and a free plan has nothing to give back, so neither shows it. The refund is made in full regardless of how much of the membership has run, the same way a staff-cancelled event registration is, and it is recorded in the audit log.
+- **Refund** hands back what the member paid and ends the membership. It is offered only where circls actually took the money — a hand-added member paid you directly and a free plan has nothing to give back, so neither shows it. The refund is made in full regardless of how much of the membership has run, the same way a staff-cancelled event registration is, and it is recorded in the audit log. Read-only members don't see this button.
 - **Cancel** ends the membership and frees its seat on the tier, so someone else can take it, but returns no money. Use it when the refund happened elsewhere, or when there was nothing to refund.
 
 Either way, the member's QR pass stops working straight away — the door reads it as **revoked**. Editing a cancelled member's dates does not bring it back. If you reactivate a cancelled member, their pass works again.

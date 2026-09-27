@@ -13,6 +13,7 @@ import {
   useArenaSlots,
   useBulkSlots,
   useCancelBookingById,
+  useMyRole,
   useRefundPreview,
   useSetArenaOpen,
   useUpdateArenaQrConfig,
@@ -22,6 +23,7 @@ import type { QrTicketConfig } from '@/lib/api/types';
 import { refundSentence } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
+import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
@@ -137,6 +139,9 @@ export default function ArenaReceptionPage() {
     : cancelRefund.isError
       ? 'Couldn’t work out whether a refund is due — circls decides it when you confirm.'
       : 'Working out the refund…';
+  // Read-only members don't get the Cancel action.
+  const { role } = useMyRole(activeTenantId);
+  const canCancel = roleCan(role, 'bookings.cancel');
 
   // ── Price-change confirm state ──
   const [priceConfirmOpen, setPriceConfirmOpen] = useState(false);
@@ -265,7 +270,7 @@ export default function ArenaReceptionPage() {
           now={now}
           onBulk={handleBulk}
           onBook={handleBook}
-          onCancel={handleCancel}
+          onCancel={canCancel ? handleCancel : undefined}
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
         />

@@ -3,12 +3,20 @@
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { useArenas, useBookingDetail, useBookingPayments, useVenueBookings, useVenues } from '@/lib/api/queries';
+import {
+  useArenas,
+  useBookingDetail,
+  useBookingPayments,
+  useMyRole,
+  useVenueBookings,
+  useVenues,
+} from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
+import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -212,8 +220,11 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
   const router = useRouter();
   const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
   const { data: paymentRows } = useBookingPayments(bookingId);
+  const { activeTenantId } = useOrg();
+  const { role } = useMyRole(activeTenantId);
 
-  const isCancellable = detail && detail.status !== 'cancelled';
+  // Read-only members can't cancel (or so refund) a booking.
+  const isCancellable = detail && detail.status !== 'cancelled' && roleCan(role, 'bookings.cancel');
 
   return (
     <>

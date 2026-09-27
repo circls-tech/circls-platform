@@ -8,12 +8,14 @@ import {
   useRefundMember,
   useUpdateMember,
 } from '@/lib/api/memberships';
+import { useMyRole } from '@/lib/api/queries';
 import type {
   Membership,
   MembershipPurchase,
   MemberStatus,
   MemberStatusCounts,
 } from '@/lib/api/types';
+import { roleCan } from '@/lib/roles';
 import { Button, Input, StatusPill } from '@/lib/ui';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
@@ -88,6 +90,9 @@ export function MembershipMembers({
   const addMember = useAddMember(tenantId);
   const updateMember = useUpdateMember(tenantId);
   const refundMember = useRefundMember(tenantId);
+  // Refunding cancels the booking behind the purchase, which Read-only can't.
+  const { role } = useMyRole(tenantId);
+  const canRefund = roleCan(role, 'bookings.cancel');
   // Controlled when a Reception button owns the state, uncontrolled otherwise.
   const [ownAdding, setOwnAdding] = useState(false);
   const adding = walkInOpen ?? ownAdding;
@@ -252,7 +257,7 @@ export function MembershipMembers({
         </Button>
         {/* Only where circls took money. A hand-added or free membership has
             nothing to give back, so offering Refund would be a lie. */}
-        {p2.refundable && (
+        {p2.refundable && canRefund && (
           <Button
             variant="danger"
             size="sm"

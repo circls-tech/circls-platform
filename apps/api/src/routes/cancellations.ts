@@ -1,11 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
-import { db } from '../db/client.js';
-import { tenantMembers } from '../db/schema/index.js';
-import { BadRequest, Forbidden, NotFound } from '../lib/errors.js';
+import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
+import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { cancelPaidBooking, previewCancellation } from '../services/cancellation_service.js';
 import { getBookingById } from '../services/inventory_service.js';
 
@@ -17,9 +16,10 @@ const cancelBodySchema = z.object({
 
 /**
  * Caller-classification: the booking's own customer (`bySelf` — the timing
- * tiers apply), or a tenant member acting on their behalf (a full,
- * out-of-policy refund)? Neither → 403. The cancel and its preview both
- * classify here, so the preview can't score the caller differently.
+ * tiers apply), or a tenant member with `bookings.cancel` acting on their
+ * behalf (a full, out-of-policy refund)? Neither → 403, a Read-only member
+ * included. The cancel and its preview both classify here, so the preview
+ * can't score the caller differently.
  */
 async function isCancellingOwnBooking(
   booking: { customerUserId: string | null; tenantId: string },
@@ -27,14 +27,8 @@ async function isCancellingOwnBooking(
 ): Promise<boolean> {
   if (booking.customerUserId === userId) return true;
 
-  const [member] = await db
-    .select()
-    .from(tenantMembers)
-    .where(and(eq(tenantMembers.userId, userId), eq(tenantMembers.tenantId, booking.tenantId)))
-    .limit(1);
-  if (!member) {
-    throw new Forbidden('Not authorised to cancel this booking', 'tenant_forbidden');
-  }
+  const ctx = await requireTenantMembership(userId, booking.tenantId);
+  assertCap(ctx, 'bookings.cancel');
   return false;
 }
 
@@ -46,6 +40,7 @@ async function isCancellingOwnBooking(
  *     amount is decided by `computeRefundPolicy()` against the slot start.
  *   - Tenant staff/admin cancels on behalf of a customer → bySelf=false.
  *     Out-of-policy: refund is full regardless of timing. Audit captures this.
+ *     Owner, Manager and Staff hold `bookings.cancel`; Read-only doesn't.
  *
  * Either way `decideRefund()` bounds it by the money actually held: nothing for
  * a charge that was never captured, and no more than earlier refunds left.

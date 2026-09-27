@@ -3,11 +3,18 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useBookingDetail, useCancelBookingWithReason, useRefundPreview } from '@/lib/api/queries';
+import {
+  useBookingDetail,
+  useCancelBookingWithReason,
+  useMyRole,
+  useRefundPreview,
+} from '@/lib/api/queries';
 import { ApiError } from '@/lib/api/client';
 import type { CancelResult } from '@/lib/api/types';
 import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
+import { useOrg } from '@/lib/org_context';
+import { roleCan } from '@/lib/roles';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
 
@@ -41,10 +48,16 @@ export default function RefundBookingPage() {
   const firstSlotStart = booking?.slots[0]?.startAt;
   const isAlreadyCancelled = booking?.status === 'cancelled';
 
+  // Owners, Managers and Staff can cancel (and so refund); Read-only can't.
+  const { activeTenantId } = useOrg();
+  const { role, isLoading: roleLoading } = useMyRole(activeTenantId);
+  const canCancel = roleCan(role, 'bookings.cancel');
+  const cancellable = Boolean(booking) && !isAlreadyCancelled && !result;
+
   // The server works the preview out with the cancel's own rules and inputs
   // (who you are, what was captured, what's already been refunded), so it is
   // what submitting right now would do.
-  const preview = useRefundPreview(id, Boolean(booking) && !isAlreadyCancelled && !result);
+  const preview = useRefundPreview(id, cancellable && canCancel);
   const previewCopy = preview.data ? refundTierCopy(preview.data.tier) : null;
   const previewError =
     preview.error instanceof ApiError ? preview.error.message : preview.error ? 'Something went wrong.' : null;
@@ -127,8 +140,16 @@ export default function RefundBookingPage() {
             </div>
           </Card>
 
+          {cancellable && !roleLoading && !canCancel && (
+            <Card>
+              <p className="py-2 text-sm text-slate-600">
+                Your role can&apos;t cancel or refund bookings — Owners, Managers and Staff can.
+              </p>
+            </Card>
+          )}
+
           {/* Refund preview */}
-          {!isAlreadyCancelled && !result && (
+          {cancellable && canCancel && (
             <Card>
               <div className="flex flex-col gap-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Refund preview</p>
@@ -164,7 +185,7 @@ export default function RefundBookingPage() {
           )}
 
           {/* Form */}
-          {!isAlreadyCancelled && !result && (
+          {cancellable && canCancel && (
             <Card>
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <Input

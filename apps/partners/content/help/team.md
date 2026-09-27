@@ -8,8 +8,8 @@ Every member has one of four roles:
 | --- | --- |
 | **Owner** | Full control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings, events, memberships and discounts, answer and manage [customer questions](/help/questions), view financial reports, issue refunds, manage [API keys](/help/api-keys), and update or delete the organisation. |
 | **Manager** | Everything an Owner can do — team and roles, venues, schedules, pricing, bookings, events, financial reports, refunds and API keys. The one exception: a Manager cannot delete the organisation. |
-| **Staff** | Day-to-day operations — create and cancel bookings, view analytics, and reply to and manage customer questions. Can view venues, arenas, pricing, events and memberships, but cannot change them. No team management and no access to financial reports. |
-| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions. |
+| **Staff** | Day-to-day operations — create and cancel bookings (cancelling one paid online refunds the customer in full), view analytics, and reply to and manage customer questions. Can view venues, arenas, pricing, events and memberships, but cannot change them. No team management and no access to financial reports. |
+| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or cancelling and refunding bookings. |
 
 Choose the least-privileged role that lets someone do their job — you can always upgrade them later. These descriptions are also shown on the **Settings → Team** page itself, and next to the role picker when you send an invite.
 

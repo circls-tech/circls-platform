@@ -267,7 +267,7 @@ One limit does not apply: the per-person ticket cap. That is counted per circls 
 
 ### Refunding a registration
 
-Every row in the **Registered** table has a **Refund** button. Refunding on behalf of an attendee cancels their registration and:
+Every row in the **Registered** table has a **Refund** button for Owners, Managers and Staff (Read-only members don't see it). Refunding on behalf of an attendee cancels their registration and:
 
 - refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log). If part of it was already refunded, the rest is. Your own registration, made from your customer account, follows the customer cancellation tiers instead — see [Refunding a booking](/help/bookings);
 - revokes the attendee's QR entry passes so they can no longer check in;
