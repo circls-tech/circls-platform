@@ -8,6 +8,8 @@ circls offers a REST API and outbound webhooks so aggregators and your own syste
 
 ## API keys
 
+API keys and webhooks are managed by Owners and Managers; other roles don't see them under **Settings**.
+
 ### Generating a key
 
 1. Go to **Settings → API keys**.

@@ -424,6 +424,7 @@ describe.skipIf(!runIntegration)('invitation_service', () => {
       tenantId,
       invitationId: r.invitation.id,
       actorUserId: ownerUserId,
+      actorRole: 'owner',
     });
     expect(r2.plaintextToken).not.toBe(old);
     await expect(

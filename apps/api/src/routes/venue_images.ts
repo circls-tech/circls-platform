@@ -2,7 +2,9 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import type { Capability } from '../lib/authz/capabilities.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getVenueById } from '../services/venue_service.js';
 import {
@@ -35,13 +37,17 @@ const focalSchema = z.object({
   focalY: z.number().min(0).max(1),
 });
 
-/** Resolve the venue and assert the caller belongs to its tenant. */
-async function authorizeVenue(req: FastifyRequest) {
+/**
+ * Resolve the venue and assert the caller belongs to its tenant. Writes pass
+ * the capability they need; the list is open to any member.
+ */
+async function authorizeVenue(req: FastifyRequest, cap?: Capability) {
   const { id } = req.params as { id: string };
   const venue = await getVenueById(id);
   if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
   const user = await currentUser(req);
-  await requireTenantMembership(user.id, venue.tenantId);
+  const ctx = await requireTenantMembership(user.id, venue.tenantId);
+  if (cap) assertCap(ctx, cap);
   return venue;
 }
 
@@ -52,7 +58,7 @@ export const venueImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid presign payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const venue = await authorizeVenue(req);
+    const venue = await authorizeVenue(req, 'venues.write');
     return presignVenueImageUpload(venue.id, parsed.data.contentType);
   });
 
@@ -62,7 +68,7 @@ export const venueImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid finalize payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const venue = await authorizeVenue(req);
+    const venue = await authorizeVenue(req, 'venues.write');
     const { storageKey, width, height } = parsed.data;
     const dimensions = width && height ? { width, height } : undefined;
     return finalizeVenueImage(venue.tenantId, venue.id, storageKey, dimensions);
@@ -80,7 +86,7 @@ export const venueImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid order payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const venue = await authorizeVenue(req);
+    const venue = await authorizeVenue(req, 'venues.write');
     return reorderVenueImages(venue.id, parsed.data.imageIds);
   });
 
@@ -91,13 +97,13 @@ export const venueImageRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid focal payload', 'bad_request', { issues: parsed.error.issues });
     }
     const { imageId } = req.params as { imageId: string };
-    const venue = await authorizeVenue(req);
+    const venue = await authorizeVenue(req, 'venues.write');
     return setVenueImageFocal(venue.id, imageId, parsed.data);
   });
 
   app.delete('/v1/venues/:id/images/:imageId', { preHandler: requireAuth }, async (req) => {
     const { imageId } = req.params as { imageId: string };
-    const venue = await authorizeVenue(req);
+    const venue = await authorizeVenue(req, 'venues.write');
     await deleteVenueImage(venue.id, imageId);
     return { ok: true };
   });

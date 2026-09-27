@@ -44,6 +44,8 @@ cancelled, its passes are revoked automatically.
 
 ## Checking guests in
 
+Any member of your organisation can check guests in — Read-only members included, so a door volunteer only needs that role.
+
 Open **Check-in** in the portal navigation. There are two ways to validate:
 
 1. **Scan with any camera** — the customer's QR encodes a check-in link, so

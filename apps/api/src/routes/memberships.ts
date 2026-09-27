@@ -220,14 +220,16 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v1/tenants/:tenantId/memberships/:id/activate', { preHandler: requireAuth }, async (req) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'memberships.write');
     return setMembershipActive({ tenantId, actorUserId: user.id }, id, true);
   });
 
   app.post('/v1/tenants/:tenantId/memberships/:id/deactivate', { preHandler: requireAuth }, async (req) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'memberships.write');
     return setMembershipActive({ tenantId, actorUserId: user.id }, id, false);
   });
 
@@ -273,6 +275,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
       const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertCap(memberCtx, 'bookings.create');
       assertTermsAccepted(memberCtx);
       const parsed = addMemberSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -359,6 +362,13 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       const parsed = updateMemberSchema.safeParse(req.body);
       if (!parsed.success) {
         throw new BadRequest('Invalid update', 'bad_request', { issues: parsed.error.issues });
+      }
+      // Desk work on the booking behind the purchase, which Staff do too:
+      // cancelling a member takes bookings.cancel; renewing, re-dating or
+      // reactivating one takes bookings.create.
+      if (parsed.data.status === 'cancelled') assertCap(memberCtx, 'bookings.cancel');
+      if (parsed.data.status === 'active' || parsed.data.startsAt || parsed.data.endsAt) {
+        assertCap(memberCtx, 'bookings.create');
       }
       await updateMember({ tenantId, actorUserId: user.id }, userMembershipId, membershipId, {
         ...(parsed.data.startsAt ? { startsAt: new Date(parsed.data.startsAt) } : {}),

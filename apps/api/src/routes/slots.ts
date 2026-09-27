@@ -6,7 +6,9 @@ import { env } from '../config/env.js';
 import { slots } from '../db/schema/index.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import type { Capability } from '../lib/authz/capabilities.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
@@ -19,14 +21,18 @@ import {
 } from '../services/slot_service.js';
 import { withIdempotency } from '../lib/idempotency.js';
 
-/** Resolve an arena → its venue's tenant, assert the caller is a member. */
-async function authorizeArena(req: FastifyRequest, arenaId: string) {
+/**
+ * Resolve an arena → its venue's tenant, assert the caller is a member.
+ * Writes pass the capability they need; reads are open to any member.
+ */
+async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capability) {
   const arena = await getArenaById(arenaId);
   if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
   const venue = await getVenueById(arena.venueId);
   if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
   const user = await currentUser(req);
-  await requireTenantMembership(user.id, venue.tenantId);
+  const ctx = await requireTenantMembership(user.id, venue.tenantId);
+  if (cap) assertCap(ctx, cap);
   return { user, venue, arena };
 }
 
@@ -88,7 +94,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid release payload', 'bad_request', { issues: parsed.error.issues });
     }
 
-    const { user, venue } = await authorizeArena(req, arenaId);
+    const { user, venue } = await authorizeArena(req, arenaId, 'schedules.write');
     const { tenantId } = venue;
     const input = parsed.data;
 
@@ -152,7 +158,10 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
 
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, venue.tenantId);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    // Prices and blocking are setup, not desk work: Owner/Manager only.
+    if (price !== undefined) assertCap(ctx, 'pricing.write');
+    if (blocked !== undefined) assertCap(ctx, 'schedules.write');
 
     const patch: { price?: number; blocked?: boolean } = {};
     if (price !== undefined) patch.price = price;
@@ -192,7 +201,8 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
 
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, venue.tenantId);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'bookings.create');
 
     await holdSlots(venue.tenantId, user.id, slotIds);
     return { held: slotIds.length };
@@ -221,7 +231,8 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
 
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, venue.tenantId);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'bookings.create');
 
     await releaseHold(venue.tenantId, slotIds);
     return { released: slotIds.length };

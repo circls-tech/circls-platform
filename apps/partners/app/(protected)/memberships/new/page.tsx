@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import { useCreateMembership, useUploadMembershipCover } from '@/lib/api/memberships';
-import { useVenues } from '@/lib/api/queries';
+import { useMyRole, useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
+import { roleCan } from '@/lib/roles';
 import { Button, Card } from '@/lib/ui';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
+import { RoleNotice } from '@/components/RoleNotice';
 import {
   MembershipPlanFields,
   emptyPlanDraft,
@@ -35,6 +37,10 @@ export default function NewMembershipPage() {
   const { currencyFor } = useVenueCurrencies();
   const createMembership = useCreateMembership(tenantId);
   const uploadCover = useUploadMembershipCover(tenantId);
+  // The form gives way to a notice only once the role has loaded, so the
+  // notice never flashes at those who can create plans.
+  const { role, isLoading: roleLoading } = useMyRole(tenantId);
+  const cannotCreate = !roleLoading && !roleCan(role, 'memberships.write');
 
   const [draft, setDraft] = useState<MembershipPlanDraft>(emptyPlanDraft);
   const [artwork, setArtwork] = useState<PendingPhoto[]>([]);
@@ -85,45 +91,49 @@ export default function NewMembershipPage() {
         </h1>
       </div>
 
-      <Card subtitle="Circls reviews a new plan before it goes live.">
-        <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-2.5">
-          <MembershipPlanFields
-            value={draft}
-            onChange={setDraft}
-            venues={venues ?? []}
-            currencyFor={currencyFor}
-          />
+      {cannotCreate ? (
+        <RoleNotice>Your role can’t create membership plans — Owners and Managers can.</RoleNotice>
+      ) : (
+        <Card subtitle="Circls reviews a new plan before it goes live.">
+          <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-2.5">
+            <MembershipPlanFields
+              value={draft}
+              onChange={setDraft}
+              venues={venues ?? []}
+              currencyFor={currencyFor}
+            />
 
-          {/* A plan has no id to upload against until it exists, so the file is
-              held here and sent immediately after creation. */}
-          <PendingPhotosPicker
-            photos={artwork}
-            onChange={setArtwork}
-            max={1}
-            title="Plan artwork"
-            hint="Optional cover image — JPEG, PNG or WebP, up to 10 MB. Uploaded when the plan is created."
-          />
+            {/* A plan has no id to upload against until it exists, so the file is
+                held here and sent immediately after creation. */}
+            <PendingPhotosPicker
+              photos={artwork}
+              onChange={setArtwork}
+              max={1}
+              title="Plan artwork"
+              hint="Optional cover image — JPEG, PNG or WebP, up to 10 MB. Uploaded when the plan is created."
+            />
 
-          {err && <p className="text-sm text-red-600">{err}</p>}
+            {err && <p className="text-sm text-red-600">{err}</p>}
 
-          <div className="flex justify-end gap-2">
-            <Link href="/memberships">
-              <Button type="button" variant="secondary" size="sm">
-                Cancel
+            <div className="flex justify-end gap-2">
+              <Link href="/memberships">
+                <Button type="button" variant="secondary" size="sm">
+                  Cancel
+                </Button>
+              </Link>
+              <Button
+                type="submit"
+                size="sm"
+                petal="#F9B4D4"
+                loading={createMembership.isPending || uploadCover.isPending}
+                disabled={!tenantId || !authed}
+              >
+                Create plan
               </Button>
-            </Link>
-            <Button
-              type="submit"
-              size="sm"
-              petal="#F9B4D4"
-              loading={createMembership.isPending || uploadCover.isPending}
-              disabled={!tenantId || !authed}
-            >
-              Create plan
-            </Button>
-          </div>
-        </form>
-      </Card>
+            </div>
+          </form>
+        </Card>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useMemberships } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
+import { useCan } from '@/lib/use_can';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
 function fmtPrice(pricePaise: number, currency: CurrencyCode) {
@@ -38,6 +39,7 @@ export default function MembershipsPage() {
   const { data: memberships, isLoading } = useMemberships(tenantId);
   const { data: venues } = useVenues(tenantId);
   const { currencyFor } = useVenueCurrencies();
+  const canCreate = useCan('memberships.write', tenantId);
 
   function venueName(id: string | null) {
     if (!id) return 'Org-wide';
@@ -55,18 +57,26 @@ export default function MembershipsPage() {
             <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>
           )}
         </div>
-        <Link href="/memberships/new">
-          <Button petal="#F9B4D4" size="sm">
-            New plan
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/memberships/new">
+            <Button petal="#F9B4D4" size="sm">
+              New plan
+            </Button>
+          </Link>
+        )}
       </div>
 
       <Card title="Plans" subtitle="Time-bound passes your customers can buy.">
         {isLoading && <p className="py-2 text-sm text-slate-400">Loading…</p>}
         {!isLoading && memberships?.length === 0 && (
           <p className="py-2 text-sm text-slate-500">
-            No plans yet. Use <span className="font-medium">New plan</span> to create one.
+            No plans yet.
+            {canCreate && (
+              <>
+                {' '}
+                Use <span className="font-medium">New plan</span> to create one.
+              </>
+            )}
           </p>
         )}
         {!isLoading && memberships && memberships.length > 0 && (

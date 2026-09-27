@@ -21,8 +21,13 @@ interface MatrixProps {
   now?: Date;                // ticking current time; reception-mode only
   dayStartMin?: number;      // business-day boundary (min-of-day); 0 = calendar day
   onBulk: (slotIds: string[], patch: { price?: number; blocked?: boolean }) => void;
-  onBook: (slotIds: string[]) => void;
+  /** Reception: omitted for a role that can't take bookings, hiding "Add booking". */
+  onBook?: (slotIds: string[]) => void;
   onCancel?: (bookingId: string) => void;
+  /** Whether the price and block controls show (default true). Reception passes
+   *  the viewer's role; the schedule builder edits a local draft and keeps both. */
+  canSetPrice?: boolean;
+  canBlock?: boolean;
   onPrevWeek: () => void;
   onNextWeek: () => void;
 }
@@ -196,11 +201,23 @@ interface InspectorProps {
   currency: CurrencyCode;
   mode: 'builder' | 'reception';
   onBulk: MatrixProps['onBulk'];
-  onBook: MatrixProps['onBook'];
+  onBook?: MatrixProps['onBook'];
   onCancel?: MatrixProps['onCancel'];
+  canSetPrice: boolean;
+  canBlock: boolean;
 }
 
-function Inspector({ selected, slots, currency, mode, onBulk, onBook, onCancel }: InspectorProps) {
+function Inspector({
+  selected,
+  slots,
+  currency,
+  mode,
+  onBulk,
+  onBook,
+  onCancel,
+  canSetPrice,
+  canBlock,
+}: InspectorProps) {
   const [priceInput, setPriceInput] = useState('');
 
   const selectedSlots = slots.filter((s) => selected.has(s.id));
@@ -247,51 +264,55 @@ function Inspector({ selected, slots, currency, mode, onBulk, onBook, onCancel }
           Current price: <span className="font-medium text-slate-700">{priceLabel}</span>
         </div>
 
-        {hasLockedSlots && (
+        {hasLockedSlots && (canSetPrice || canBlock) && (
           <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-700">
             Selection includes booked/held slots. Price and block actions are disabled.
           </p>
         )}
 
         {/* Price control */}
-        <div className="flex flex-col gap-2">
-          <Input
-            label={`Price (${currencySymbol(currency)})`}
-            type="number"
-            min={0}
-            step={1}
-            placeholder="e.g. 500"
-            value={priceInput}
-            onChange={(e) => setPriceInput(e.target.value)}
-            disabled={hasLockedSlots}
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={hasLockedSlots || priceInput.trim() === ''}
-            onClick={() => {
-              const rupees = Number(priceInput);
-              if (isNaN(rupees) || rupees < 0) return;
-              onBulk(ids, { price: Math.round(rupees * 100) });
-              setPriceInput('');
-            }}
-          >
-            Apply price
-          </Button>
-        </div>
+        {canSetPrice && (
+          <div className="flex flex-col gap-2">
+            <Input
+              label={`Price (${currencySymbol(currency)})`}
+              type="number"
+              min={0}
+              step={1}
+              placeholder="e.g. 500"
+              value={priceInput}
+              onChange={(e) => setPriceInput(e.target.value)}
+              disabled={hasLockedSlots}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={hasLockedSlots || priceInput.trim() === ''}
+              onClick={() => {
+                const rupees = Number(priceInput);
+                if (isNaN(rupees) || rupees < 0) return;
+                onBulk(ids, { price: Math.round(rupees * 100) });
+                setPriceInput('');
+              }}
+            >
+              Apply price
+            </Button>
+          </div>
+        )}
 
         {/* Block / Unblock */}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={hasLockedSlots}
-          onClick={() => onBulk(ids, { blocked: !allBlocked })}
-        >
-          {allBlocked ? 'Unblock' : 'Block'}
-        </Button>
+        {canBlock && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={hasLockedSlots}
+            onClick={() => onBulk(ids, { blocked: !allBlocked })}
+          >
+            {allBlocked ? 'Unblock' : 'Block'}
+          </Button>
+        )}
 
         {/* Reception: Add booking */}
-        {mode === 'reception' && (
+        {mode === 'reception' && onBook && (
           <Button
             size="sm"
             variant="primary"
@@ -354,6 +375,8 @@ export function Matrix({
   onBulk,
   onBook,
   onCancel,
+  canSetPrice = true,
+  canBlock = true,
   onPrevWeek,
   onNextWeek,
 }: MatrixProps) {
@@ -626,6 +649,8 @@ export function Matrix({
           onBulk={onBulk}
           onBook={onBook}
           onCancel={onCancel}
+          canSetPrice={canSetPrice}
+          canBlock={canBlock}
         />
       </div>
     </div>

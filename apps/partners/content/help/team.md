@@ -7,16 +7,16 @@ Every member has one of four roles:
 | Role | What they can do |
 | --- | --- |
 | **Owner** | Full control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings, events, memberships and discounts, answer and manage [customer questions](/help/questions), view financial reports, issue refunds, manage [API keys](/help/api-keys), and update or delete the organisation. |
-| **Manager** | Everything an Owner can do — team and roles, venues, schedules, pricing, bookings, events, financial reports, refunds and API keys. The one exception: a Manager cannot delete the organisation. |
-| **Staff** | Day-to-day operations — create and cancel bookings (cancelling one paid online refunds the customer in full), view analytics, and reply to and manage customer questions. Can view venues, arenas, pricing, events and memberships, but cannot change them. No team management and no access to financial reports. |
-| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or cancelling and refunding bookings. |
+| **Manager** | Everything an Owner can do — team and roles, venues, schedules, pricing, bookings, events, financial reports, refunds and API keys. The exceptions: a Manager cannot delete the organisation, and cannot make anyone an Owner or change or remove an Owner. |
+| **Staff** | Day-to-day operations — create and cancel bookings (cancelling one paid online refunds the customer in full), run the event door and membership desks (add registrations and members; renew, cancel or refund members), check customers in, view analytics, and reply to and manage customer questions. Can view venues, arenas, schedules, pricing, events and membership plans, but cannot change them — including slot prices and blocking slots on the reception grid. No team management, no API keys or webhooks, and no access to financial reports. |
+| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or taking, cancelling and refunding bookings. The one exception: they can check customers in at the door, so a door volunteer only needs this role. |
 
 Choose the least-privileged role that lets someone do their job — you can always upgrade them later. These descriptions are also shown on the **Settings → Team** page itself, and next to the role picker when you send an invite.
 
 ## Inviting a colleague
 
 1. Go to **Settings → Team**.
-2. In **Invite a teammate**, enter the colleague's **email** and pick a **role**.
+2. In **Invite a teammate**, enter the colleague's **email** and pick a **role**. You can offer any role up to your own, so only an Owner can invite another Owner.
 3. Click **Send invitation**.
 
 An invite link is generated (and emailed to them). It's shown to you in a highlighted box so you can copy and share it directly if you prefer. **Invitations expire after 7 days.**
@@ -31,14 +31,14 @@ The invited person opens the invite link, which shows the organisation name and 
 
 ## Managing pending invitations
 
-Pending invites appear under **Pending invitations**. For each one you can:
+Pending invites appear under **Pending invitations**. Owners and managers can:
 
-- **Resend** — re-issues the email and extends the expiry (the old link is replaced).
+- **Resend** — re-issues the email and extends the expiry (the old link is replaced). Managers can't resend an invitation to become an Owner.
 - **Revoke** — invalidates the invite link so it can no longer be used.
 
 ## Changing a role
 
-In the **Members** list, use the **role** dropdown next to a person and pick a new role. The change applies immediately.
+Owners and managers can change roles: in the **Members** list, use the **role** dropdown next to a person and pick a new role. The change applies immediately. Nobody can give a role above their own, or change the role of someone above them — so only an Owner can make someone an Owner or change an Owner's role, and a Manager sees an Owner's role without a dropdown.
 
 ## Editing a member's name
 
@@ -53,7 +53,7 @@ A member's **phone number** can't be typed in here — phone numbers on circls a
 
 ## Removing a member
 
-In the **Members** list, click **Remove** next to the person and confirm. Their access is revoked immediately — there's no grace period — so double-check before removing an owner or manager.
+Owners and managers can remove members: in the **Members** list, click **Remove** next to the person and confirm. Their access is revoked immediately — there's no grace period — so double-check before removing an owner or manager. Only an Owner can remove another Owner, and the last Owner can't be removed. Any member can remove themselves to leave the organisation.
 
 ## Tips
 

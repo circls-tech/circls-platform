@@ -14,6 +14,7 @@ import {
 import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
+import { useCan } from '@/lib/use_can';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
@@ -54,6 +55,9 @@ export default function MembershipDetailPage() {
   const updateMembership = useUpdateMembership(tenantId);
   const activate = useActivateMembership(tenantId);
   const deactivate = useDeactivateMembership(tenantId);
+  // Editing and (de)activating a plan is setup; adding a member is desk work.
+  const canEditPlan = useCan('memberships.write', tenantId);
+  const canAddMember = useCan('bookings.create', tenantId);
 
   // Owned here so the Reception button in the header can open the walk-in desk
   // that lives further down the page.
@@ -132,16 +136,20 @@ export default function MembershipDetailPage() {
           <StatusPill status={membership.status} />
           {/* Signing someone up at the counter is the thing staff come here to
               do most often, so it sits beside the name rather than below the
-              members table. Ungated, like the Add member desk it opens: a
-              partner can record an off-platform member on any plan. */}
-          <span className="ml-auto">
-            <ReceptionButton
-              onClick={() => {
-                setWalkInOpen(true);
-                membersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-            />
-          </span>
+              members table. Offered on every plan — a partner can record an
+              off-platform member on any of them — but, like the Add member
+              desk it opens, only to roles that can add one (bookings.create):
+              Staff run the desk; Read-only can't. */}
+          {canAddMember && (
+            <span className="ml-auto">
+              <ReceptionButton
+                onClick={() => {
+                  setWalkInOpen(true);
+                  membersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
+            </span>
+          )}
         </div>
         <p className="mt-0.5 text-sm text-slate-500">{venueLabel}</p>
       </div>
@@ -157,7 +165,7 @@ export default function MembershipDetailPage() {
         subtitle={
           editing
             ? undefined
-            : editable
+            : editable || !canEditPlan
               ? undefined
               : 'Live plans are read-only. Deactivate the plan to edit it.'
         }
@@ -238,38 +246,40 @@ export default function MembershipDetailPage() {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!authed || !editable}
-                onClick={() => setEditing(true)}
-                title={editable ? undefined : 'Only pending-review or inactive plans can be edited.'}
-              >
-                Edit
-              </Button>
-              {membership.status === 'active' && (
+            {canEditPlan && (
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
-                  loading={deactivate.isPending}
-                  disabled={!authed}
-                  onClick={() => void onToggle(membership)}
+                  disabled={!authed || !editable}
+                  onClick={() => setEditing(true)}
+                  title={editable ? undefined : 'Only pending-review or inactive plans can be edited.'}
                 >
-                  Deactivate
+                  Edit
                 </Button>
-              )}
-              {membership.status === 'inactive' && (
-                <Button
-                  size="sm"
-                  loading={activate.isPending}
-                  disabled={!authed}
-                  onClick={() => void onToggle(membership)}
-                >
-                  Activate
-                </Button>
-              )}
-            </div>
+                {membership.status === 'active' && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={deactivate.isPending}
+                    disabled={!authed}
+                    onClick={() => void onToggle(membership)}
+                  >
+                    Deactivate
+                  </Button>
+                )}
+                {membership.status === 'inactive' && (
+                  <Button
+                    size="sm"
+                    loading={activate.isPending}
+                    disabled={!authed}
+                    onClick={() => void onToggle(membership)}
+                  >
+                    Activate
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>

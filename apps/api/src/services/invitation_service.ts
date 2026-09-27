@@ -22,6 +22,7 @@ import { tenantMembers, ROLE_RANK, type TenantRole } from '../db/schema/tenant_m
 import { tenantInvitations, type TenantInvitation } from '../db/schema/tenant_invitations.js';
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
+import { canActOnRole } from '../lib/authz/can.js';
 import { Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { env } from '../config/env.js';
 import { getNotifications } from '../lib/notifications/index.js';
@@ -474,6 +475,8 @@ export interface ResendInvitationInput {
   tenantId: string;
   invitationId: string;
   actorUserId: string;
+  /** The actor's own role in the tenant: nobody re-sends an invite above it. */
+  actorRole: TenantRole;
   ttlDays?: number;
 }
 
@@ -503,6 +506,9 @@ export async function resendInvitation(
     )
     .limit(1);
   if (!previous) throw new NotFound('Invitation not found', 'invitation_not_found');
+  if (!canActOnRole(input.actorRole, previous.role)) {
+    throw new Forbidden("You can't resend an invitation to a role above your own", 'role_above_yours');
+  }
 
   const [updated] = await db
     .update(tenantInvitations)

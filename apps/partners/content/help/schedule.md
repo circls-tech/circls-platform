@@ -1,6 +1,6 @@
 The **schedule builder** turns an arena's opening hours into bookable slots. You define a date range, a set of **pricing bands** (time ranges, each at its own price) and a slot length, fine-tune on a visual grid, then release the slots so consumers can book them.
 
-Open it from the reception view's **Schedule builder →** link or from the onboarding wizard. The URL looks like `/arenas/{arenaId}/schedule`.
+Open it from the reception view's **Schedule builder →** link or from the onboarding wizard. The schedule builder is for Owners and Managers; other roles see a notice instead. The URL looks like `/arenas/{arenaId}/schedule`.
 
 ## 1. Configure the template
 
@@ -78,9 +78,9 @@ Each slot has a status:
 
 From here you can:
 
-- **Change prices** on selected slots (you'll be asked to confirm).
-- **Block or unblock** slots — applied immediately.
-- **Take a booking** on open slots for walk-in / phone customers (reception booking).
+- **Change prices** on selected slots (you'll be asked to confirm). Owners and Managers only.
+- **Block or unblock** slots — applied immediately. Owners and Managers only.
+- **Take a booking** on open slots for walk-in / phone customers (reception booking). Owners, Managers and Staff.
 - **Cancel a booking** on a booked slot, which frees it again. A booking paid online is refunded to the customer in full; the confirmation shows the refund before you confirm. Read-only members don't get this action. See [Understanding bookings and cancellations](/help/bookings).
 
 ## Tips

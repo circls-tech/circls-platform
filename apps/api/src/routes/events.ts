@@ -4,6 +4,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { addExternalEventRegistration } from '../services/booking_service.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
@@ -318,6 +319,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const user = await currentUser(req);
     const memberCtx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(memberCtx, 'events.write');
     assertTermsAccepted(memberCtx);
     const parsed = createEventSchema.safeParse(req.body);
     if (!parsed.success)
@@ -382,6 +384,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     const { tenantId } = req.params as { tenantId: string };
     const user = await currentUser(req);
     const memberCtx = await requireTenantMembership(user.id, tenantId);
+    assertCap(memberCtx, 'events.write');
     assertTermsAccepted(memberCtx);
     const parsed = createTenantEventSchema.safeParse(req.body);
     if (!parsed.success)
@@ -431,7 +434,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
   app.patch('/v1/tenants/:tenantId/events/:id', { preHandler: requireAuth }, async (req) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'events.write');
     const parsed = updateEventSchema.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequest('Invalid event patch', 'bad_request', {
@@ -473,7 +477,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return publishEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
@@ -484,7 +489,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return cancelEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
@@ -498,7 +504,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return completeEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
@@ -512,6 +519,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
       const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertCap(memberCtx, 'bookings.create');
       assertTermsAccepted(memberCtx);
       const parsed = externalRegistrationSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -541,7 +549,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return reopenEvent({ tenantId, actorUserId: user.id }, id);
     },
   );
@@ -552,7 +561,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return setEventArchived({ tenantId, actorUserId: user.id }, id, true);
     },
   );
@@ -563,7 +573,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return setEventArchived({ tenantId, actorUserId: user.id }, id, false);
     },
   );
@@ -577,7 +588,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       const parsed = changeRequestSchema.safeParse(req.body);
       if (!parsed.success)
         throw new BadRequest('Invalid change request', 'bad_request', {
@@ -634,7 +646,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
         requestId: string;
       };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       return withdrawChangeRequest({ tenantId, actorUserId: user.id }, id, requestId);
     },
   );
@@ -659,7 +672,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, seriesId } = req.params as { tenantId: string; seriesId: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       const rows = await publishEventSeries({ tenantId, actorUserId: user.id }, seriesId);
       return { seriesId, count: rows.length, events: rows };
     },
@@ -671,7 +685,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, seriesId } = req.params as { tenantId: string; seriesId: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'events.write');
       const rows = await cancelEventSeries({ tenantId, actorUserId: user.id }, seriesId);
       return { seriesId, count: rows.length, events: rows };
     },

@@ -10,6 +10,7 @@ import { CloseReopenControl } from '@/components/CloseReopenControl';
 import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
+import { useCan } from '@/lib/use_can';
 import { Badge, StatusPill, TagsInput } from '@/lib/ui';
 
 export default function VenuePage() {
@@ -19,6 +20,10 @@ export default function VenuePage() {
   const { data: arenas, isLoading } = useArenas(venueId);
   const createArena = useCreateArena(venueId);
   const setVenueOpen = useSetVenueOpen(venueId);
+  // The venue's own organisation decides, once it has loaded.
+  const venueTenantId = venue?.tenantId ?? tenantId;
+  const canEditVenue = useCan('venues.write', venueTenantId);
+  const canAddArena = useCan('arenas.write', venueTenantId);
   const [name, setName] = useState('');
   const [sport, setSport] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -63,19 +68,21 @@ export default function VenuePage() {
             status={venue.status}
             {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
           />
-          <span className="ml-auto">
-            <CloseReopenControl
-              noun="venue"
-              target={venue}
-              venueId={venue.id}
-              tenantId={tenantId}
-              setOpen={setVenueOpen}
-            />
-          </span>
+          {canEditVenue && (
+            <span className="ml-auto">
+              <CloseReopenControl
+                noun="venue"
+                target={venue}
+                venueId={venue.id}
+                tenantId={tenantId}
+                setOpen={setVenueOpen}
+              />
+            </span>
+          )}
         </div>
       )}
       {venue && <VenueDetailsForm venue={venue} />}
-      <VenueImages venueId={venueId} />
+      <VenueImages venueId={venueId} readOnly={!canEditVenue} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Arenas</h1>
         <div className="flex gap-2">
@@ -130,48 +137,50 @@ export default function VenuePage() {
         ))}
         {arenas?.length === 0 && <p className="text-sm text-gray-500">No arenas yet.</p>}
       </ul>
-      <form
-        onSubmit={onCreate}
-        className="flex max-w-md flex-col gap-3 rounded border border-gray-200 bg-white p-4"
-      >
-        <h2 className="font-medium">Add an arena</h2>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Court 1"
-          className="rounded border border-gray-300 px-3 py-2 text-sm"
-        />
-        <input
-          value={sport}
-          onChange={(e) => setSport(e.target.value)}
-          placeholder="sport (optional)"
-          className="rounded border border-gray-300 px-3 py-2 text-sm"
-        />
-        <TagsInput
-          value={tags}
-          onChange={setTags}
-          placeholder="e.g. indoor, nets…"
-        />
-        {inferredSport && (
-          <p className="text-xs text-slate-500">
-            Will be classified as: <span className="font-semibold text-slate-700">{inferredSport}</span>
-          </p>
-        )}
-        <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="booking" />
-        <button
-          type="submit"
-          disabled={createArena.isPending}
-          className="rounded bg-brand-600 px-4 py-2 text-sm text-slate-900 disabled:opacity-50"
+      {canAddArena && (
+        <form
+          onSubmit={onCreate}
+          className="flex max-w-md flex-col gap-3 rounded border border-gray-200 bg-white p-4"
         >
-          {createArena.isPending ? 'Adding…' : 'Add arena'}
-        </button>
-        {created && (
-          <p className="text-sm text-amber-700">
-            Arena created. It’s now pending review by Circls before it goes live.
-          </p>
-        )}
-        {err && <p className="text-sm text-red-600">{err}</p>}
-      </form>
+          <h2 className="font-medium">Add an arena</h2>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Court 1"
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          />
+          <input
+            value={sport}
+            onChange={(e) => setSport(e.target.value)}
+            placeholder="sport (optional)"
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          />
+          <TagsInput
+            value={tags}
+            onChange={setTags}
+            placeholder="e.g. indoor, nets…"
+          />
+          {inferredSport && (
+            <p className="text-xs text-slate-500">
+              Will be classified as: <span className="font-semibold text-slate-700">{inferredSport}</span>
+            </p>
+          )}
+          <QrTicketConfigEditor value={qrConfig} onChange={setQrConfig} itemNoun="booking" />
+          <button
+            type="submit"
+            disabled={createArena.isPending}
+            className="rounded bg-brand-600 px-4 py-2 text-sm text-slate-900 disabled:opacity-50"
+          >
+            {createArena.isPending ? 'Adding…' : 'Add arena'}
+          </button>
+          {created && (
+            <p className="text-sm text-amber-700">
+              Arena created. It’s now pending review by Circls before it goes live.
+            </p>
+          )}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </form>
+      )}
     </div>
   );
 }

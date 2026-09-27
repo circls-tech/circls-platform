@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { type FormEvent, useRef, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
+import { useCan } from '@/lib/use_can';
 import {
   useCancelEventSeries,
   useArchiveTenantEvent,
@@ -121,6 +122,9 @@ export default function OrgEventDetailPage() {
   const tenantId = activeTenantId ?? '';
   const { user } = useAuth();
   const authed = Boolean(user);
+  // Owners and Managers change the event; Staff can still take walk-ins at the door.
+  const canWrite = useCan('events.write', tenantId);
+  const canBook = useCan('bookings.create', tenantId);
 
   const { data: ev, isLoading } = useEvent(tenantId, eventId);
   const { data: venues } = useVenues(tenantId);
@@ -407,16 +411,18 @@ export default function OrgEventDetailPage() {
               {/* Taking someone's details at the door is a front-desk job, so
                   it belongs beside the event's name — not below the whole
                   registrations table. Gated exactly as the desk itself is. */}
-              <ReceptionButton
-                disabled={!(ev.status === 'published' && authed)}
-                onClick={() => {
-                  setWalkInOpen(true);
-                  registrationsRef.current?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start',
-                  });
-                }}
-              />
+              {canBook && (
+                <ReceptionButton
+                  disabled={!(ev.status === 'published' && authed)}
+                  onClick={() => {
+                    setWalkInOpen(true);
+                    registrationsRef.current?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  }}
+                />
+              )}
             </div>
           </div>
 
@@ -506,8 +512,13 @@ export default function OrgEventDetailPage() {
                 )}
               </dl>
 
-              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
-                {ev.status === 'draft' && (
+              {/* A draft offers only Owner/Manager actions: no divider for anyone else. */}
+              <div
+                className={`mt-6 flex flex-wrap items-center gap-2 ${
+                  canWrite || ev.status !== 'draft' ? 'border-t border-[#f1f5f9] pt-4' : ''
+                }`}
+              >
+                {canWrite && ev.status === 'draft' && (
                   <>
                     <Button variant="secondary" size="sm" disabled={!authed} onClick={startEdit}>
                       Edit
@@ -534,7 +545,7 @@ export default function OrgEventDetailPage() {
                 )}
                 {(ev.status === 'pending_review' || ev.status === 'published') && (
                   <>
-                    {ev.status === 'published' && (
+                    {canWrite && ev.status === 'published' && (
                       <Button
                         petal="#FFB0A3"
                         size="sm"
@@ -545,19 +556,25 @@ export default function OrgEventDetailPage() {
                         End event
                       </Button>
                     )}
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      loading={cancel.isPending}
-                      disabled={!authed}
-                      onClick={handleCancel}
-                    >
-                      Cancel event
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={cancel.isPending}
+                        disabled={!authed}
+                        onClick={handleCancel}
+                      >
+                        Cancel event
+                      </Button>
+                    )}
                     <span className="text-xs text-slate-400">
                       {ev.status === 'pending_review'
-                        ? 'Awaiting Circls review. You can still cancel.'
-                        : 'This event is live. Ending stops registrations and keeps entry passes valid; cancelling takes it down and revokes them.'}
+                        ? canWrite
+                          ? 'Awaiting Circls review. You can still cancel.'
+                          : 'Awaiting Circls review.'
+                        : canWrite
+                          ? 'This event is live. Ending stops registrations and keeps entry passes valid; cancelling takes it down and revokes them.'
+                          : 'This event is live.'}
                     </span>
                   </>
                 )}
@@ -571,7 +588,7 @@ export default function OrgEventDetailPage() {
                 )}
                 {/* An event ended by mistake goes straight back on sale,
                     while its window is still open. */}
-                {ev.status === 'completed' && new Date(ev.endsAt) > new Date() && (
+                {canWrite && ev.status === 'completed' && new Date(ev.endsAt) > new Date() && (
                   <Button
                     petal="#A7E3BF"
                     size="sm"
@@ -584,7 +601,7 @@ export default function OrgEventDetailPage() {
                 )}
                 {/* Archiving is the last step for anything that has reached an
                     end state, and the only way to shelve one date of a series. */}
-                {ev.status !== 'published' && ev.status !== 'pending_review' && (
+                {canWrite && ev.status !== 'published' && ev.status !== 'pending_review' && (
                   <Button
                     petal="#A9C9F2"
                     size="sm"
@@ -610,6 +627,7 @@ export default function OrgEventDetailPage() {
                 postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
                 saving={update.isPending}
+                readOnly={!canWrite}
                 onSave={async (input) => {
                   await update.mutateAsync({ eventId, input });
                 }}
@@ -790,9 +808,11 @@ export default function OrgEventDetailPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" loading={update.isPending} disabled={!authed}>
-                    Save changes
-                  </Button>
+                  {canWrite && (
+                    <Button type="submit" loading={update.isPending} disabled={!authed}>
+                      Save changes
+                    </Button>
+                  )}
                 </div>
               </form>
             </Card>
@@ -832,46 +852,51 @@ export default function OrgEventDetailPage() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
-                {series.events.some((o) => o.status === 'draft') && (
-                  <Button
-                    size="sm"
-                    loading={publishSeries.isPending}
-                    disabled={!authed}
-                    onClick={() => {
-                      setErrorMsg(null);
-                      publishSeries.mutate(ev.seriesId!, {
-                        onError: (e) => setErrorMsg((e as Error).message),
-                      });
-                    }}
-                  >
-                    Submit all dates for review
-                  </Button>
-                )}
-                {series.events.some(
-                  (o) => o.status !== 'cancelled' && o.status !== 'rejected',
-                ) && (
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    loading={cancelSeries.isPending}
-                    disabled={!authed}
-                    onClick={() => {
-                      setErrorMsg(null);
-                      cancelSeries.mutate(ev.seriesId!, {
-                        onError: (e) => setErrorMsg((e as Error).message),
-                      });
-                    }}
-                  >
-                    Cancel entire series
-                  </Button>
-                )}
-              </div>
+              {canWrite && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
+                  {series.events.some((o) => o.status === 'draft') && (
+                    <Button
+                      size="sm"
+                      loading={publishSeries.isPending}
+                      disabled={!authed}
+                      onClick={() => {
+                        setErrorMsg(null);
+                        publishSeries.mutate(ev.seriesId!, {
+                          onError: (e) => setErrorMsg((e as Error).message),
+                        });
+                      }}
+                    >
+                      Submit all dates for review
+                    </Button>
+                  )}
+                  {series.events.some(
+                    (o) => o.status !== 'cancelled' && o.status !== 'rejected',
+                  ) && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      loading={cancelSeries.isPending}
+                      disabled={!authed}
+                      onClick={() => {
+                        setErrorMsg(null);
+                        cancelSeries.mutate(ev.seriesId!, {
+                          onError: (e) => setErrorMsg((e as Error).message),
+                        });
+                      }}
+                    >
+                      Cancel entire series
+                    </Button>
+                  )}
+                </div>
+              )}
             </Card>
           )}
 
           {/* A series shares one gallery, stored on its first date. */}
-          <EventImages eventId={ev.seriesId && series ? series.events[0]!.id : eventId} />
+          <EventImages
+            eventId={ev.seriesId && series ? series.events[0]!.id : eventId}
+            readOnly={!canWrite}
+          />
 
           <div ref={registrationsRef}>
             <EventRegistrations
@@ -882,7 +907,7 @@ export default function OrgEventDetailPage() {
               tenantId={tenantId}
               eventId={eventId}
               questions={ev.questions}
-              canAddRegistration={ev.status === 'published' && authed}
+              canAddRegistration={ev.status === 'published' && authed && canBook}
               tz={effectiveTz}
               currency={currency}
               walkInOpen={walkInOpen}

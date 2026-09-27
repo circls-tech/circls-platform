@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
+import { RoleNotice } from '@/components/RoleNotice';
+import { roleCan } from '@/lib/roles';
 import {
   useCreateWebhookSubscription,
+  useMyRole,
   useDeleteWebhookSubscription,
   useWebhookSubscriptions,
 } from '@/lib/api/queries';
@@ -31,6 +34,7 @@ interface NewSubscription {
 export default function WebhooksPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
   const fmt = useMemo(
     () =>
@@ -85,6 +89,24 @@ export default function WebhooksPage() {
     );
     if (!confirmed) return;
     await deleteMut.mutateAsync(s.id);
+  }
+
+  // Integration settings are for Owners and Managers (integration.api_keys.manage).
+  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+          >
+            &larr; Settings
+          </Link>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
+        </div>
+        <RoleNotice>Your role can&rsquo;t manage webhooks — Owners and Managers can.</RoleNotice>
+      </div>
+    );
   }
 
   return (

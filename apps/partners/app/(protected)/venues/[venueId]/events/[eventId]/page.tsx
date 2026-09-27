@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useCan } from '@/lib/use_can';
 import {
   useCancelEvent,
   useEvent,
@@ -109,6 +110,9 @@ export default function EventDetailPage() {
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const { user } = useAuth();
   const authed = Boolean(user);
+  // Owners and Managers change the event; Staff can still take walk-ins at the door.
+  const canWrite = useCan('events.write', tenantId);
+  const canBook = useCan('bookings.create', tenantId);
 
   const { data: ev, isLoading } = useEvent(tenantId, eventId);
   // Recurring events share one gallery, stored on the series' first date.
@@ -287,8 +291,13 @@ export default function EventDetailPage() {
                 </div>
               </dl>
 
-              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
-                {ev.status === 'draft' && (
+              {/* A draft offers only Owner/Manager actions: no divider for anyone else. */}
+              <div
+                className={`mt-6 flex flex-wrap items-center gap-2 ${
+                  canWrite || ev.status !== 'draft' ? 'border-t border-[#f1f5f9] pt-4' : ''
+                }`}
+              >
+                {canWrite && ev.status === 'draft' && (
                   <>
                     <Button variant="secondary" size="sm" disabled={!authed} onClick={startEdit}>
                       Edit
@@ -315,19 +324,25 @@ export default function EventDetailPage() {
                 )}
                 {(ev.status === 'pending_review' || ev.status === 'published') && (
                   <>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      loading={cancel.isPending}
-                      disabled={!authed}
-                      onClick={handleCancel}
-                    >
-                      Cancel event
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={cancel.isPending}
+                        disabled={!authed}
+                        onClick={handleCancel}
+                      >
+                        Cancel event
+                      </Button>
+                    )}
                     <span className="text-xs text-slate-400">
                       {ev.status === 'pending_review'
-                        ? 'Awaiting Circls review. You can still cancel.'
-                        : 'This event is live. Cancelling takes it down for consumers.'}
+                        ? canWrite
+                          ? 'Awaiting Circls review. You can still cancel.'
+                          : 'Awaiting Circls review.'
+                        : canWrite
+                          ? 'This event is live. Cancelling takes it down for consumers.'
+                          : 'This event is live.'}
                     </span>
                   </>
                 )}
@@ -352,6 +367,7 @@ export default function EventDetailPage() {
                 postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
                 saving={update.isPending}
+                readOnly={!canWrite}
                 onSave={async (input) => {
                   await update.mutateAsync({ eventId, input });
                 }}
@@ -421,15 +437,20 @@ export default function EventDetailPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" loading={update.isPending} disabled={!authed}>
-                    Save changes
-                  </Button>
+                  {canWrite && (
+                    <Button type="submit" loading={update.isPending} disabled={!authed}>
+                      Save changes
+                    </Button>
+                  )}
                 </div>
               </form>
             </Card>
           )}
 
-          <EventImages eventId={ev?.seriesId && series ? series.events[0]!.id : eventId} />
+          <EventImages
+            eventId={ev?.seriesId && series ? series.events[0]!.id : eventId}
+            readOnly={!canWrite}
+          />
 
           <EventRegistrations
             bookings={bookings?.rows}
@@ -439,7 +460,7 @@ export default function EventDetailPage() {
             tenantId={ev.tenantId}
             eventId={eventId}
             questions={ev.questions}
-            canAddRegistration={ev.status === 'published'}
+            canAddRegistration={ev.status === 'published' && canBook}
             tz={displayTz}
             currency={currency}
           />

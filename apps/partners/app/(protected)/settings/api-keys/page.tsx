@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
+import { RoleNotice } from '@/components/RoleNotice';
+import { roleCan } from '@/lib/roles';
 import {
   useApiKeys,
+  useMyRole,
   useCreateApiKey,
   useRevokeApiKey,
 } from '@/lib/api/queries';
@@ -24,6 +27,7 @@ interface NewKey {
 export default function ApiKeysPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
 
   const fmt = useMemo(
@@ -79,6 +83,24 @@ export default function ApiKeysPage() {
     );
     if (!confirmed) return;
     await revokeMut.mutateAsync(k.id);
+  }
+
+  // Integration settings are for Owners and Managers (integration.api_keys.manage).
+  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+          >
+            &larr; Settings
+          </Link>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
+        </div>
+        <RoleNotice>Your role can&rsquo;t manage API keys — Owners and Managers can.</RoleNotice>
+      </div>
+    );
   }
 
   return (

@@ -1,5 +1,7 @@
 Venues and arenas are the foundation of your circls listing. A **venue** is a physical location; an **arena** is a bookable space inside it. This guide covers adding and editing both, uploading photos, and understanding listing statuses.
 
+Adding and editing venues and arenas — details, photos, QR ticket rules, and closing or reopening them — is for Owners and Managers. Staff and Read-only members can view them.
+
 ## Adding a venue
 
 1. Go to **Venues** in the sidebar and click **+ Add venue**.

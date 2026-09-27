@@ -5,7 +5,9 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { useWebhookDeliveries } from '@/lib/api/queries';
+import { RoleNotice } from '@/components/RoleNotice';
+import { roleCan } from '@/lib/roles';
+import { useMyRole, useWebhookDeliveries } from '@/lib/api/queries';
 import type { WebhookDeliveryItem } from '@/lib/api/types';
 import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
@@ -51,6 +53,7 @@ export default function WebhookDeliveriesPage() {
   const subId = params.id;
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
   const dtFmt = useMemo(
     () =>
@@ -77,6 +80,24 @@ export default function WebhookDeliveriesPage() {
   } = useWebhookDeliveries(tenantId, subId);
 
   const rows: WebhookDeliveryItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+
+  // Integration settings are for Owners and Managers (integration.api_keys.manage).
+  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings/webhooks"
+            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+          >
+            &larr; Webhooks
+          </Link>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Recent deliveries</h1>
+        </div>
+        <RoleNotice>Your role can&rsquo;t view webhook deliveries — Owners and Managers can.</RoleNotice>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

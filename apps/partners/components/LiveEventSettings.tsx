@@ -39,6 +39,7 @@ export function LiveEventSettings({
   questions,
   onSave,
   saving,
+  readOnly = false,
 }: {
   tiers: EventTier[];
   maxPerUser: number | null;
@@ -58,6 +59,8 @@ export function LiveEventSettings({
     >,
   ) => Promise<void>;
   saving: boolean;
+  /** Show the settings without letting them change, for a role that can't edit the event. */
+  readOnly?: boolean;
 }) {
   // Capacity drafts keyed by tier id ('' = unlimited); seeded from the live values.
   const [caps, setCaps] = useState<Record<string, string>>(() =>
@@ -124,16 +127,23 @@ export function LiveEventSettings({
 
   return (
     <Card title="Live settings">
-      <p className="mb-4 text-xs text-slate-500">
-        These can change while the event is live, without review. Capacity can only go up (or blank
-        for unlimited) and the per-customer limit only affects future purchases — tickets people
-        already hold are never touched. Editing a question mid-event keeps the answers people
-        already gave under the old wording. A changed after-booking link applies
-        to new bookings; people who already booked keep seeing it on their
-        booking page.
-      </p>
+      {readOnly ? (
+        <p className="mb-4 text-xs text-slate-500">
+          Owners and Managers can change these while the event is live, without review.
+        </p>
+      ) : (
+        <p className="mb-4 text-xs text-slate-500">
+          These can change while the event is live, without review. Capacity can only go up (or blank
+          for unlimited) and the per-customer limit only affects future purchases — tickets people
+          already hold are never touched. Editing a question mid-event keeps the answers people
+          already gave under the old wording. A changed after-booking link applies
+          to new bookings; people who already booked keep seeing it on their
+          booking page.
+        </p>
+      )}
 
-      <div className="flex max-w-xl flex-col gap-3">
+      {/* Disabled, the fieldset makes every control inside it read-only at once. */}
+      <fieldset disabled={readOnly} className="flex min-w-0 max-w-xl flex-col gap-3">
         {tiers.map((t) => (
           <div key={t.id} className="flex items-end justify-between gap-4">
             <div className="min-w-0 pb-2">
@@ -183,13 +193,15 @@ export function LiveEventSettings({
           </p>
         )}
 
-        <div className="flex items-center gap-3">
-          <Button size="sm" loading={saving} disabled={!dirty} onClick={save}>
-            Save live settings
-          </Button>
-          {saved && !dirty && <span className="text-xs text-emerald-600">Saved.</span>}
-        </div>
-      </div>
+        {!readOnly && (
+          <div className="flex items-center gap-3">
+            <Button size="sm" loading={saving} disabled={!dirty} onClick={save}>
+              Save live settings
+            </Button>
+            {saved && !dirty && <span className="text-xs text-emerald-600">Saved.</span>}
+          </div>
+        )}
+      </fieldset>
     </Card>
   );
 }

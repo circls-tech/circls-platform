@@ -2,7 +2,9 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import type { Capability } from '../lib/authz/capabilities.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import {
@@ -22,13 +24,15 @@ const ruleSchema = z.object({
   pricePaise: z.number().int().nonnegative(),
 });
 
-async function authorizeArena(req: FastifyRequest, arenaId: string): Promise<void> {
+/** Assert the caller belongs to the arena's tenant; writes pass the capability they need. */
+async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capability): Promise<void> {
   const arena = await getArenaById(arenaId);
   if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
   const venue = await getVenueById(arena.venueId);
   if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
   const user = await currentUser(req);
-  await requireTenantMembership(user.id, venue.tenantId);
+  const ctx = await requireTenantMembership(user.id, venue.tenantId);
+  if (cap) assertCap(ctx, cap);
 }
 
 export const pricingRoutes: FastifyPluginAsync = async (app) => {
@@ -38,7 +42,7 @@ export const pricingRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid pricing rule', 'bad_request', { issues: parsed.error.issues });
     }
-    await authorizeArena(req, arenaId);
+    await authorizeArena(req, arenaId, 'pricing.write');
     const p = parsed.data;
     return createPricingRule(arenaId, {
       ...(p.priority !== undefined ? { priority: p.priority } : {}),
@@ -62,7 +66,7 @@ export const pricingRoutes: FastifyPluginAsync = async (app) => {
     { preHandler: requireAuth },
     async (req, reply) => {
       const { arenaId, ruleId } = req.params as { arenaId: string; ruleId: string };
-      await authorizeArena(req, arenaId);
+      await authorizeArena(req, arenaId, 'pricing.write');
       await deletePricingRule(arenaId, ruleId);
       return reply.status(204).send();
     },

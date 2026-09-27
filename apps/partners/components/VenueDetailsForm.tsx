@@ -5,6 +5,7 @@ import { useUpdateVenue } from '@/lib/api/queries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import type { OpeningHours, Venue } from '@/lib/api/types';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { useCan } from '@/lib/use_can';
 import { Button, Input, TagsInput } from '@/lib/ui';
 import { AddressAutocomplete } from './AddressAutocomplete';
 import { CityDidYouMean } from './CityDidYouMean';
@@ -74,6 +75,8 @@ function fromDayState(state: Record<string, DayState>): OpeningHours {
  */
 export function VenueDetailsForm({ venue }: { venue: Venue }) {
   const update = useUpdateVenue(venue.id);
+  // Only venues.write can change the venue: everyone else sees the form locked, without Save.
+  const canSave = useCan('venues.write', venue.tenantId);
 
   const [name, setName] = useState(venue.name);
   const [description, setDescription] = useState(venue.description ?? '');
@@ -151,181 +154,186 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
       onSubmit={submit}
       className="flex flex-col gap-5 rounded border border-gray-200 bg-white p-4"
     >
-      <div>
-        <h2 className="font-medium">Venue details</h2>
-        <p className="text-xs text-gray-400">
-          What customers see on your venue page. Keep it accurate — stale details erode trust.
-        </p>
-      </div>
-
-      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          maxLength={2000}
-          className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
-          placeholder="Describe the venue, its facilities and what makes it great."
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Amenities</label>
-        <div className="flex flex-wrap gap-2">
-          {AMENITIES.map((a) => {
-            const on = amenities.includes(a.value);
-            return (
-              <button
-                key={a.value}
-                type="button"
-                onClick={() => toggleAmenity(a.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  on
-                    ? 'border-[#17151D] bg-brand-200 text-[#17151D]'
-                    : 'border-gray-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {a.label}
-              </button>
-            );
-          })}
+      {/* Disabled, the fieldset locks every field for a role that can't save them. */}
+      <fieldset disabled={!canSave} className="contents">
+        <div>
+          <h2 className="font-medium">Venue details</h2>
+          <p className="text-xs text-gray-400">
+            What customers see on your venue page. Keep it accurate — stale details erode trust.
+          </p>
         </div>
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Opening hours</label>
-        <div className="flex flex-col gap-1.5">
-          {WEEKDAYS.map(({ key, label }) => {
-            const d = hours[key]!;
-            return (
-              <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="w-24 text-slate-600">{label}</span>
-                <label className="flex items-center gap-1 text-xs text-slate-500">
-                  <input
-                    type="checkbox"
-                    checked={d.closed}
-                    onChange={(e) => setDay(key, { closed: e.target.checked })}
-                  />
-                  Closed
-                </label>
-                {!d.closed && (
-                  <>
-                    <input
-                      type="time"
-                      value={d.open}
-                      onChange={(e) => setDay(key, { open: e.target.value })}
-                      className="rounded border border-gray-300 px-2 py-1 text-sm"
-                    />
-                    <span className="text-slate-400">to</span>
-                    <input
-                      type="time"
-                      value={d.close}
-                      onChange={(e) => setDay(key, { close: e.target.value })}
-                      className="rounded border border-gray-300 px-2 py-1 text-sm"
-                    />
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Input label="Contact phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-        <Input label="Contact email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
-      </div>
-
-      <AddressAutocomplete country={country || null} onSelect={applySuggestion} />
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <Input
-            label="Address line 1"
-            value={addressLine1}
-            onChange={(e) => {
-              setAddressLine1(e.target.value);
-              setCoords(null);
-            }}
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <Input label="Address line 2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
-        </div>
         <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
+            placeholder="Describe the venue, its facilities and what makes it great."
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Amenities</label>
+          <div className="flex flex-wrap gap-2">
+            {AMENITIES.map((a) => {
+              const on = amenities.includes(a.value);
+              return (
+                <button
+                  key={a.value}
+                  type="button"
+                  onClick={() => toggleAmenity(a.value)}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    on
+                      ? 'border-[#17151D] bg-brand-200 text-[#17151D]'
+                      : 'border-gray-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Opening hours</label>
+          <div className="flex flex-col gap-1.5">
+            {WEEKDAYS.map(({ key, label }) => {
+              const d = hours[key]!;
+              return (
+                <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="w-24 text-slate-600">{label}</span>
+                  <label className="flex items-center gap-1 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={d.closed}
+                      onChange={(e) => setDay(key, { closed: e.target.checked })}
+                    />
+                    Closed
+                  </label>
+                  {!d.closed && (
+                    <>
+                      <input
+                        type="time"
+                        value={d.open}
+                        onChange={(e) => setDay(key, { open: e.target.value })}
+                        className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                      <span className="text-slate-400">to</span>
+                      <input
+                        type="time"
+                        value={d.close}
+                        onChange={(e) => setDay(key, { close: e.target.value })}
+                        className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Input label="Contact phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+          <Input label="Contact email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+        </div>
+
+        <AddressAutocomplete country={country || null} onSelect={applySuggestion} />
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Input
+              label="Address line 1"
+              value={addressLine1}
+              onChange={(e) => {
+                setAddressLine1(e.target.value);
+                setCoords(null);
+              }}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Input label="Address line 2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input
+              label="City"
+              value={city}
+              onChange={(e) => {
+                setCity(e.target.value);
+                setCoords(null);
+              }}
+            />
+            <CityDidYouMean
+              city={city}
+              country={country || null}
+              onPick={(c) => {
+                setCity(c);
+                setCoords(null);
+              }}
+            />
+          </div>
           <Input
-            label="City"
-            value={city}
+            label="State"
+            value={state}
             onChange={(e) => {
-              setCity(e.target.value);
+              setState(e.target.value);
               setCoords(null);
             }}
           />
-          <CityDidYouMean
-            city={city}
-            country={country || null}
-            onPick={(c) => {
-              setCity(c);
+          <Input
+            label="Postal code"
+            value={postalCode}
+            onChange={(e) => {
+              setPostalCode(e.target.value);
               setCoords(null);
             }}
           />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Country</label>
+            <select
+              value={country}
+              onChange={(e) => {
+                setCountry(e.target.value);
+                setCoords(null);
+              }}
+              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
+            >
+              <option value="">Select country…</option>
+              {SERVED_COUNTRIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-gray-400">
+              Sets your map location automatically — customers browse by country.
+            </span>
+          </div>
         </div>
-        <Input
-          label="State"
-          value={state}
-          onChange={(e) => {
-            setState(e.target.value);
-            setCoords(null);
-          }}
-        />
-        <Input
-          label="Postal code"
-          value={postalCode}
-          onChange={(e) => {
-            setPostalCode(e.target.value);
-            setCoords(null);
-          }}
-        />
+
+        <MapPinPicker coords={coords} onChange={setCoords} city={city} country={country} />
+
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Country</label>
-          <select
-            value={country}
-            onChange={(e) => {
-              setCountry(e.target.value);
-              setCoords(null);
-            }}
-            className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300"
-          >
-            <option value="">Select country…</option>
-            {SERVED_COUNTRIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs text-gray-400">
-            Sets your map location automatically — customers browse by country.
-          </span>
+          <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Tags</label>
+          <TagsInput value={tags} onChange={setTags} placeholder="e.g. indoor, premium…" />
         </div>
-      </div>
 
-      <MapPinPicker coords={coords} onChange={setCoords} city={city} country={country} />
-
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Tags</label>
-        <TagsInput value={tags} onChange={setTags} placeholder="e.g. indoor, premium…" />
-      </div>
-
-      <div className="flex items-center gap-3">
-        <Button type="submit" loading={update.isPending}>
-          Save details
-        </Button>
-        {saved && <span className="text-sm text-emerald-600">Saved.</span>}
-        {err && <span className="text-sm text-red-600">{err}</span>}
-      </div>
+        {canSave && (
+          <div className="flex items-center gap-3">
+            <Button type="submit" loading={update.isPending}>
+              Save details
+            </Button>
+            {saved && <span className="text-sm text-emerald-600">Saved.</span>}
+            {err && <span className="text-sm text-red-600">{err}</span>}
+          </div>
+        )}
+      </fieldset>
     </form>
   );
 }

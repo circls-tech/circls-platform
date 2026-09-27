@@ -16,11 +16,11 @@ export const PARTNER_ROLE_INFO: Record<TenantRole, string> = {
   owner:
     'Full control of the organisation — team, venues, schedules, pricing, bookings, events, financials, refunds, API keys, and deleting the organisation.',
   manager:
-    'Everything an Owner can do except delete the organisation.',
+    'Everything an Owner can do except delete the organisation, or make, change or remove an Owner.',
   staff:
-    'Day-to-day operations — create/cancel bookings, view analytics, answer customer questions. Read-only on venues, schedules, pricing, events and memberships; no team or financial access.',
+    'Day-to-day operations — create/cancel bookings, run the event door and membership desks, view analytics, answer customer questions. Read-only on venues, schedules, pricing, events and membership plans; no team or financial access.',
   readonly:
-    'View-only access to everything, including financial reports. Cannot create, change or delete anything.',
+    'View-only access to everything, including financial reports. Cannot create, change or delete anything, except checking customers in at the door.',
 };
 
 /**

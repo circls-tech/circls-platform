@@ -44,6 +44,7 @@ export function ImageGalleryEditor({
   deleteImage,
   reorder,
   setFocal,
+  readOnly = false,
 }: {
   subject: 'venue' | 'event';
   images: GalleryImage[] | undefined;
@@ -55,6 +56,8 @@ export function ImageGalleryEditor({
   deleteImage: (imageId: string) => Promise<unknown>;
   reorder: (imageIds: string[]) => Promise<unknown>;
   setFocal: (imageId: string, focal: FocalPoint) => Promise<unknown>;
+  /** Show the photos without the controls, for a role that can't edit them. */
+  readOnly?: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,16 +136,20 @@ export function ImageGalleryEditor({
             {hint ? ` · ${hint}` : ''}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={uploading}
-          disabled={busy || remaining <= 0}
-          onClick={() => fileInput.current?.click()}
-        >
-          {uploading && progress ? `Uploading ${progress.done}/${progress.total}…` : 'Add photos'}
-        </Button>
-        <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={onFiles} />
+        {!readOnly && (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={uploading}
+              disabled={busy || remaining <= 0}
+              onClick={() => fileInput.current?.click()}
+            >
+              {uploading && progress ? `Uploading ${progress.done}/${progress.total}…` : 'Add photos'}
+            </Button>
+            <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={onFiles} />
+          </>
+        )}
       </div>
 
       {isLoading && <p className="text-sm text-gray-500">Loading&hellip;</p>}
@@ -155,11 +162,13 @@ export function ImageGalleryEditor({
 
       {count > 0 && (
         <>
-          <p className="text-xs text-gray-500">
-            Each thumbnail shows how that photo is cropped in listings. If something important is
-            cut off, use <span className="font-medium">Crop</span> to choose what stays in frame.
-            The full photo is always shown uncropped on the public page.
-          </p>
+          {!readOnly && (
+            <p className="text-xs text-gray-500">
+              Each thumbnail shows how that photo is cropped in listings. If something important is
+              cut off, use <span className="font-medium">Crop</span> to choose what stays in frame.
+              The full photo is always shown uncropped on the public page.
+            </p>
+          )}
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((img, i) => (
               <li key={img.id} className="flex flex-col gap-1.5">
@@ -178,52 +187,54 @@ export function ImageGalleryEditor({
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px]">
-                  <button
-                    type="button"
-                    disabled={busy || i === 0}
-                    aria-label={`Move photo ${i + 1} earlier`}
-                    onClick={() => void applyOrder(move(ids, i, i - 1))}
-                    className="rounded px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
-                  >
-                    &larr;
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || i === count - 1}
-                    aria-label={`Move photo ${i + 1} later`}
-                    onClick={() => void applyOrder(move(ids, i, i + 1))}
-                    className="rounded px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
-                  >
-                    &rarr;
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setCropId(img.id)}
-                    className="rounded px-2 py-1 font-medium text-slate-900 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent"
-                  >
-                    Crop
-                  </button>
-                  {i > 0 && (
+                {!readOnly && (
+                  <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px]">
+                    <button
+                      type="button"
+                      disabled={busy || i === 0}
+                      aria-label={`Move photo ${i + 1} earlier`}
+                      onClick={() => void applyOrder(move(ids, i, i - 1))}
+                      className="rounded px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
+                    >
+                      &larr;
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || i === count - 1}
+                      aria-label={`Move photo ${i + 1} later`}
+                      onClick={() => void applyOrder(move(ids, i, i + 1))}
+                      className="rounded px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
+                    >
+                      &rarr;
+                    </button>
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void applyOrder([img.id, ...ids.filter((id) => id !== img.id)])}
+                      onClick={() => setCropId(img.id)}
                       className="rounded px-2 py-1 font-medium text-slate-900 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent"
                     >
-                      Make cover
+                      Crop
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setConfirmId(img.id)}
-                    className="ml-auto rounded px-2 py-1 font-medium text-red-600 hover:bg-red-50 disabled:text-slate-400 disabled:hover:bg-transparent"
-                  >
-                    Delete
-                  </button>
-                </div>
+                    {i > 0 && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void applyOrder([img.id, ...ids.filter((id) => id !== img.id)])}
+                        className="rounded px-2 py-1 font-medium text-slate-900 hover:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-transparent"
+                      >
+                        Make cover
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setConfirmId(img.id)}
+                      className="ml-auto rounded px-2 py-1 font-medium text-red-600 hover:bg-red-50 disabled:text-slate-400 disabled:hover:bg-transparent"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
