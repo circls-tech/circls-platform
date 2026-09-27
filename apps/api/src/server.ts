@@ -25,6 +25,7 @@ import { venueImageRoutes } from './routes/venue_images.js';
 import { paymentRoutes } from './routes/payments.js';
 import { razorpayWebhookRoutes } from './routes/webhooks_razorpay.js';
 import { stripeWebhookRoutes } from './routes/webhooks_stripe.js';
+import { cashfreeWebhookRoutes } from './routes/webhooks_cashfree.js';
 import { eventRoutes } from './routes/events.js';
 import { eventImageRoutes } from './routes/event_images.js';
 import { membershipRoutes } from './routes/memberships.js';
@@ -67,6 +68,7 @@ export async function buildServer(): Promise<FastifyInstance> {
         paths: [
           'req.headers.authorization',
           'req.headers["x-razorpay-signature"]',
+          'req.headers["x-webhook-signature"]',
           'req.headers.cookie',
           '*.keySecret',
           '*.key_secret',
@@ -270,6 +272,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(paymentRoutes);
   await app.register(razorpayWebhookRoutes);
   await app.register(stripeWebhookRoutes);
+  await app.register(cashfreeWebhookRoutes);
   await app.register(eventRoutes);
   await app.register(eventImageRoutes);
   await app.register(membershipRoutes);

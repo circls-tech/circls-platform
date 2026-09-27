@@ -221,6 +221,8 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
     try {
       const res = await getGateway(charge.provider).refundPayment({
         paymentId: charge.providerPaymentId,
+        orderId: charge.providerOrderId,
+        refundId: refundRow.id,
         amountMinor: input.amountPaise,
         reason: input.reason,
         reference: input.bookingId,

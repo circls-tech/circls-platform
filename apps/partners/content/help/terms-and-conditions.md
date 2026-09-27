@@ -21,7 +21,7 @@ The region is taken from where your organisation is based:
 
 | Based in | Document | Currency & gateway |
 | --- | --- | --- |
-| India (or anywhere outside the US) | India Terms | ₹ INR via Razorpay |
+| India (or anywhere outside the US) | India Terms | ₹ INR via Razorpay or Cashfree |
 | United States | US Terms | $ USD via Stripe |
 
 If your organisation predates the Terms feature and has no country on file yet, the acceptance screen asks for it and saves it to your organisation profile.

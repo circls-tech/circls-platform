@@ -400,6 +400,13 @@
       "when": 1783770000000,
       "tag": "0057_registration_question_multiselect",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1783850000000,
+      "tag": "0058_payment_provider_cashfree",
+      "breakpoints": true
     }
   ]
 }

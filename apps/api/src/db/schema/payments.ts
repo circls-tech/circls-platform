@@ -9,11 +9,13 @@ import { users } from './users.js';
  * a row shape: positive = customer→venue, negative = refund. Idempotency on
  * `(provider, provider_payment_id)`.
  */
-// 'razorpay' | 'stripe' are gateways (see lib/gateway.ts); 'stub' is the
-// keyless dev/test adapter; 'external' is cash handled at the venue.
+// 'razorpay' | 'stripe' | 'cashfree' are gateways (see lib/gateway.ts);
+// 'stub' is the keyless dev/test adapter; 'external' is cash handled at the
+// venue.
 export const paymentProvider = pgEnum('payment_provider', [
   'razorpay',
   'stripe',
+  'cashfree',
   'stub',
   'external',
 ]);

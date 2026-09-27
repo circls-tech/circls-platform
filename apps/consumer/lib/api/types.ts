@@ -253,12 +253,12 @@ export interface SlotBookingResult {
   bookingId: string;
   payment: {
     /** Which gateway to open checkout on — Stripe for US venues. */
-    gateway: 'razorpay' | 'stripe';
+    gateway: 'razorpay' | 'stripe' | 'cashfree';
     orderId: string;
     /** The gateway's browser-safe key (Razorpay key id / Stripe publishable
-     *  key). Empty string in stub mode (no live keys configured). */
+     *  key / Cashfree SDK mode). Empty string in stub mode (no live keys configured). */
     keyId: string;
-    /** Stripe only: the PaymentIntent client secret. */
+    /** Stripe PaymentIntent client secret / Cashfree payment session id. */
     clientSecret?: string;
     amountPaise: number;
     currency: string;
@@ -277,10 +277,10 @@ export interface EventBookingResult {
   /** Present only for paid events; free events return a confirmed booking and no order. */
   providerOrderId?: string;
   /** Which gateway to open checkout on (paid only) — Stripe for US venues. */
-  gateway?: 'razorpay' | 'stripe';
+  gateway?: 'razorpay' | 'stripe' | 'cashfree';
   /** The gateway's browser-safe key + amount for opening checkout (paid only). */
   keyId?: string;
-  /** Stripe only: the PaymentIntent client secret. */
+  /** Stripe PaymentIntent client secret / Cashfree payment session id. */
   clientSecret?: string;
   amountPaise?: number;
   currency?: string;
@@ -294,10 +294,10 @@ export interface MembershipPurchaseResult {
   /** Present only for paid memberships; free ones activate immediately. */
   orderId?: string;
   /** Which gateway to open checkout on (paid only) — Stripe for US venues. */
-  gateway?: 'razorpay' | 'stripe';
+  gateway?: 'razorpay' | 'stripe' | 'cashfree';
   /** The gateway's browser-safe key + amount for opening checkout (paid only). */
   keyId?: string;
-  /** Stripe only: the PaymentIntent client secret. */
+  /** Stripe PaymentIntent client secret / Cashfree payment session id. */
   clientSecret?: string;
   amountPaise?: number;
   currency?: string;

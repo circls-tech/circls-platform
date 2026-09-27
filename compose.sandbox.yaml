@@ -52,6 +52,14 @@ services:
   api:
     <<: *dev
     env_file: ./.sandbox/env/api.env
+    # Optional real Cashfree SANDBOX keys for testing its checkout end to end.
+    # Set them in the local, gitignored .env — never in .sandbox/env/api.env,
+    # which is committed. Unset ⇒ Cashfree stub mode and INR stays on Razorpay.
+    environment:
+      CASHFREE_CLIENT_ID: ${CASHFREE_CLIENT_ID:-}
+      CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET:-}
+      CASHFREE_ENV: ${CASHFREE_ENV:-sandbox}
+      INR_PAYMENT_GATEWAY: ${INR_PAYMENT_GATEWAY:-razorpay}
     command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
     ports: ['8080:8080']
     volumes:

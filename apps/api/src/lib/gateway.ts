@@ -1,6 +1,6 @@
 /**
  * Payment gateway port — the provider-agnostic contract every gateway adapter
- * implements (Razorpay today; Stripe next). Services resolve an adapter via
+ * implements (Razorpay and Cashfree for INR, Stripe for USD). Services resolve an adapter via
  * `getGateway()` instead of importing a provider module directly, so adding a
  * gateway is a new adapter + a `providerForCountry` mapping, not a service
  * rewrite.
@@ -10,6 +10,7 @@
  * column name predates multi-currency.
  */
 import { env } from '../config/env.js';
+import { getCashfree } from './cashfree.js';
 import { getRazorpay } from './razorpay.js';
 import { getStripe } from './stripe.js';
 
@@ -19,7 +20,18 @@ export type GatewayMode = 'stub' | 'live';
  * Gateways money can move through. Mirrors the `payment_provider` DB enum
  * minus its non-gateway values ('stub', 'external').
  */
-export type PaymentProviderId = 'razorpay' | 'stripe';
+export type PaymentProviderId = 'razorpay' | 'stripe' | 'cashfree';
+
+const GATEWAY_PROVIDERS: readonly PaymentProviderId[] = ['razorpay', 'stripe', 'cashfree'];
+
+/**
+ * True for a `payment_provider` value that is a real gateway (as opposed to
+ * 'stub' or 'external'). Use this instead of listing gateways inline, so a new
+ * gateway can't be silently skipped by cancel/refund paths.
+ */
+export function isGatewayProvider(provider: string | null | undefined): provider is PaymentProviderId {
+  return GATEWAY_PROVIDERS.includes(provider as PaymentProviderId);
+}
 
 export interface CreateOrderInput {
   /** Total to charge the customer, in the currency's minor unit. */
@@ -28,7 +40,23 @@ export interface CreateOrderInput {
   currency: string;
   /** Our booking id — surfaces in the gateway dashboard for reconciliation. */
   reference: string;
+  /**
+   * Our payments row id — unique per order attempt (a booking can mint more
+   * than one order). Gateways that take a merchant-chosen order id (Cashfree)
+   * use it; the others generate their own.
+   */
+  chargeId: string;
+  /** The paying customer, for gateways that require customer details (Cashfree). */
+  customer?: GatewayCustomer | undefined;
   notes?: Record<string, string> | undefined;
+}
+
+export interface GatewayCustomer {
+  /** Stable id for the customer — the user id, else the booking id. */
+  id: string;
+  phoneE164?: string | null | undefined;
+  email?: string | null | undefined;
+  name?: string | null | undefined;
 }
 
 export interface GatewayOrder {
@@ -36,8 +64,9 @@ export interface GatewayOrder {
   status: 'created' | 'attempted' | 'paid';
   amountMinor: number;
   /**
-   * Stripe only: the PaymentIntent client secret the browser needs to confirm
-   * the payment (Razorpay's checkout needs only the order id + key id).
+   * What the browser needs to open checkout beyond the order id: the Stripe
+   * PaymentIntent client secret, or the Cashfree payment session id.
+   * Razorpay's checkout needs only the order id + key id.
    */
   clientSecret?: string | undefined;
 }
@@ -45,6 +74,10 @@ export interface GatewayOrder {
 export interface GatewayRefundInput {
   /** The gateway's payment id the refund is issued against. */
   paymentId: string;
+  /** The gateway order id the payment belongs to (Cashfree refunds by order). */
+  orderId?: string | null | undefined;
+  /** Our refund ledger row id — the merchant refund id where a gateway takes one. */
+  refundId: string;
   amountMinor: number;
   reason?: string | undefined;
   reference: string;
@@ -72,8 +105,13 @@ export interface PaymentGateway {
    */
   cancelOrder(orderId: string): Promise<void>;
   refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult>;
-  /** HMAC verify of a gateway webhook over the exact raw body bytes. */
-  verifyWebhookSignature(rawBody: string, signature: string): boolean;
+  /**
+   * HMAC verify of a gateway webhook over the exact raw body bytes.
+   * `timestamp` is the separate timestamp header for gateways that sign it
+   * alongside the body (Cashfree's `x-webhook-timestamp`); Stripe carries its
+   * timestamp inside the signature header and Razorpay signs none.
+   */
+  verifyWebhookSignature(rawBody: string, signature: string, timestamp?: string): boolean;
 }
 
 export function getGateway(provider: PaymentProviderId): PaymentGateway {
@@ -82,6 +120,8 @@ export function getGateway(provider: PaymentProviderId): PaymentGateway {
       return getRazorpay();
     case 'stripe':
       return getStripe();
+    case 'cashfree':
+      return getCashfree();
   }
 }
 
@@ -99,10 +139,12 @@ export function isUsCountry(country: string | null | undefined): boolean {
  * Which gateway settles a venue's money, keyed by the venue's country
  * (callers fall back to the tenant's country when the venue has none). The
  * gateway follows where the money settles — a US traveller booking a Mumbai
- * venue still pays in INR via Razorpay.
+ * venue still pays in INR. INR orders go through `INR_PAYMENT_GATEWAY`
+ * (Razorpay or Cashfree); switching it only affects NEW orders — refunds,
+ * cancels and webhooks always use the provider recorded on the charge row.
  */
 export function providerForCountry(country: string | null | undefined): PaymentProviderId {
-  return isUsCountry(country) ? 'stripe' : 'razorpay';
+  return isUsCountry(country) ? 'stripe' : env.INR_PAYMENT_GATEWAY;
 }
 
 /** The currency a venue's prices are denominated in, keyed like the provider. */
@@ -113,8 +155,16 @@ export function currencyForCountry(country: string | null | undefined): 'USD' | 
 /**
  * The public (browser-safe) key checkout needs for a gateway. Empty string in
  * stub mode — the consumer app reads that as "payments not enabled" and shows
- * the booking as reserved.
+ * the booking as reserved. Cashfree's JS SDK takes no key, only the
+ * environment, so its "key" is the SDK mode ('sandbox' | 'production').
  */
 export function publicKeyIdFor(provider: PaymentProviderId): string {
-  return (provider === 'stripe' ? env.STRIPE_PUBLISHABLE_KEY : env.RAZORPAY_KEY_ID) ?? '';
+  switch (provider) {
+    case 'stripe':
+      return env.STRIPE_PUBLISHABLE_KEY ?? '';
+    case 'razorpay':
+      return env.RAZORPAY_KEY_ID ?? '';
+    case 'cashfree':
+      return getCashfree().mode === 'live' ? env.CASHFREE_ENV : '';
+  }
 }

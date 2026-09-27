@@ -12,6 +12,10 @@ import {
   venues,
 } from '../db/schema/index.js';
 import {
+  __getStubCashfreeCancelledOrders,
+  __resetCashfreeForTesting,
+} from '../lib/cashfree.js';
+import {
   __getStubStripeCancelledOrders,
   __resetStripeForTesting,
 } from '../lib/stripe.js';
@@ -28,6 +32,7 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
   beforeAll(async () => {
     await pingDb();
     __resetStripeForTesting();
+    __resetCashfreeForTesting();
     const [u] = await db
       .insert(users)
       .values({ firebaseUid: `bt-fb-${Date.now()}`, email: `bt-${Date.now()}@test.x` })
@@ -189,6 +194,27 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
     // And the gateway order was voided so the still-open card form can no
     // longer complete the payment at all.
     expect(__getStubStripeCancelledOrders()).toContain('pi_sweep_test_1');
+  });
+
+  // Regression: the sweep used to cancel only razorpay/stripe orders, so an
+  // abandoned Cashfree order stayed payable after its booking was cancelled.
+  it('cancels the Cashfree order for a swept booking', async () => {
+    const { bookingId } = await seedOldPending('2032-04-12T05:00:00.000Z');
+    await db.insert(payments).values({
+      bookingId,
+      tenantId,
+      provider: 'cashfree',
+      providerOrderId: 'cf_sweep_test_1',
+      amountPaise: 50000,
+      currency: 'INR',
+      status: 'pending',
+      kind: 'charge',
+      metadata: {},
+    });
+
+    await sweepAbandonedCarts();
+
+    expect(__getStubCashfreeCancelledOrders()).toContain('cf_sweep_test_1');
   });
 
   it('leaves captured charges alone when sweeping', async () => {

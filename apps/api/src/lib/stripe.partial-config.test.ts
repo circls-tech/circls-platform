@@ -24,7 +24,12 @@ describe('getStripe with a partial config', () => {
 
     // Stub orders keep US bookings on the "reserved" path — deterministic ids,
     // no network, no real PaymentIntent a customer could pay.
-    const order = await gw.createOrder({ amountMinor: 1000, currency: 'USD', reference: 'b1' });
+    const order = await gw.createOrder({
+      amountMinor: 1000,
+      currency: 'USD',
+      reference: 'b1',
+      chargeId: 'c1',
+    });
     expect(order.id).toMatch(/^stub_pi_/);
   });
 });

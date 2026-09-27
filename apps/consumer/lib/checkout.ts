@@ -78,6 +78,11 @@ function loadRazorpayScript(): Promise<void> {
 
 export type CheckoutResult =
   | { kind: 'paid' }
+  /**
+   * A payment attempt finished but the browser can't tell its outcome
+   * (Cashfree) — the webhook confirms the booking if it succeeded.
+   */
+  | { kind: 'submitted' }
   | { kind: 'dismissed' }
   /** keyId/order missing — payments not enabled; booking is reserved as pending. */
   | { kind: 'reserved' };
