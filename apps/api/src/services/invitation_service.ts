@@ -22,7 +22,7 @@ import { tenantMembers, ROLE_RANK, type TenantRole } from '../db/schema/tenant_m
 import { tenantInvitations, type TenantInvitation } from '../db/schema/tenant_invitations.js';
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
-import { canActOnRole } from '../lib/authz/can.js';
+import { canActOnRole, isSuspendedTenant, tenantSuspendedError } from '../lib/authz/can.js';
 import { Conflict, Forbidden, NotFound } from '../lib/errors.js';
 import { env } from '../config/env.js';
 import { getNotifications } from '../lib/notifications/index.js';
@@ -218,6 +218,8 @@ export interface InvitationLookupResult {
   invitationId: string;
   tenantId: string;
   tenantName: string;
+  /** Circls has the organisation suspended: nobody can join until it's reinstated. */
+  tenantSuspended: boolean;
   role: TenantRole;
   email: string;
   expiresAt: Date;
@@ -233,6 +235,8 @@ export async function lookupInvitation(token: string): Promise<InvitationLookupR
       tokenHash: tenantInvitations.tokenHash,
       tenantId: tenantInvitations.tenantId,
       tenantName: tenants.name,
+      tenantStatus: tenants.status,
+      tenantIsPlatform: tenants.isPlatform,
       role: tenantInvitations.role,
       email: tenantInvitations.email,
       expiresAt: tenantInvitations.expiresAt,
@@ -256,6 +260,7 @@ export async function lookupInvitation(token: string): Promise<InvitationLookupR
         invitationId: c.invitationId,
         tenantId: c.tenantId,
         tenantName: c.tenantName,
+        tenantSuspended: isSuspendedTenant({ isPlatform: c.tenantIsPlatform, status: c.tenantStatus }),
         role: c.role,
         email: c.email,
         expiresAt: c.expiresAt,
@@ -305,6 +310,9 @@ export async function acceptInvitation(
   if (meta.email !== tokenEmail) {
     throw new Conflict('Token email does not match invitation', 'invitation_email_mismatch');
   }
+  // A suspended organisation's team doesn't change — joining included. The
+  // invitation stays pending, so it can be accepted once Circls reinstates it.
+  if (meta.tenantSuspended) throw tenantSuspendedError();
 
   return db.transaction(async (tx) => {
     let [existing] = await tx

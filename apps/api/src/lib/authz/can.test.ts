@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '../../db/schema/tenant_members.js';
 import { ALL_CAPABILITIES } from './capabilities.js';
-import { can } from './can.js';
+import { can, isSuspendedTenant } from './can.js';
 
 const ROLES: TenantRole[] = ['owner', 'manager', 'staff', 'readonly'];
 
@@ -16,7 +16,7 @@ describe('can() — authz matrix', () => {
     for (const role of ROLES) {
       matrix[role] = {};
       for (const cap of ALL_CAPABILITIES) {
-        matrix[role]![cap] = can({ role, isPlatform: false }, cap);
+        matrix[role]![cap] = can({ role, isPlatform: false, suspended: false }, cap);
       }
     }
     expect(matrix).toMatchSnapshot();
@@ -27,32 +27,46 @@ describe('can() — authz matrix', () => {
     for (const role of ROLES) {
       matrix[role] = {};
       for (const cap of ALL_CAPABILITIES) {
-        matrix[role]![cap] = can({ role, isPlatform: true }, cap);
+        matrix[role]![cap] = can({ role, isPlatform: true, suspended: false }, cap);
       }
     }
     expect(matrix).toMatchSnapshot();
   });
 
   it('owner of a partner tenant can write venues', () => {
-    expect(can({ role: 'owner', isPlatform: false }, 'venues.write')).toBe(true);
+    expect(can({ role: 'owner', isPlatform: false, suspended: false }, 'venues.write')).toBe(true);
   });
 
   it('staff of a partner tenant cannot write venues', () => {
-    expect(can({ role: 'staff', isPlatform: false }, 'venues.write')).toBe(false);
+    expect(can({ role: 'staff', isPlatform: false, suspended: false }, 'venues.write')).toBe(false);
   });
 
   it('manager of a platform tenant can execute payouts', () => {
-    expect(can({ role: 'manager', isPlatform: true }, 'admin.payouts.execute')).toBe(true);
+    expect(can({ role: 'manager', isPlatform: true, suspended: false }, 'admin.payouts.execute')).toBe(true);
   });
 
   it('staff of a platform tenant cannot execute payouts', () => {
-    expect(can({ role: 'staff', isPlatform: true }, 'admin.payouts.execute')).toBe(false);
+    expect(can({ role: 'staff', isPlatform: true, suspended: false }, 'admin.payouts.execute')).toBe(false);
   });
 
   it('partner-tenant member never has admin.* caps', () => {
     for (const role of ROLES) {
-      expect(can({ role, isPlatform: false }, 'admin.payouts.execute')).toBe(false);
-      expect(can({ role, isPlatform: false }, 'admin.tenants.suspend')).toBe(false);
+      expect(can({ role, isPlatform: false, suspended: false }, 'admin.payouts.execute')).toBe(false);
+      expect(can({ role, isPlatform: false, suspended: false }, 'admin.tenants.suspend')).toBe(false);
     }
+  });
+
+  it('a suspended tenant keeps only the read capabilities', () => {
+    const owner = { role: 'owner' as const, isPlatform: false, suspended: true };
+    expect(can(owner, 'venues.read')).toBe(true);
+    expect(can(owner, 'integration.read')).toBe(true);
+    expect(can(owner, 'venues.write')).toBe(false);
+    expect(can(owner, 'questions.write')).toBe(false);
+  });
+
+  it('only a partner tenant can be suspended', () => {
+    expect(isSuspendedTenant({ isPlatform: false, status: 'suspended' })).toBe(true);
+    expect(isSuspendedTenant({ isPlatform: false, status: 'active' })).toBe(false);
+    expect(isSuspendedTenant({ isPlatform: true, status: 'suspended' })).toBe(false);
   });
 });

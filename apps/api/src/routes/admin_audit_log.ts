@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client.js';
+import { can } from '../lib/authz/can.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
@@ -29,7 +30,11 @@ interface AdminAuditLogItem {
   entityName: string | null;
   actorUserId: string | null;
   actorName: string | null;
-  /** Phone or email of whoever acted, so a row is identifiable without an id. */
+  /**
+   * Phone or email of whoever acted, so a row is identifiable without an id.
+   * Contact details are for admin.users.read holders only (as in the user
+   * reports); everyone else gets null.
+   */
   actorContact: string | null;
   /** Owning organisation's name; null for platform-level entries. */
   tenantName: string | null;
@@ -58,9 +63,9 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
 const querySchema = z.object({
   /**
    * Free-text search so the log can be used without knowing any UUIDs: matches
-   * an organisation's name or slug, a person's name, email or phone (whether
-   * they acted or were acted upon), and the name of the event, venue or
-   * membership that was acted on.
+   * an organisation's name or slug, a person's name (and, for admin.users.read
+   * holders, their email or phone) whether they acted or were acted upon, and
+   * the name of the event, venue or membership that was acted on.
    */
   q: z.string().min(1).max(200).optional(),
   tenantId: z.string().uuid().optional(),
@@ -91,6 +96,9 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
       const p = parsed.data;
       const limit = Math.min(p.limit ?? 50, 200);
       const fetchLimit = limit + 1;
+      // Contact details (shown, or matched by the search) follow the user
+      // reports: platform Owners and Managers only.
+      const seesContacts = can(ctx, 'admin.users.read');
 
       const conditions: ReturnType<typeof sql>[] = [sql`1=1`];
       if (p.q) {
@@ -98,7 +106,7 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
         // Phones are stored E.164; people type them with spaces, dashes or no
         // country code, so compare digits-only as well as the raw string.
         const digits = p.q.replace(/\D/g, '');
-        const phoneLike = digits.length >= 4 ? `%${digits}%` : null;
+        const phoneLike = seesContacts && digits.length >= 4 ? `%${digits}%` : null;
         conditions.push(sql`(
           exists (
             select 1 from tenants tq
@@ -109,7 +117,7 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
             select 1 from users uq
              where uq.id = al.actor_user_id
                and (lower(coalesce(uq.display_name, '')) like ${like}
-                    or lower(coalesce(uq.email, '')) like ${like}
+                    ${seesContacts ? sql`or lower(coalesce(uq.email, '')) like ${like}` : sql``}
                     ${phoneLike ? sql`or regexp_replace(coalesce(uq.phone_e164, ''), '\\D', '', 'g') like ${phoneLike}` : sql``})
           )
           or exists (
@@ -131,7 +139,7 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
             select 1 from users ue
              where ue.id = al.entity_id
                and (lower(coalesce(ue.display_name, '')) like ${like}
-                    or lower(coalesce(ue.email, '')) like ${like}
+                    ${seesContacts ? sql`or lower(coalesce(ue.email, '')) like ${like}` : sql``}
                     ${phoneLike ? sql`or regexp_replace(coalesce(ue.phone_e164, ''), '\\D', '', 'g') like ${phoneLike}` : sql``})
           )
         )`);
@@ -174,7 +182,7 @@ export const adminAuditLogRoutes: FastifyPluginAsync = async (app) => {
           end AS entity_name,
           al.actor_user_id,
           u.display_name AS actor_name,
-          coalesce(u.phone_e164, u.email) AS actor_contact,
+          ${seesContacts ? sql`coalesce(u.phone_e164, u.email)` : sql`null`} AS actor_contact,
           t.name AS tenant_name,
           al.before,
           al.after,

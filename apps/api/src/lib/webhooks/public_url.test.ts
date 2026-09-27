@@ -22,6 +22,23 @@ describe('isPublicAddress', () => {
     }
   });
 
+  it('refuses IPv6 ranges that carry an IPv4 address elsewhere, and other non-public ones', () => {
+    for (const ip of [
+      '::127.0.0.1', // IPv4-compatible
+      '::a9fe:a9fe',
+      '::ffff:0:7f00:1', // SIIT
+      '64:ff9b::a9fe:a9fe', // NAT64
+      '64:ff9b:1::a9fe:a9fe', // local-use NAT64
+      '2002:a9fe:a9fe::1', // 6to4
+      '2001:0:a9fe:a9fe::1', // Teredo
+      'fec0::1',
+      '100::1',
+      '3fff::1',
+    ]) {
+      expect(isPublicAddress(ip), ip).toBe(false);
+    }
+  });
+
   it('accepts public addresses', () => {
     for (const ip of ['93.184.216.34', '8.8.8.8', '2606:4700:4700::1111']) {
       expect(isPublicAddress(ip), ip).toBe(true);
@@ -51,6 +68,7 @@ describe('assertPublicHttpsUrl', () => {
     expect(await code('https://127.0.0.1/hook')).toBe('webhook_url_not_public');
     expect(await code('https://169.254.169.254/latest/meta-data')).toBe('webhook_url_not_public');
     expect(await code('https://[::1]/hook')).toBe('webhook_url_not_public');
+    expect(await code('https://[::127.0.0.1]/hook')).toBe('webhook_url_not_public');
   });
 
   it('accepts a public https address', async () => {

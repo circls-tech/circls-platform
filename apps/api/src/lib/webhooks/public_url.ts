@@ -5,9 +5,11 @@ import { BadRequest } from '../errors.js';
 /**
  * Addresses a webhook must never reach: private, loopback, link-local (cloud
  * metadata lives there), carrier-grade NAT, multicast, reserved and
- * documentation ranges, and NAT64. IPv4-mapped IPv6 addresses are unwrapped and
- * judged as IPv4 (a ::ffff:0:0/96 rule here would also catch every IPv4
- * address: BlockList matches IPv4 against IPv6 rules in that mapped form).
+ * documentation ranges, and every IPv6 range that carries an IPv4 address to
+ * somewhere else (IPv4-compatible, SIIT, NAT64, 6to4, Teredo). IPv4-mapped
+ * IPv6 addresses are unwrapped and judged as IPv4 (a ::ffff:0:0/96 rule here
+ * would also catch every IPv4 address: BlockList matches IPv4 against IPv6
+ * rules in that mapped form).
  */
 const NOT_PUBLIC = new BlockList();
 for (const [net, prefix] of [
@@ -29,12 +31,22 @@ for (const [net, prefix] of [
   NOT_PUBLIC.addSubnet(net, prefix, 'ipv4');
 }
 for (const [net, prefix] of [
-  ['::', 127],
-  ['64:ff9b::', 96],
-  ['2001:db8::', 32],
-  ['fc00::', 7],
-  ['fe80::', 10],
-  ['ff00::', 8],
+  ['::', 96], // unspecified, loopback and IPv4-compatible (::a.b.c.d)
+  ['::ffff:0:0:0', 96], // SIIT IPv4-translated
+  ['64:ff9b::', 96], // NAT64
+  ['64:ff9b:1::', 48], // local-use NAT64
+  ['100::', 64], // discard-only
+  ['2001::', 32], // Teredo
+  ['2001:2::', 48], // benchmarking
+  ['2001:20::', 28], // ORCHIDv2
+  ['2001:db8::', 32], // documentation
+  ['2002::', 16], // 6to4
+  ['3fff::', 20], // documentation
+  ['5f00::', 16], // SRv6 SIDs
+  ['fc00::', 7], // unique local
+  ['fe80::', 10], // link-local
+  ['fec0::', 10], // site-local (deprecated)
+  ['ff00::', 8], // multicast
 ] as const) {
   NOT_PUBLIC.addSubnet(net, prefix, 'ipv6');
 }

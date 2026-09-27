@@ -27,7 +27,8 @@ import type { FlowAnswer } from '../db/schema/support_issues.js';
 import type { TenantRole } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
-import { can } from '../lib/authz/can.js';
+import { can, isSuspendedTenant } from '../lib/authz/can.js';
+import { ownBookingCondition } from './booking_ownership.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
@@ -262,7 +263,8 @@ export async function resolveViewerRelation(
   tenantId: string,
 ): Promise<ViewerRelation> {
   const res = await db.execute<Record<string, unknown>>(sql`
-    select tm.tenant_id::text as tenant_id, tm.role as role, t.is_platform as is_platform
+    select tm.tenant_id::text as tenant_id, tm.role as role, t.is_platform as is_platform,
+           t.status as status
       from tenant_members tm
       join tenants t on t.id = tm.tenant_id
      where tm.user_id = ${userId}::uuid
@@ -271,13 +273,17 @@ export async function resolveViewerRelation(
   for (const r of rowsOf(res)) {
     const role = r['role'] as TenantRole;
     const isPlatform = Boolean(r['is_platform']);
+    // A suspended org's members can still read, but not answer as the org.
+    const suspended = isSuspendedTenant({ isPlatform, status: String(r['status']) });
     if (r['tenant_id'] === tenantId) {
       rel.isOrgMember = true;
-      if (can({ role, isPlatform }, 'questions.write')) rel.canPostAsOrg = true;
+      if (can({ role, isPlatform, suspended }, 'questions.write')) rel.canPostAsOrg = true;
     }
     if (isPlatform) {
       rel.isPlatformMember = true;
-      if (can({ role, isPlatform: true }, 'admin.support.write')) rel.canPostAsCircls = true;
+      if (can({ role, isPlatform: true, suspended: false }, 'admin.support.write')) {
+        rel.canPostAsCircls = true;
+      }
     }
   }
   return rel;
@@ -552,9 +558,8 @@ export async function createSupportThread(input: {
       .where(
         and(
           eq(bookings.id, input.bookingId),
-          // The caller's own booking, as listMyBookings decides it: theirs as
-          // the customer, or an old customer-less consumer booking they made.
-          sql`(${bookings.customerUserId} = ${input.userId}::uuid or (${bookings.customerUserId} is null and ${bookings.createdByUserId} = ${input.userId}::uuid and ${bookings.channel} = 'circls'))`,
+          // The caller's own booking, as "My bookings" decides it.
+          ownBookingCondition(input.userId, 'bookings'),
         ),
       )
       .limit(1);

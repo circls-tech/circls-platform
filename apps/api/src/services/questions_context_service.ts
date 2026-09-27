@@ -24,6 +24,7 @@ import {
 } from '../db/schema/question_threads.js';
 import { users } from '../db/schema/users.js';
 import { NotFound } from '../lib/errors.js';
+import { ownBookingCondition } from './booking_ownership.js';
 import type { QuestionSubjectSummary } from './questions_service.js';
 
 const BOOKINGS_LIMIT = 10;
@@ -225,9 +226,11 @@ export async function getThreadContext(
     contextBooking = r ? mapBookingRow(r) : null;
   }
 
+  // The asker's own bookings, as their "My bookings" has them — not the
+  // walk-ins or registrations they may have entered for others as staff.
   const recentRes = await db.execute<Record<string, unknown>>(
     bookingSelect(sql`
-      where (b.customer_user_id = ${userId}::uuid or b.created_by_user_id = ${userId}::uuid)
+      where ${ownBookingCondition(userId)}
         ${tenantScope ? sql`and b.tenant_id = ${tenantScope}::uuid` : sql``}
       order by b.created_at desc
       limit ${BOOKINGS_LIMIT}

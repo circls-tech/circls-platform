@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type TenantMember, tenantMembers } from '../db/schema/index.js';
 import { tenants } from '../db/schema/tenants.js';
+import { isSuspendedTenant } from '../lib/authz/can.js';
 import { Forbidden } from '../lib/errors.js';
 
 export interface TenantContext {
@@ -45,7 +46,7 @@ export async function requireTenantMembership(
     userId,
     role: row.role,
     isPlatform: row.isPlatform,
-    suspended: !row.isPlatform && row.status === 'suspended',
+    suspended: isSuspendedTenant(row),
     termsVersion: row.termsVersion,
     termsAcceptedAt: row.termsAcceptedAt,
   };

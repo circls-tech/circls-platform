@@ -114,6 +114,8 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
     if (!meta) throw new BadRequest('Invitation not found', 'invitation_not_found');
     return {
       tenantName: meta.tenantName,
+      // The accept page says why joining is on hold rather than failing later.
+      tenantSuspended: meta.tenantSuspended,
       role: meta.role,
       email: meta.email,
       inviterEmail: meta.inviterEmail,

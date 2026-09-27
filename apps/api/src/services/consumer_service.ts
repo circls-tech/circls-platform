@@ -30,6 +30,7 @@ import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
+import { ownBookingCondition } from './booking_ownership.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
@@ -958,13 +959,8 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
-    -- The customer's bookings. Consumer bookings from before customers were
-    -- stamped carry only their creator, so a circls-channel booking with no
-    -- customer still counts as the creator's; walk-ins, off-platform
-    -- registrations and API bookings belong to their customers, not to the
-    -- staff member or owner who entered them.
-    where b.customer_user_id = ${userId}
-       or (b.customer_user_id is null and b.created_by_user_id = ${userId} and b.channel = 'circls')
+    -- The customer's bookings (see ownBookingCondition).
+    where ${ownBookingCondition(userId)}
     order by b.created_at desc
     limit 100
   `);
@@ -1100,9 +1096,7 @@ export async function getMyBookingDetail(
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     where b.id = ${bookingId}
-      -- Same ownership rule as listMyBookings.
-      and (b.customer_user_id = ${userId}
-        or (b.customer_user_id is null and b.created_by_user_id = ${userId} and b.channel = 'circls'))
+      and ${ownBookingCondition(userId)}
     limit 1
   `);
   const arr = rows as unknown as Record<string, unknown>[];

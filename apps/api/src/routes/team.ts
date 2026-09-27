@@ -75,12 +75,14 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
       }
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
-      // Editing yourself needs no cap; editing others is owner/manager only.
+      // Editing yourself needs no cap; editing others is owner/manager only
+      // (and never someone above you — the service checks that).
       if (user.id !== targetUserId) assertCap(ctx, 'members.update');
       return updateMemberProfile({
         tenantId,
         targetUserId,
         actorUserId: user.id,
+        actorRole: ctx.role,
         displayName: parsed.data.displayName,
       });
     },

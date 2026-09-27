@@ -4,8 +4,11 @@
  * Owner-safety invariants (enforced here, not at capability layer):
  *   - cannot demote the last owner
  *   - cannot remove the last owner
- *   - nobody grants a role above their own, or changes or removes a member
- *     above them — a Manager can't make anyone an Owner, or unmake one
+ *   - nobody grants a role above their own, or changes, renames or removes a
+ *     member above them — a Manager can't make anyone an Owner, or unmake one
+ *   - a role change or removal only applies to the role it was checked
+ *     against: if the member's role changed meanwhile, it's refused
+ *     (member_changed) rather than overwriting the newer role
  *
  * Self-removal exception (enforced at the route layer):
  *   - DELETE on yourself is allowed regardless of cap, provided the last-owner
@@ -44,6 +47,14 @@ export async function listMembers(tenantId: string): Promise<MemberRow[]> {
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The member's role changed (or they left) between our read and our write. */
+function memberChanged(): Conflict {
+  return new Conflict(
+    'This member was changed by someone else just now. Reload and try again.',
+    'member_changed',
+  );
+}
 
 /** Lock owner rows for this tenant so concurrent demotions serialize. */
 async function lockedOwnerCount(tx: Tx, tenantId: string): Promise<number> {
@@ -96,14 +107,20 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
       }
     }
 
+    // Only if the role is still the one checked above: a concurrent change
+    // (say an Owner promoting this member) must not be silently overwritten.
     const [updated] = await tx
       .update(tenantMembers)
       .set({ role: input.nextRole })
       .where(
-        and(eq(tenantMembers.tenantId, input.tenantId), eq(tenantMembers.userId, input.targetUserId)),
+        and(
+          eq(tenantMembers.tenantId, input.tenantId),
+          eq(tenantMembers.userId, input.targetUserId),
+          eq(tenantMembers.role, current.role),
+        ),
       )
       .returning();
-    if (!updated) throw new NotFound('Member not found', 'member_not_found');
+    if (!updated) throw memberChanged();
 
     await writeAudit(
       tx,
@@ -130,6 +147,8 @@ export interface UpdateMemberProfileInput {
   tenantId: string;
   targetUserId: string;
   actorUserId: string;
+  /** The actor's own role in the tenant. */
+  actorRole: TenantRole;
   displayName: string | null;
 }
 
@@ -139,7 +158,8 @@ export interface UpdateMemberProfileInput {
  * owner/manager, via this) set one. Name only: phone/email are identity keys
  * whose writers must prove ownership (OTP / verified token / invite token).
  * Scoped by membership: the target must be a member of `tenantId`, and every
- * change is audited on that tenant.
+ * change is audited on that tenant. Like a role change, nobody renames a
+ * member above them (the name shows everywhere that person appears).
  */
 export async function updateMemberProfile(input: UpdateMemberProfileInput): Promise<MemberRow> {
   return db.transaction(async (tx) => {
@@ -158,6 +178,10 @@ export async function updateMemberProfile(input: UpdateMemberProfileInput): Prom
       )
       .limit(1);
     if (!current) throw new NotFound('Member not found', 'member_not_found');
+
+    if (input.targetUserId !== input.actorUserId && !canActOnRole(input.actorRole, current.role)) {
+      throw new Forbidden("You can't edit someone above your own role", 'role_above_yours');
+    }
 
     const [updated] = await tx
       .update(users)
@@ -218,11 +242,18 @@ export async function removeMember(input: RemoveMemberInput): Promise<void> {
       }
     }
 
-    await tx
+    // Only if the role is still the one checked above (see updateMemberRole).
+    const removed = await tx
       .delete(tenantMembers)
       .where(
-        and(eq(tenantMembers.tenantId, input.tenantId), eq(tenantMembers.userId, input.targetUserId)),
-      );
+        and(
+          eq(tenantMembers.tenantId, input.tenantId),
+          eq(tenantMembers.userId, input.targetUserId),
+          eq(tenantMembers.role, current.role),
+        ),
+      )
+      .returning({ userId: tenantMembers.userId });
+    if (removed.length === 0) throw memberChanged();
 
     await writeAudit(
       tx,

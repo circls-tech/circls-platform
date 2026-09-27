@@ -17,6 +17,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
       pmanager: { uid: 'fbuid_acpmanager', email: 'acpmanager@x.com', email_verified: true },
       pstaff: { uid: 'fbuid_acpstaff', email: 'acpstaff@x.com', email_verified: true },
       preadonly: { uid: 'fbuid_acpreadonly', email: 'acpreadonly@x.com', email_verified: true },
+      invitee: { uid: 'fbuid_acinvitee', email: 'acinvitee@x.com', email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
@@ -91,6 +92,9 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
       expect(me.statusCode).toBe(200);
       userIds[token] = (me.json() as { id: string }).id;
     }
+    // These users are the same on every run: clear the questions earlier runs
+    // left, so the 24-hour question limit doesn't trip a rerun.
+    await clearQuestions();
 
     // The Circls platform tenant, with one member per role that matters here.
     const pt = await db.execute<{ id: string }>(sql`
@@ -115,12 +119,23 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
   });
 
   afterAll(async () => {
+    await clearQuestions();
     if (prevSlug === undefined) delete process.env['CIRCLS_INTERNAL_TENANT_SLUG'];
     else process.env['CIRCLS_INTERNAL_TENANT_SLUG'] = prevSlug;
     __resetPlatformTenantCacheForTesting();
     await app.close();
     await closeDb();
   });
+
+  /** Removes the question threads this file's users asked (messages cascade). */
+  async function clearQuestions(): Promise<void> {
+    const ids = Object.values(userIds);
+    if (ids.length === 0) return;
+    await db.execute(sql`
+      DELETE FROM question_threads
+       WHERE author_user_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+    `);
+  }
 
   describe('platform user reports and support issues', () => {
     it('lets only platform Owners and Managers read the user reports', async () => {
@@ -132,6 +147,26 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
           expect(res.json().error.details).toEqual({ cap: 'admin.users.read' });
         }
       }
+    });
+
+    it("keeps people's contact details in the audit log to the same roles", async () => {
+      // Something the owner (acowner@x.com) does lands in Acme's log.
+      expect((await createPlan(tenantId)).statusCode).toBe(200);
+      const log = async (token: string, q = '') =>
+        (
+          (await call(token, 'GET', `/v1/admin/audit-log?tenantId=${tenantId}&limit=200${q}`)).json() as {
+            rows: { actorUserId: string | null; actorContact: string | null }[];
+          }
+        ).rows;
+      const byManager = await log('pmanager');
+      expect(byManager.some((r) => r.actorContact === 'acowner@x.com')).toBe(true);
+
+      const byReadonly = await log('preadonly');
+      expect(byReadonly.some((r) => r.actorUserId === userIds.owner)).toBe(true);
+      expect(byReadonly.every((r) => r.actorContact === null)).toBe(true);
+      // Nor can the search find someone by their contact details.
+      expect(await log('preadonly', '&q=acowner%40x.com')).toHaveLength(0);
+      expect((await log('pmanager', '&q=acowner%40x.com')).length).toBeGreaterThan(0);
     });
 
     it('takes support issues from partners only, and changes from support writers only', async () => {
@@ -170,6 +205,7 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
     let apiBookingId: string;
     let legacyId: string;
     let ownId: string;
+    let onlineForOtherId: string;
 
     beforeAll(async () => {
       const base = {
@@ -189,7 +225,13 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
           // Booked through an API key, stamped with the owner as creator.
           { ...base, channel: 'aggregator', paymentMethod: 'external', createdByUserId: userIds.owner! },
           // A consumer booking from before customers were stamped.
-          { ...base, channel: 'circls', paymentMethod: 'razorpay_route', createdByUserId: userIds.customer! },
+          {
+            ...base,
+            channel: 'circls',
+            paymentMethod: 'razorpay_route',
+            createdByUserId: userIds.customer!,
+            createdAt: new Date('2026-06-01T10:00:00Z'),
+          },
           // The customer's booking, stamped properly.
           {
             ...base,
@@ -198,9 +240,18 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
             createdByUserId: userIds.customer!,
             customerUserId: userIds.customer!,
           },
+          // Taken online by staff for someone else (POST /v1/bookings with
+          // razorpay_route): no customer, and made since customers are stamped.
+          { ...base, channel: 'circls', paymentMethod: 'razorpay_route', createdByUserId: userIds.staff! },
         ])
         .returning({ id: bookings.id });
-      [walkInId, apiBookingId, legacyId, ownId] = rows.map((r) => r.id) as [string, string, string, string];
+      [walkInId, apiBookingId, legacyId, ownId, onlineForOtherId] = rows.map((r) => r.id) as [
+        string,
+        string,
+        string,
+        string,
+        string,
+      ];
     });
 
     const listIds = async (token: string) =>
@@ -209,12 +260,15 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
       );
 
     it('are the ones made for them, not the ones they entered for others', async () => {
-      expect(await listIds('staff')).not.toContain(walkInId);
+      const staffs = await listIds('staff');
+      expect(staffs).not.toContain(walkInId);
+      expect(staffs).not.toContain(onlineForOtherId);
       expect(await listIds('owner')).not.toContain(apiBookingId);
       const mine = await listIds('customer');
       expect(mine).toEqual(expect.arrayContaining([legacyId, ownId]));
 
       expect((await call('staff', 'GET', `/v1/consumer/me/bookings/${walkInId}`)).statusCode).toBe(404);
+      expect((await call('staff', 'GET', `/v1/consumer/me/bookings/${onlineForOtherId}`)).statusCode).toBe(404);
       expect((await call('customer', 'GET', `/v1/consumer/me/bookings/${legacyId}`)).statusCode).toBe(200);
     });
   });
@@ -294,6 +348,26 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
       expect(await authorId('customer')).toBe(userIds.customer);
     });
 
+    it('shows a webhook signing secret once, on create', async () => {
+      const created = await call('owner', 'POST', `/v1/tenants/${tenantId}/webhook-subscriptions`, {
+        url: 'https://example.com/hook',
+        events: ['booking.confirmed'],
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toHaveProperty('secret');
+      const subs = (await call('owner', 'GET', `/v1/tenants/${tenantId}/webhook-subscriptions`)).json() as object[];
+      expect(subs.length).toBeGreaterThan(0);
+      for (const sub of subs) expect(sub).not.toHaveProperty('secret');
+
+      // fetch can't send to a URL with credentials in it.
+      const withCredentials = await call('owner', 'POST', `/v1/tenants/${tenantId}/webhook-subscriptions`, {
+        url: 'https://hook:s3cret@example.com/hook',
+        events: ['booking.confirmed'],
+      });
+      expect(withCredentials.statusCode).toBe(400);
+      expect(withCredentials.json().error.message).toBe("Webhook URLs can't include a username or password");
+    });
+
     it('never returns API key hashes', async () => {
       const created = await call('owner', 'POST', `/v1/tenants/${tenantId}/api-keys`, {
         name: 'Aggregator',
@@ -312,11 +386,36 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
     let bookingId: string;
     let eventId: string;
     let tierId: string;
+    let threadId: string;
+    let inviteToken: string;
 
     beforeAll(async () => {
       frozenId = await createTenant('owner', 'Frozen');
       const frozenVenue = await createVenue('owner', frozenId, 'Frozen Courts');
-      await db.insert(tenantMembers).values({ userId: userIds.staff!, tenantId: frozenId, role: 'staff' });
+      await db.insert(tenantMembers).values([
+        { userId: userIds.staff!, tenantId: frozenId, role: 'staff' },
+        // A member of this organisation only.
+        { userId: userIds.other!, tenantId: frozenId, role: 'readonly' },
+      ]);
+      // A customer's public question on one of its plans.
+      const plan = await createPlan(frozenId);
+      const planId = (plan.json() as { id: string }).id;
+      await db.execute(sql`UPDATE memberships SET status = 'active' WHERE id = ${planId}::uuid`);
+      const asked = await call('customer', 'POST', '/v1/consumer/questions', {
+        subjectType: 'membership',
+        subjectId: planId,
+        visibility: 'public',
+        body: 'Is the pass still valid?',
+      });
+      expect(asked.statusCode).toBe(200);
+      threadId = (asked.json() as { thread: { id: string } }).thread.id;
+      // An invitation sent before the suspension.
+      const invite = await call('owner', 'POST', `/v1/tenants/${frozenId}/invitations`, {
+        email: 'acinvitee@x.com',
+        role: 'manager',
+      });
+      expect(invite.statusCode).toBe(201);
+      inviteToken = (invite.json() as { token: string }).token;
       const start = new Date(Date.now() + 48 * 3_600_000);
       const end = new Date(start.getTime() + 3_600_000);
       const [b] = await db
@@ -354,6 +453,9 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
     it('can still be looked at', async () => {
       expect((await call('owner', 'GET', `/v1/tenants/${frozenId}/members`)).statusCode).toBe(200);
       expect((await call('owner', 'GET', `/v1/bookings/${bookingId}`)).statusCode).toBe(200);
+      // Integrations included.
+      expect((await call('owner', 'GET', `/v1/tenants/${frozenId}/api-keys`)).statusCode).toBe(200);
+      expect((await call('owner', 'GET', `/v1/tenants/${frozenId}/webhook-subscriptions`)).statusCode).toBe(200);
       const peek = await call('owner', 'POST', `/v1/tenants/${frozenId}/qr-tickets/validate`, {
         code: 'not-a-real-pass',
         consume: false,
@@ -366,11 +468,24 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
         await call('owner', 'POST', `/v1/tenants/${frozenId}/venues`, { name: 'More Courts' }),
         await call('staff', 'POST', `/v1/bookings/${bookingId}/cancel`, { reason: 'suspended' }),
         await call('owner', 'POST', `/v1/tenants/${frozenId}/qr-tickets/validate`, { code: 'not-a-real-pass' }),
+        await call('owner', 'POST', `/v1/tenants/${frozenId}/api-keys`, { name: 'Late key', role: 'read' }),
+        await call(null, 'POST', `/v1/invitations/${inviteToken}/accept`, { firebaseIdToken: 'invitee' }),
       ];
       for (const res of attempts) {
         expect(res.statusCode, res.body).toBe(403);
         expect(res.json().error.code).toBe('tenant_suspended');
       }
+      const lookup = await call(null, 'GET', `/v1/invitations/lookup?token=${inviteToken}`);
+      expect(lookup.json()).toMatchObject({ tenantSuspended: true });
+    });
+
+    it("doesn't let its members answer customers as the organisation", async () => {
+      // The consumer surface too: staff can still reply, but as themselves.
+      const res = await call('staff', 'POST', `/v1/consumer/questions/${threadId}/messages`, {
+        body: 'We will be back soon.',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ message: { authorKind: 'consumer' }, threadStatus: 'open' });
     });
 
     it("stops selling, but lets customers cancel and the org reach support", async () => {
@@ -382,7 +497,8 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
       const selfCancel = await call('customer', 'POST', `/v1/bookings/${bookingId}/cancel`, {});
       expect(selfCancel.statusCode).toBe(200);
 
-      const support = await call('owner', 'POST', '/v1/support/issues', {
+      // By someone who belongs to no other organisation.
+      const support = await call('other', 'POST', '/v1/support/issues', {
         message: 'We were suspended and need help.',
       });
       expect(support.statusCode).toBe(200);

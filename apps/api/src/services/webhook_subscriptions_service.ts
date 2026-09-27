@@ -15,13 +15,6 @@ import { db } from '../db/client.js';
 import { logger } from '../lib/logger.js';
 import { assertPublicHttpsUrl } from '../lib/webhooks/public_url.js';
 import { signWebhook } from '../lib/webhooks/sign.js';
-
-/**
- * In production a webhook may only go out over https to a public address —
- * checked on create and again before every delivery, since DNS can change in
- * between. Development and tests post to local servers.
- */
-const ONLY_PUBLIC_TARGETS = env.NODE_ENV === 'production';
 import {
   outboundWebhookDeliveries,
   type OutboundWebhookDelivery,
@@ -29,9 +22,26 @@ import {
   type WebhookSubscription,
 } from '../db/schema/webhooks.js';
 
-export async function listSubscriptions(tenantId: string): Promise<WebhookSubscription[]> {
+/**
+ * In production a webhook may only go out over https to a public address —
+ * checked on create and again before every delivery, since DNS can change in
+ * between. Development and tests post to local servers.
+ */
+const ONLY_PUBLIC_TARGETS = env.NODE_ENV === 'production';
+
+/** A subscription as listed: everything but the signing secret, which is shown once. */
+export type ListedSubscription = Omit<WebhookSubscription, 'secret'>;
+
+export async function listSubscriptions(tenantId: string): Promise<ListedSubscription[]> {
   return db
-    .select()
+    .select({
+      id: webhookSubscriptions.id,
+      tenantId: webhookSubscriptions.tenantId,
+      url: webhookSubscriptions.url,
+      events: webhookSubscriptions.events,
+      status: webhookSubscriptions.status,
+      createdAt: webhookSubscriptions.createdAt,
+    })
     .from(webhookSubscriptions)
     .where(eq(webhookSubscriptions.tenantId, tenantId));
 }

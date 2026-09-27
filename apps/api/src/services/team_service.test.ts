@@ -105,6 +105,43 @@ describe.skipIf(!runIntegration)('team_service', () => {
     }
   });
 
+  it('a role change never overwrites a newer one made meanwhile', async () => {
+    const [u] = await db.insert(users).values({
+      firebaseUid: `team-r-${SUFFIX}`, email: `r-${SUFFIX}@x.test`,
+    }).returning();
+    const member = u!.id;
+    await db.insert(tenantMembers).values({ userId: member, tenantId, role: 'staff' });
+    try {
+      // An Owner's request is mid-way through promoting them to owner…
+      let promoted!: () => void;
+      let release!: () => void;
+      const didPromote = new Promise<void>((r) => { promoted = r; });
+      const held = new Promise<void>((r) => { release = r; });
+      const promotion = db.transaction(async (tx) => {
+        await tx.update(tenantMembers).set({ role: 'owner' }).where(
+          sql`${tenantMembers.tenantId} = ${tenantId} and ${tenantMembers.userId} = ${member}`,
+        );
+        promoted();
+        await held;
+      });
+      await didPromote;
+      // …when a Manager, who still sees them as staff, demotes them.
+      const demotion = updateMemberRole({
+        tenantId, targetUserId: member, actorUserId: owner1, actorRole: 'manager', nextRole: 'readonly',
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await promotion;
+      // Refused (member_changed), not applied on top of the promotion.
+      await expect(demotion).rejects.toThrow();
+      const rows = await listMembers(tenantId);
+      expect(rows.find((r) => r.userId === member)?.role).toBe('owner');
+    } finally {
+      await db.execute(sql`delete from tenant_members where user_id = ${member}`);
+      await db.execute(sql`delete from users where id = ${member}`);
+    }
+  });
+
   it('removeMember succeeds for self-removal even without explicit cap', async () => {
     await removeMember({ tenantId, targetUserId: staff, actorUserId: staff, actorRole: 'manager' });
     const rows = await listMembers(tenantId);
@@ -179,7 +216,7 @@ describe.skipIf(!runIntegration)('team_service — member profile', () => {
 
   it('sets a display name on an email-only member', async () => {
     const row = await updateMemberProfile({
-      tenantId, targetUserId: invited, actorUserId: owner, displayName: 'Invited Person',
+      tenantId, targetUserId: invited, actorUserId: owner, actorRole: 'owner', displayName: 'Invited Person',
     });
     expect(row.displayName).toBe('Invited Person');
     const rows = await listMembers(tenantId);
@@ -190,14 +227,14 @@ describe.skipIf(!runIntegration)('team_service — member profile', () => {
     const before = await listMembers(tenantId);
     const phone = before.find((r) => r.userId === phonedMember)?.phoneE164;
     const row = await updateMemberProfile({
-      tenantId, targetUserId: phonedMember, actorUserId: owner, displayName: 'Phoned',
+      tenantId, targetUserId: phonedMember, actorUserId: owner, actorRole: 'owner', displayName: 'Phoned',
     });
     expect(row.phoneE164).toBe(phone);
   });
 
   it('clears the name when null is passed', async () => {
     const row = await updateMemberProfile({
-      tenantId, targetUserId: invited, actorUserId: owner, displayName: null,
+      tenantId, targetUserId: invited, actorUserId: owner, actorRole: 'owner', displayName: null,
     });
     expect(row.displayName).toBeNull();
   });
@@ -205,8 +242,23 @@ describe.skipIf(!runIntegration)('team_service — member profile', () => {
   it('throws NotFound when the target is not a member of the tenant', async () => {
     await expect(
       updateMemberProfile({
-        tenantId, targetUserId: outsider, actorUserId: owner, displayName: 'X',
+        tenantId, targetUserId: outsider, actorUserId: owner, actorRole: 'owner', displayName: 'X',
       }),
     ).rejects.toBeInstanceOf(NotFound);
+  });
+
+  it('refuses renaming someone above your own role', async () => {
+    await expect(
+      updateMemberProfile({
+        tenantId, targetUserId: owner, actorUserId: invited, actorRole: 'manager', displayName: 'X',
+      }),
+    ).rejects.toMatchObject({ code: 'role_above_yours' });
+  });
+
+  it('lets anyone rename themselves', async () => {
+    const row = await updateMemberProfile({
+      tenantId, targetUserId: invited, actorUserId: invited, actorRole: 'staff', displayName: 'Me',
+    });
+    expect(row.displayName).toBe('Me');
   });
 });
