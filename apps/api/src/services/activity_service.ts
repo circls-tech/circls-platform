@@ -168,8 +168,9 @@ export async function listActivity(
         'membership'                                as item_type,
         'confirmed'                                 as status,
         'circls'                                    as channel,
-        u.display_name                              as customer_name,
-        coalesce(u.phone_e164, u.email)             as customer_contact,
+        coalesce(u.display_name, um.external_name)  as customer_name,
+        coalesce(u.phone_e164, u.email, um.external_contact)
+                                                    as customer_contact,
         0::bigint                                   as total_paise,
         um.created_at                               as created_at,
         m.venue_id                                  as venue_id,
@@ -180,7 +181,11 @@ export async function listActivity(
         um.ends_at                                  as end_at
       from user_memberships um
       join memberships m on m.id = um.membership_id
-      join users u       on u.id = um.user_id
+      -- Left, not inner: a member the partner added by hand has no circls
+      -- account, so their identity is on the purchase instead (see the same
+      -- join in listMembershipWindows). An inner join hid their purchase from
+      -- the feed entirely, search included.
+      left join users u  on u.id = um.user_id
       left join venues v on v.id = m.venue_id
       left join membership_tiers mt on mt.id = um.membership_tier_id
       where m.tenant_id = ${tenantId}

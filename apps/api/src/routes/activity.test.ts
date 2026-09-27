@@ -29,6 +29,7 @@ interface FeedRow {
   itemType: 'slot' | 'event' | 'membership';
   status: string;
   customerName: string | null;
+  customerContact: string | null;
   totalPaise: number | null;
   venueName: string | null;
   itemName: string | null;
@@ -388,7 +389,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
     expect(w.starting.map((x) => x.membershipName)).not.toContain('Last Week Plan');
   });
 
-  it('includes a member the partner added by hand', async () => {
+  it('includes a member the partner added by hand, in the windows and the feed', async () => {
     // No circls account, so user_id is null and the name and contact live on
     // the purchase. An inner join on users hid them from both windows.
     const [plan] = await db
@@ -410,6 +411,16 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
     expect(row!.buyerName).toBe('Asha Walk-in');
     expect(row!.buyerContact).toBe('+919876500011');
     expect(forPlan(w.ending, 'Walk-in Pass')).toHaveLength(1);
+
+    // The same purchase has no bookings row, so it reaches the feed through the
+    // free-purchase branch, which inner-joined users as well — and it has to be
+    // findable by the name the partner typed.
+    const feed = await fetchFeed('?q=Asha');
+    const rows = feed.rows.filter((r) => r.itemName === 'Walk-in Pass');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.itemType).toBe('membership');
+    expect(rows[0]!.customerName).toBe('Asha Walk-in');
+    expect(rows[0]!.customerContact).toBe('+919876500011');
   });
 
   it('service-level cursor round-trips out-of-band', async () => {

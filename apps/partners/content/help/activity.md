@@ -14,7 +14,7 @@ numbers mean** for why a figure can differ.
 The **Recent activity** table lists who booked what, newest first. Each row shows:
 
 - **When** — the moment the booking or purchase was made.
-- **Customer** — the customer's name and contact (phone or email), when available.
+- **Customer** — the customer's name and contact (phone or email), when available. For a member you added by hand, this is the name and contact you recorded, and the customer search matches it.
 - **Type** — one of:
   - **Booking** — a court/arena slot booking (walk-in, your venue site, Circls, or an aggregator).
   - **Event** — a registration for one of your events.
