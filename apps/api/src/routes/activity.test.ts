@@ -29,6 +29,7 @@ interface FeedRow {
   itemType: 'slot' | 'event' | 'membership';
   status: string;
   customerName: string | null;
+  customerContact: string | null;
   totalPaise: number | null;
   venueName: string | null;
   itemName: string | null;
@@ -81,6 +82,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
   let venueId: string;
   let today: string;
   let slotBookingId: string;
+  let consumerId: string;
 
   beforeAll(async () => {
     app = await buildServer();
@@ -104,6 +106,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
       .insert(users)
       .values({ firebaseUid: `fbuid_act_consumer_${Date.now()}`, displayName: 'Mia Member' })
       .returning();
+    consumerId = consumer!.id;
 
     // 1) Confirmed walk-in slot booking with a slot today (IST).
     const [slotBooking] = await db
@@ -296,20 +299,128 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
     expect(todayRow).toMatchObject({ bookings: 1 });
   });
 
-  it('membership-windows returns starting + soon-ending purchases, not far-future ends', async () => {
+  interface Windows {
+    starting: { membershipName: string; buyerName: string | null; buyerContact: string | null }[];
+    ending: { membershipName: string }[];
+  }
+
+  /** Only the rows for one plan. Later cases seed plans of their own into the
+   *  same tenant, so counting everything would couple this file to its own
+   *  declaration order. */
+  const forPlan = <T extends { membershipName: string }>(items: T[], name: string): T[] =>
+    items.filter((i) => i.membershipName === name);
+
+  async function windows(query = ''): Promise<Windows> {
     const res = await app.inject({
       method: 'GET',
-      url: `/v1/tenants/${tenantId}/activity/membership-windows?withinDays=30`,
+      url: `/v1/tenants/${tenantId}/activity/membership-windows${query}`,
       headers: bearer('owner'),
     });
     expect(res.statusCode).toBe(200);
-    const w = res.json() as {
-      starting: { membershipName: string; buyerName: string | null }[];
-      ending: { membershipName: string }[];
-    };
-    expect(w.starting).toHaveLength(2); // both purchases started now
+    return res.json() as Windows;
+  }
+
+  it('membership-windows returns starting + soon-ending purchases, not far-future ends', async () => {
+    const w = await windows('?withinDays=30');
+    expect(forPlan(w.starting, 'Gold Plan')).toHaveLength(2); // both purchases started now
     expect(w.starting[0]!.buyerName).toBe('Mia Member');
-    expect(w.ending).toHaveLength(1); // only the 10-day one; 60-day end is outside the window
+    // Only the 10-day one; the 60-day end is outside the window.
+    expect(forPlan(w.ending, 'Gold Plan')).toHaveLength(1);
+  });
+
+  it('reaches 15 days ahead by default, not 30', async () => {
+    // The 10-day end is inside either window; the 60-day one is outside both.
+    // A 20-day end separates them.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Twenty Day Plan', durationDays: 20, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + 20 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    const dflt = await windows();
+    expect(dflt.ending.map((e) => e.membershipName)).not.toContain('Twenty Day Plan');
+    const wider = await windows('?withinDays=30');
+    expect(wider.ending.map((e) => e.membershipName)).toContain('Twenty Day Plan');
+  });
+
+  it('never lists a membership that has already ended as starting', async () => {
+    // A short pass sold two days ago and finished yesterday. It began inside
+    // the backward window, so the old query called it Starting and sent the
+    // partner to welcome someone who had already finished.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Day Pass', durationDays: 1, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(Date.now() - 2 * 24 * 3600 * 1000),
+      endsAt: new Date(Date.now() - 1 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    const w = await windows();
+    expect(w.starting.map((x) => x.membershipName)).not.toContain('Day Pass');
+    // It belongs under Ending, which reaches 3 days back.
+    expect(w.ending.map((x) => x.membershipName)).toContain('Day Pass');
+  });
+
+  it('looks only 3 days back, not 7', async () => {
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Last Week Plan', durationDays: 90, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(Date.now() - 5 * 24 * 3600 * 1000),
+      endsAt: new Date(Date.now() + 85 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    // Still running, but it began five days ago: too old to be a prompt.
+    const w = await windows();
+    expect(w.starting.map((x) => x.membershipName)).not.toContain('Last Week Plan');
+  });
+
+  it('includes a member the partner added by hand, in the windows and the feed', async () => {
+    // No circls account, so user_id is null and the name and contact live on
+    // the purchase. An inner join on users hid them from both windows.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Walk-in Pass', durationDays: 30, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      membershipId: plan!.id,
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + 10 * 24 * 3600 * 1000),
+      status: 'active',
+      externalName: 'Asha Walk-in',
+      externalContact: '+919876500011',
+    });
+
+    const w = await windows();
+    const [row] = forPlan(w.starting, 'Walk-in Pass');
+    expect(row).toBeDefined();
+    expect(row!.buyerName).toBe('Asha Walk-in');
+    expect(row!.buyerContact).toBe('+919876500011');
+    expect(forPlan(w.ending, 'Walk-in Pass')).toHaveLength(1);
+
+    // The same purchase has no bookings row, so it reaches the feed through the
+    // free-purchase branch, which inner-joined users as well — and it has to be
+    // findable by the name the partner typed.
+    const feed = await fetchFeed('?q=Asha');
+    const rows = feed.rows.filter((r) => r.itemName === 'Walk-in Pass');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.itemType).toBe('membership');
+    expect(rows[0]!.customerName).toBe('Asha Walk-in');
+    expect(rows[0]!.customerContact).toBe('+919876500011');
   });
 
   it('service-level cursor round-trips out-of-band', async () => {

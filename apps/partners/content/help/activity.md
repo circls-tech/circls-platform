@@ -14,7 +14,7 @@ numbers mean** for why a figure can differ.
 The **Recent activity** table lists who booked what, newest first. Each row shows:
 
 - **When** — the moment the booking or purchase was made.
-- **Customer** — the customer's name and contact (phone or email), when available.
+- **Customer** — the customer's name and contact (phone or email), when available. For a member you added by hand, this is the name and contact you recorded, and the customer search matches it.
 - **Type** — one of:
   - **Booking** — a court/arena slot booking (walk-in, your venue site, Circls, or an aggregator).
   - **Event** — a registration for one of your events.
@@ -42,12 +42,12 @@ The calendar counts sessions by the day they *take place*, not the day they were
 
 ## Memberships starting & ending
 
-The **Memberships starting & ending** panel lists member subscriptions whose validity window opens or closes around now (from 7 days ago up to 30 days ahead):
+The **Memberships starting & ending** panel lists member subscriptions whose validity window opens or closes around now — the next **15 days** ahead, and the last **3** behind:
 
-- **Starting** — memberships that recently began or are about to begin.
-- **Ending** — memberships approaching their end date (shown in amber), a good prompt to nudge the member about renewing.
+- **Starting** — memberships about to begin, or begun in the last 3 days and still running. One that has already finished is never listed here, however recently it started: a short pass sold a few days ago has nothing left to welcome anyone to.
+- **Ending** — memberships approaching their end date (shown in amber), a good prompt to nudge the member about renewing, plus any that ended in the last 3 days.
 
-Each entry shows the member, the plan and tier, and the full validity window. Cancelled memberships are not shown.
+Each entry shows the member, the plan and tier, and the full validity window. Members you added by hand appear alongside those who bought through circls, listed under the name and contact you recorded. Cancelled memberships are not shown.
 
 ## Related articles
 

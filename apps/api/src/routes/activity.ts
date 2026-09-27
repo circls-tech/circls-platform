@@ -29,7 +29,7 @@ const dailyQuerySchema = z.object({
 });
 
 const membershipWindowsQuerySchema = z.object({
-  withinDays: z.coerce.number().int().min(1).max(90).default(30),
+  withinDays: z.coerce.number().int().min(1).max(90).default(15),
 });
 
 /**

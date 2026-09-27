@@ -168,8 +168,9 @@ export async function listActivity(
         'membership'                                as item_type,
         'confirmed'                                 as status,
         'circls'                                    as channel,
-        u.display_name                              as customer_name,
-        coalesce(u.phone_e164, u.email)             as customer_contact,
+        coalesce(u.display_name, um.external_name)  as customer_name,
+        coalesce(u.phone_e164, u.email, um.external_contact)
+                                                    as customer_contact,
         0::bigint                                   as total_paise,
         um.created_at                               as created_at,
         m.venue_id                                  as venue_id,
@@ -180,7 +181,11 @@ export async function listActivity(
         um.ends_at                                  as end_at
       from user_memberships um
       join memberships m on m.id = um.membership_id
-      join users u       on u.id = um.user_id
+      -- Left, not inner: a member the partner added by hand has no circls
+      -- account, so their identity is on the purchase instead (see the same
+      -- join in listMembershipWindows). An inner join hid their purchase from
+      -- the feed entirely, search included.
+      left join users u  on u.id = um.user_id
       left join venues v on v.id = m.venue_id
       left join membership_tiers mt on mt.id = um.membership_tier_id
       where m.tenant_id = ${tenantId}
@@ -296,9 +301,10 @@ export interface MembershipWindowItem {
 }
 
 export interface MembershipWindows {
-  /** Started in the last 7 days or starting within `withinDays`. */
+  /** Starting within `withinDays`, or started in the last 3 days and still
+   *  running. One that has already ended is not starting, whenever it began. */
   starting: MembershipWindowItem[];
-  /** Ended in the last 7 days or ending within `withinDays`. */
+  /** Ended in the last 3 days, or ending within `withinDays`. */
   ending: MembershipWindowItem[];
 }
 
@@ -307,23 +313,33 @@ const MEMBERSHIP_WINDOW_LIMIT = 100;
 /**
  * Memberships whose validity window opens or closes around now — the Activity
  * page's "starting & ending soon" panel. Cancelled purchases are excluded.
+ *
+ * The backward reach is deliberately short. This panel is a prompt to act —
+ * welcome someone, or chase a renewal — and a membership that began a week ago
+ * is neither.
  */
 export async function listMembershipWindows(
   tenantId: string,
   withinDays: number,
 ): Promise<MembershipWindows> {
-  const windowQuery = (col: 'starts_at' | 'ends_at') => sql`
+  const windowQuery = (col: 'starts_at' | 'ends_at', extra = sql``) => sql`
     select um.id, um.status, um.starts_at, um.ends_at,
-           u.display_name, u.phone_e164, u.email,
+           coalesce(u.display_name, um.external_name)           as buyer_name,
+           coalesce(u.phone_e164, u.email, um.external_contact) as buyer_contact,
            m.name as membership_name, mt.name as tier_name
     from user_memberships um
     join memberships m on m.id = um.membership_id
-    join users u       on u.id = um.user_id
+    -- A member the partner added by hand has no circls account, so user_id is
+    -- null and the identity lives in external_name/external_contact (the
+    -- member_identity check constraint guarantees one or the other). An inner
+    -- join dropped exactly the members this panel is meant to prompt about.
+    left join users u  on u.id = um.user_id
     left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId}
       and um.status <> 'cancelled'
-      and um.${sql.raw(col)} >= now() - interval '7 days'
+      and um.${sql.raw(col)} >= now() - interval '3 days'
       and um.${sql.raw(col)} <= now() + make_interval(days => ${withinDays})
+      ${extra}
     order by um.${sql.raw(col)} asc
     limit ${MEMBERSHIP_WINDOW_LIMIT}
   `;
@@ -331,8 +347,8 @@ export async function listMembershipWindows(
   const toItems = (raw: unknown): MembershipWindowItem[] =>
     (raw as Record<string, unknown>[]).map((r) => ({
       userMembershipId: r['id'] as string,
-      buyerName: (r['display_name'] as string | null) ?? null,
-      buyerContact: ((r['phone_e164'] as string | null) ?? (r['email'] as string | null)) ?? null,
+      buyerName: (r['buyer_name'] as string | null) ?? null,
+      buyerContact: (r['buyer_contact'] as string | null) ?? null,
       membershipName: r['membership_name'] as string,
       tierName: (r['tier_name'] as string | null) ?? null,
       status: r['status'] as string,
@@ -341,7 +357,10 @@ export async function listMembershipWindows(
     }));
 
   const [starting, ending] = await Promise.all([
-    db.execute<Record<string, unknown>>(windowQuery('starts_at')),
+    // A membership that has already ended is not starting, however recently it
+    // began — a 2-day pass sold three days ago was listed as Starting, which
+    // sent partners to welcome people who had already finished.
+    db.execute<Record<string, unknown>>(windowQuery('starts_at', sql`and um.ends_at > now()`)),
     db.execute<Record<string, unknown>>(windowQuery('ends_at')),
   ]);
 

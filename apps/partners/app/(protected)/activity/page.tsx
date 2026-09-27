@@ -336,7 +336,7 @@ export default function ActivityPage() {
 
         <Card
           title="Memberships starting & ending"
-          subtitle="Validity windows opening or closing within 30 days."
+          subtitle="Starting or ending over the next 15 days."
         >
           {membershipWindows.isLoading && (
             <p className="py-6 text-center text-sm text-slate-400">Loading&hellip;</p>
