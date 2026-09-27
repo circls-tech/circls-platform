@@ -143,6 +143,20 @@ export interface ItemRevenue extends RevenueSlice {
 /** What `getTenantItemRevenue` groups by. */
 export type RevenueGrouping = 'event' | 'membership' | 'venue';
 
+/** What one grouping found: the rows, and anything it could not place. */
+export interface TenantItemRevenueResult {
+  items: ItemRevenue[];
+  /**
+   * Money of this kind that carries no id to attribute it to — a slot booking
+   * with no venue, or an event booking whose `item_data` never got stamped.
+   *
+   * Returned rather than discarded so the caller can say so. These totals DO
+   * count towards the dashboard's cards, so dropping them silently would let a
+   * tab and a card disagree with nothing on screen explaining the gap.
+   */
+  unattributed: RevenueSlice[];
+}
+
 /**
  * One organisation's sales, grouped by the thing sold, so the admin tenant
  * tabs can put money beside each event, plan or venue.
@@ -155,7 +169,7 @@ export async function getTenantItemRevenue(
   grouping: RevenueGrouping,
   from: string,
   to: string,
-): Promise<ItemRevenue[]> {
+): Promise<TenantItemRevenueResult> {
   // What identifies the thing sold, per grouping. Events and memberships are
   // stamped into the booking's item_data; a slot booking carries its venue.
   const key =
@@ -166,6 +180,8 @@ export async function getTenantItemRevenue(
         : sql`nullif(item_data->>'membershipId', '')::uuid`;
   const wanted = grouping === 'venue' ? 'slot' : grouping;
 
+  // Grouped including the unattributable, which come back with a null id
+  // rather than being filtered away.
   const raw = await db.execute<Record<string, unknown>>(sql`
     with money as (${moneyRows(from, to, tenantId)})
     select ${key}                                                           as item_id,
@@ -178,11 +194,15 @@ export async function getTenantItemRevenue(
            count(distinct booking_id) filter (where kind = 'charge')        as bookings
       from money
      where item_type = ${wanted}
-       and ${key} is not null
      group by 1, 2, 3
   `);
-  return (raw as unknown as Record<string, unknown>[]).map((r) => ({
-    ...toSlice(r),
-    itemId: r['item_id'] as string,
-  }));
+
+  const items: ItemRevenue[] = [];
+  const unattributed: RevenueSlice[] = [];
+  for (const r of raw as unknown as Record<string, unknown>[]) {
+    const itemId = r['item_id'] as string | null;
+    if (itemId) items.push({ ...toSlice(r), itemId });
+    else unattributed.push(toSlice(r));
+  }
+  return { items, unattributed };
 }

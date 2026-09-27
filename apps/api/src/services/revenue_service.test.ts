@@ -6,10 +6,23 @@ const { getPlatformRevenue, getTenantItemRevenue } = await import('./revenue_ser
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
-/** A window wide enough to hold everything these fixtures create. */
-const FROM = '2030-01-01T00:00:00.000Z';
-const TO = '2030-02-01T00:00:00.000Z';
-const AT = (day: number) => `2030-01-${String(day).padStart(2, '0')}T10:00:00.000Z`;
+/**
+ * A window this run alone occupies.
+ *
+ * getPlatformRevenue is platform-wide by design, so a fixed window would make
+ * these assertions see every previous run's rows as well — they passed once
+ * and failed on the second run against the same database. Anchoring on the
+ * clock gives each run its own stretch of time, far enough ahead that no real
+ * row can fall in it.
+ */
+const DAY = 24 * 3600 * 1000;
+// A random century-scale offset, not a clock reading: two runs a minute apart
+// would otherwise get windows that overlap almost entirely, which is exactly
+// how the first attempt at this still saw the previous run's rows.
+const RUN_BASE = Date.UTC(2200, 0, 1) + Math.floor(Math.random() * 500_000) * DAY;
+const AT = (day: number) => new Date(RUN_BASE + day * DAY).toISOString();
+const FROM = AT(0);
+const TO = AT(60);
 
 describe.skipIf(!runIntegration)('revenue_service', () => {
   let tenantId: string;
@@ -238,7 +251,7 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
 
   describe('per-tenant, grouped by the thing sold', () => {
     it('groups events by their id and excludes other orgs', async () => {
-      const items = await getTenantItemRevenue(tenantId, 'event', FROM, TO);
+      const { items } = await getTenantItemRevenue(tenantId, 'event', FROM, TO);
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
         itemId: eventId,
@@ -249,19 +262,64 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
     });
 
     it('groups slot money by venue', async () => {
-      const items = await getTenantItemRevenue(tenantId, 'venue', FROM, TO);
+      const { items } = await getTenantItemRevenue(tenantId, 'venue', FROM, TO);
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ itemId: venueId, grossPaise: 0, refundsPaise: 50000 });
     });
 
     it('groups memberships by plan, keeping the currency', async () => {
-      const items = await getTenantItemRevenue(tenantId, 'membership', FROM, TO);
+      const { items } = await getTenantItemRevenue(tenantId, 'membership', FROM, TO);
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ itemId: planId, currency: 'USD', grossPaise: 2000 });
     });
 
     it("returns nothing for an org that sold nothing of that kind", async () => {
-      expect(await getTenantItemRevenue(otherTenantId, 'venue', FROM, TO)).toEqual([]);
+      const { items, unattributed } = await getTenantItemRevenue(otherTenantId, 'venue', FROM, TO);
+      expect(items).toEqual([]);
+      expect(unattributed).toEqual([]);
+    });
+
+    it('reports money it cannot attribute rather than dropping it', async () => {
+      // A slot booking with no venue, or an event booking whose item_data was
+      // never stamped, has nothing to group by — but the money is real and
+      // counts towards the dashboard card. Silently discarding it would let a
+      // tab and a card disagree with nothing on screen explaining the gap.
+      const [t] = (await db.execute<Record<string, unknown>>(sql`
+        insert into tenants (name, slug, commission_bps)
+        values (${`Orphan ${Date.now()}`}, ${`orphan-${Date.now()}`}, 1000)
+        returning id
+      `)) as unknown as Record<string, unknown>[];
+      const orphanTenant = t!['id'] as string;
+
+      const homeless = await insertBooking({
+        tenant: orphanTenant,
+        itemType: 'slot',
+        venue: null,
+        at: AT(25),
+      });
+      await insertPayment({
+        booking: homeless,
+        tenant: orphanTenant,
+        kind: 'charge',
+        amount: 40000,
+        base: 36000,
+        commission: 3600,
+        at: AT(25),
+      });
+
+      const { items, unattributed } = await getTenantItemRevenue(
+        orphanTenant,
+        'venue',
+        AT(25),
+        AT(26),
+      );
+      expect(items).toEqual([]);
+      expect(unattributed).toHaveLength(1);
+      expect(unattributed[0]).toMatchObject({
+        grossPaise: 40000,
+        netPaise: 36000 - 3600,
+        bookings: 1,
+      });
     });
   });
 
@@ -293,7 +351,7 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
         at: AT(20),
       });
 
-      const items = await getTenantItemRevenue(legacyTenant, 'event', AT(20), AT(21));
+      const { items } = await getTenantItemRevenue(legacyTenant, 'event', AT(20), AT(21));
       expect(items[0]).toMatchObject({
         grossPaise: 100000,
         commissionPaise: 20000, // 100000 × 2000bps, from the tenant's rate

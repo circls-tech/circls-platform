@@ -821,4 +821,10 @@ export interface TenantItemRevenue {
   to: string;
   groupBy: RevenueGrouping;
   items: ItemRevenue[];
+  /**
+   * Money of this kind carrying no id to attribute it to. It counts towards
+   * the dashboard's cards, so it is reported rather than dropped — otherwise a
+   * tab and a card disagree with nothing on screen explaining the gap.
+   */
+  unattributed: RevenueSlice[];
 }

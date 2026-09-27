@@ -16,6 +16,7 @@ import type {
   AdminTenantVenueShelf,
   ItemRevenue,
   RevenueGrouping,
+  RevenueSlice,
 } from '@/lib/api/types';
 import { type CurrencyCode, formatPrice, formatTotal } from '@/lib/money';
 
@@ -168,8 +169,8 @@ const VENUE_SHELVES: { key: AdminTenantVenueShelf; label: string }[] = [
  * A row with no sales shows a dash rather than a zero: nothing has happened
  * yet, which is different from having taken nothing.
  */
-function SalesCells({ money }: { money: ItemRevenue | undefined }) {
-  if (!money) {
+function SalesCells({ money }: { money: ItemRevenue[] | undefined }) {
+  if (!money || money.length === 0) {
     return (
       <>
         <td className="px-4 py-2.5 text-right text-xs text-slate-400">—</td>
@@ -177,33 +178,68 @@ function SalesCells({ money }: { money: ItemRevenue | undefined }) {
       </>
     );
   }
-  const currency = money.currency as CurrencyCode;
+  const sorted = [...money].sort((a, b) => a.currency.localeCompare(b.currency));
+  const sales = sorted.reduce((n, m) => n + m.bookings, 0);
   return (
     <>
-      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">
-        {money.bookings}
-      </td>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">{sales}</td>
       <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-800">
-        {formatTotal(money.grossPaise, currency)}
-        <span className="block text-[10px] text-slate-400">
-          net {formatTotal(money.netPaise, currency)}
-        </span>
+        {sorted.map((m) => (
+          <span key={m.currency} className="block first:mt-0 mt-1">
+            {formatTotal(m.grossPaise, m.currency as CurrencyCode)}
+            <span className="block text-[10px] text-slate-400">
+              net {formatTotal(m.netPaise, m.currency as CurrencyCode)}
+            </span>
+          </span>
+        ))}
       </td>
     </>
   );
 }
 
-/** Index one tenant's revenue by the thing that took it. */
+/**
+ * Money this tenant took, indexed by the thing that took it.
+ *
+ * An array per item, not a single row: the service returns one row per
+ * (item, currency), so a venue that sold in two currencies — one whose country
+ * was corrected after it had already traded — has two. Keying a plain Map on
+ * the id alone silently kept whichever came last.
+ */
 function useRevenueByItem(tenantId: string, groupBy: RevenueGrouping) {
   const { data } = useAdminTenantRevenue(tenantId, groupBy);
-  return new Map((data?.items ?? []).map((i) => [i.itemId, i]));
+  const byItem = new Map<string, ItemRevenue[]>();
+  for (const i of data?.items ?? []) {
+    const at = byItem.get(i.itemId);
+    if (at) at.push(i);
+    else byItem.set(i.itemId, [i]);
+  }
+  return { byItem, unattributed: data?.unattributed ?? [] };
+}
+
+/**
+ * Money of this kind that belongs to no row above — a slot booking with no
+ * venue, say. It still counts on the dashboard's cards, so saying nothing
+ * would leave a tab and a card disagreeing with no explanation.
+ */
+function UnattributedNote({ slices, noun }: { slices: RevenueSlice[]; noun: string }) {
+  const real = slices.filter((s) => s.grossPaise !== 0 || s.bookings > 0);
+  if (real.length === 0) return null;
+  return (
+    <p className="text-xs text-amber-700">
+      Not in the rows above:{' '}
+      {real
+        .map((s) => `${formatTotal(s.grossPaise, s.currency as CurrencyCode)} from ${s.bookings} ${s.bookings === 1 ? 'sale' : 'sales'}`)
+        .join(', ')}{' '}
+      with no {noun} recorded. Counted in the dashboard totals.
+    </p>
+  );
 }
 
 export function VenuesTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantVenueShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantVenues(tenantId, shelf);
   const rows: AdminTenantVenueItem[] = data ?? [];
-  const money = useRevenueByItem(tenantId, 'venue');
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'venue');
 
   return (
     <section className="space-y-3">
@@ -288,6 +324,7 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
           </tbody>
         </TableShell>
       )}
+      <UnattributedNote slices={unattributed} noun="venue" />
     </section>
   );
 }
@@ -306,7 +343,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } =
     useAdminTenantEvents(tenantId, scope);
   const rows: AdminTenantEventBillingItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
-  const money = useRevenueByItem(tenantId, 'event');
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'event');
 
   return (
     <section className="space-y-3">
@@ -391,6 +428,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
           {isFetchingNextPage ? 'Loading…' : 'Load more events'}
         </button>
       )}
+      <UnattributedNote slices={unattributed} noun="event" />
     </section>
   );
 }
@@ -407,7 +445,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantMembershipShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantMemberships(tenantId, shelf);
   const rows: AdminTenantMembershipItem[] = data ?? [];
-  const money = useRevenueByItem(tenantId, 'membership');
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'membership');
 
   return (
     <section className="space-y-3">
@@ -483,6 +521,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
           </tbody>
         </TableShell>
       )}
+      <UnattributedNote slices={unattributed} noun="plan" />
     </section>
   );
 }

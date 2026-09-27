@@ -909,8 +909,12 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, platformTenantId);
     assertCap(ctx, 'admin.tenants.read');
 
-    const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
-    if (!params.success) throw new NotFound('Tenant not found', 'tenant_not_found');
+    // Same shape as every sibling tenant route: a malformed id is a bad
+     // request, not a missing tenant.
+    const params = tenantIdParamSchema.safeParse(req.params);
+    if (!params.success) {
+      throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+    }
 
     const parsed = revenueWindow
       .extend({ groupBy: z.enum(['event', 'membership', 'venue']) })
@@ -921,11 +925,12 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       });
     }
     const { from, to } = windowOf(parsed.data);
-    return {
+    const { items, unattributed } = await getTenantItemRevenue(
+      params.data.id,
+      parsed.data.groupBy,
       from,
       to,
-      groupBy: parsed.data.groupBy,
-      items: await getTenantItemRevenue(params.data.id, parsed.data.groupBy, from, to),
-    };
+    );
+    return { from, to, groupBy: parsed.data.groupBy, items, unattributed };
   });
 };

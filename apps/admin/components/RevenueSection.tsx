@@ -31,11 +31,43 @@ const PRESETS: { id: PresetId; label: string; days: number | null }[] = [
   { id: 'custom', label: 'Custom', days: null },
 ];
 
-/** A date input's YYYY-MM-DD, `days` ago. */
-function daysAgo(days: number): string {
+/**
+ * Windows are the admin's own calendar days, not UTC's.
+ *
+ * The obvious version of this — shifting the date then calling toISOString()
+ * — mixes the two: it reads the local date, subtracts, then serialises in UTC,
+ * so in India every preset began a day early and "Last 7 days" quietly covered
+ * eight. These build the instant that a local day actually starts.
+ */
+
+/** A date input's value for a local calendar day. */
+function ymdLocal(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The instant local midnight fell, `daysBack` days ago. */
+function startOfDayAgo(daysBack: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString();
+}
+
+/** The instant the local day `ymd` began. */
+function startOfLocalDay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y!, m! - 1, d!, 0, 0, 0, 0).toISOString();
+}
+
+/**
+ * The instant the day AFTER `ymd` began — an exclusive upper bound, which is
+ * what the API compares with, so the chosen end day is included whole and no
+ * sliver of it is lost to rounding.
+ */
+function endOfLocalDay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y!, m! - 1, d! + 1, 0, 0, 0, 0).toISOString();
 }
 
 /** Sum a set of slices per currency — never across them. */
@@ -127,19 +159,23 @@ function RevenueCard({
 
 export function RevenueSection() {
   const [preset, setPreset] = useState<PresetId>('30d');
-  const [customFrom, setCustomFrom] = useState(daysAgo(30));
-  const [customTo, setCustomTo] = useState(new Date().toISOString().slice(0, 10));
+  const [customFrom, setCustomFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return ymdLocal(d);
+  });
+  const [customTo, setCustomTo] = useState(() => ymdLocal(new Date()));
 
-  // A date input gives a calendar day; the API wants instants. The end day is
-  // inclusive to the reader, so it reaches to the start of the next one.
+  // "Last 7 days" means today and the six before it — seven calendar days,
+  // not seven days plus today.
   const chosen = PRESETS.find((p) => p.id === preset)!;
   const from =
     preset === 'custom'
-      ? `${customFrom}T00:00:00.000Z`
+      ? startOfLocalDay(customFrom)
       : chosen.days === null
         ? null
-        : `${daysAgo(chosen.days)}T00:00:00.000Z`;
-  const to = preset === 'custom' ? `${customTo}T23:59:59.999Z` : null;
+        : startOfDayAgo(chosen.days - 1);
+  const to = preset === 'custom' ? endOfLocalDay(customTo) : null;
 
   const { data, isLoading, isError, error } = useAdminRevenue(from, to);
   const slices = data?.slices ?? [];
