@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { canGoBack } from '@/lib/nav/history_depth';
+import { canGoBack, markReplace } from '@/lib/nav/history_depth';
 
 /**
  * A subtle, on-brand "← Back" affordance, in two flavours.
@@ -14,7 +14,9 @@ import { canGoBack } from '@/lib/nav/history_depth';
  * Pass `href` instead on the header's top-level tabs. Stepping back through
  * history there lands on whichever tab was browsed before, which reads as
  * sideways rather than out; a fixed destination makes the button mean one
- * thing on those pages — leave, to here.
+ * thing on those pages — leave, to here. It gets there by *replacing* the
+ * entry rather than pushing one, because a tab you have left should not be
+ * sitting behind you for the browser's own Back to walk into again.
  */
 export function BackBar({
   href,
@@ -31,7 +33,13 @@ export function BackBar({
 
   function goBack() {
     if (href) {
-      router.push(href);
+      // Pushing would leave the tab in history, so the device Back button
+      // went straight back into the page just backed out of — three presses
+      // to leave the site, which reads as Back looping. markReplace keeps the
+      // depth counter honest: a replace adds no entry, so nothing to return
+      // through was gained.
+      markReplace(href);
+      router.replace(href);
       return;
     }
     // Only step back through pages we navigated to ourselves. window.history

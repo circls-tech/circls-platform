@@ -69,3 +69,29 @@ export function recordBack(): void {
 export function canGoBack(): boolean {
   return read() > 0;
 }
+
+/**
+ * A replace swaps the current entry instead of adding one — what Back does on
+ * a top-level tab. The depth has to stay put across it, and the tracker cannot
+ * tell a replace from a push on its own: both surface as a pathname change.
+ *
+ * The destination is remembered rather than a bare flag, so a replace that
+ * never lands cannot swallow the count for a later, unrelated forward move.
+ */
+let pendingReplacePath: string | null = null;
+
+function pathOf(href: string): string {
+  return href.split('?')[0]!.split('#')[0]!;
+}
+
+/** Called just before `router.replace`, with where it is heading. */
+export function markReplace(href: string): void {
+  pendingReplacePath = pathOf(href);
+}
+
+/** Whether `path` is where a replace we marked landed. Always clears. */
+export function consumeReplace(path: string): boolean {
+  const matched = pendingReplacePath !== null && pendingReplacePath === pathOf(path);
+  pendingReplacePath = null;
+  return matched;
+}

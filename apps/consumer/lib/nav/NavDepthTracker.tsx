@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { beginVisit, recordBack, recordForward } from './history_depth';
+import { beginVisit, consumeReplace, recordBack, recordForward } from './history_depth';
 
 /**
  * Keeps the in-app navigation depth in step with the router.
@@ -12,7 +12,9 @@ import { beginVisit, recordBack, recordForward } from './history_depth';
  *
  * Distinguishing a forward move from a back one matters: without it, using
  * Back would *raise* the depth and the next Back would try to step off the
- * front of our own history.
+ * front of our own history. A replace is a third case — it swaps the current
+ * entry, so the depth is unchanged — and only the code calling it knows, which
+ * is why it leaves word via markReplace.
  */
 export function NavDepthTracker() {
   const pathname = usePathname();
@@ -38,10 +40,11 @@ export function NavDepthTracker() {
     if (seen.current === pathname) return;
     seen.current = pathname;
 
+    const replaced = consumeReplace(pathname);
     if (cameFromPop.current) {
       cameFromPop.current = false;
       recordBack();
-    } else {
+    } else if (!replaced) {
       recordForward();
     }
   }, [pathname]);
