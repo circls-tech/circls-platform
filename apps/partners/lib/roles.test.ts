@@ -23,10 +23,12 @@ describe('roleCan', () => {
 
   it('mirrors PLATFORM_CAPS for the Circls organisation', () => {
     const platform = { isPlatform: true };
-    expect(ROLE_ORDER.map((r) => roleCan(r, 'events.write', platform))).toEqual([true, false, false, false]);
+    // Platform Managers run Circls's own listings…
+    for (const cap of ['events.write', 'venues.write', 'bookings.cancel', 'integration.read'] as const) {
+      expect(ROLE_ORDER.map((r) => roleCan(r, cap, platform))).toEqual([true, true, false, false]);
+    }
+    // …but only Owners manage the Circls team.
     expect(ROLE_ORDER.map((r) => roleCan(r, 'members.invite', platform))).toEqual([true, false, false, false]);
-    expect(ROLE_ORDER.map((r) => roleCan(r, 'bookings.cancel', platform))).toEqual([true, false, false, false]);
-    expect(ROLE_ORDER.map((r) => roleCan(r, 'integration.read', platform))).toEqual([true, true, false, false]);
   });
 
   it('grants nothing without a role it knows', () => {

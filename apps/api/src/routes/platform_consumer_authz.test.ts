@@ -39,6 +39,7 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
   let app: FastifyInstance;
   let prevSlug: string | undefined;
   const userIds: Record<string, string> = {};
+  let platformTenantId: string;
   let tenantId: string;
   let venueId: string;
   let rivalVenueId: string;
@@ -102,7 +103,7 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
       VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
       RETURNING id
     `);
-    const platformTenantId = (pt as unknown as { id: string }[])[0]!.id;
+    platformTenantId = (pt as unknown as { id: string }[])[0]!.id;
     await db.insert(tenantMembers).values([
       { userId: userIds.pmanager!, tenantId: platformTenantId, role: 'manager' },
       { userId: userIds.pstaff!, tenantId: platformTenantId, role: 'staff' },
@@ -147,6 +148,32 @@ describe.skipIf(!runIntegration)('platform, consumer and cross-tenant authorizat
           expect(res.json().error.details).toEqual({ cap: 'admin.users.read' });
         }
       }
+    });
+
+    it("lets platform Managers run Circls's own listings, not its team", async () => {
+      const venue = await call('pmanager', 'POST', `/v1/tenants/${platformTenantId}/venues`, {
+        name: 'Circls Hub',
+      });
+      expect(venue.statusCode).toBe(200);
+      const event = await call('pmanager', 'POST', `/v1/tenants/${platformTenantId}/events`, {
+        addressJson: { city: 'Pune' },
+        tzName: 'Asia/Kolkata',
+        name: 'Circls Community Night',
+        startsAt: '2031-09-01T10:00:00.000Z',
+        endsAt: '2031-09-01T12:00:00.000Z',
+        tiers: [{ name: 'General', pricePaise: 0 }],
+      });
+      expect(event.statusCode).toBe(200);
+
+      const invite = await call('pmanager', 'POST', `/v1/tenants/${platformTenantId}/invitations`, {
+        email: 'someone@x.com',
+        role: 'staff',
+      });
+      expect(invite.statusCode).toBe(403);
+      expect(invite.json().error.details).toEqual({ cap: 'members.invite' });
+
+      const byStaff = await call('pstaff', 'POST', `/v1/tenants/${platformTenantId}/venues`, { name: 'Nope' });
+      expect(byStaff.statusCode).toBe(403);
     });
 
     it("keeps people's contact details in the audit log to the same roles", async () => {

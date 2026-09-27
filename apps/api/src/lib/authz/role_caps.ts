@@ -57,6 +57,11 @@ export const PARTNER_CAPS: Record<TenantRole, readonly Capability[]> = {
   ],
 } as const;
 
+/** Managing the Circls team itself: platform Owners only. */
+const CIRCLS_TEAM_MANAGEMENT: readonly Capability[] = [
+  'members.invite', 'members.role_change', 'members.update', 'members.remove',
+];
+
 /** Caps each role gets on the *Circls platform* tenant (isPlatform=true). */
 export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   // Founder / CTO: everything platform + everything partner-of-Circls.
@@ -69,12 +74,12 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'admin.coupons.read', 'admin.coupons.write',
     'admin.support.read', 'admin.support.write',
   ],
-  // Ops lead: every admin power; no team mgmt of Circls itself.
+  // Ops lead: every admin power, and runs the Circls organisation's own
+  // venues, events, memberships, bookings and the rest like a partner Manager
+  // does — but doesn't manage the Circls team, which decides who can use the
+  // admin console.
   manager: [
-    'tenant.read', 'tenant.update',
-    'members.read',
-    'payments.refund',
-    'integration.read', 'integration.api_keys.manage',
+    ...PARTNER_CAPS.manager.filter((cap) => !CIRCLS_TEAM_MANAGEMENT.includes(cap)),
     'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
     // The consumer and partner user reports (contact details, CSV exports).
     'admin.users.read',

@@ -81,9 +81,17 @@ const PARTNER_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
   staff: [...DESK, 'questions.write'],
   readonly: [],
 };
+/** Managing the Circls team itself stays with platform Owners. */
+const CIRCLS_TEAM_MANAGEMENT: readonly PortalCapability[] = [
+  'members.invite',
+  'members.role_change',
+  'members.update',
+  'members.remove',
+];
 const PLATFORM_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
   owner: ALL,
-  manager: ['tenant.update', 'integration.read', 'integration.api_keys.manage'],
+  // Runs the Circls organisation's own listings like a partner Manager.
+  manager: ALL.filter((cap) => !CIRCLS_TEAM_MANAGEMENT.includes(cap)),
   staff: [],
   readonly: [],
 };
