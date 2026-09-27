@@ -1,6 +1,8 @@
 # The Dashboard: what your numbers mean
 
-The **Dashboard** is the first page you land on. Four tiles summarise your organisation, and a chart shows the last seven days. This article explains exactly what each number counts — and how the tiles line up with the **Activity** page, which lists the same business one row at a time.
+The **Dashboard** is the first page you land on, and it is built to be the one page you need in the morning: two numbers for today, a chart for the week, and then everything you run — venues, events and plans — each with the desk and the "add" button beside it.
+
+This article explains exactly what each number counts, and how the tiles line up with the **Activity** page, which lists the same business one row at a time.
 
 Everything is counted per organisation, across all your venues, and the days are cut at midnight IST.
 
@@ -23,24 +25,27 @@ If you sell in more than one currency, each gets its own figure rather than bein
 
 **Everything booked today** — courts, events and memberships — whether paid online, taken at the desk, or free. A cancelled booking is not counted, and neither is a checkout still in progress.
 
-## Revenue · 7d
-
-The same money as **Revenue today**, over the last seven days including today.
-
-## Occupancy · 7d
-
-**How much of your bookable court time was taken**, over the last seven days. Unlike the other tiles, this one is about the sessions themselves rather than money, so it counts a slot on the day the session runs, not the day it was booked. Blocked slots are left out of the calculation entirely — they were never on sale. Events and memberships have no slots, so they do not appear here.
-
 ## The 7-day chart
 
 One bar per day, showing the money taken that day, with the number of bookings in the tooltip. Days where you refunded more than you took hang below the line.
 
+## Your venues, events and memberships
+
+Below the chart, one section per kind of thing you run, so the jobs done daily are on the page you already land on rather than three clicks into a tab.
+
+**Venues** carry a **Reception** button. A venue has no single desk — reception is run per arena — so the button goes straight to the grid when the venue has exactly one arena to mean, and to the venue otherwise, where each arena carries its own button. The tile also says how many arenas there are.
+
+**Memberships** carry a **Reception** button too, and a plan has only one desk, so it opens the walk-in form directly — ready for a name, with no hunting.
+
+**Events have no Reception button, deliberately.** A venue's desk is a calendar because its inventory is a calendar: a court is sold in slots across the day. An event is one moment with a guest list, so the equivalent is that list, and it only matters on the day. Event tiles show the date instead, in **Today** styling when the event is today, and open the event where its registrations and walk-in form live. Events you have not run yet come first, soonest at the front, with recent past ones after.
+
+Each section has its own **add** button, so a new venue, event or plan is one click from here. Only the roles allowed to create them see those buttons.
+
 ## How this compares with the Activity page
 
-The Activity feed lists every booking as it was made, with the amount you charged. The Dashboard totals the money that actually moved. They describe the same business, so they will usually agree — but they are answering slightly different questions, and there are three honest reasons a total might not match:
+The Activity feed lists every booking as it was made, with the amount you charged. The Dashboard totals the money that actually moved. They describe the same business, so they will usually agree — but they are answering slightly different questions, and there are two honest reasons a total might not match:
 
 - **A booking whose payment did not go through** appears in the feed with its amount, because the customer tried to book. It adds nothing to revenue, because no money arrived.
 - **A refund** lowers revenue on the day you made it, while the original booking stays in the feed on the day it was made, showing what was originally charged.
-- **Occupancy is dated differently.** Book a court today for next month and the booking is on today's feed and today's revenue, but the occupancy it creates belongs to next month.
 
 If a figure still looks wrong after allowing for those, tell us through **Questions** and include the day you are looking at.
