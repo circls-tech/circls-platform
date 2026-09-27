@@ -299,9 +299,15 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
   });
 
   interface Windows {
-    starting: { membershipName: string; buyerName: string | null }[];
+    starting: { membershipName: string; buyerName: string | null; buyerContact: string | null }[];
     ending: { membershipName: string }[];
   }
+
+  /** Only the rows for one plan. Later cases seed plans of their own into the
+   *  same tenant, so counting everything would couple this file to its own
+   *  declaration order. */
+  const forPlan = <T extends { membershipName: string }>(items: T[], name: string): T[] =>
+    items.filter((i) => i.membershipName === name);
 
   async function windows(query = ''): Promise<Windows> {
     const res = await app.inject({
@@ -315,9 +321,10 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
 
   it('membership-windows returns starting + soon-ending purchases, not far-future ends', async () => {
     const w = await windows('?withinDays=30');
-    expect(w.starting).toHaveLength(2); // both purchases started now
+    expect(forPlan(w.starting, 'Gold Plan')).toHaveLength(2); // both purchases started now
     expect(w.starting[0]!.buyerName).toBe('Mia Member');
-    expect(w.ending).toHaveLength(1); // only the 10-day one; 60-day end is outside the window
+    // Only the 10-day one; the 60-day end is outside the window.
+    expect(forPlan(w.ending, 'Gold Plan')).toHaveLength(1);
   });
 
   it('reaches 15 days ahead by default, not 30', async () => {
@@ -379,6 +386,30 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
     // Still running, but it began five days ago: too old to be a prompt.
     const w = await windows();
     expect(w.starting.map((x) => x.membershipName)).not.toContain('Last Week Plan');
+  });
+
+  it('includes a member the partner added by hand', async () => {
+    // No circls account, so user_id is null and the name and contact live on
+    // the purchase. An inner join on users hid them from both windows.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Walk-in Pass', durationDays: 30, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      membershipId: plan!.id,
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + 10 * 24 * 3600 * 1000),
+      status: 'active',
+      externalName: 'Asha Walk-in',
+      externalContact: '+919876500011',
+    });
+
+    const w = await windows();
+    const [row] = forPlan(w.starting, 'Walk-in Pass');
+    expect(row).toBeDefined();
+    expect(row!.buyerName).toBe('Asha Walk-in');
+    expect(row!.buyerContact).toBe('+919876500011');
+    expect(forPlan(w.ending, 'Walk-in Pass')).toHaveLength(1);
   });
 
   it('service-level cursor round-trips out-of-band', async () => {

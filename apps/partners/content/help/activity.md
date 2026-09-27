@@ -47,7 +47,7 @@ The **Memberships starting & ending** panel lists member subscriptions whose val
 - **Starting** — memberships about to begin, or begun in the last 3 days and still running. One that has already finished is never listed here, however recently it started: a short pass sold a few days ago has nothing left to welcome anyone to.
 - **Ending** — memberships approaching their end date (shown in amber), a good prompt to nudge the member about renewing, plus any that ended in the last 3 days.
 
-Each entry shows the member, the plan and tier, and the full validity window. Cancelled memberships are not shown.
+Each entry shows the member, the plan and tier, and the full validity window. Members you added by hand appear alongside those who bought through circls, listed under the name and contact you recorded. Cancelled memberships are not shown.
 
 ## Related articles
 

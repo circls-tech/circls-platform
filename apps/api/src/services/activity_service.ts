@@ -319,11 +319,16 @@ export async function listMembershipWindows(
 ): Promise<MembershipWindows> {
   const windowQuery = (col: 'starts_at' | 'ends_at', extra = sql``) => sql`
     select um.id, um.status, um.starts_at, um.ends_at,
-           u.display_name, u.phone_e164, u.email,
+           coalesce(u.display_name, um.external_name)           as buyer_name,
+           coalesce(u.phone_e164, u.email, um.external_contact) as buyer_contact,
            m.name as membership_name, mt.name as tier_name
     from user_memberships um
     join memberships m on m.id = um.membership_id
-    join users u       on u.id = um.user_id
+    -- A member the partner added by hand has no circls account, so user_id is
+    -- null and the identity lives in external_name/external_contact (the
+    -- member_identity check constraint guarantees one or the other). An inner
+    -- join dropped exactly the members this panel is meant to prompt about.
+    left join users u  on u.id = um.user_id
     left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId}
       and um.status <> 'cancelled'
@@ -337,8 +342,8 @@ export async function listMembershipWindows(
   const toItems = (raw: unknown): MembershipWindowItem[] =>
     (raw as Record<string, unknown>[]).map((r) => ({
       userMembershipId: r['id'] as string,
-      buyerName: (r['display_name'] as string | null) ?? null,
-      buyerContact: ((r['phone_e164'] as string | null) ?? (r['email'] as string | null)) ?? null,
+      buyerName: (r['buyer_name'] as string | null) ?? null,
+      buyerContact: (r['buyer_contact'] as string | null) ?? null,
       membershipName: r['membership_name'] as string,
       tierName: (r['tier_name'] as string | null) ?? null,
       status: r['status'] as string,
