@@ -858,18 +858,14 @@ export async function consumerBookSlots(
   );
 }
 
-/** Book an event seat as a consumer (event must be published + venue visible). */
-export async function consumerBookEvent(
-  eventId: string,
-  customer: { userId: string; name?: string | null; contact?: string | null },
-  lines: EventLine[],
-  couponCode?: string,
-  answers: RegistrationAnswerInput[] = [],
-): Promise<BookEventResult> {
+/**
+ * 404s unless `eventId` is on sale to consumers: published, and its venue
+ * visible — or, for an org-wide event, which has no venue, its organisation
+ * live. Every event booking route passes through here.
+ */
+export async function assertEventBookable(eventId: string): Promise<void> {
   const [ev] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!ev || ev.status !== 'published') throw new NotFound('Event not found', 'event_not_found');
-  // Venue-scoped events gate on venue visibility; org-scoped events have no
-  // venue, so gate on the owning tenant being live (mirrors membership purchase).
   if (ev.venueId != null) {
     await assertVenueVisible(ev.venueId);
   } else {
@@ -880,24 +876,44 @@ export async function consumerBookEvent(
       .limit(1);
     if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
   }
+}
+
+/**
+ * 404s unless `membershipId` is on sale to consumers: an active plan of a live
+ * organisation, and — for a plan tied to a venue — that venue visible. Every
+ * membership purchase route passes through here.
+ */
+export async function assertMembershipPurchasable(membershipId: string): Promise<void> {
+  const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
+  if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
+  const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
+  if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
+  if (m.venueId != null) await assertVenueVisible(m.venueId);
+}
+
+/** Book an event seat as a consumer (event must be published + venue visible). */
+export async function consumerBookEvent(
+  eventId: string,
+  customer: { userId: string; name?: string | null; contact?: string | null },
+  lines: EventLine[],
+  couponCode?: string,
+  answers: RegistrationAnswerInput[] = [],
+): Promise<BookEventResult> {
+  await assertEventBookable(eventId);
   const pricing = couponCode
     ? await resolvePricing({ itemType: 'event', eventId, lines }, customer.userId, couponCode)
     : null;
   return bookEvent(eventId, customer, pricing, lines, answers);
 }
 
-/** Purchase a membership as a consumer (must be active + tenant visible). */
+/** Purchase a membership as a consumer (must be on sale — see assertMembershipPurchasable). */
 export async function consumerPurchaseMembership(
   membershipId: string,
   userId: string,
   couponCode?: string,
   membershipTierId?: string,
 ): Promise<PurchaseMembershipResult> {
-  const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
-  if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
-  // Confirm the owning tenant is live (membership has no own venue gate when tenant-wide).
-  const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
-  if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
+  await assertMembershipPurchasable(membershipId);
   const pricing = couponCode
     ? await resolvePricing(
         { itemType: 'membership', membershipId, ...(membershipTierId ? { membershipTierId } : {}) },
@@ -942,7 +958,13 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
-    where b.created_by_user_id = ${userId} or b.customer_user_id = ${userId}
+    -- The customer's bookings. Consumer bookings from before customers were
+    -- stamped carry only their creator, so a circls-channel booking with no
+    -- customer still counts as the creator's; walk-ins, off-platform
+    -- registrations and API bookings belong to their customers, not to the
+    -- staff member or owner who entered them.
+    where b.customer_user_id = ${userId}
+       or (b.customer_user_id is null and b.created_by_user_id = ${userId} and b.channel = 'circls')
     order by b.created_at desc
     limit 100
   `);
@@ -1078,7 +1100,9 @@ export async function getMyBookingDetail(
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     where b.id = ${bookingId}
-      and (b.created_by_user_id = ${userId} or b.customer_user_id = ${userId})
+      -- Same ownership rule as listMyBookings.
+      and (b.customer_user_id = ${userId}
+        or (b.customer_user_id is null and b.created_by_user_id = ${userId} and b.channel = 'circls'))
     limit 1
   `);
   const arr = rows as unknown as Record<string, unknown>[];

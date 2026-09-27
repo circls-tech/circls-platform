@@ -31,6 +31,15 @@ import {
   updateMember,
   updateMembership,
 } from '../services/memberships_service.js';
+import { assertMembershipPurchasable } from '../services/consumer_service.js';
+import { getVenueById } from '../services/venue_service.js';
+
+/** A plan may only name one of its own organisation's venues. */
+async function assertOwnVenue(tenantId: string, venueId: string | null | undefined): Promise<void> {
+  if (!venueId) return;
+  const venue = await getVenueById(venueId);
+  if (!venue || venue.tenantId !== tenantId) throw new NotFound('Venue not found', 'venue_not_found');
+}
 
 const termsField = z
   .string()
@@ -134,6 +143,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid membership payload', 'bad_request', {
         issues: parsed.error.issues,
       });
+    await assertOwnVenue(tenantId, parsed.data.venueId);
     return createMembership({
       tenantId,
       actorUserId: user.id,
@@ -168,6 +178,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequest('Invalid membership patch', 'bad_request', { issues: parsed.error.issues });
+    await assertOwnVenue(tenantId, parsed.data.venueId);
     const patch: Parameters<typeof updateMembership>[2] = {};
     if (parsed.data.venueId !== undefined) patch.venueId = parsed.data.venueId;
     if (parsed.data.name !== undefined) patch.name = parsed.data.name;
@@ -385,6 +396,8 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const parsed = purchaseSchema.safeParse(req.body ?? {});
     if (!parsed.success)
       throw new BadRequest('Invalid purchase payload', 'bad_request', { issues: parsed.error.issues });
+    // The same on-sale rules as /v1/consumer/memberships/:id/purchase.
+    await assertMembershipPurchasable(id);
     return purchaseMembership({
       membershipId: id,
       userId: user.id,
