@@ -3,8 +3,8 @@
  *
  * Distinct from booking_service.cancelBooking() (walk-in, no money to reverse).
  * This entry point handles paid bookings:
- *   - Looks up the booking + its charge payment row.
- *   - Decides refund amount per `computeRefundPolicy()`.
+ *   - Looks up the booking, its charge payment row and any prior refunds.
+ *   - Decides refund amount per `decideRefund()`.
  *   - Sets booking.status='cancelled' and frees the slots.
  *   - If a refund is due, delegates to refund_service.issueRefund() inside the
  *     same transaction so a failure rolls the cancel back atomically.
@@ -12,6 +12,9 @@
  *     charge row instead and voids the gateway order after commit so the
  *     customer's still-open card form can't complete the payment late.
  *   - Writes a 'booking.cancelled' audit row with the refund detail.
+ *
+ * `previewCancellation()` reads the same inputs and makes the same decision
+ * without the side effects, so the portal can show the refund before it's made.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -22,10 +25,11 @@ import { getGateway, isGatewayProvider, type PaymentProviderId } from '../lib/ga
 import { logger } from '../lib/logger.js';
 import {
   type BookingPaymentMethod,
-  type RefundPolicy,
-  computeRefundPolicy,
+  type RefundDecision,
+  type RefundTier,
+  decideRefund,
 } from './cancellation_policy.js';
-import { type RefundExec, issueRefund } from './refund_service.js';
+import { type RefundExec, issueRefund, sumPriorRefunds } from './refund_service.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 
 export interface CancelInput {
@@ -41,7 +45,18 @@ export interface CancelResult {
   status: 'cancelled';
   refundPaise: number;
   refundId?: string;
-  policy: RefundPolicy['tier'];
+  policy: RefundTier;
+}
+
+/** What cancelling a booking right now would refund. */
+export interface RefundPreview {
+  bookingId: string;
+  tier: RefundTier;
+  refundPaise: number;
+  /** What was charged: the charge row, else the booking total. */
+  amountPaise: number;
+  /** Already refunded against the booking before this cancel. */
+  alreadyRefundedPaise: number;
 }
 
 /** Postgres tstzrange text form looks like `["2026-..","2026-..")`. */
@@ -53,85 +68,135 @@ function parseTstzRangeStart(range: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+interface CancellationInputs {
+  booking: typeof bookings.$inferSelect;
+  charge: typeof payments.$inferSelect | undefined;
+  slotStart: Date;
+  alreadyRefundedPaise: number;
+}
+
+/**
+ * Everything the refund decision needs, read the same way for a cancel and for
+ * its preview. `lockCharge` takes the charge row FOR UPDATE (the cancel does,
+ * inside its transaction).
+ */
+async function loadCancellationInputs(
+  exec: RefundExec,
+  bookingId: string,
+  lockCharge: boolean,
+): Promise<CancellationInputs> {
+  const [booking] = await exec.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+
+  if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
+  if (booking.status === 'cancelled') {
+    throw new Conflict('Booking already cancelled', 'already_cancelled');
+  }
+
+  // Most-recent charge payment row, if any. Phase 12 inserts one per booking;
+  // legacy walk-ins have none. Locked FOR UPDATE by the cancel so the charge's
+  // status is authoritative for the whole tx — a concurrent webhook capture
+  // blocks behind this lock instead of flipping the row under our feet.
+  const chargeQuery = exec
+    .select()
+    .from(payments)
+    .where(and(eq(payments.bookingId, bookingId), eq(payments.kind, 'charge')))
+    .orderBy(sql`${payments.createdAt} desc`)
+    .limit(1);
+  const [charge] = lockCharge ? await chargeQuery.for('update') : await chargeQuery;
+
+  // Slot start instant. Prefer the booking's persisted `time_range` (Track A
+  // fixed cancelled-booking visibility by stamping arena + span on the row);
+  // fall back to a join on slots when older bookings lack it.
+  let slotStart: Date | null = null;
+  if (booking.timeRange) {
+    slotStart = parseTstzRangeStart(booking.timeRange);
+  }
+  if (!slotStart) {
+    const [s] = await exec
+      .select({ startsAt: sql<string>`lower(${slots.timeRange})::text` })
+      .from(slots)
+      .where(and(eq(slots.bookingId, bookingId), sql`${slots.deletedAt} is null`))
+      .orderBy(sql`lower(${slots.timeRange}) asc`)
+      .limit(1);
+    slotStart = s?.startsAt ? new Date(s.startsAt) : null;
+  }
+  // Event bookings carry no time_range and no slots — the event's start
+  // instant plays the slot-start role for the refund-policy tiers.
+  if (!slotStart && booking.itemType === 'event') {
+    const eventId = (booking.itemData as { eventId?: string } | null)?.eventId;
+    if (eventId) {
+      const [ev] = await exec
+        .select({ startsAt: events.startsAt })
+        .from(events)
+        .where(eq(events.id, eventId))
+        .limit(1);
+      slotStart = ev?.startsAt ?? null;
+    }
+  }
+  // Membership purchases carry no time_range and no slots either. The
+  // membership's own start plays the slot-start role, so a self-cancel would
+  // be scored on the same tiers; a staff refund overrides them regardless.
+  if (!slotStart && booking.itemType === 'membership') {
+    const [um] = await exec
+      .select({ startsAt: userMemberships.startsAt })
+      .from(userMemberships)
+      .innerJoin(payments, eq(payments.id, userMemberships.paymentId))
+      .where(eq(payments.bookingId, bookingId))
+      .limit(1);
+    slotStart = um?.startsAt ?? null;
+  }
+  // Fail-closed: cancelling without knowing the slot start would silently
+  // hand a full refund. Reject loudly instead.
+  if (!slotStart) {
+    throw new Conflict('Cannot determine slot start time', 'no_slot_start');
+  }
+
+  const { refundedPaise } = await sumPriorRefunds(exec, bookingId);
+  return { booking, charge, slotStart, alreadyRefundedPaise: refundedPaise };
+}
+
+function decide(inputs: CancellationInputs, bySelf: boolean): RefundDecision {
+  return decideRefund({
+    bookingSlotStart: inputs.slotStart,
+    paymentMethod: inputs.booking.paymentMethod as BookingPaymentMethod,
+    charge: inputs.charge
+      ? { amountPaise: Number(inputs.charge.amountPaise), status: inputs.charge.status }
+      : null,
+    bookingTotalPaise: Number(inputs.booking.totalPaise ?? 0),
+    alreadyRefundedPaise: inputs.alreadyRefundedPaise,
+    bySelf,
+  });
+}
+
+/**
+ * What cancelling `bookingId` right now would refund — the same inputs and the
+ * same decision as {@link cancelPaidBooking}, read without locks or side
+ * effects. Throws what the cancel would (already cancelled, no slot start).
+ */
+export async function previewCancellation(
+  bookingId: string,
+  bySelf: boolean,
+): Promise<RefundPreview> {
+  const inputs = await loadCancellationInputs(db, bookingId, false);
+  const decision = decide(inputs, bySelf);
+  return {
+    bookingId,
+    tier: decision.tier,
+    refundPaise: decision.refundPaise,
+    amountPaise: decision.amountPaise,
+    alreadyRefundedPaise: inputs.alreadyRefundedPaise,
+  };
+}
+
 export async function cancelPaidBooking(input: CancelInput): Promise<CancelResult> {
   // The gateway order to void after commit, when the cancelled booking's
   // charge was never captured (see below).
   let orderToCancel: { provider: PaymentProviderId; orderId: string } | undefined;
 
   const result = await db.transaction(async (tx) => {
-    const [booking] = await tx
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, input.bookingId))
-      .limit(1);
-
-    if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
-    if (booking.status === 'cancelled') {
-      throw new Conflict('Booking already cancelled', 'already_cancelled');
-    }
-
-    // Most-recent charge payment row, if any. Phase 12 inserts one per booking;
-    // legacy walk-ins have none. FOR UPDATE so the charge's status is
-    // authoritative for the whole tx — a concurrent webhook capture blocks
-    // behind this lock instead of flipping the row under our feet.
-    const [charge] = await tx
-      .select()
-      .from(payments)
-      .where(and(eq(payments.bookingId, input.bookingId), eq(payments.kind, 'charge')))
-      .orderBy(sql`${payments.createdAt} desc`)
-      .limit(1)
-      .for('update');
-
-    // Slot start instant. Prefer the booking's persisted `time_range` (Track A
-    // fixed cancelled-booking visibility by stamping arena + span on the row);
-    // fall back to a join on slots when older bookings lack it.
-    let slotStart: Date | null = null;
-    if (booking.timeRange) {
-      slotStart = parseTstzRangeStart(booking.timeRange);
-    }
-    if (!slotStart) {
-      const [s] = await tx
-        .select({ startsAt: sql<string>`lower(${slots.timeRange})::text` })
-        .from(slots)
-        .where(and(eq(slots.bookingId, input.bookingId), sql`${slots.deletedAt} is null`))
-        .orderBy(sql`lower(${slots.timeRange}) asc`)
-        .limit(1);
-      slotStart = s?.startsAt ? new Date(s.startsAt) : null;
-    }
-    // Event bookings carry no time_range and no slots — the event's start
-    // instant plays the slot-start role for the refund-policy tiers.
-    if (!slotStart && booking.itemType === 'event') {
-      const eventId = (booking.itemData as { eventId?: string } | null)?.eventId;
-      if (eventId) {
-        const [ev] = await tx
-          .select({ startsAt: events.startsAt })
-          .from(events)
-          .where(eq(events.id, eventId))
-          .limit(1);
-        slotStart = ev?.startsAt ?? null;
-      }
-    }
-    // Membership purchases carry no time_range and no slots either. The
-    // membership's own start plays the slot-start role, so a self-cancel would
-    // be scored on the same tiers; a staff refund overrides them regardless.
-    if (!slotStart && booking.itemType === 'membership') {
-      const [um] = await tx
-        .select({ startsAt: userMemberships.startsAt })
-        .from(userMemberships)
-        .innerJoin(payments, eq(payments.id, userMemberships.paymentId))
-        .where(eq(payments.bookingId, input.bookingId))
-        .limit(1);
-      slotStart = um?.startsAt ?? null;
-    }
-    // Fail-closed: cancelling without knowing the slot start would silently
-    // hand a full refund. Reject loudly instead.
-    if (!slotStart) {
-      throw new Conflict('Cannot determine slot start time', 'no_slot_start');
-    }
-
-    const paymentMethod = booking.paymentMethod as BookingPaymentMethod;
-    const amountPaise = charge?.amountPaise ?? Number(booking.totalPaise ?? 0);
-    const policy = computeRefundPolicy(slotStart, paymentMethod, amountPaise, input.bySelf);
+    const inputs = await loadCancellationInputs(tx as RefundExec, input.bookingId, true);
+    const { booking, charge } = inputs;
+    const decision = decide(inputs, input.bySelf);
 
     // 1. Flip booking status. Use a status guard so concurrent cancels don't
     //    fire two refunds for the same booking.
@@ -160,7 +225,7 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
     //     it): terminally fail the row and queue the gateway order for
     //     cancellation after commit, so a late retry can't charge the
     //     customer for a booking that no longer exists. Nothing was captured,
-    //     so there is nothing to refund.
+    //     so the decision refunds nothing ('uncaptured').
     const chargeNeverCaptured = charge?.status === 'pending';
     if (charge && chargeNeverCaptured) {
       await tx
@@ -172,14 +237,16 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
       }
     }
 
-    // 3. Refund, if any. issueRefund() runs in its own logical block but we
-    //    pass the same `tx` so a refund failure rolls the whole cancel back.
+    // 3. Refund, if any — decideRefund only grants one against a captured
+    //    charge, capped at what earlier refunds left. issueRefund() runs in its
+    //    own logical block but we pass the same `tx` so a refund failure rolls
+    //    the whole cancel back.
     let refundId: string | undefined;
-    if (policy.refundPaise > 0 && charge && !chargeNeverCaptured) {
+    if (decision.refundPaise > 0) {
       const refund = await issueRefund(
         {
           bookingId: input.bookingId,
-          amountPaise: policy.refundPaise,
+          amountPaise: decision.refundPaise,
           reason: input.reason,
           actorUserId: input.actorUserId,
         },
@@ -188,27 +255,25 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
       refundId = refund.paymentId;
     }
 
-    // Nothing captured → nothing refunded, whatever the policy tier says.
-    const refundPaise = chargeNeverCaptured ? 0 : policy.refundPaise;
-
     const ctx: AuditCtx = { tenantId: booking.tenantId, actorUserId: input.actorUserId };
     await writeAudit(tx, ctx, 'booking.cancelled', 'booking', input.bookingId, null, {
       reason: input.reason,
       bySelf: input.bySelf,
-      refundPaise,
-      policyTier: policy.tier,
+      refundPaise: decision.refundPaise,
+      policyTier: decision.tier,
       refundId: refundId ?? null,
-      amountPaise,
-      paymentMethod,
+      amountPaise: decision.amountPaise,
+      alreadyRefundedPaise: inputs.alreadyRefundedPaise,
+      paymentMethod: booking.paymentMethod,
       chargeNeverCaptured,
     });
 
     return {
       bookingId: input.bookingId,
       status: 'cancelled' as const,
-      refundPaise,
+      refundPaise: decision.refundPaise,
       ...(refundId !== undefined ? { refundId } : {}),
-      policy: policy.tier,
+      policy: decision.tier,
     };
   });
 

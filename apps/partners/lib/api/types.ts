@@ -404,12 +404,36 @@ export interface NotificationsPage {
 
 // ── Phase 14: cancellations + payments ledger ────────────────────────────────
 
+/** How the cancellation engine decided a refund (the API's `RefundTier`):
+ *  the policy tiers, plus nothing-was-captured and already-refunded-in-full. */
+export type RefundTier =
+  | 'full'
+  | 'partial'
+  | 'none'
+  | 'override'
+  | 'free'
+  | 'external'
+  | 'uncaptured'
+  | 'already_refunded';
+
 export interface CancelResult {
   bookingId: string;
   status: 'cancelled';
   refundPaise: number;
   refundId?: string;
-  policy: 'full' | 'partial' | 'none' | 'override' | 'free' | 'external';
+  policy: RefundTier;
+}
+
+/** GET /v1/bookings/:id/refund-preview — what cancelling now would refund,
+ *  decided by the server exactly as the cancel itself will. */
+export interface RefundPreview {
+  bookingId: string;
+  tier: RefundTier;
+  refundPaise: number;
+  /** What was charged: the charge row, else the booking total. */
+  amountPaise: number;
+  /** Refunded against the booking before now (e.g. a goodwill refund). */
+  alreadyRefundedPaise: number;
 }
 
 export type PaymentKind = 'charge' | 'refund' | 'adjustment';

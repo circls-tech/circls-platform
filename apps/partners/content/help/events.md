@@ -269,12 +269,12 @@ One limit does not apply: the per-person ticket cap. That is counted per circls 
 
 Every row in the **Registered** table has a **Refund** button. Refunding on behalf of an attendee cancels their registration and:
 
-- refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log);
+- refunds a paid registration **in full** to the original payment method, regardless of how close the event is (staff cancellations are out-of-policy by design and are recorded in the audit log). If part of it was already refunded, the rest is. Your own registration, made from your customer account, follows the customer cancellation tiers instead — see [Refunding a booking](/help/bookings);
 - revokes the attendee's QR entry passes so they can no longer check in;
 - frees the seats — tier sold counts and any per-person ticket limits no longer count the cancelled registration;
 - moves the row to the **Cancelled** table.
 
-Free registrations and payments that were never completed are simply cancelled — the confirmation says so, because there is nothing to refund. This can't be undone; the attendee has to register again if plans change.
+Free registrations, registrations paid to you directly, and payments that were never completed are simply cancelled — there is nothing to refund. Either way, the confirmation shows exactly what will be refunded before you confirm. This can't be undone; the attendee has to register again if plans change.
 
 ## Customer questions
 

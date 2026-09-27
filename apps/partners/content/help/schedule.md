@@ -81,7 +81,7 @@ From here you can:
 - **Change prices** on selected slots (you'll be asked to confirm).
 - **Block or unblock** slots — applied immediately.
 - **Take a booking** on open slots for walk-in / phone customers (reception booking).
-- **Cancel a booking** on a booked slot, which frees it again. See [Understanding bookings and cancellations](/help/bookings).
+- **Cancel a booking** on a booked slot, which frees it again. A booking paid online is refunded to the customer in full; the confirmation shows the refund before you confirm. See [Understanding bookings and cancellations](/help/bookings).
 
 ## Tips
 

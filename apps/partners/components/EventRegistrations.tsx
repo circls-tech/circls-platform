@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import type { EventBooking, EventQuestion, EventTier } from '@/lib/api/types';
-import { useCancelBookingWithReason } from '@/lib/api/queries';
+import { useCancelBookingWithReason, useRefundPreview } from '@/lib/api/queries';
 import { AddRegistrationModal } from '@/components/AddRegistrationModal';
 import { ApiError } from '@/lib/api/client';
+import { refundSentence } from '@/lib/bookings/refund_copy';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { Button, Card, StatusPill } from '@/lib/ui';
@@ -284,6 +285,10 @@ export function EventRegistrations({
   };
   const [pendingCancel, setPendingCancel] = useState<EventBooking | null>(null);
   const [lastCancelled, setLastCancelled] = useState<{ name: string | null; refundPaise: number } | null>(null);
+  // The server's own decision for the registration being confirmed — a staff
+  // refund is in full, but not for one that was never paid, already refunded,
+  // or is the staff member's own registration.
+  const refundPreview = useRefundPreview(pendingCancel?.id ?? null);
 
   if (isLoading) {
     return (
@@ -299,6 +304,12 @@ export function EventRegistrations({
   const slug = slugify(eventName);
 
   const cancelError = cancel.error instanceof ApiError ? cancel.error.message : cancel.error ? 'Cancellation failed.' : null;
+
+  const refundText = refundPreview.data
+    ? refundSentence(refundPreview.data, (p) => formatMoney(p, currency, { decimals: 2 }), 'attendee')
+    : refundPreview.isError
+      ? 'Couldn’t work out the refund — circls decides it when you confirm.'
+      : 'Working out the refund…';
 
   function confirmCancel(b: EventBooking) {
     setLastCancelled(null);
@@ -385,15 +396,10 @@ export function EventRegistrations({
       <ConfirmDialog
         open={pendingCancel !== null}
         title="Refund registration"
-        message={
-          !pendingCancel?.totalPaise
-            ? `Cancel ${pendingCancel?.customerName ?? 'this registration'}? The ticket will be revoked. This was a free registration — there is nothing to refund.`
-            : pendingCancel.status === 'pending'
-              ? `Cancel ${pendingCancel.customerName ?? 'this registration'}? Payment was never completed, so nothing will be refunded.`
-              : `Refund ${pendingCancel.customerName ?? 'this registration'}? The attendee will be refunded ${formatMoney(pendingCancel.totalPaise, currency, { decimals: 2 })} in full, their registration cancelled and their ticket revoked.`
-        }
+        message={`Cancel ${pendingCancel?.customerName ?? 'this registration'} and revoke their ticket? ${refundText}`}
         confirmLabel="Refund registration"
         danger
+        confirmDisabled={refundPreview.isLoading}
         onConfirm={() => pendingCancel && confirmCancel(pendingCancel)}
         onClose={() => setPendingCancel(null)}
       />
