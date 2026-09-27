@@ -296,9 +296,10 @@ export interface MembershipWindowItem {
 }
 
 export interface MembershipWindows {
-  /** Started in the last 7 days or starting within `withinDays`. */
+  /** Starting within `withinDays`, or started in the last 3 days and still
+   *  running. One that has already ended is not starting, whenever it began. */
   starting: MembershipWindowItem[];
-  /** Ended in the last 7 days or ending within `withinDays`. */
+  /** Ended in the last 3 days, or ending within `withinDays`. */
   ending: MembershipWindowItem[];
 }
 
@@ -307,12 +308,16 @@ const MEMBERSHIP_WINDOW_LIMIT = 100;
 /**
  * Memberships whose validity window opens or closes around now — the Activity
  * page's "starting & ending soon" panel. Cancelled purchases are excluded.
+ *
+ * The backward reach is deliberately short. This panel is a prompt to act —
+ * welcome someone, or chase a renewal — and a membership that began a week ago
+ * is neither.
  */
 export async function listMembershipWindows(
   tenantId: string,
   withinDays: number,
 ): Promise<MembershipWindows> {
-  const windowQuery = (col: 'starts_at' | 'ends_at') => sql`
+  const windowQuery = (col: 'starts_at' | 'ends_at', extra = sql``) => sql`
     select um.id, um.status, um.starts_at, um.ends_at,
            u.display_name, u.phone_e164, u.email,
            m.name as membership_name, mt.name as tier_name
@@ -322,8 +327,9 @@ export async function listMembershipWindows(
     left join membership_tiers mt on mt.id = um.membership_tier_id
     where m.tenant_id = ${tenantId}
       and um.status <> 'cancelled'
-      and um.${sql.raw(col)} >= now() - interval '7 days'
+      and um.${sql.raw(col)} >= now() - interval '3 days'
       and um.${sql.raw(col)} <= now() + make_interval(days => ${withinDays})
+      ${extra}
     order by um.${sql.raw(col)} asc
     limit ${MEMBERSHIP_WINDOW_LIMIT}
   `;
@@ -341,7 +347,10 @@ export async function listMembershipWindows(
     }));
 
   const [starting, ending] = await Promise.all([
-    db.execute<Record<string, unknown>>(windowQuery('starts_at')),
+    // A membership that has already ended is not starting, however recently it
+    // began — a 2-day pass sold three days ago was listed as Starting, which
+    // sent partners to welcome people who had already finished.
+    db.execute<Record<string, unknown>>(windowQuery('starts_at', sql`and um.ends_at > now()`)),
     db.execute<Record<string, unknown>>(windowQuery('ends_at')),
   ]);
 

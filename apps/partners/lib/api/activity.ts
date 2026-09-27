@@ -70,7 +70,7 @@ export function useActivityDaily(tenantId: string, month: string, tz: string, ve
 }
 
 /** Memberships starting / ending around now (±window). */
-export function useMembershipWindows(tenantId: string, withinDays = 30) {
+export function useMembershipWindows(tenantId: string, withinDays = 15) {
   return useQuery({
     queryKey: ['activity-membership-windows', tenantId, withinDays],
     queryFn: () =>

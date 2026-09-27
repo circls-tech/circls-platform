@@ -81,6 +81,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
   let venueId: string;
   let today: string;
   let slotBookingId: string;
+  let consumerId: string;
 
   beforeAll(async () => {
     app = await buildServer();
@@ -104,6 +105,7 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
       .insert(users)
       .values({ firebaseUid: `fbuid_act_consumer_${Date.now()}`, displayName: 'Mia Member' })
       .returning();
+    consumerId = consumer!.id;
 
     // 1) Confirmed walk-in slot booking with a slot today (IST).
     const [slotBooking] = await db
@@ -296,20 +298,87 @@ describe.skipIf(!runIntegration)('tenant activity', () => {
     expect(todayRow).toMatchObject({ bookings: 1 });
   });
 
-  it('membership-windows returns starting + soon-ending purchases, not far-future ends', async () => {
+  interface Windows {
+    starting: { membershipName: string; buyerName: string | null }[];
+    ending: { membershipName: string }[];
+  }
+
+  async function windows(query = ''): Promise<Windows> {
     const res = await app.inject({
       method: 'GET',
-      url: `/v1/tenants/${tenantId}/activity/membership-windows?withinDays=30`,
+      url: `/v1/tenants/${tenantId}/activity/membership-windows${query}`,
       headers: bearer('owner'),
     });
     expect(res.statusCode).toBe(200);
-    const w = res.json() as {
-      starting: { membershipName: string; buyerName: string | null }[];
-      ending: { membershipName: string }[];
-    };
+    return res.json() as Windows;
+  }
+
+  it('membership-windows returns starting + soon-ending purchases, not far-future ends', async () => {
+    const w = await windows('?withinDays=30');
     expect(w.starting).toHaveLength(2); // both purchases started now
     expect(w.starting[0]!.buyerName).toBe('Mia Member');
     expect(w.ending).toHaveLength(1); // only the 10-day one; 60-day end is outside the window
+  });
+
+  it('reaches 15 days ahead by default, not 30', async () => {
+    // The 10-day end is inside either window; the 60-day one is outside both.
+    // A 20-day end separates them.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Twenty Day Plan', durationDays: 20, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + 20 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    const dflt = await windows();
+    expect(dflt.ending.map((e) => e.membershipName)).not.toContain('Twenty Day Plan');
+    const wider = await windows('?withinDays=30');
+    expect(wider.ending.map((e) => e.membershipName)).toContain('Twenty Day Plan');
+  });
+
+  it('never lists a membership that has already ended as starting', async () => {
+    // A short pass sold two days ago and finished yesterday. It began inside
+    // the backward window, so the old query called it Starting and sent the
+    // partner to welcome someone who had already finished.
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Day Pass', durationDays: 1, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(Date.now() - 2 * 24 * 3600 * 1000),
+      endsAt: new Date(Date.now() - 1 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    const w = await windows();
+    expect(w.starting.map((x) => x.membershipName)).not.toContain('Day Pass');
+    // It belongs under Ending, which reaches 3 days back.
+    expect(w.ending.map((x) => x.membershipName)).toContain('Day Pass');
+  });
+
+  it('looks only 3 days back, not 7', async () => {
+    const [plan] = await db
+      .insert(memberships)
+      .values({ tenantId, name: 'Last Week Plan', durationDays: 90, status: 'active' })
+      .returning();
+    await db.insert(userMemberships).values({
+      userId: consumerId,
+      membershipId: plan!.id,
+      startsAt: new Date(Date.now() - 5 * 24 * 3600 * 1000),
+      endsAt: new Date(Date.now() + 85 * 24 * 3600 * 1000),
+      status: 'active',
+    });
+
+    // Still running, but it began five days ago: too old to be a prompt.
+    const w = await windows();
+    expect(w.starting.map((x) => x.membershipName)).not.toContain('Last Week Plan');
   });
 
   it('service-level cursor round-trips out-of-band', async () => {

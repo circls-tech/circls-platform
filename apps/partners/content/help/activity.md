@@ -42,10 +42,10 @@ The calendar counts sessions by the day they *take place*, not the day they were
 
 ## Memberships starting & ending
 
-The **Memberships starting & ending** panel lists member subscriptions whose validity window opens or closes around now (from 7 days ago up to 30 days ahead):
+The **Memberships starting & ending** panel lists member subscriptions whose validity window opens or closes around now — the next **15 days** ahead, and the last **3** behind:
 
-- **Starting** — memberships that recently began or are about to begin.
-- **Ending** — memberships approaching their end date (shown in amber), a good prompt to nudge the member about renewing.
+- **Starting** — memberships about to begin, or begun in the last 3 days and still running. One that has already finished is never listed here, however recently it started: a short pass sold a few days ago has nothing left to welcome anyone to.
+- **Ending** — memberships approaching their end date (shown in amber), a good prompt to nudge the member about renewing, plus any that ended in the last 3 days.
 
 Each entry shows the member, the plan and tier, and the full validity window. Cancelled memberships are not shown.
 
