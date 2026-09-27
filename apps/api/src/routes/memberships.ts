@@ -297,7 +297,9 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * Refund a member's purchase and end their membership. Distinct from the
-   * cancel above, which only frees the seat and moves no money.
+   * cancel above, which only frees the seat and moves no money. The refund
+   * cancels the booking behind the purchase, so it needs `bookings.cancel`,
+   * the same as refunding any other booking: Read-only members can't.
    */
   const refundMemberSchema = z.object({ reason: z.string().min(1).max(500) });
 
@@ -312,6 +314,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       };
       const user = await currentUser(req);
       const memberCtx = await requireTenantMembership(user.id, tenantId);
+      assertCap(memberCtx, 'bookings.cancel');
       assertTermsAccepted(memberCtx);
       const parsed = refundMemberSchema.safeParse(req.body);
       if (!parsed.success) {

@@ -853,8 +853,11 @@ async function applyRefundResolution(args: RefundResolutionArgs): Promise<void> 
   });
 }
 
-export async function listForBooking(bookingId: string): Promise<Payment[]> {
-  return db.select().from(payments).where(eq(payments.bookingId, bookingId));
+export async function listForBooking(bookingId: string, tenantId: string): Promise<Payment[]> {
+  return db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.bookingId, bookingId), eq(payments.tenantId, tenantId)));
 }
 
 export async function getPayment(

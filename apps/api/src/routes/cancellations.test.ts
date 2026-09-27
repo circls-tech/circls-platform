@@ -8,6 +8,8 @@ vi.mock('../lib/firebase_admin.js', () => ({
       owner: { uid: 'fbuid_cxowner', email: 'cxowner@x.com', email_verified: true },
       customer: { uid: 'fbuid_cxcustomer', email: 'cxcustomer@x.com', email_verified: true },
       stranger: { uid: 'fbuid_cxstranger', email: 'cxstranger@x.com', email_verified: true },
+      staff: { uid: 'fbuid_cxstaff', email: 'cxstaff@x.com', email_verified: true },
+      readonly: { uid: 'fbuid_cxreadonly', email: 'cxreadonly@x.com', email_verified: true },
     };
     const u = map[token];
     if (!u) throw new Error('bad token');
@@ -16,7 +18,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 }));
 
 const { closeDb, db } = await import('../db/client.js');
-const { bookings, payments } = await import('../db/schema/index.js');
+const { bookings, payments, tenantMembers } = await import('../db/schema/index.js');
 const { buildServer } = await import('../server.js');
 const { issueRefund } = await import('../services/refund_service.js');
 
@@ -60,6 +62,13 @@ describe.skipIf(!runIntegration)('refund preview and cancel', () => {
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('customer') });
     expect(me.statusCode).toBe(200);
     customerUserId = (me.json() as { id: string }).id;
+
+    // Staff hold bookings.cancel; Read-only members don't.
+    for (const role of ['staff', 'readonly'] as const) {
+      const member = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(role) });
+      expect(member.statusCode).toBe(200);
+      await db.insert(tenantMembers).values({ userId: (member.json() as { id: string }).id, tenantId, role });
+    }
   });
 
   afterAll(async () => {
@@ -105,6 +114,33 @@ describe.skipIf(!runIntegration)('refund preview and cancel', () => {
       });
     }
     return b!.id;
+  }
+
+  /** A walk-in paid at the counter: no charge row, nothing for circls to refund. */
+  async function seedWalkInBooking(): Promise<string> {
+    const start = new Date(Date.now() + 30 * 3_600_000);
+    const end = new Date(start.getTime() + 3_600_000);
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'slot',
+        channel: 'walkin',
+        paymentMethod: 'external',
+        status: 'confirmed',
+        customerName: 'Walk-in Test',
+        customerContact: '+91-9000000457',
+        totalPaise: 50000,
+        timeRange: `[${start.toISOString()},${end.toISOString()})`,
+      })
+      .returning();
+    return b!.id;
+  }
+
+  async function bookingStatus(bookingId: string) {
+    const [b] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+    return b?.status;
   }
 
   async function preview(bookingId: string, token: string) {
@@ -221,5 +257,56 @@ describe.skipIf(!runIntegration)('refund preview and cancel', () => {
     const bookingId = await seedOnlineBooking(1, 'pending');
     const shown = (await preview(bookingId, 'owner')).json() as Preview;
     expect(shown).toMatchObject({ tier: 'uncaptured', refundPaise: 0 });
+  });
+
+  describe('roles', () => {
+    it('lets Staff cancel, refunding a booking paid online in full', async () => {
+      const bookingId = await seedOnlineBooking(30);
+      const shown = (await preview(bookingId, 'staff')).json() as Preview;
+      expect(shown).toMatchObject({ tier: 'override', refundPaise: 50000 });
+
+      const res = await cancel(bookingId, 'staff');
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ status: 'cancelled', policy: 'override', refundPaise: 50000 });
+      expect(await refundRows(bookingId)).toHaveLength(1);
+
+      const walkIn = await seedWalkInBooking();
+      const res2 = await cancel(walkIn, 'staff');
+      expect(res2.statusCode).toBe(200);
+      expect(res2.json()).toMatchObject({ status: 'cancelled', policy: 'external', refundPaise: 0 });
+    });
+
+    it('refuses Read-only the cancel and its preview, and changes nothing', async () => {
+      const bookingId = await seedOnlineBooking(30);
+      for (const res of [await cancel(bookingId, 'readonly'), await preview(bookingId, 'readonly')]) {
+        expect(res.statusCode).toBe(403);
+        expect(res.json().error).toMatchObject({
+          code: 'forbidden_capability',
+          details: { cap: 'bookings.cancel' },
+        });
+      }
+      expect(await bookingStatus(bookingId)).toBe('confirmed');
+      expect(await refundRows(bookingId)).toHaveLength(0);
+    });
+
+    it('refuses Read-only a membership refund', async () => {
+      // The capability is checked before the member is looked up, so ids that
+      // match nothing show who gets past it: a 404 means the caller did.
+      const url = `/v1/tenants/${tenantId}/memberships/${crypto.randomUUID()}/members/${crypto.randomUUID()}/refund`;
+      const refund = (token: string) =>
+        app.inject({ method: 'POST', url, headers: bearer(token), payload: { reason: 'refund test' } });
+
+      const readonly = await refund('readonly');
+      expect(readonly.statusCode).toBe(403);
+      expect(readonly.json().error).toMatchObject({
+        code: 'forbidden_capability',
+        details: { cap: 'bookings.cancel' },
+      });
+      for (const token of ['owner', 'staff']) {
+        const res = await refund(token);
+        expect(res.statusCode).toBe(404);
+        expect(res.json().error.code).toBe('member_not_found');
+      }
+    });
   });
 });

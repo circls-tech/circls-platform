@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import type { EventBooking, EventQuestion, EventTier } from '@/lib/api/types';
-import { useCancelBookingWithReason, useRefundPreview } from '@/lib/api/queries';
+import { useCancelBookingWithReason, useMyRole, useRefundPreview } from '@/lib/api/queries';
 import { AddRegistrationModal } from '@/components/AddRegistrationModal';
 import { ApiError } from '@/lib/api/client';
 import { refundSentence } from '@/lib/bookings/refund_copy';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { roleCan } from '@/lib/roles';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -289,6 +290,9 @@ export function EventRegistrations({
   // refund is in full, but not for one that was never paid, already refunded,
   // or is the staff member's own registration.
   const refundPreview = useRefundPreview(pendingCancel?.id ?? null);
+  // Refunding a registration cancels its booking, which Read-only can't do.
+  const { role } = useMyRole(tenantId);
+  const canCancel = roleCan(role, 'bookings.cancel');
 
   if (isLoading) {
     return (
@@ -351,7 +355,7 @@ export function EventRegistrations({
         currency={currency}
         csvName={`${slug}-registered`}
         showStatus
-        onCancel={setPendingCancel}
+        onCancel={canCancel ? setPendingCancel : undefined}
         cancellingId={cancel.isPending ? cancel.variables?.bookingId ?? null : null}
       >
         {cancelError && (

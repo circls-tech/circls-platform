@@ -34,3 +34,30 @@ export const ROLE_INFO: Record<TenantRole, { label: string; description: string 
 export function formatRole(role: string): string {
   return ROLE_INFO[role as TenantRole]?.label ?? role;
 }
+
+/**
+ * The capabilities the portal hides actions behind. `bookings.cancel` covers
+ * cancelling — and so refunding — a booking, an event registration or a
+ * member's purchase.
+ */
+export type PortalCapability = 'bookings.cancel';
+
+/**
+ * Those capabilities' grants in PARTNER_CAPS (apps/api/src/lib/authz/role_caps.ts).
+ * The API enforces them either way; this only keeps the portal from offering
+ * what it will refuse.
+ */
+const ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
+  owner: ['bookings.cancel'],
+  manager: ['bookings.cancel'],
+  staff: ['bookings.cancel'],
+  readonly: [],
+};
+
+/**
+ * Whether `role` holds `cap`. No role (still loading, or not a member) holds
+ * nothing, and nor does one this build doesn't know yet.
+ */
+export function roleCan(role: TenantRole | null | undefined, cap: PortalCapability): boolean {
+  return role != null && (ROLE_CAPS[role]?.includes(cap) ?? false);
+}

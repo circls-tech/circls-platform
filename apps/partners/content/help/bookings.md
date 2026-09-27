@@ -27,7 +27,7 @@ A booking paid online stays **pending** while the customer completes payment —
 
 ## The booking detail
 
-The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, you'll see a **Refund booking** action.
+The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, Owners, Managers and Staff see a **Refund booking** action; Read-only members can view the booking but not cancel or refund it.
 
 ### Payment methods
 
@@ -45,7 +45,7 @@ automatically. See [QR tickets and door check-in](/help/qr-tickets).
 
 ## Refunding a booking
 
-Refunding a booking also cancels it and releases its slots — the two go together, which is why there is a single action for both.
+Refunding a booking also cancels it and releases its slots — the two go together, which is why there is a single action for both. Owners, Managers and Staff can do it; Read-only members can't.
 
 1. From the booking detail, click **Refund booking**.
 2. The refund page summarises the booking and shows a **refund preview**: what the customer gets back if you refund now, worked out with the same rules as the refund itself:
