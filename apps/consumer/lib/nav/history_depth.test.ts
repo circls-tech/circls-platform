@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { beginVisit, canGoBack, recordBack, recordForward } from './history_depth';
+import {
+  beginVisit,
+  canGoBack,
+  consumeReplace,
+  markReplace,
+  recordBack,
+  recordForward,
+} from './history_depth';
 
 /** Minimal in-memory Storage; `onSet` lets a test make writes fail. */
 function fakeStorage(onSet?: () => void): Storage {
@@ -77,6 +84,30 @@ describe('in-app navigation depth', () => {
     recordBack();
     expect(canGoBack()).toBe(false);
 
+    recordForward();
+    expect(canGoBack()).toBe(true);
+  });
+
+  // Back on a top-level tab replaces the entry rather than pushing one, so the
+  // depth must not grow with it: a counter that outruns our own history ends
+  // with router.back() called when nothing of ours is behind — an inert button.
+  it('recognises the landing of a replace, so the tracker can skip counting it', () => {
+    markReplace('/');
+    expect(consumeReplace('/')).toBe(true);
+  });
+
+  it('matches a marked replace on the path alone, ignoring query and hash', () => {
+    markReplace('/venues?city=bengaluru#list');
+    expect(consumeReplace('/venues')).toBe(true);
+  });
+
+  it('does not let a replace that never landed swallow a later forward', () => {
+    beginVisit();
+    markReplace('/');
+    // The visitor went somewhere else instead, so the mark does not apply —
+    // and is spent, rather than lying in wait for the next navigation.
+    expect(consumeReplace('/events')).toBe(false);
+    expect(consumeReplace('/')).toBe(false);
     recordForward();
     expect(canGoBack()).toBe(true);
   });

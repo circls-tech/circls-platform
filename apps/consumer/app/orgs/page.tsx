@@ -13,7 +13,7 @@ export default function OrgsPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <BackBar fallbackHref="/" />
+        <BackBar href="/" />
         <h1 className="font-display text-4xl font-extrabold text-ink">Organisations</h1>
         <p className="mt-1 mb-6 text-sm text-text-secondary">
           The clubs and organisers running venues, events and memberships on circls.
