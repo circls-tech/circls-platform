@@ -10,6 +10,8 @@ export interface TenantContext {
   role: TenantMember['role'];
   /** True only for the Circls platform tenant. Drives the authz map choice. */
   isPlatform: boolean;
+  /** Circls suspended this (partner) tenant: its members can look, not change. */
+  suspended: boolean;
   /** Terms & Conditions acceptance state — read by assertTermsAccepted. */
   termsVersion: string | null;
   termsAcceptedAt: Date | null;
@@ -29,6 +31,7 @@ export async function requireTenantMembership(
     .select({
       role: tenantMembers.role,
       isPlatform: tenants.isPlatform,
+      status: tenants.status,
       termsVersion: tenants.termsVersion,
       termsAcceptedAt: tenants.termsAcceptedAt,
     })
@@ -42,6 +45,7 @@ export async function requireTenantMembership(
     userId,
     role: row.role,
     isPlatform: row.isPlatform,
+    suspended: !row.isPlatform && row.status === 'suspended',
     termsVersion: row.termsVersion,
     termsAcceptedAt: row.termsAcceptedAt,
   };

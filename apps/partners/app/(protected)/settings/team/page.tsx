@@ -15,7 +15,7 @@ import {
   useUpdateMemberRole,
 } from '@/lib/api/queries';
 import type { TeamMember, TenantRole } from '@/lib/api/types';
-import { ROLE_INFO, ROLE_ORDER, roleCan, roleCanActOn } from '@/lib/roles';
+import { ROLE_INFO, ROLE_ORDER, roleCanActOn } from '@/lib/roles';
 
 export default function TeamPage() {
   const { activeTenantId } = useOrg();
@@ -24,12 +24,12 @@ export default function TeamPage() {
   const { data: me } = useMe();
   // Managing the team needs its own capabilities, and never reaches above your
   // own role: a Manager can't make, change or remove an Owner.
-  const { role: myRole } = useMyRole(tenantId);
+  const { role: myRole, can } = useMyRole(tenantId);
   const grantable = ROLE_ORDER.filter((r) => roleCanActOn(myRole, r));
-  const canInvite = roleCan(myRole, 'members.invite');
-  const canChangeRoles = roleCan(myRole, 'members.role_change');
-  const canRemove = roleCan(myRole, 'members.remove');
-  const canEditOthers = roleCan(myRole, 'members.update');
+  const canInvite = can('members.invite');
+  const canChangeRoles = can('members.role_change');
+  const canRemove = can('members.remove');
+  const canEditOthers = can('members.update');
 
   const dateTimeFmt = useMemo(
     () =>

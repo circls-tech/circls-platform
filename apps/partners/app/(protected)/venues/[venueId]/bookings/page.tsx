@@ -16,7 +16,6 @@ import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurr
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
-import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -221,10 +220,10 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
   const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
   const { data: paymentRows } = useBookingPayments(bookingId);
   const { activeTenantId } = useOrg();
-  const { role } = useMyRole(activeTenantId);
+  const { can } = useMyRole(activeTenantId);
 
   // Read-only members can't cancel (or so refund) a booking.
-  const isCancellable = detail && detail.status !== 'cancelled' && roleCan(role, 'bookings.cancel');
+  const isCancellable = detail && detail.status !== 'cancelled' && can('bookings.cancel');
 
   return (
     <>

@@ -7,7 +7,6 @@ import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
 import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
-import { roleCan } from '@/lib/roles';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
@@ -71,7 +70,7 @@ export default function NewEventPage() {
   const { data: venues } = useVenues(tenantId);
   // The ?tenantId link param first; without it, the active organisation.
   const { activeTenantId } = useOrg();
-  const { role, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
+  const { can, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -184,7 +183,7 @@ export default function NewEventPage() {
   }
 
   // Only once the role is known, so Owners and Managers never see it flash up.
-  if (!roleLoading && !roleCan(role, 'events.write')) {
+  if (!roleLoading && !can('events.write')) {
     return (
       <div className="flex flex-col gap-6">
         <Link

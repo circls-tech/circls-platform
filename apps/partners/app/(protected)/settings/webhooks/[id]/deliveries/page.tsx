@@ -6,7 +6,6 @@ import { useParams } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { RoleNotice } from '@/components/RoleNotice';
-import { roleCan } from '@/lib/roles';
 import { useMyRole, useWebhookDeliveries } from '@/lib/api/queries';
 import type { WebhookDeliveryItem } from '@/lib/api/types';
 import { Badge } from '@/lib/ui/Badge';
@@ -53,7 +52,7 @@ export default function WebhookDeliveriesPage() {
   const subId = params.id;
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
-  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
   const dtFmt = useMemo(
     () =>
@@ -82,7 +81,7 @@ export default function WebhookDeliveriesPage() {
   const rows: WebhookDeliveryItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
   // Integration settings are for Owners and Managers (integration.api_keys.manage).
-  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+  if (!roleLoading && !can('integration.api_keys.manage')) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-4">

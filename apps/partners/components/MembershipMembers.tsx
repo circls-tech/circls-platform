@@ -15,7 +15,6 @@ import type {
   MemberStatus,
   MemberStatusCounts,
 } from '@/lib/api/types';
-import { roleCan } from '@/lib/roles';
 import { Button, Input, StatusPill } from '@/lib/ui';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
@@ -93,9 +92,9 @@ export function MembershipMembers({
   // Adding a member or moving their dates is desk work (bookings.create);
   // cancelling one — and refunding, which cancels the booking behind the
   // purchase — is bookings.cancel. Staff hold both; Read-only neither.
-  const { role } = useMyRole(tenantId);
-  const canAdd = roleCan(role, 'bookings.create');
-  const canCancel = roleCan(role, 'bookings.cancel');
+  const { can } = useMyRole(tenantId);
+  const canAdd = can('bookings.create');
+  const canCancel = can('bookings.cancel');
   // Controlled when a Reception button owns the state, uncontrolled otherwise.
   // Never open for a role that can't add a member, even if a Reception button asks.
   const [ownAdding, setOwnAdding] = useState(false);

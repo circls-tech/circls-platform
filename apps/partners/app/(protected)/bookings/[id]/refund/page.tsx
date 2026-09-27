@@ -14,7 +14,7 @@ import type { CancelResult } from '@/lib/api/types';
 import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
-import { roleCan } from '@/lib/roles';
+import { RoleNotice } from '@/components/RoleNotice';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
 
@@ -50,8 +50,8 @@ export default function RefundBookingPage() {
 
   // Owners, Managers and Staff can cancel (and so refund); Read-only can't.
   const { activeTenantId } = useOrg();
-  const { role, isLoading: roleLoading } = useMyRole(activeTenantId);
-  const canCancel = roleCan(role, 'bookings.cancel');
+  const { can, isLoading: roleLoading } = useMyRole(activeTenantId);
+  const canCancel = can('bookings.cancel');
   const cancellable = Boolean(booking) && !isAlreadyCancelled && !result;
 
   // The server works the preview out with the cancel's own rules and inputs
@@ -141,11 +141,7 @@ export default function RefundBookingPage() {
           </Card>
 
           {cancellable && !roleLoading && !canCancel && (
-            <Card>
-              <p className="py-2 text-sm text-slate-600">
-                Your role can&apos;t cancel or refund bookings — Owners, Managers and Staff can.
-              </p>
-            </Card>
+            <RoleNotice>Your role can&apos;t cancel or refund bookings — Owners, Managers and Staff can.</RoleNotice>
           )}
 
           {/* Refund preview */}

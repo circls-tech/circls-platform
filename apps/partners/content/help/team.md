@@ -55,6 +55,10 @@ A member's **phone number** can't be typed in here — phone numbers on circls a
 
 Owners and managers can remove members: in the **Members** list, click **Remove** next to the person and confirm. Their access is revoked immediately — there's no grace period — so double-check before removing an owner or manager. Only an Owner can remove another Owner, and the last Owner can't be removed. Any member can remove themselves to leave the organisation.
 
+## If your organisation is suspended
+
+Circls can suspend an organisation — for example over an unpaid bill or a policy issue. While it is suspended, a banner says so at the top of every page, and every member, whatever their role, can still **view** everything: bookings, customers, events, memberships, reports. Nothing can be **changed**: no new bookings or registrations, cancellations or refunds, edits, invitations, role changes, API keys or webhooks, and passes can be looked up at the door but not admitted. Customers can still cancel their own bookings, and you can still raise a support issue with Circls from the Help page.
+
 ## Tips
 
 - Keep at least one **owner** on the organisation at all times.

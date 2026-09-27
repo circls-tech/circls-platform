@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Forbidden } from '../lib/errors.js';
 import type { TenantContext } from './tenant_context.js';
-import { assertCap } from './require_cap.js';
+import { assertCap, assertTenantActive } from './require_cap.js';
 
 function ctx(overrides: Partial<TenantContext> = {}): TenantContext {
   return {
@@ -9,11 +9,36 @@ function ctx(overrides: Partial<TenantContext> = {}): TenantContext {
     userId: '00000000-0000-0000-0000-000000000001',
     role: 'owner',
     isPlatform: false,
+    suspended: false,
     termsVersion: null,
     termsAcceptedAt: null,
     ...overrides,
   };
 }
+
+describe('a suspended tenant', () => {
+  it('keeps the read capabilities', () => {
+    expect(() => assertCap(ctx({ suspended: true }), 'bookings.read')).not.toThrow();
+    expect(() => assertCap(ctx({ suspended: true }), 'financials.read')).not.toThrow();
+  });
+
+  it('loses every other one, even for an Owner, with its own code', () => {
+    for (const cap of ['venues.write', 'bookings.cancel', 'payments.refund'] as const) {
+      try {
+        assertCap(ctx({ suspended: true }), cap);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(Forbidden);
+        expect((err as Forbidden).code).toBe('tenant_suspended');
+      }
+    }
+  });
+
+  it('fails assertTenantActive', () => {
+    expect(() => assertTenantActive(ctx({ suspended: true }))).toThrow(Forbidden);
+    expect(() => assertTenantActive(ctx())).not.toThrow();
+  });
+});
 
 describe('assertCap()', () => {
   it('allows owner to write venues', () => {

@@ -17,7 +17,6 @@ import {
 } from '@/lib/api/queries';
 import { type CurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
-import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 import { fmtTzOffset } from '@/lib/time';
 import {
@@ -176,8 +175,8 @@ export default function ScheduleBuilderPage() {
   // Everything here feeds "Release schedule", so a role that can't release
   // gets a notice instead — only once the role has loaded, so the notice
   // never flashes at those who can.
-  const { role, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
-  const cannotSchedule = !roleLoading && !roleCan(role, 'schedules.write');
+  const { can, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
+  const cannotSchedule = !roleLoading && !can('schedules.write');
 
   // ── Form state ──
   const [startDate, setStartDate] = useState(today);

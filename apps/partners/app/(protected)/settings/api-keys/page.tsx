@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { RoleNotice } from '@/components/RoleNotice';
-import { roleCan } from '@/lib/roles';
 import {
   useApiKeys,
   useMyRole,
@@ -27,7 +26,7 @@ interface NewKey {
 export default function ApiKeysPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
-  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
 
   const fmt = useMemo(
@@ -86,7 +85,7 @@ export default function ApiKeysPage() {
   }
 
   // Integration settings are for Owners and Managers (integration.api_keys.manage).
-  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+  if (!roleLoading && !can('integration.api_keys.manage')) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-4">

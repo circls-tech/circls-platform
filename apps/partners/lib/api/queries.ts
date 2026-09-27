@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { type PortalCapability, isSuspended, roleCan } from '@/lib/roles';
 import { apiFetch } from './client';
 import type {
   Analytics,
@@ -920,18 +921,28 @@ export function useTeamMembers(tenantId: string) {
  * The signed-in user's role in `tenantId`, read off the team list (every
  * partner role can read it). `role` is null until the lists are in, or when
  * they aren't a member; `isLoading` tells the two apart.
+ *
+ * `can(cap)` is what to gate a control on: the role's grant, withheld while
+ * Circls has the organisation suspended (it can then be viewed, not changed).
  */
 export function useMyRole(tenantId: string | null | undefined): {
   role: TenantRole | null;
   isLoading: boolean;
+  suspended: boolean;
+  can: (cap: PortalCapability) => boolean;
 } {
   const me = useMe();
   const members = useTeamMembers(tenantId ?? '');
+  const { data: tenants } = useMyTenants();
+  const role = members.data?.find((m) => m.userId === me.data?.id)?.role ?? null;
+  const suspended = isSuspended(tenants?.find((t) => t.id === tenantId));
   return {
-    role: members.data?.find((m) => m.userId === me.data?.id)?.role ?? null,
+    role,
     // isPending rather than isLoading: a query still waiting for its tenant id
     // is disabled, not fetching, but it has no answer yet either.
     isLoading: me.isPending || members.isPending,
+    suspended,
+    can: (cap) => !suspended && roleCan(role, cap),
   };
 }
 

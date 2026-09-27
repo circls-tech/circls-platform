@@ -5,6 +5,13 @@ import { PARTNER_CAPS, PLATFORM_CAPS } from './role_caps.js';
 export interface AuthzContext {
   role: TenantRole;
   isPlatform: boolean;
+  /** A suspended tenant keeps its read capabilities and loses the rest. */
+  suspended?: boolean;
+}
+
+/** The capabilities that only read: all a suspended tenant keeps. */
+export function isReadCapability(cap: Capability): boolean {
+  return cap.endsWith('.read');
 }
 
 /**
@@ -13,6 +20,7 @@ export interface AuthzContext {
  * (≤ 30 caps × 4 roles).
  */
 export function can(ctx: AuthzContext, cap: Capability): boolean {
+  if (ctx.suspended && !isReadCapability(cap)) return false;
   const map = ctx.isPlatform ? PLATFORM_CAPS : PARTNER_CAPS;
   return map[ctx.role].includes(cap);
 }

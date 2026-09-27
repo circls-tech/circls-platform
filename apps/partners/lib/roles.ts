@@ -1,4 +1,4 @@
-import type { TenantRole } from '@/lib/api/types';
+import type { Tenant, TenantRole } from '@/lib/api/types';
 
 /**
  * Display metadata for partner-tenant roles. Descriptions must stay in sync
@@ -29,6 +29,11 @@ export const ROLE_INFO: Record<TenantRole, { label: string; description: string 
       'View-only access to everything, including financial reports and analytics. Cannot create, change or delete anything — except checking customers in at the door.',
   },
 };
+
+/** Whether Circls has `tenant` suspended: it can then be viewed but not changed. */
+export function isSuspended(tenant: Pick<Tenant, 'status' | 'isPlatform'> | undefined): boolean {
+  return tenant?.status === 'suspended' && !tenant.isPlatform;
+}
 
 /** Label for a role value that may come back untyped from the API. */
 export function formatRole(role: string): string {
