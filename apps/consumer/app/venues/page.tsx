@@ -26,7 +26,7 @@ export default function VenuesPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <BackBar fallbackHref="/" />
+        <BackBar href="/" />
         <div className="mb-8 max-w-xl">
           <h1 className="font-display text-4xl font-extrabold text-ink">Find a venue</h1>
           <p className="mt-1 text-sm text-text-secondary">

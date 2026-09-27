@@ -3,21 +3,37 @@ import { useRouter } from 'next/navigation';
 import { canGoBack } from '@/lib/nav/history_depth';
 
 /**
- * A subtle, on-brand "← Back" affordance. Returns the visitor to the previous
- * page they saw *within circls*. When there is no such page — a scanned QR, a
- * shared link, a search result, a new tab — it falls back to `fallbackHref`, so
- * the button is never a dead end.
+ * A subtle, on-brand "← Back" affordance, in two flavours.
+ *
+ * By default it returns the visitor to the previous page they saw *within
+ * circls*, falling back to `fallbackHref` when there is no such page — a
+ * scanned QR, a shared link, a search result, a new tab — so the button is
+ * never a dead end. That is what a detail page wants: back to the list you
+ * came from.
+ *
+ * Pass `href` instead on the header's top-level tabs. Stepping back through
+ * history there lands on whichever tab was browsed before, which reads as
+ * sideways rather than out; a fixed destination makes the button mean one
+ * thing on those pages — leave, to here.
  */
 export function BackBar({
+  href,
   fallbackHref = '/',
   className = '',
 }: {
+  /** Always go here, never through history. For the top-level tabs. */
+  href?: string;
+  /** Where to land when there is no in-app page to go back to. */
   fallbackHref?: string;
   className?: string;
 }) {
   const router = useRouter();
 
   function goBack() {
+    if (href) {
+      router.push(href);
+      return;
+    }
     // Only step back through pages we navigated to ourselves. window.history
     // counts other origins too, and router.back() won't traverse to one, so
     // trusting it left the button inert for anyone arriving from a search
