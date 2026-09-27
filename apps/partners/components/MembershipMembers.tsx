@@ -90,12 +90,16 @@ export function MembershipMembers({
   const addMember = useAddMember(tenantId);
   const updateMember = useUpdateMember(tenantId);
   const refundMember = useRefundMember(tenantId);
-  // Refunding cancels the booking behind the purchase, which Read-only can't.
+  // Adding a member or moving their dates is desk work (bookings.create);
+  // cancelling one — and refunding, which cancels the booking behind the
+  // purchase — is bookings.cancel. Staff hold both; Read-only neither.
   const { role } = useMyRole(tenantId);
-  const canRefund = roleCan(role, 'bookings.cancel');
+  const canAdd = roleCan(role, 'bookings.create');
+  const canCancel = roleCan(role, 'bookings.cancel');
   // Controlled when a Reception button owns the state, uncontrolled otherwise.
+  // Never open for a role that can't add a member, even if a Reception button asks.
   const [ownAdding, setOwnAdding] = useState(false);
-  const adding = walkInOpen ?? ownAdding;
+  const adding = canAdd && (walkInOpen ?? ownAdding);
   const setAdding = (open: boolean) => {
     if (walkInOpen === undefined) setOwnAdding(open);
     onWalkInOpenChange?.(open);
@@ -241,23 +245,25 @@ export function MembershipMembers({
     const expired = p2.status === 'expired';
     return (
       <span className="flex flex-wrap items-center gap-1">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            setEditingId(p2.userMembershipId);
-            setEditRange({
-              startsAt: toDateInput(p2.startsAt),
-              endsAt: toDateInput(p2.endsAt),
-            });
-          }}
-          {...(expired ? { title: 'Move the end date into the future to renew them' } : {})}
-        >
-          {expired ? 'Renew' : 'Edit dates'}
-        </Button>
+        {canAdd && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditingId(p2.userMembershipId);
+              setEditRange({
+                startsAt: toDateInput(p2.startsAt),
+                endsAt: toDateInput(p2.endsAt),
+              });
+            }}
+            {...(expired ? { title: 'Move the end date into the future to renew them' } : {})}
+          >
+            {expired ? 'Renew' : 'Edit dates'}
+          </Button>
+        )}
         {/* Only where circls took money. A hand-added or free membership has
             nothing to give back, so offering Refund would be a lie. */}
-        {p2.refundable && canRefund && (
+        {p2.refundable && canCancel && (
           <Button
             variant="danger"
             size="sm"
@@ -268,7 +274,7 @@ export function MembershipMembers({
             Refund
           </Button>
         )}
-        {p2.status !== 'cancelled' && (
+        {p2.status !== 'cancelled' && canCancel && (
           <Button
             variant="secondary"
             size="sm"
@@ -384,13 +390,13 @@ export function MembershipMembers({
             </Button>
           </div>
         </form>
-      ) : (
+      ) : canAdd ? (
         <div className="flex justify-end">
           <Button petal="#BCE3A0" size="sm" onClick={() => setAdding(true)}>
             Add member
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 

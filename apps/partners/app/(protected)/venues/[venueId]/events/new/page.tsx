@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
-import { useVenues, uploadEventImageFile } from '@/lib/api/queries';
+import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
+import { useOrg } from '@/lib/org_context';
+import { roleCan } from '@/lib/roles';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
 import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
@@ -21,6 +23,7 @@ import {
 } from '@/components/PostBookingRedirectEditor';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
+import { RoleNotice } from '@/components/RoleNotice';
 import {
   RecurrenceEditor,
   emptyRecurrence,
@@ -66,6 +69,9 @@ export default function NewEventPage() {
   const currency = useCurrency({ venueId });
   // For Advanced-settings venue overrides on recurring events (needs tenantId).
   const { data: venues } = useVenues(tenantId);
+  // The ?tenantId link param first; without it, the active organisation.
+  const { activeTenantId } = useOrg();
+  const { role, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -175,6 +181,22 @@ export default function NewEventPage() {
     } catch (e) {
       setErr((e as Error).message);
     }
+  }
+
+  // Only once the role is known, so Owners and Managers never see it flash up.
+  if (!roleLoading && !roleCan(role, 'events.write')) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Link
+          href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}
+          className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
+        >
+          &larr; Events
+        </Link>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
+        <RoleNotice>Your role can’t create events — Owners and Managers can.</RoleNotice>
+      </div>
+    );
   }
 
   return (

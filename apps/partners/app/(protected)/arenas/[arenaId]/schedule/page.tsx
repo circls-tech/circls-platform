@@ -4,10 +4,12 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
+import { RoleNotice } from '@/components/RoleNotice';
 import { Button, Card, Input } from '@/lib/ui';
 import {
   useArena,
   useArenaSlots,
+  useMyRole,
   useReleaseSlots,
   useVenues,
   type ReleaseCell,
@@ -15,6 +17,7 @@ import {
 } from '@/lib/api/queries';
 import { type CurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
+import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 import { fmtTzOffset } from '@/lib/time';
 import {
@@ -168,6 +171,13 @@ export default function ScheduleBuilderPage() {
   // only — slots are generated and released in the venue's tz.
   const { resolveTz } = useTimezone();
   const effectiveTz = resolveTz(tz);
+
+  // ── Role ──
+  // Everything here feeds "Release schedule", so a role that can't release
+  // gets a notice instead — only once the role has loaded, so the notice
+  // never flashes at those who can.
+  const { role, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
+  const cannotSchedule = !roleLoading && !roleCan(role, 'schedules.write');
 
   // ── Form state ──
   const [startDate, setStartDate] = useState(today);
@@ -421,79 +431,83 @@ export default function ScheduleBuilderPage() {
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Schedule Builder</h1>
 
       {/* Config form */}
-      <Card title="Configure schedule">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Input label="Start date" type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDerived(); }} />
-          <Input label="End date" type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); clearDerived(); }} />
-          <Input
-            label="Business day starts at"
-            type="time"
-            value={dayStartTime}
-            hint="Day runs 24h from here"
-            onChange={(e) => { setDayStartTime(e.target.value); clearDerived(); }}
-          />
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Quantization</label>
-            <select
-              value={quantizationMin}
-              onChange={(e) => { setQuantizationMin(Number(e.target.value)); clearDerived(); }}
-              className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300 transition-colors duration-150"
-            >
-              <option value={30}>30 min</option>
-              <option value={60}>60 min</option>
-              <option value={90}>90 min</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Pricing bands */}
-        <div className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Pricing bands</label>
-            <span className="text-xs text-slate-400">
-              Each band covers a time range at one price. An end ≤ start crosses midnight; set end = start for 24 hours.
-            </span>
+      {cannotSchedule ? (
+        <RoleNotice>Your role can’t change the schedule — Owners and Managers can.</RoleNotice>
+      ) : (
+        <Card title="Configure schedule">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Input label="Start date" type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDerived(); }} />
+            <Input label="End date" type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); clearDerived(); }} />
+            <Input
+              label="Business day starts at"
+              type="time"
+              value={dayStartTime}
+              hint="Day runs 24h from here"
+              onChange={(e) => { setDayStartTime(e.target.value); clearDerived(); }}
+            />
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Quantization</label>
+              <select
+                value={quantizationMin}
+                onChange={(e) => { setQuantizationMin(Number(e.target.value)); clearDerived(); }}
+                className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300 transition-colors duration-150"
+              >
+                <option value={30}>30 min</option>
+                <option value={60}>60 min</option>
+                <option value={90}>90 min</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            {bands.map((b, i) => (
-              <div key={i} className="flex flex-wrap items-end gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2">
-                <Input label={i === 0 ? 'From' : undefined} type="time" value={b.startTime} onChange={(e) => updateBand(i, { startTime: e.target.value })} />
-                <span className="pb-2 text-slate-400">→</span>
-                <Input label={i === 0 ? 'To' : undefined} type="time" value={b.endTime} onChange={(e) => updateBand(i, { endTime: e.target.value })} />
-                <Input
-                  label={i === 0 ? `Price (${currencySymbol(currency)})` : undefined}
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={b.priceRupees}
-                  onChange={(e) => updateBand(i, { priceRupees: Number(e.target.value) })}
-                />
-                <Button size="sm" variant="ghost" onClick={() => removeBand(i)} aria-label="Remove band" className="mb-0.5 text-red-500">
-                  Remove
-                </Button>
-              </div>
-            ))}
+          {/* Pricing bands */}
+          <div className="mt-6">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Pricing bands</label>
+              <span className="text-xs text-slate-400">
+                Each band covers a time range at one price. An end ≤ start crosses midnight; set end = start for 24 hours.
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {bands.map((b, i) => (
+                <div key={i} className="flex flex-wrap items-end gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2">
+                  <Input label={i === 0 ? 'From' : undefined} type="time" value={b.startTime} onChange={(e) => updateBand(i, { startTime: e.target.value })} />
+                  <span className="pb-2 text-slate-400">→</span>
+                  <Input label={i === 0 ? 'To' : undefined} type="time" value={b.endTime} onChange={(e) => updateBand(i, { endTime: e.target.value })} />
+                  <Input
+                    label={i === 0 ? `Price (${currencySymbol(currency)})` : undefined}
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={b.priceRupees}
+                    onChange={(e) => updateBand(i, { priceRupees: Number(e.target.value) })}
+                  />
+                  <Button size="sm" variant="ghost" onClick={() => removeBand(i)} aria-label="Remove band" className="mb-0.5 text-red-500">
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3">
+              <Button onClick={addBand} variant="ghost" size="sm">
+                + Add band
+              </Button>
+            </div>
           </div>
 
-          <div className="mt-3">
-            <Button onClick={addBand} variant="ghost" size="sm">
-              + Add band
+          <div className="mt-4">
+            <Button onClick={handleBuildPreview} variant="secondary">
+              Generate preview
             </Button>
           </div>
-        </div>
 
-        <div className="mt-4">
-          <Button onClick={handleBuildPreview} variant="secondary">
-            Generate preview
-          </Button>
-        </div>
-
-        {validationError && <p className="mt-3 text-sm text-red-600">{validationError}</p>}
-      </Card>
+          {validationError && <p className="mt-3 text-sm text-red-600">{validationError}</p>}
+        </Card>
+      )}
 
       {/* Preview grid */}
-      {previewSlots && (
+      {!cannotSchedule && previewSlots && (
         <>
           <Card
             title="Preview grid"

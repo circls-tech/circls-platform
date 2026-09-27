@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/events';
 import { useVenues } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
+import { useCan } from '@/lib/use_can';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
@@ -100,6 +101,8 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
   const create = useCreateEventChangeRequest(tenantId);
   const withdraw = useWithdrawEventChangeRequest(tenantId);
   const { data: venues } = useVenues(tenantId);
+  // Anyone can see where a request stands; only Owners and Managers make or withdraw one.
+  const canWrite = useCan('events.write', tenantId);
 
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +258,9 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     }
   }
 
+  // Nothing to see and nothing they could do: no card at all.
+  if (!canWrite && !latest) return null;
+
   return (
     <Card title="Request changes">
       <p className="mb-4 text-xs text-slate-500">
@@ -269,27 +275,30 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
             Changes submitted — awaiting circls review:{' '}
             <span className="font-medium">{friendlyFields(pending.patch).join(', ')}</span>
           </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={withdraw.isPending}
-            onClick={() => {
-              setError(null);
-              withdraw.mutate(
-                { eventId: ev.id, requestId: pending.id },
-                { onError: (e) => setError((e as Error).message) },
-              );
-            }}
-          >
-            Withdraw
-          </Button>
+          {canWrite && (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={withdraw.isPending}
+              onClick={() => {
+                setError(null);
+                withdraw.mutate(
+                  { eventId: ev.id, requestId: pending.id },
+                  { onError: (e) => setError((e as Error).message) },
+                );
+              }}
+            >
+              Withdraw
+            </Button>
+          )}
         </div>
       )}
 
       {!pending && latest?.status === 'rejected' && (
         <p className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           Your last request ({friendlyFields(latest.patch).join(', ')}) was declined
-          {latest.reason ? <>: &ldquo;{latest.reason}&rdquo;</> : '.'} You can submit a new one.
+          {latest.reason ? <>: &ldquo;{latest.reason}&rdquo;</> : '.'}
+          {canWrite && ' You can submit a new one.'}
         </p>
       )}
 
@@ -305,7 +314,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
         </p>
       )}
 
-      {!pending && !open && (
+      {canWrite && !pending && !open && (
         <Button variant="secondary" size="sm" onClick={openForm}>
           Request changes
         </Button>
@@ -456,9 +465,11 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
             >
               Cancel
             </Button>
-            <Button type="submit" loading={create.isPending}>
-              Submit for approval
-            </Button>
+            {canWrite && (
+              <Button type="submit" loading={create.isPending}>
+                Submit for approval
+              </Button>
+            )}
           </div>
         </form>
       )}

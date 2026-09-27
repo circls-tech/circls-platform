@@ -7,6 +7,7 @@ import { formatMoney, useCurrency } from '@/lib/currency';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
+import { useCan } from '@/lib/use_can';
 
 function fmt(iso: string, tz: string) {
   return new Intl.DateTimeFormat('en-IN', {
@@ -25,6 +26,7 @@ export default function VenueEventsPage() {
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const { data: events, isLoading } = useVenueEvents(venueId);
   const publish = usePublishEvent(tenantId, venueId);
+  const canWrite = useCan('events.write', tenantId);
   const currency = useCurrency({ venueId });
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -48,12 +50,14 @@ export default function VenueEventsPage() {
       </Link>
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
-        <Link
-          href={`/venues/${venueId}/events/new${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-brand-700"
-        >
-          + New event
-        </Link>
+        {canWrite && (
+          <Link
+            href={`/venues/${venueId}/events/new${tenantId ? `?tenantId=${tenantId}` : ''}`}
+            className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-brand-700"
+          >
+            + New event
+          </Link>
+        )}
       </div>
 
       {errorMsg && (
@@ -69,7 +73,13 @@ export default function VenueEventsPage() {
         {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading…</p>}
         {!isLoading && events?.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-400">
-            No events yet. Click <span className="font-medium">+ New event</span> to create one.
+            No events yet.
+            {canWrite && (
+              <>
+                {' '}
+                Click <span className="font-medium">+ New event</span> to create one.
+              </>
+            )}
           </p>
         )}
         {!isLoading && events && events.length > 0 && (
@@ -113,7 +123,7 @@ export default function VenueEventsPage() {
                       <StatusPill status={ev.status} />
                     </td>
                     <td className="py-2.5">
-                      {ev.status === 'draft' && (
+                      {canWrite && ev.status === 'draft' && (
                         <Button
                           petal="#A7E3BF"
                           size="sm"

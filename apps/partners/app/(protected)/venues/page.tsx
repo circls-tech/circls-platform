@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues, useCreateVenue } from '@/lib/api/queries';
+import { useCan } from '@/lib/use_can';
 import { Badge, Button, Card, Input, Modal, StatusPill, TagsInput } from '@/lib/ui';
 import type { Venue } from '@/lib/api/types';
 
@@ -106,7 +107,8 @@ function VenueList({
   onAddVenue,
 }: {
   tenantId: string;
-  onAddVenue: () => void;
+  /** Omitted for a role that can't add venues, hiding the button. */
+  onAddVenue?: () => void;
 }) {
   const { data: venues, isLoading } = useVenues(tenantId);
   const [shelf, setShelf] = useState<VenueShelf>('open');
@@ -121,9 +123,11 @@ function VenueList({
         <p className="text-sm text-slate-500">
           No venues yet for this organization.
         </p>
-        <Button variant="secondary" size="sm" onClick={onAddVenue}>
-          + Add venue
-        </Button>
+        {onAddVenue && (
+          <Button variant="secondary" size="sm" onClick={onAddVenue}>
+            + Add venue
+          </Button>
+        )}
       </Card>
     );
   }
@@ -206,6 +210,7 @@ export default function VenuesPage() {
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId);
   const [showAddVenue, setShowAddVenue] = useState(false);
+  const canAddVenue = useCan('venues.write', activeTenantId);
 
   if (!activeTenantId) {
     return (
@@ -229,11 +234,16 @@ export default function VenuesPage() {
             <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>
           )}
         </div>
-        <Button variant="primary" size="sm" petal="#BCE3A0" onClick={() => setShowAddVenue(true)}>
-          + Add venue
-        </Button>
+        {canAddVenue && (
+          <Button variant="primary" size="sm" petal="#BCE3A0" onClick={() => setShowAddVenue(true)}>
+            + Add venue
+          </Button>
+        )}
       </div>
-      <VenueList tenantId={activeTenantId} onAddVenue={() => setShowAddVenue(true)} />
+      <VenueList
+        tenantId={activeTenantId}
+        onAddVenue={canAddVenue ? () => setShowAddVenue(true) : undefined}
+      />
       <AddVenueModal
         tenantId={activeTenantId}
         open={showAddVenue}

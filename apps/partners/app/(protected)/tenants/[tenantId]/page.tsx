@@ -3,12 +3,14 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useCreateVenue, useVenues } from '@/lib/api/queries';
+import { useCan } from '@/lib/use_can';
 import { StatusPill } from '@/lib/ui';
 
 export default function TenantPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const { data: venues, isLoading } = useVenues(tenantId);
   const createVenue = useCreateVenue(tenantId);
+  const canAddVenue = useCan('venues.write', tenantId);
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
@@ -50,31 +52,33 @@ export default function TenantPage() {
         ))}
         {venues?.length === 0 && <p className="text-sm text-gray-500">No venues yet.</p>}
       </ul>
-      <form
-        onSubmit={onCreate}
-        className="flex max-w-md flex-col gap-2 rounded border border-gray-200 bg-white p-4"
-      >
-        <h2 className="font-medium">Add a venue</h2>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Venue name"
-          className="rounded border border-gray-300 px-3 py-2"
-        />
-        <button
-          type="submit"
-          disabled={createVenue.isPending}
-          className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
+      {canAddVenue && (
+        <form
+          onSubmit={onCreate}
+          className="flex max-w-md flex-col gap-2 rounded border border-gray-200 bg-white p-4"
         >
-          {createVenue.isPending ? 'Adding…' : 'Add venue'}
-        </button>
-        {created && (
-          <p className="text-sm text-amber-700">
-            Venue created. It’s now pending review by Circls before it goes live.
-          </p>
-        )}
-        {err && <p className="text-sm text-red-600">{err}</p>}
-      </form>
+          <h2 className="font-medium">Add a venue</h2>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Venue name"
+            className="rounded border border-gray-300 px-3 py-2"
+          />
+          <button
+            type="submit"
+            disabled={createVenue.isPending}
+            className="rounded bg-brand-600 px-4 py-2 text-slate-900 disabled:opacity-50"
+          >
+            {createVenue.isPending ? 'Adding…' : 'Add venue'}
+          </button>
+          {created && (
+            <p className="text-sm text-amber-700">
+              Venue created. It’s now pending review by Circls before it goes live.
+            </p>
+          )}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </form>
+      )}
     </div>
   );
 }

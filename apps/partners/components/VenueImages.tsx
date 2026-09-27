@@ -16,7 +16,14 @@ const MAX_IMAGES = 12;
  * presigned PUT (see useUploadVenueImage); reads use the public URL. All of the
  * gallery UI lives in ImageGalleryEditor; this only binds the venue hooks.
  */
-export function VenueImages({ venueId }: { venueId: string }) {
+export function VenueImages({
+  venueId,
+  readOnly = false,
+}: {
+  venueId: string;
+  /** Show the photos without the controls, for a role that can't edit them. */
+  readOnly?: boolean;
+}) {
   const { data: images, isLoading } = useVenueImages(venueId);
   const upload = useUploadVenueImage(venueId);
   const del = useDeleteVenueImage(venueId);
@@ -33,6 +40,7 @@ export function VenueImages({ venueId }: { venueId: string }) {
       deleteImage={(imageId) => del.mutateAsync(imageId)}
       reorder={(imageIds) => reorder.mutateAsync(imageIds)}
       setFocal={(imageId, f) => focal.mutateAsync({ imageId, focal: f })}
+      readOnly={readOnly}
     />
   );
 }

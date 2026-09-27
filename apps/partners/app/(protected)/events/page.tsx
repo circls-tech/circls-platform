@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
+import { useCan } from '@/lib/use_can';
 import {
   useArchiveTenantEvent,
   useCompleteTenantEvent,
@@ -68,6 +69,7 @@ function EventList({ tenantId }: { tenantId: string }) {
   const complete = useCompleteTenantEvent(tenantId);
   const archive = useArchiveTenantEvent(tenantId);
   const reopen = useReopenTenantEvent(tenantId);
+  const canWrite = useCan('events.write', tenantId);
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -168,7 +170,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {seriesSize > 1 && <Badge tone="neutral" label={`Recurring ×${seriesSize}`} />}
                 <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
                 <StatusPill status={ev.status} />
-                {(ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
+                {canWrite && (ev.seriesId ? seriesHasDraft : ev.status === 'draft') && (
                   <Button
                     petal="#A7E3BF"
                     size="sm"
@@ -188,7 +190,8 @@ function EventList({ tenantId }: { tenantId: string }) {
                     straight back on sale — but only while its window is still
                     open, since a reopened past event would be invisible to
                     consumers anyway. */}
-                {!ev.seriesId &&
+                {canWrite &&
+                  !ev.seriesId &&
                   ev.status === 'completed' &&
                   new Date(ev.endsAt) > new Date() && (
                     <Button
@@ -200,7 +203,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                       Reopen
                     </Button>
                   )}
-                {!ev.seriesId && ev.status === 'published' && (
+                {canWrite && !ev.seriesId && ev.status === 'published' && (
                   <Button
                     petal="#FFB0A3"
                     size="sm"
@@ -210,7 +213,8 @@ function EventList({ tenantId }: { tenantId: string }) {
                     End
                   </Button>
                 )}
-                {!ev.seriesId &&
+                {canWrite &&
+                  !ev.seriesId &&
                   (ev.archivedAt ? (
                     <Button
                       petal="#A9C9F2"
@@ -250,6 +254,7 @@ export default function EventsPage() {
   const router = useRouter();
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId);
+  const canWrite = useCan('events.write', activeTenantId);
 
   if (!activeTenantId) {
     return (
@@ -271,9 +276,11 @@ export default function EventsPage() {
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
           {activeTenant && <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button size="sm" petal="#9CE0D4" onClick={() => router.push('/events/new')}>
-          Create event
-        </Button>
+        {canWrite && (
+          <Button size="sm" petal="#9CE0D4" onClick={() => router.push('/events/new')}>
+            Create event
+          </Button>
+        )}
       </div>
       <EventList tenantId={activeTenantId} />
     </div>

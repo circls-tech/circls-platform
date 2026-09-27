@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
 import { type CurrencyCode, asCurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
+import { useCan } from '@/lib/use_can';
 import { Card, StatusPill } from '@/lib/ui';
 import type { AnalyticsTrendDay, MoneyByCurrency } from '@/lib/api/types';
 
@@ -210,6 +211,7 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
 
 function VenuesSection({ tenantId }: { tenantId: string }) {
   const { data: venues, isLoading } = useVenues(tenantId);
+  const canAddVenue = useCan('venues.write', tenantId);
 
   if (isLoading) {
     return (
@@ -223,13 +225,17 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
   if (!venues || venues.length === 0) {
     return (
       <Card className="flex flex-col items-start gap-3">
-        <p className="text-sm text-slate-500">No venues yet. Add your first venue to get started.</p>
-        <Link
-          href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-        >
-          ＋ Add venue
-        </Link>
+        <p className="text-sm text-slate-500">
+          No venues yet.{canAddVenue && ' Add your first venue to get started.'}
+        </p>
+        {canAddVenue && (
+          <Link
+            href="/venues"
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+          >
+            ＋ Add venue
+          </Link>
+        )}
       </Card>
     );
   }
@@ -254,14 +260,16 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
         ))}
       </div>
 
-      <div className="pt-1">
-        <Link
-          href="/venues"
-          className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-        >
-          ＋ Add venue
-        </Link>
-      </div>
+      {canAddVenue && (
+        <div className="pt-1">
+          <Link
+            href="/venues"
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+          >
+            ＋ Add venue
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -139,9 +139,13 @@ export default function ArenaReceptionPage() {
     : cancelRefund.isError
       ? 'Couldn’t work out whether a refund is due — circls decides it when you confirm.'
       : 'Working out the refund…';
-  // Read-only members don't get the Cancel action.
+  // Staff work the desk — booking and cancelling — but not the arena's setup
+  // (prices, blocks, schedule, QR rules, closing it); Read-only does neither.
   const { role } = useMyRole(activeTenantId);
+  const canBook = roleCan(role, 'bookings.create');
   const canCancel = roleCan(role, 'bookings.cancel');
+  const canSchedule = roleCan(role, 'schedules.write');
+  const canEditArena = roleCan(role, 'arenas.write');
 
   // ── Price-change confirm state ──
   const [priceConfirmOpen, setPriceConfirmOpen] = useState(false);
@@ -212,13 +216,16 @@ export default function ArenaReceptionPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-          >
-            Schedule builder →
-          </Link>
-          {arena && (
+          {canSchedule && (
+            <Link
+              href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            >
+              Schedule builder →
+            </Link>
+          )}
+          {/* Closing an arena, like closing its venue, is venues.write. */}
+          {arena && roleCan(role, 'venues.write') && (
             <CloseReopenControl
               noun="arena"
               target={arena}
@@ -244,16 +251,18 @@ export default function ArenaReceptionPage() {
         <Card>
           <div className="flex flex-col gap-2 text-center py-4">
             <p className="text-sm text-slate-500">No slots released for this week.</p>
-            <p className="text-xs text-slate-400">
-              Use the{' '}
-              <Link
-                href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
-                className="font-medium text-brand-600 hover:underline"
-              >
-                schedule builder
-              </Link>{' '}
-              to release slots first.
-            </p>
+            {canSchedule && (
+              <p className="text-xs text-slate-400">
+                Use the{' '}
+                <Link
+                  href={`/arenas/${arenaId}/schedule${tenantId ? `?tenantId=${tenantId}` : ''}`}
+                  className="font-medium text-brand-600 hover:underline"
+                >
+                  schedule builder
+                </Link>{' '}
+                to release slots first.
+              </p>
+            )}
           </div>
         </Card>
       )}
@@ -269,20 +278,22 @@ export default function ArenaReceptionPage() {
           dayStartMin={arena?.businessDayStartMin ?? 0}
           now={now}
           onBulk={handleBulk}
-          onBook={handleBook}
+          onBook={canBook ? handleBook : undefined}
           onCancel={canCancel ? handleCancel : undefined}
+          canSetPrice={roleCan(role, 'pricing.write')}
+          canBlock={canSchedule}
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
         />
       )}
 
-      {/* QR ticket rules */}
+      {/* QR ticket rules: everyone sees them; only arenas.write changes them. */}
       {arena && (
         <Card
           title="QR tickets"
           subtitle="Issue scannable door passes for bookings on this arena. Changes only affect future bookings."
         >
-          <div className="flex max-w-2xl flex-col gap-3">
+          <fieldset disabled={!canEditArena} className="flex min-w-0 max-w-2xl flex-col gap-3">
             <QrTicketConfigEditor
               value={qrConfig}
               onChange={(v) => {
@@ -292,15 +303,17 @@ export default function ArenaReceptionPage() {
               itemNoun="booking"
             />
             {qrErr && <p className="text-sm text-red-600">{qrErr}</p>}
-            <div className="flex items-center justify-end gap-3">
-              {qrSaved && !updateQrConfig.isPending && (
-                <span className="text-xs text-emerald-600">Saved.</span>
-              )}
-              <Button size="sm" loading={updateQrConfig.isPending} onClick={() => void saveQrConfig()}>
-                Save
-              </Button>
-            </div>
-          </div>
+            {canEditArena && (
+              <div className="flex items-center justify-end gap-3">
+                {qrSaved && !updateQrConfig.isPending && (
+                  <span className="text-xs text-emerald-600">Saved.</span>
+                )}
+                <Button size="sm" loading={updateQrConfig.isPending} onClick={() => void saveQrConfig()}>
+                  Save
+                </Button>
+              </div>
+            )}
+          </fieldset>
         </Card>
       )}
 

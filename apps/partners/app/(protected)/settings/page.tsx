@@ -1,8 +1,11 @@
 'use client';
 import Link from 'next/link';
 import { Card } from '@/lib/ui';
+import { useCan } from '@/lib/use_can';
 
 export default function SettingsPage() {
+  // API keys and webhooks are integration settings, for Owners and Managers.
+  const canManageIntegrations = useCan('integration.api_keys.manage');
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -66,28 +69,32 @@ export default function SettingsPage() {
           Manage memberships &rarr;
         </Link>
       </Card>
-      <Card
-        title="API keys"
-        subtitle="Issue and revoke Circls API keys for aggregator integrations."
-      >
-        <Link
-          href="/settings/api-keys"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-        >
-          Manage API keys &rarr;
-        </Link>
-      </Card>
-      <Card
-        title="Outbound webhooks"
-        subtitle="Subscribe a URL to booking and payment events for real-time syncing."
-      >
-        <Link
-          href="/settings/webhooks"
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-        >
-          Manage webhooks &rarr;
-        </Link>
-      </Card>
+      {canManageIntegrations && (
+        <>
+          <Card
+            title="API keys"
+            subtitle="Issue and revoke Circls API keys for aggregator integrations."
+          >
+            <Link
+              href="/settings/api-keys"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+            >
+              Manage API keys &rarr;
+            </Link>
+          </Card>
+          <Card
+            title="Outbound webhooks"
+            subtitle="Subscribe a URL to booking and payment events for real-time syncing."
+          >
+            <Link
+              href="/settings/webhooks"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
+            >
+              Manage webhooks &rarr;
+            </Link>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

@@ -290,9 +290,11 @@ export function EventRegistrations({
   // refund is in full, but not for one that was never paid, already refunded,
   // or is the staff member's own registration.
   const refundPreview = useRefundPreview(pendingCancel?.id ?? null);
-  // Refunding a registration cancels its booking, which Read-only can't do.
+  // Refunding a registration cancels its booking, and adding one makes a
+  // booking — neither of which Read-only can do.
   const { role } = useMyRole(tenantId);
   const canCancel = roleCan(role, 'bookings.cancel');
+  const canBook = roleCan(role, 'bookings.create');
 
   if (isLoading) {
     return (
@@ -328,7 +330,7 @@ export function EventRegistrations({
 
   return (
     <>
-      {canAddRegistration && (
+      {canAddRegistration && canBook && (
         <div className="mb-3 flex justify-end">
           <Button petal="#BCE3A0" size="sm" onClick={() => setAddingRegistration(true)}>
             Add registration
@@ -336,16 +338,18 @@ export function EventRegistrations({
         </div>
       )}
 
-      <AddRegistrationModal
-        open={addingRegistration}
-        tenantId={tenantId}
-        eventId={eventId}
-        eventName={eventName}
-        tiers={tiers}
-        questions={questions}
-        currency={currency}
-        onClose={() => setAddingRegistration(false)}
-      />
+      {canBook && (
+        <AddRegistrationModal
+          open={addingRegistration}
+          tenantId={tenantId}
+          eventId={eventId}
+          eventName={eventName}
+          tiers={tiers}
+          questions={questions}
+          currency={currency}
+          onClose={() => setAddingRegistration(false)}
+        />
+      )}
 
       <RegistrationsTable
         title="Registered"
