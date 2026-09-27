@@ -27,6 +27,23 @@ export function formatPrice(
 }
 
 /**
+ * A ledger total, with its symbol: "₹1,234.56", "-$12.00", "₹0".
+ *
+ * Distinct from {@link formatPrice} in the one case that matters: zero. A
+ * price of nothing is "Free"; a commission of nothing is ₹0. Reading "Free"
+ * in a revenue column is nonsense, and a negative total — a window whose
+ * refunds outweighed its sales — must show its sign rather than be hidden.
+ */
+export function formatTotal(minor: number, currency: CurrencyCode = 'INR'): string {
+  return new Intl.NumberFormat(LOCALE[currency], {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(minor / 100);
+}
+
+/**
  * A ledger amount: fixed two decimals, no symbol ("1,234.56"), for columns
  * whose header already names the currency.
  */

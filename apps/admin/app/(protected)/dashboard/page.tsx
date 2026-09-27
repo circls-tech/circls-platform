@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useAdminStats } from '@/lib/api/queries';
+import { RevenueSection } from '@/components/RevenueSection';
 
 interface TileProps {
   label: string;
@@ -72,6 +73,8 @@ export default function AdminDashboard() {
           Aggregates across every tenant on circls.app.
         </p>
       </div>
+
+      <RevenueSection />
 
       <section>
         <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Tenants</h2>

@@ -782,3 +782,43 @@ export interface AdminQuestionThreadContext {
   /** Historical support_issues by the same user, latest 10. */
   supportIssues: QuestionContextSupportIssue[];
 }
+
+// ── Revenue ────────────────────────────────────────────────────────────
+
+/**
+ * A slice of sales in one currency. `gross` is what customers paid less
+ * refunds; `net` is what the partner is owed once commission comes out — the
+ * money that later shows up in a payout. Slices are never summed across
+ * currencies.
+ */
+export interface RevenueSlice {
+  /** 'slot' | 'event' | 'membership'. */
+  itemType: string;
+  currency: string;
+  grossPaise: number;
+  netPaise: number;
+  commissionPaise: number;
+  refundsPaise: number;
+  bookings: number;
+}
+
+export interface PlatformRevenue {
+  /** ISO-8601; the window these slices cover. */
+  from: string;
+  to: string;
+  slices: RevenueSlice[];
+}
+
+/** A slice belonging to one event, plan or venue. */
+export interface ItemRevenue extends RevenueSlice {
+  itemId: string;
+}
+
+export type RevenueGrouping = 'event' | 'membership' | 'venue';
+
+export interface TenantItemRevenue {
+  from: string;
+  to: string;
+  groupBy: RevenueGrouping;
+  items: ItemRevenue[];
+}

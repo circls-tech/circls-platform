@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   useAdminTenantEvents,
   useAdminTenantMemberships,
+  useAdminTenantRevenue,
   useAdminTenantVenues,
 } from '@/lib/api/queries';
 import type {
@@ -13,8 +14,10 @@ import type {
   AdminTenantMembershipShelf,
   AdminTenantVenueItem,
   AdminTenantVenueShelf,
+  ItemRevenue,
+  RevenueGrouping,
 } from '@/lib/api/types';
-import { formatPrice } from '@/lib/money';
+import { type CurrencyCode, formatPrice, formatTotal } from '@/lib/money';
 
 /**
  * The tenant page's Venues, Events and Memberships tabs: read-only mirrors of
@@ -132,6 +135,11 @@ function Th({ children }: { children: React.ReactNode }) {
   return <th className="px-4 py-2 font-medium">{children}</th>;
 }
 
+/** Money reads right-aligned, so its header does too. */
+function ThRight({ children }: { children: React.ReactNode }) {
+  return <th className="px-4 py-2 text-right font-medium">{children}</th>;
+}
+
 function TableShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -151,10 +159,51 @@ const VENUE_SHELVES: { key: AdminTenantVenueShelf; label: string }[] = [
   { key: 'all', label: 'All' },
 ];
 
+/**
+ * What one event, plan or venue has taken — so an admin asked "how much has
+ * this sold" can answer without waiting for a payout to be reconciled.
+ *
+ * Gross is customer money less refunds; net is what the partner is owed once
+ * commission comes out, which is the figure that later appears in a payout.
+ * A row with no sales shows a dash rather than a zero: nothing has happened
+ * yet, which is different from having taken nothing.
+ */
+function SalesCells({ money }: { money: ItemRevenue | undefined }) {
+  if (!money) {
+    return (
+      <>
+        <td className="px-4 py-2.5 text-right text-xs text-slate-400">—</td>
+        <td className="px-4 py-2.5 text-right text-xs text-slate-400">—</td>
+      </>
+    );
+  }
+  const currency = money.currency as CurrencyCode;
+  return (
+    <>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">
+        {money.bookings}
+      </td>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-800">
+        {formatTotal(money.grossPaise, currency)}
+        <span className="block text-[10px] text-slate-400">
+          net {formatTotal(money.netPaise, currency)}
+        </span>
+      </td>
+    </>
+  );
+}
+
+/** Index one tenant's revenue by the thing that took it. */
+function useRevenueByItem(tenantId: string, groupBy: RevenueGrouping) {
+  const { data } = useAdminTenantRevenue(tenantId, groupBy);
+  return new Map((data?.items ?? []).map((i) => [i.itemId, i]));
+}
+
 export function VenuesTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantVenueShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantVenues(tenantId, shelf);
   const rows: AdminTenantVenueItem[] = data ?? [];
+  const money = useRevenueByItem(tenantId, 'venue');
 
   return (
     <section className="space-y-3">
@@ -192,6 +241,8 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
               <Th>Tags</Th>
               <Th>Status</Th>
               <Th>Created</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -231,6 +282,7 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
                   />
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">{fmtDate(v.createdAt)}</td>
+                <SalesCells money={money.get(v.id)} />
               </tr>
             ))}
           </tbody>
@@ -254,6 +306,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } =
     useAdminTenantEvents(tenantId, scope);
   const rows: AdminTenantEventBillingItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+  const money = useRevenueByItem(tenantId, 'event');
 
   return (
     <section className="space-y-3">
@@ -287,6 +340,8 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
               <Th>Starts</Th>
               <Th>Ends</Th>
               <Th>Status</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -320,6 +375,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
                     {scope === 'all' && ev.archived && <Tag>Archived</Tag>}
                   </span>
                 </td>
+                <SalesCells money={money.get(ev.id)} />
               </tr>
             ))}
           </tbody>
@@ -351,6 +407,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantMembershipShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantMemberships(tenantId, shelf);
   const rows: AdminTenantMembershipItem[] = data ?? [];
+  const money = useRevenueByItem(tenantId, 'membership');
 
   return (
     <section className="space-y-3">
@@ -392,6 +449,8 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
               <Th>Tiers</Th>
               <Th>Status</Th>
               <Th>Created</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -418,6 +477,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
                   <ListingStatusPill status={m.status} />
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">{fmtDate(m.createdAt)}</td>
+                <SalesCells money={money.get(m.id)} />
               </tr>
             ))}
           </tbody>
