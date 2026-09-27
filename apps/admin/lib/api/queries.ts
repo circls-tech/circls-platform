@@ -20,6 +20,9 @@ import type {
   AdminQuestionThreadDetail,
   AdminQuestionThreadListPage,
   AdminStats,
+  PlatformRevenue,
+  RevenueGrouping,
+  TenantItemRevenue,
   AdminSupportIssue,
   AdminSupportIssueFilters,
   AdminEventBillingPatch,
@@ -68,6 +71,34 @@ export function useAdminStats() {
     queryKey: ['admin', 'stats'],
     enabled: Boolean(user),
     queryFn: () => apiFetch<AdminStats>('/v1/admin/stats'),
+  });
+}
+
+/**
+ * Platform sales in a window. Omitting `from` reaches back to the beginning,
+ * which is what the Lifetime preset sends.
+ */
+export function useAdminRevenue(from: string | null, to: string | null) {
+  const { user } = useAuth();
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return useQuery({
+    queryKey: ['admin', 'revenue', from, to],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<PlatformRevenue>(`/v1/admin/revenue${suffix}`),
+  });
+}
+
+/** One org's sales, grouped by the event, plan or venue that took them. */
+export function useAdminTenantRevenue(tenantId: string | null, groupBy: RevenueGrouping) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'revenue', groupBy],
+    enabled: Boolean(user && tenantId),
+    queryFn: () =>
+      apiFetch<TenantItemRevenue>(`/v1/admin/tenants/${tenantId}/revenue?groupBy=${groupBy}`),
   });
 }
 

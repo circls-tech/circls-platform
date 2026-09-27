@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   useAdminTenantEvents,
   useAdminTenantMemberships,
+  useAdminTenantRevenue,
   useAdminTenantVenues,
 } from '@/lib/api/queries';
 import type {
@@ -13,8 +14,11 @@ import type {
   AdminTenantMembershipShelf,
   AdminTenantVenueItem,
   AdminTenantVenueShelf,
+  ItemRevenue,
+  RevenueGrouping,
+  RevenueSlice,
 } from '@/lib/api/types';
-import { formatPrice } from '@/lib/money';
+import { type CurrencyCode, formatPrice, formatTotal } from '@/lib/money';
 
 /**
  * The tenant page's Venues, Events and Memberships tabs: read-only mirrors of
@@ -132,6 +136,11 @@ function Th({ children }: { children: React.ReactNode }) {
   return <th className="px-4 py-2 font-medium">{children}</th>;
 }
 
+/** Money reads right-aligned, so its header does too. */
+function ThRight({ children }: { children: React.ReactNode }) {
+  return <th className="px-4 py-2 text-right font-medium">{children}</th>;
+}
+
 function TableShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -151,10 +160,86 @@ const VENUE_SHELVES: { key: AdminTenantVenueShelf; label: string }[] = [
   { key: 'all', label: 'All' },
 ];
 
+/**
+ * What one event, plan or venue has taken — so an admin asked "how much has
+ * this sold" can answer without waiting for a payout to be reconciled.
+ *
+ * Gross is customer money less refunds; net is what the partner is owed once
+ * commission comes out, which is the figure that later appears in a payout.
+ * A row with no sales shows a dash rather than a zero: nothing has happened
+ * yet, which is different from having taken nothing.
+ */
+function SalesCells({ money }: { money: ItemRevenue[] | undefined }) {
+  if (!money || money.length === 0) {
+    return (
+      <>
+        <td className="px-4 py-2.5 text-right text-xs text-slate-400">—</td>
+        <td className="px-4 py-2.5 text-right text-xs text-slate-400">—</td>
+      </>
+    );
+  }
+  const sorted = [...money].sort((a, b) => a.currency.localeCompare(b.currency));
+  const sales = sorted.reduce((n, m) => n + m.bookings, 0);
+  return (
+    <>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">{sales}</td>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-800">
+        {sorted.map((m) => (
+          <span key={m.currency} className="block first:mt-0 mt-1">
+            {formatTotal(m.grossPaise, m.currency as CurrencyCode)}
+            <span className="block text-[10px] text-slate-400">
+              net {formatTotal(m.netPaise, m.currency as CurrencyCode)}
+            </span>
+          </span>
+        ))}
+      </td>
+    </>
+  );
+}
+
+/**
+ * Money this tenant took, indexed by the thing that took it.
+ *
+ * An array per item, not a single row: the service returns one row per
+ * (item, currency), so a venue that sold in two currencies — one whose country
+ * was corrected after it had already traded — has two. Keying a plain Map on
+ * the id alone silently kept whichever came last.
+ */
+function useRevenueByItem(tenantId: string, groupBy: RevenueGrouping) {
+  const { data } = useAdminTenantRevenue(tenantId, groupBy);
+  const byItem = new Map<string, ItemRevenue[]>();
+  for (const i of data?.items ?? []) {
+    const at = byItem.get(i.itemId);
+    if (at) at.push(i);
+    else byItem.set(i.itemId, [i]);
+  }
+  return { byItem, unattributed: data?.unattributed ?? [] };
+}
+
+/**
+ * Money of this kind that belongs to no row above — a slot booking with no
+ * venue, say. It still counts on the dashboard's cards, so saying nothing
+ * would leave a tab and a card disagreeing with no explanation.
+ */
+function UnattributedNote({ slices, noun }: { slices: RevenueSlice[]; noun: string }) {
+  const real = slices.filter((s) => s.grossPaise !== 0 || s.bookings > 0);
+  if (real.length === 0) return null;
+  return (
+    <p className="text-xs text-amber-700">
+      Not in the rows above:{' '}
+      {real
+        .map((s) => `${formatTotal(s.grossPaise, s.currency as CurrencyCode)} from ${s.bookings} ${s.bookings === 1 ? 'sale' : 'sales'}`)
+        .join(', ')}{' '}
+      with no {noun} recorded. Counted in the dashboard totals.
+    </p>
+  );
+}
+
 export function VenuesTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantVenueShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantVenues(tenantId, shelf);
   const rows: AdminTenantVenueItem[] = data ?? [];
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'venue');
 
   return (
     <section className="space-y-3">
@@ -192,6 +277,8 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
               <Th>Tags</Th>
               <Th>Status</Th>
               <Th>Created</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -231,11 +318,13 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
                   />
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">{fmtDate(v.createdAt)}</td>
+                <SalesCells money={money.get(v.id)} />
               </tr>
             ))}
           </tbody>
         </TableShell>
       )}
+      <UnattributedNote slices={unattributed} noun="venue" />
     </section>
   );
 }
@@ -254,6 +343,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } =
     useAdminTenantEvents(tenantId, scope);
   const rows: AdminTenantEventBillingItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'event');
 
   return (
     <section className="space-y-3">
@@ -287,6 +377,8 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
               <Th>Starts</Th>
               <Th>Ends</Th>
               <Th>Status</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -320,6 +412,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
                     {scope === 'all' && ev.archived && <Tag>Archived</Tag>}
                   </span>
                 </td>
+                <SalesCells money={money.get(ev.id)} />
               </tr>
             ))}
           </tbody>
@@ -335,6 +428,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
           {isFetchingNextPage ? 'Loading…' : 'Load more events'}
         </button>
       )}
+      <UnattributedNote slices={unattributed} noun="event" />
     </section>
   );
 }
@@ -351,6 +445,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
   const [shelf, setShelf] = useState<AdminTenantMembershipShelf>('active');
   const { data, isLoading, isError, error } = useAdminTenantMemberships(tenantId, shelf);
   const rows: AdminTenantMembershipItem[] = data ?? [];
+  const { byItem: money, unattributed } = useRevenueByItem(tenantId, 'membership');
 
   return (
     <section className="space-y-3">
@@ -392,6 +487,8 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
               <Th>Tiers</Th>
               <Th>Status</Th>
               <Th>Created</Th>
+              <ThRight>Sales</ThRight>
+              <ThRight>Gross / net</ThRight>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -418,11 +515,13 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
                   <ListingStatusPill status={m.status} />
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">{fmtDate(m.createdAt)}</td>
+                <SalesCells money={money.get(m.id)} />
               </tr>
             ))}
           </tbody>
         </TableShell>
       )}
+      <UnattributedNote slices={unattributed} noun="plan" />
     </section>
   );
 }

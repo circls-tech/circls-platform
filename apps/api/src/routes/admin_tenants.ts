@@ -15,6 +15,7 @@ import { writeAudit } from '../lib/audit.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currencyForCountry } from '../lib/gateway.js';
+import { getPlatformRevenue, getTenantItemRevenue } from '../services/revenue_service.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -866,4 +867,70 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       };
     },
   );
+
+  // ── Revenue ──────────────────────────────────────────────────────
+  //
+  // What has been sold, as of now — the question payouts cannot answer until a
+  // week is reconciled. See revenue_service for what gross and net mean and
+  // how they differ from a payout.
+
+  /** A window. Absent `from`, it reaches back to the beginning. */
+  const revenueWindow = z.object({
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  });
+
+  /** The epoch, for "lifetime": earlier than any row this platform can hold. */
+  const BEGINNING = '1970-01-01T00:00:00.000Z';
+
+  function windowOf(q: { from?: string | undefined; to?: string | undefined }) {
+    return { from: q.from ?? BEGINNING, to: q.to ?? new Date().toISOString() };
+  }
+
+  app.get('/v1/admin/revenue', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.tenants.read');
+
+    const parsed = revenueWindow.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid revenue window', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    const { from, to } = windowOf(parsed.data);
+    return { from, to, slices: await getPlatformRevenue(from, to) };
+  });
+
+  app.get('/v1/admin/tenants/:id/revenue', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.tenants.read');
+
+    // Same shape as every sibling tenant route: a malformed id is a bad
+     // request, not a missing tenant.
+    const params = tenantIdParamSchema.safeParse(req.params);
+    if (!params.success) {
+      throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+    }
+
+    const parsed = revenueWindow
+      .extend({ groupBy: z.enum(['event', 'membership', 'venue']) })
+      .safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid revenue query', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    const { from, to } = windowOf(parsed.data);
+    const { items, unattributed } = await getTenantItemRevenue(
+      params.data.id,
+      parsed.data.groupBy,
+      from,
+      to,
+    );
+    return { from, to, groupBy: parsed.data.groupBy, items, unattributed };
+  });
 };
