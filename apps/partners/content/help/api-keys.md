@@ -48,7 +48,7 @@ Webhooks push events to a URL you control the moment they happen, so you don't h
 ### Creating a subscription
 
 1. Go to **Settings → Outbound webhooks**.
-2. In **Create a subscription**, enter your **Delivery URL** (e.g. `https://example.com/webhooks/circls`).
+2. In **Create a subscription**, enter your **Delivery URL** (e.g. `https://example.com/webhooks/circls`). It must use `https://` and be reachable on the public internet; circls doesn't follow redirects, so give the final address.
 3. Select the **events** to subscribe to:
    - `booking.confirmed`
    - `booking.cancelled`

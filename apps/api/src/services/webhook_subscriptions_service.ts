@@ -13,7 +13,15 @@ import { and, eq, sql } from 'drizzle-orm';
 import { env } from '../config/env.js';
 import { db } from '../db/client.js';
 import { logger } from '../lib/logger.js';
+import { assertPublicHttpsUrl } from '../lib/webhooks/public_url.js';
 import { signWebhook } from '../lib/webhooks/sign.js';
+
+/**
+ * In production a webhook may only go out over https to a public address —
+ * checked on create and again before every delivery, since DNS can change in
+ * between. Development and tests post to local servers.
+ */
+const ONLY_PUBLIC_TARGETS = env.NODE_ENV === 'production';
 import {
   outboundWebhookDeliveries,
   type OutboundWebhookDelivery,
@@ -47,6 +55,7 @@ function makeSecret(): string {
 export async function createSubscription(
   input: CreateSubscriptionInput,
 ): Promise<CreateSubscriptionResult> {
+  if (ONLY_PUBLIC_TARGETS) await assertPublicHttpsUrl(input.url);
   const secret = makeSecret();
   const [row] = await db
     .insert(webhookSubscriptions)
@@ -123,6 +132,7 @@ async function postSignedWebhook(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
   try {
+    if (ONLY_PUBLIC_TARGETS) await assertPublicHttpsUrl(url);
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -131,6 +141,8 @@ async function postSignedWebhook(
       },
       body: rawBody,
       signal: controller.signal,
+      // A redirect could lead anywhere: it counts as a failed delivery.
+      redirect: 'manual',
     });
     return { ok: res.ok, status: res.status };
   } catch (err) {
