@@ -57,7 +57,7 @@ describe.skipIf(!runIntegration)('team_service', () => {
 
   it('updateMemberRole promotes staff to manager', async () => {
     await updateMemberRole({
-      tenantId, targetUserId: staff, actorUserId: owner1, nextRole: 'manager',
+      tenantId, targetUserId: staff, actorUserId: owner1, actorRole: 'owner', nextRole: 'manager',
     });
     const rows = await listMembers(tenantId);
     expect(rows.find((r) => r.userId === staff)?.role).toBe('manager');
@@ -65,38 +65,38 @@ describe.skipIf(!runIntegration)('team_service', () => {
 
   it('updateMemberRole rejects demoting the last owner', async () => {
     await updateMemberRole({
-      tenantId, targetUserId: owner2, actorUserId: owner1, nextRole: 'staff',
+      tenantId, targetUserId: owner2, actorUserId: owner1, actorRole: 'owner', nextRole: 'staff',
     });
     try {
       await expect(
         updateMemberRole({
-          tenantId, targetUserId: owner1, actorUserId: owner1, nextRole: 'manager',
+          tenantId, targetUserId: owner1, actorUserId: owner1, actorRole: 'owner', nextRole: 'manager',
         }),
       ).rejects.toMatchObject({ code: 'last_owner_protected' });
     } finally {
       await updateMemberRole({
-        tenantId, targetUserId: owner2, actorUserId: owner1, nextRole: 'owner',
+        tenantId, targetUserId: owner2, actorUserId: owner1, actorRole: 'owner', nextRole: 'owner',
       });
     }
   });
 
   it('removeMember rejects removing the last owner', async () => {
     await updateMemberRole({
-      tenantId, targetUserId: owner2, actorUserId: owner1, nextRole: 'staff',
+      tenantId, targetUserId: owner2, actorUserId: owner1, actorRole: 'owner', nextRole: 'staff',
     });
     try {
       await expect(
-        removeMember({ tenantId, targetUserId: owner1, actorUserId: owner1 }),
+        removeMember({ tenantId, targetUserId: owner1, actorUserId: owner1, actorRole: 'owner' }),
       ).rejects.toMatchObject({ code: 'last_owner_protected' });
     } finally {
       await updateMemberRole({
-        tenantId, targetUserId: owner2, actorUserId: owner1, nextRole: 'owner',
+        tenantId, targetUserId: owner2, actorUserId: owner1, actorRole: 'owner', nextRole: 'owner',
       });
     }
   });
 
   it('removeMember succeeds when ≥2 owners and target is owner', async () => {
-    await removeMember({ tenantId, targetUserId: owner2, actorUserId: owner1 });
+    await removeMember({ tenantId, targetUserId: owner2, actorUserId: owner1, actorRole: 'owner' });
     try {
       const rows = await listMembers(tenantId);
       expect(rows.find((r) => r.userId === owner2)).toBeUndefined();
@@ -106,7 +106,7 @@ describe.skipIf(!runIntegration)('team_service', () => {
   });
 
   it('removeMember succeeds for self-removal even without explicit cap', async () => {
-    await removeMember({ tenantId, targetUserId: staff, actorUserId: staff });
+    await removeMember({ tenantId, targetUserId: staff, actorUserId: staff, actorRole: 'manager' });
     const rows = await listMembers(tenantId);
     expect(rows.find((r) => r.userId === staff)).toBeUndefined();
   });
@@ -117,6 +117,7 @@ describe.skipIf(!runIntegration)('team_service', () => {
         tenantId,
         targetUserId: '00000000-0000-0000-0000-000000000000',
         actorUserId: owner1,
+        actorRole: 'owner',
         nextRole: 'staff',
       }),
     ).rejects.toBeInstanceOf(NotFound);
@@ -128,6 +129,7 @@ describe.skipIf(!runIntegration)('team_service', () => {
         tenantId,
         targetUserId: '00000000-0000-0000-0000-000000000000',
         actorUserId: owner1,
+        actorRole: 'owner',
       }),
     ).rejects.toBeInstanceOf(NotFound);
   });

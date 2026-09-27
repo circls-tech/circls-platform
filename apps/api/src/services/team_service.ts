@@ -4,6 +4,8 @@
  * Owner-safety invariants (enforced here, not at capability layer):
  *   - cannot demote the last owner
  *   - cannot remove the last owner
+ *   - nobody grants a role above their own, or changes or removes a member
+ *     above them — a Manager can't make anyone an Owner, or unmake one
  *
  * Self-removal exception (enforced at the route layer):
  *   - DELETE on yourself is allowed regardless of cap, provided the last-owner
@@ -14,7 +16,8 @@ import { db } from '../db/client.js';
 import { tenantMembers, type TenantRole } from '../db/schema/tenant_members.js';
 import { users } from '../db/schema/users.js';
 import { writeAudit } from '../lib/audit.js';
-import { Conflict, NotFound } from '../lib/errors.js';
+import { canActOnRole } from '../lib/authz/can.js';
+import { Conflict, Forbidden, NotFound } from '../lib/errors.js';
 
 export interface MemberRow {
   userId: string;
@@ -56,6 +59,8 @@ export interface UpdateMemberRoleInput {
   tenantId: string;
   targetUserId: string;
   actorUserId: string;
+  /** The actor's own role in the tenant. */
+  actorRole: TenantRole;
   nextRole: TenantRole;
 }
 
@@ -76,6 +81,13 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
       )
       .limit(1);
     if (!current) throw new NotFound('Member not found', 'member_not_found');
+
+    if (!canActOnRole(input.actorRole, current.role) || !canActOnRole(input.actorRole, input.nextRole)) {
+      throw new Forbidden(
+        "You can't grant a role above your own, or change the role of someone above you",
+        'role_above_yours',
+      );
+    }
 
     if (current.role === 'owner' && input.nextRole !== 'owner') {
       const n = await lockedOwnerCount(tx, input.tenantId);
@@ -179,6 +191,8 @@ export interface RemoveMemberInput {
   tenantId: string;
   targetUserId: string;
   actorUserId: string;
+  /** The actor's own role in the tenant. */
+  actorRole: TenantRole;
 }
 
 export async function removeMember(input: RemoveMemberInput): Promise<void> {
@@ -191,6 +205,11 @@ export async function removeMember(input: RemoveMemberInput): Promise<void> {
       )
       .limit(1);
     if (!current) throw new NotFound('Member not found', 'member_not_found');
+
+    // Leaving is always allowed (bar the last-owner rule below).
+    if (input.targetUserId !== input.actorUserId && !canActOnRole(input.actorRole, current.role)) {
+      throw new Forbidden("You can't remove someone above your own role", 'role_above_yours');
+    }
 
     if (current.role === 'owner') {
       const n = await lockedOwnerCount(tx, input.tenantId);

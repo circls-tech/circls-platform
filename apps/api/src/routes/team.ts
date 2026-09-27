@@ -54,6 +54,7 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
         tenantId,
         targetUserId,
         actorUserId: user.id,
+        actorRole: ctx.role,
         nextRole: parsed.data.role,
       });
     },
@@ -104,7 +105,7 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
           });
         }
       }
-      await removeMember({ tenantId, targetUserId, actorUserId: user.id });
+      await removeMember({ tenantId, targetUserId, actorUserId: user.id, actorRole: ctx.role });
       return reply.status(204).send();
     },
   );

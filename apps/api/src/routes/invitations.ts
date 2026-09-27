@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env.js';
+import { canActOnRole } from '../lib/authz/can.js';
 import { BadRequest, Forbidden } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -33,6 +34,10 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'members.invite');
+    // Accepting grants the invited role, so nobody invites above their own.
+    if (!canActOnRole(ctx.role, parsed.data.role)) {
+      throw new Forbidden("You can't invite someone to a role above your own", 'role_above_yours');
+    }
     const result = await createInvitation({
       tenantId,
       actorUserId: user.id,
@@ -74,7 +79,12 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, 'members.invite');
-      const result = await resendInvitation({ tenantId, invitationId, actorUserId: user.id });
+      const result = await resendInvitation({
+        tenantId,
+        invitationId,
+        actorUserId: user.id,
+        actorRole: ctx.role,
+      });
       return reply.status(200).send({
         invitation: result.invitation,
         // Plaintext token is for dev preview only; never expose it in prod responses.
