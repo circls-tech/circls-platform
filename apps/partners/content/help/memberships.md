@@ -1,5 +1,7 @@
 Memberships are time-bound passes your customers can buy — a monthly unlimited plan, a 10-class pack, a season pass. Each plan is made up of one or more **tiers** (e.g. *Gold*, *Silver*, *Bronze*), and each tier has its own price, duration, benefits and optional capacity — just like ticket tiers on an event. This guide covers creating a plan, editing it, activating and deactivating it, and seeing who has bought it.
 
+Creating and editing plans, activating and deactivating them, and their artwork are for Owners and Managers. Staff run the membership desk — adding members, changing or renewing their dates, cancelling and refunding them. Read-only members can view plans and members but not change them.
+
 ## Creating a membership plan
 
 1. Go to **Memberships** in the sidebar and click **New plan**.
@@ -90,13 +92,15 @@ An expired member keeps their seat on the tier, exactly as before — expiry doe
 
 ### Adding someone who joined elsewhere
 
-Signed someone up at the desk, over the phone, or on paper? Click **Reception** beside the plan's name — or **Add member** in that list; both open the same form, and Reception is there so counter staff can reach it in one click. You give their name, an optional contact, which tier they are on, and — if you want something other than the tier's normal run — the dates their membership covers.
+Signed someone up at the desk, over the phone, or on paper? Click **Reception** beside the plan's name — or **Add member** in that list; both open the same form, and Reception is there so counter staff can reach it in one click (Owners, Managers and Staff; Read-only members don't see either button). You give their name, an optional contact, which tier they are on, and — if you want something other than the tier's normal run — the dates their membership covers.
 
 They are a real member where it counts: the seat comes out of that tier's capacity, so a tier can sell out because of them, and they appear in the list marked **added by you**.
 
 **They are invisible to money.** circls processed nothing, so the membership never appears in a payout and never attracts commission — whatever they paid, they paid you directly.
 
 ### Correcting dates, and cancelling
+
+Owners, Managers and Staff can do everything in this section; Read-only members see the members without these buttons.
 
 **Edit dates** on any member lets you change when their membership starts and ends — for a mid-term upgrade, a goodwill extension, or simply a mistake at sign-up. The end date must fall after the start date. Changing a member's dates moves their QR pass with them, so the door always agrees with the membership. Extending an **expired** member's end date into the future renews them: they become **active** again and their pass works at the door — which is why the button reads **Renew** on the **Expired** tab. It opens the same two date boxes; the renewed member moves back to **Active**.
 

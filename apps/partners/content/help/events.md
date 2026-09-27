@@ -1,5 +1,7 @@
 Events are one-off or recurring happenings — tournaments, classes, socials, screenings — that consumers can discover and register for. This guide covers creating an event (including weekly recurring events), defining ticket tiers, adding registration questions, sending bookers to a next step, adding photos, submitting it for review, and managing registrations.
 
+Creating and changing events — editing, submitting for review, publishing, ending, reopening, cancelling, archiving, photos and change requests — is for Owners and Managers. Staff and Read-only members can view events; Staff also run the door, adding registrations and refunding them (see below).
+
 ## Creating an event
 
 1. Go to **Events** in the sidebar and click **Create event**.
@@ -251,7 +253,7 @@ Use these tables to check turnout and reconcile payments.
 
 ### Adding someone who registered elsewhere
 
-Took a registration at the door, over the phone, or through your own form? Click **Reception** beside the event's name — or **Add registration** in the registrations list — to put them on the roll. Both open the same form; Reception is there so door staff can find it without scrolling. It is available only while the event is live.
+Took a registration at the door, over the phone, or through your own form? Click **Reception** beside the event's name — or **Add registration** in the registrations list — to put them on the roll. Both open the same form; Reception is there so door staff can find it without scrolling. It is available only while the event is live, and to Owners, Managers and Staff — Read-only members don't see either button.
 
 You are asked for the same things the customer would have given: their name, an optional contact, which tickets they took, and answers to any **required** registration question — those are enforced here exactly as they are in the customer flow, so your answer data stays complete.
 
