@@ -1,0 +1,4 @@
+# pnpm dependency patches (see patches/README.md) must keep LF endings. With
+# core.autocrlf=true, a Windows checkout would otherwise turn them into CRLF, and
+# pnpm copies those CRs into the patched files in node_modules.
+patches/*.patch text eol=lf

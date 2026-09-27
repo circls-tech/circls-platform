@@ -10,6 +10,9 @@ WORKDIR /repo
 
 FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# Dependency patches listed under "pnpm.patchedDependencies" in the root
+# package.json. The frozen install fails if they're missing.
+COPY patches ./patches
 COPY apps/partners/package.json apps/partners/package.json
 # --prod=false forces devDependencies (typescript, next build tools, etc.) to
 # install even if the platform injects NODE_ENV=production at build time.

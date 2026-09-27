@@ -13,5 +13,10 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "next@15.5.26": "patches/next@15.5.26.patch"
+    }
   }
 }

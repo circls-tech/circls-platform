@@ -10,6 +10,9 @@ WORKDIR /repo
 
 FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# Dependency patches listed under "pnpm.patchedDependencies" in the root
+# package.json. The frozen install fails if they're missing.
+COPY patches ./patches
 COPY apps/admin/package.json apps/admin/package.json
 RUN pnpm install --frozen-lockfile --prod=false --filter @circls/admin...
 
