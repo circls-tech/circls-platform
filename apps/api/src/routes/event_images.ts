@@ -2,7 +2,9 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
+import type { Capability } from '../lib/authz/capabilities.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   deleteEventImage,
@@ -35,13 +37,17 @@ const focalSchema = z.object({
   focalY: z.number().min(0).max(1),
 });
 
-/** Resolve the event and assert the caller belongs to its tenant. */
-async function authorizeEvent(req: FastifyRequest) {
+/**
+ * Resolve the event and assert the caller belongs to its tenant. Writes pass
+ * the capability they need; the list is open to any member.
+ */
+async function authorizeEvent(req: FastifyRequest, cap?: Capability) {
   const { id } = req.params as { id: string };
   const event = await getEventById(id);
   if (!event) throw new NotFound('Event not found', 'event_not_found');
   const user = await currentUser(req);
-  await requireTenantMembership(user.id, event.tenantId);
+  const ctx = await requireTenantMembership(user.id, event.tenantId);
+  if (cap) assertCap(ctx, cap);
   return event;
 }
 
@@ -51,7 +57,7 @@ export const eventImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid presign payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const event = await authorizeEvent(req);
+    const event = await authorizeEvent(req, 'events.write');
     return presignEventImageUpload(event.id, parsed.data.contentType);
   });
 
@@ -60,7 +66,7 @@ export const eventImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid finalize payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const event = await authorizeEvent(req);
+    const event = await authorizeEvent(req, 'events.write');
     const { storageKey, width, height } = parsed.data;
     const dimensions = width && height ? { width, height } : undefined;
     return finalizeEventImage(event.tenantId, event.id, storageKey, dimensions);
@@ -78,7 +84,7 @@ export const eventImageRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid order payload', 'bad_request', { issues: parsed.error.issues });
     }
-    const event = await authorizeEvent(req);
+    const event = await authorizeEvent(req, 'events.write');
     return reorderEventImages(event.id, parsed.data.imageIds);
   });
 
@@ -89,13 +95,13 @@ export const eventImageRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid focal payload', 'bad_request', { issues: parsed.error.issues });
     }
     const { imageId } = req.params as { imageId: string };
-    const event = await authorizeEvent(req);
+    const event = await authorizeEvent(req, 'events.write');
     return setEventImageFocal(event.id, imageId, parsed.data);
   });
 
   app.delete('/v1/events/:id/images/:imageId', { preHandler: requireAuth }, async (req) => {
     const { imageId } = req.params as { imageId: string };
-    const event = await authorizeEvent(req);
+    const event = await authorizeEvent(req, 'events.write');
     await deleteEventImage(event.id, imageId);
     return { ok: true };
   });

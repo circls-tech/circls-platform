@@ -4,6 +4,7 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { withIdempotency } from '../lib/idempotency.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
@@ -83,7 +84,8 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
 
     const user = await currentUser(req);
     const { tenantId } = venue;
-    await requireTenantMembership(user.id, tenantId);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'bookings.create');
 
     if (paymentMethod === 'razorpay_route') {
       const result = await withIdempotency(idemKey, tenantId, async () => ({

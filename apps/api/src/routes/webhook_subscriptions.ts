@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { BadRequest } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   createSubscription,
@@ -16,6 +17,11 @@ const createSchema = z.object({
   events: z.array(z.string().min(1)).min(1),
 });
 
+/**
+ * Webhook subscriptions are integration settings, like API keys: every route
+ * needs integration.api_keys.manage (Owner/Manager). Deliveries carry event
+ * payloads, so even reading them does.
+ */
 export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
   app.get(
     '/v1/tenants/:tenantId/webhook-subscriptions',
@@ -23,7 +29,8 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId } = req.params as { tenantId: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'integration.api_keys.manage');
       return listSubscriptions(tenantId);
     },
   );
@@ -34,7 +41,8 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId } = req.params as { tenantId: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'integration.api_keys.manage');
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success)
         throw new BadRequest('Invalid webhook payload', 'bad_request', {
@@ -50,7 +58,8 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const { tenantId, id } = req.params as { tenantId: string; id: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'integration.api_keys.manage');
       await deleteSubscription(id, tenantId);
       return reply.status(204).send();
     },
@@ -64,7 +73,8 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { tenantId, subId } = req.params as { tenantId: string; subId: string };
       const user = await currentUser(req);
-      await requireTenantMembership(user.id, tenantId);
+      const ctx = await requireTenantMembership(user.id, tenantId);
+      assertCap(ctx, 'integration.api_keys.manage');
       const q = req.query as { limit?: string; cursor?: string };
       const limit = q.limit ? Math.min(Number(q.limit) || 50, 100) : 50;
       return listDeliveries(subId, tenantId, {

@@ -12,6 +12,7 @@ import {
   reopenArena,
   updateArenaQrTicketConfig,
 } from '../services/arena_service.js';
+import type { Capability } from '../lib/authz/capabilities.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 import { getWeeklySchedule, setWeeklySchedule } from '../services/schedule_service.js';
@@ -40,14 +41,18 @@ const scheduleSchema = z.object({
   ),
 });
 
-/** Resolve an arena → its venue's tenant and assert the caller is a member. */
-async function authorizeArena(req: FastifyRequest, arenaId: string) {
+/**
+ * Resolve an arena → its venue's tenant and assert the caller is a member.
+ * Writes pass the capability they need; reads are open to any member.
+ */
+async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capability) {
   const arena = await getArenaById(arenaId);
   if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
   const venue = await getVenueById(arena.venueId);
   if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
   const user = await currentUser(req);
-  await requireTenantMembership(user.id, venue.tenantId);
+  const ctx = await requireTenantMembership(user.id, venue.tenantId);
+  if (cap) assertCap(ctx, cap);
   return arena;
 }
 
@@ -61,7 +66,8 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     const venue = await getVenueById(venueId);
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const user = await currentUser(req);
-    await requireTenantMembership(user.id, venue.tenantId);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'arenas.write');
     const { name, sport, capacity, slotDurationMin, tags, qrTicketConfig } = parsed.data;
     return createArena(venueId, {
       name,
@@ -83,7 +89,7 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid arena patch', 'bad_request', { issues: parsed.error.issues });
     }
-    await authorizeArena(req, arenaId);
+    await authorizeArena(req, arenaId, 'arenas.write');
     return updateArenaQrTicketConfig(arenaId, toQrTicketConfig(parsed.data.qrTicketConfig));
   });
 
@@ -125,7 +131,7 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid schedule payload', 'bad_request', { issues: parsed.error.issues });
     }
-    await authorizeArena(req, arenaId);
+    await authorizeArena(req, arenaId, 'schedules.write');
     return setWeeklySchedule(arenaId, parsed.data.rows);
   });
 
