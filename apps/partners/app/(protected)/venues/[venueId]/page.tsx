@@ -56,7 +56,7 @@ export default function VenuePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={`/tenants/${tenantId}`} className="text-sm text-gray-500">
+      <Link href="/venues" className="text-sm text-gray-500">
         ← Venues
       </Link>
       {venue && (

@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import {
@@ -39,6 +39,10 @@ function fmtPrice(pricePaise: number, currency: CurrencyCode) {
  */
 export default function MembershipDetailPage() {
   const { membershipId } = useParams<{ membershipId: string }>();
+  const searchParams = useSearchParams();
+  // `?desk=1` opens the walk-in form on arrival, so Reception on the dashboard
+  // lands on an open desk rather than a page to hunt through.
+  const openDeskOnArrival = searchParams.get('desk') === '1';
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
   const { user } = useAuth();
@@ -62,7 +66,7 @@ export default function MembershipDetailPage() {
   // Owned here so the Reception button in the header can open the walk-in desk
   // that lives further down the page.
   const membersRef = useRef<HTMLDivElement>(null);
-  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(openDeskOnArrival);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<MembershipPlanDraft | null>(null);
   const [err, setErr] = useState<string | null>(null);

@@ -2,12 +2,41 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
+import { useArenas, useMe, useMyTenants, useVenues, useAnalytics } from '@/lib/api/queries';
+import { useTenantEvents } from '@/lib/api/events';
+import { useMemberships } from '@/lib/api/memberships';
+import { ReceptionButton } from '@/components/ReceptionButton';
+import { useTimezone } from '@/lib/timezone_context';
 import { useOrg } from '@/lib/org_context';
-import { type CurrencyCode, asCurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
+import {
+  type CurrencyCode,
+  asCurrencyCode,
+  formatMoney,
+  useCurrency,
+  useVenueCurrencies,
+} from '@/lib/currency';
+import { planSummary } from '@/lib/plan_summary';
 import { useCan } from '@/lib/use_can';
 import { Card, StatusPill } from '@/lib/ui';
-import type { AnalyticsTrendDay, MoneyByCurrency } from '@/lib/api/types';
+import type {
+  AnalyticsTrendDay,
+  Membership,
+  MoneyByCurrency,
+  Venue,
+  VenueEventSummary,
+} from '@/lib/api/types';
+
+/** The dashboard's own "add" link — same shape wherever a section offers one. */
+const ADD_LINK_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] ' +
+  'bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] ' +
+  'transition-transform hover:-translate-y-0.5';
+
+/** A section's card. A plain div, never a Link: these carry their own buttons,
+ *  and a button inside a link is a nested control the keyboard can't reach. */
+const TILE_CLASS =
+  'flex flex-col gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-5 ' +
+  'shadow-[4px_4px_0_#17151D]';
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -207,69 +236,293 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
   );
 }
 
-// ── Venues Section ────────────────────────────────────────────────────────────
+// ── Sections: venues, events, memberships ───────────────────────────────
+
+/** Shared empty state: one sentence, and the way to fix it. */
+function EmptySection({
+  message,
+  addHref,
+  addLabel,
+  canAdd,
+}: {
+  message: string;
+  addHref: string;
+  addLabel: string;
+  canAdd: boolean;
+}) {
+  return (
+    <Card className="flex flex-col items-start gap-3">
+      <p className="text-sm text-slate-500">{message}</p>
+      {canAdd && (
+        <Link href={addHref} className={ADD_LINK_CLASS}>
+          {addLabel}
+        </Link>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The first few, and the way to the rest.
+ *
+ * The dashboard is glanced at, so no section may grow without bound: an org
+ * with forty plans would push everything under it off the page.
+ */
+const SECTION_LIMIT = 6;
+
+function MoreLink({ href, count, noun }: { href: string; count: number; noun: string }) {
+  return (
+    <Link href={href} className="text-xs font-semibold text-[#EE5C2B] hover:underline">
+      All {count} {noun} →
+    </Link>
+  );
+}
+
+function SectionSpinner({ what }: { what: string }) {
+  return (
+    <div className="flex items-center gap-2 text-sm text-slate-500">
+      <span className="block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+      Loading {what}…
+    </div>
+  );
+}
+
+/**
+ * One venue, with the way into its desk.
+ *
+ * A venue has no single desk — reception is run per arena — so the button
+ * only points straight at a grid when there is exactly one arena to mean. With
+ * several it goes to the venue, where each arena carries its own button; that
+ * is one extra click, and honest, rather than guessing which court is meant.
+ *
+ * Every arena counts, whatever its listing status. Nothing in the walk-in path
+ * checks it, and the venue page offers reception on every row — so filtering
+ * to `active` here hid a working desk from exactly the partner most likely to
+ * want it: one who has just created a venue and whose arenas await review.
+ */
+function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
+  const { data: arenas } = useArenas(venue.id);
+  const desks = arenas ?? [];
+  const deskHref =
+    desks.length === 1
+      ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}`
+      : `/venues/${venue.id}?tenantId=${tenantId}`;
+
+  return (
+    <div className={TILE_CLASS}>
+      <div className="flex items-start justify-between gap-2">
+        <Link
+          href={`/venues/${venue.id}?tenantId=${tenantId}`}
+          className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline"
+        >
+          {venue.name}
+        </Link>
+        <StatusPill
+          status={venue.status}
+          {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
+        />
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <p className="text-xs text-slate-400">
+          {venue.tzName ?? '\u00a0'}
+          {desks.length > 1 && ` · ${desks.length} arenas`}
+        </p>
+        {desks.length > 0 && <ReceptionButton href={deskHref} />}
+      </div>
+    </div>
+  );
+}
 
 function VenuesSection({ tenantId }: { tenantId: string }) {
   const { data: venues, isLoading } = useVenues(tenantId);
   const canAddVenue = useCan('venues.write', tenantId);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-slate-500">
-        <span className="block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
-        Loading venues…
-      </div>
-    );
-  }
+  if (isLoading) return <SectionSpinner what="venues" />;
 
   if (!venues || venues.length === 0) {
     return (
-      <Card className="flex flex-col items-start gap-3">
-        <p className="text-sm text-slate-500">
-          No venues yet.{canAddVenue && ' Add your first venue to get started.'}
-        </p>
-        {canAddVenue && (
-          <Link
-            href="/venues"
-            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-          >
-            ＋ Add venue
-          </Link>
-        )}
-      </Card>
+      <EmptySection
+        message={`No venues yet.${canAddVenue ? ' Add your first venue to get started.' : ''}`}
+        addHref="/venues"
+        addLabel="＋ Add venue"
+        canAdd={canAddVenue}
+      />
     );
   }
+
+  const shown = venues.slice(0, SECTION_LIMIT);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {venues.map((venue) => (
-          <Link
-            key={venue.id}
-            href={`/venues/${venue.id}?tenantId=${tenantId}`}
-            className="block rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-5 shadow-[4px_4px_0_#17151D] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span className="font-[family-name:var(--font-display)] font-bold text-[#17151D]">{venue.name}</span>
-              <StatusPill status={venue.status} />
-            </div>
-            {venue.tzName && (
-              <p className="mt-1 text-xs text-slate-400">{venue.tzName}</p>
-            )}
-          </Link>
+        {shown.map((venue) => (
+          <VenueTile key={venue.id} venue={venue} tenantId={tenantId} />
         ))}
       </div>
-
-      {canAddVenue && (
-        <div className="pt-1">
-          <Link
-            href="/venues"
-            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFD2A1] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
-          >
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {canAddVenue && (
+          <Link href="/venues" className={ADD_LINK_CLASS}>
             ＋ Add venue
           </Link>
-        </div>
-      )}
+        )}
+        {venues.length > shown.length && (
+          <MoreLink href="/venues" count={venues.length} noun="venues" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Events get no Reception button, on purpose.
+ *
+ * A venue's desk is a calendar because its inventory is a calendar: a court is
+ * sold in slots across the day. An event is one moment with a guest list, so
+ * the equivalent is that list — and it only matters on the day. So the tile
+ * carries the date instead, and says plainly when the event is today.
+ */
+function EventTile({ event, tenantId, tz }: { event: VenueEventSummary; tenantId: string; tz: string }) {
+  const starts = new Date(event.startsAt);
+  const fmt = new Intl.DateTimeFormat('en-IN', {
+    timeZone: tz,
+    day: '2-digit',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const dayOf = (d: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+  const isToday = dayOf(starts) === dayOf(new Date());
+
+  return (
+    <div className={TILE_CLASS}>
+      <div className="flex items-start justify-between gap-2">
+        <Link
+          href={`/events/${event.id}?tenantId=${tenantId}`}
+          className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline"
+        >
+          {event.name}
+        </Link>
+        <StatusPill status={event.status} />
+      </div>
+      <p className="text-xs text-slate-400">
+        {isToday ? (
+          <span className="font-bold text-[#EE5C2B]">Today, {fmt.format(starts).split(', ').pop()}</span>
+        ) : (
+          fmt.format(starts)
+        )}
+      </p>
+    </div>
+  );
+}
+
+function EventsSection({ tenantId }: { tenantId: string }) {
+  const { data: events, isLoading } = useTenantEvents(tenantId);
+  const canAddEvent = useCan('events.write', tenantId);
+  const { resolveTz } = useTimezone();
+  const tz = resolveTz();
+
+  if (isLoading) return <SectionSpinner what="events" />;
+
+  if (!events || events.length === 0) {
+    return (
+      <EmptySection
+        message={`No events yet.${canAddEvent ? ' Create one to start taking registrations.' : ''}`}
+        addHref="/events/new"
+        addLabel="＋ New event"
+        canAdd={canAddEvent}
+      />
+    );
+  }
+
+  // What is coming, soonest first — then the most recent of what has been.
+  // Sorting on the date alone put a fortnight-old event at the front, which is
+  // the opposite of quick access.
+  const now = new Date().toISOString();
+  const upcoming = events
+    .filter((e) => e.endsAt >= now)
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const past = events
+    .filter((e) => e.endsAt < now)
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+  const shown = [...upcoming, ...past].slice(0, SECTION_LIMIT);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {shown.map((event) => (
+          <EventTile key={event.id} event={event} tenantId={tenantId} tz={tz} />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {canAddEvent && (
+          <Link href="/events/new" className={ADD_LINK_CLASS}>
+            ＋ New event
+          </Link>
+        )}
+        {events.length > shown.length && (
+          <MoreLink href="/events" count={events.length} noun="events" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MembershipsSection({ tenantId }: { tenantId: string }) {
+  const { data: plans, isLoading } = useMemberships(tenantId);
+  const canAddPlan = useCan('memberships.write', tenantId);
+  const { currencyFor } = useVenueCurrencies();
+
+  if (isLoading) return <SectionSpinner what="memberships" />;
+
+  if (!plans || plans.length === 0) {
+    return (
+      <EmptySection
+        message={`No membership plans yet.${canAddPlan ? ' Create one to start selling.' : ''}`}
+        addHref="/memberships/new"
+        addLabel="＋ New plan"
+        canAdd={canAddPlan}
+      />
+    );
+  }
+
+  const shown = plans.slice(0, SECTION_LIMIT);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {shown.map((plan) => (
+          <div key={plan.id} className={TILE_CLASS}>
+            <div className="flex items-start justify-between gap-2">
+              <Link
+                href={`/memberships/${plan.id}?tenantId=${tenantId}`}
+                className="font-[family-name:var(--font-display)] font-bold text-[#17151D] hover:underline"
+              >
+                {plan.name}
+              </Link>
+              <StatusPill status={plan.status} />
+            </div>
+            <div className="flex items-end justify-between gap-2">
+              <p className="text-xs text-slate-400">
+                {planSummary(plan, currencyFor(plan.venueId))}
+              </p>
+              {/* Straight to the walk-in form, open on arrival: a plan has one
+                  desk, so unlike a venue there is nothing to disambiguate. */}
+              <ReceptionButton href={`/memberships/${plan.id}?tenantId=${tenantId}&desk=1`} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {canAddPlan && (
+          <Link href="/memberships/new" className={ADD_LINK_CLASS}>
+            ＋ New plan
+          </Link>
+        )}
+        {plans.length > shown.length && (
+          <MoreLink href="/memberships" count={plans.length} noun="plans" />
+        )}
+      </div>
     </div>
   );
 }
@@ -313,8 +566,6 @@ export default function DashboardPage() {
       : buckets.map((b) => formatMoney(b.amountMinor, asCurrencyCode(b.currency))).join(' · ');
   const bookingsToday = analytics?.bookingsToday ?? 0;
   const revenueToday = fmtBuckets(analytics?.revenueToday);
-  const revenue7d = fmtBuckets(analytics?.revenue7d);
-  const occupancy7dPct = analytics?.occupancy7dPct ?? 0;
 
   return (
     <div className="flex flex-col gap-8">
@@ -333,7 +584,10 @@ export default function DashboardPage() {
         <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Overview
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Two cards, not four. The week-scale pair — revenue and occupancy
+            over 7 days — said little a partner acts on today, and the chart
+            below already carries the week. */}
+        <div className="grid gap-4 sm:grid-cols-2">
           <StatCard
             label="Bookings today"
             value={String(bookingsToday)}
@@ -349,22 +603,6 @@ export default function DashboardPage() {
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FFB0A3"
             icon="currency"
-          />
-          <StatCard
-            label="Revenue · 7d"
-            value={revenue7d}
-            sublabel="Taken in the last 7 days"
-            loading={analyticsLoading && Boolean(activeTenantId)}
-            petal="#F9B4D4"
-            icon="trend"
-          />
-          <StatCard
-            label="Occupancy · 7d"
-            value={`${occupancy7dPct}%`}
-            sublabel="Court time booked, last 7 days"
-            loading={analyticsLoading && Boolean(activeTenantId)}
-            petal="#A9C9F2"
-            icon="chart"
           />
         </div>
       </section>
@@ -412,7 +650,9 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── Venues ── */}
+      {/* ── What you run: one section per kind, each with its desk and its
+             "add" — so the things done daily are reachable from the page
+             everyone lands on, not three clicks into a tab. ── */}
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
           Your Venues
@@ -434,6 +674,24 @@ export default function DashboardPage() {
           <VenuesSection tenantId={activeTenantId} />
         )}
       </section>
+
+      {activeTenantId && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
+            Your Events
+          </h2>
+          <EventsSection tenantId={activeTenantId} />
+        </section>
+      )}
+
+      {activeTenantId && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-bold uppercase tracking-widest text-[#EE5C2B]">
+            Your Memberships
+          </h2>
+          <MembershipsSection tenantId={activeTenantId} />
+        </section>
+      )}
     </div>
   );
 }
