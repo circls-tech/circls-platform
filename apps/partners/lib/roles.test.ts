@@ -1,21 +1,59 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '@/lib/api/types';
-import { ROLE_ORDER, roleCan, roleCanActOn } from './roles';
+import { ROLE_ORDER, roleCan, roleCanActOn, tenantCan } from './roles';
 
 describe('roleCan', () => {
   it('mirrors the grants in PARTNER_CAPS', () => {
     // owner, manager, staff, readonly
     expect(ROLE_ORDER.map((r) => roleCan(r, 'bookings.create'))).toEqual([true, true, true, false]);
     expect(ROLE_ORDER.map((r) => roleCan(r, 'bookings.cancel'))).toEqual([true, true, true, false]);
-    for (const cap of ['events.write', 'pricing.write', 'members.role_change', 'integration.api_keys.manage'] as const) {
+    expect(ROLE_ORDER.map((r) => roleCan(r, 'questions.write'))).toEqual([true, true, true, false]);
+    for (const cap of [
+      'events.write',
+      'pricing.write',
+      'discounts.write',
+      'tenant.update',
+      'members.role_change',
+      'integration.read',
+      'integration.api_keys.manage',
+    ] as const) {
       expect(ROLE_ORDER.map((r) => roleCan(r, cap))).toEqual([true, true, false, false]);
     }
+  });
+
+  it('mirrors PLATFORM_CAPS for the Circls organisation', () => {
+    const platform = { isPlatform: true };
+    // Platform Managers run Circls's own listings…
+    for (const cap of ['events.write', 'venues.write', 'bookings.cancel', 'integration.read'] as const) {
+      expect(ROLE_ORDER.map((r) => roleCan(r, cap, platform))).toEqual([true, true, false, false]);
+    }
+    // …but only Owners manage the Circls team.
+    expect(ROLE_ORDER.map((r) => roleCan(r, 'members.invite', platform))).toEqual([true, false, false, false]);
   });
 
   it('grants nothing without a role it knows', () => {
     expect(roleCan(null, 'bookings.cancel')).toBe(false);
     expect(roleCan(undefined, 'bookings.cancel')).toBe(false);
     expect(roleCan('auditor' as TenantRole, 'bookings.cancel')).toBe(false);
+  });
+});
+
+describe('tenantCan', () => {
+  const tenant = (myRole: TenantRole, status = 'active', isPlatform = false) => ({ myRole, status, isPlatform });
+
+  it('follows the role on an active organisation', () => {
+    expect(tenantCan(tenant('staff'), 'bookings.cancel')).toBe(true);
+    expect(tenantCan(tenant('staff'), 'events.write')).toBe(false);
+  });
+
+  it('keeps only reading while the organisation is suspended', () => {
+    expect(tenantCan(tenant('owner', 'suspended'), 'integration.read')).toBe(true);
+    expect(tenantCan(tenant('owner', 'suspended'), 'integration.api_keys.manage')).toBe(false);
+    expect(tenantCan(tenant('staff', 'suspended'), 'bookings.cancel')).toBe(false);
+  });
+
+  it('grants nothing for an organisation you are not in', () => {
+    expect(tenantCan(undefined, 'integration.read')).toBe(false);
   });
 });
 

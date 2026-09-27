@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { RoleNotice } from '@/components/RoleNotice';
-import { roleCan } from '@/lib/roles';
 import {
   useApiKeys,
   useMyRole,
@@ -27,7 +26,7 @@ interface NewKey {
 export default function ApiKeysPage() {
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
-  const { role: myRole, isLoading: roleLoading } = useMyRole(tenantId);
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
 
   const fmt = useMemo(
@@ -61,11 +60,15 @@ export default function ApiKeysPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    const res = await createMut.mutateAsync({ name: name.trim(), role });
-    setNewKey({ id: res.id, name: name.trim(), plaintext: res.plaintext });
-    setName('');
-    setRole('write');
-    setCopied(false);
+    try {
+      const res = await createMut.mutateAsync({ name: name.trim(), role });
+      setNewKey({ id: res.id, name: name.trim(), plaintext: res.plaintext });
+      setName('');
+      setRole('write');
+      setCopied(false);
+    } catch {
+      // Shown under the form from createMut.error.
+    }
   }
 
   async function copyToClipboard(text: string) {
@@ -85,35 +88,44 @@ export default function ApiKeysPage() {
     await revokeMut.mutateAsync(k.id);
   }
 
-  // Integration settings are for Owners and Managers (integration.api_keys.manage).
-  if (!roleLoading && !roleCan(myRole, 'integration.api_keys.manage')) {
+  // Integration settings are for Owners and Managers: seeing them needs
+  // integration.read, changing them integration.api_keys.manage (which a
+  // suspended organisation doesn't keep).
+  const canSee = roleLoading || can('integration.read');
+  const canManage = can('integration.api_keys.manage');
+
+  const header = (
+    <div className="flex items-center gap-4">
+      <Link
+        href="/settings"
+        className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+      >
+        &larr; Settings
+      </Link>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
+    </div>
+  );
+
+  if (!canSee) {
     return (
       <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/settings"
-            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-          >
-            &larr; Settings
-          </Link>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
-        </div>
-        <RoleNotice>Your role can&rsquo;t manage API keys — Owners and Managers can.</RoleNotice>
+        {header}
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t see API keys — Owners and Managers can.
+        </RoleNotice>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/settings"
-          className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-        >
-          &larr; Settings
-        </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">API keys</h1>
-      </div>
+      {header}
+
+      {!roleLoading && !canManage && (
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t change API keys — Owners and Managers can.
+        </RoleNotice>
+      )}
 
       {/* One-shot reveal panel — visible until the user navigates away. */}
       {newKey && (
@@ -150,41 +162,43 @@ export default function ApiKeysPage() {
       )}
 
       {/* Create form */}
-      <Card title="Create a key" subtitle="One key per integration is the recommended model — easier to revoke if it leaks.">
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[240px] flex-1">
-            <Input
-              label="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. PartnerCo aggregator"
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-              Role
-            </label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as 'read' | 'write' | 'admin')}
-              className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a]"
-            >
-              <option value="read">read</option>
-              <option value="write">write</option>
-              <option value="admin">admin</option>
-            </select>
-          </div>
-          <Button type="submit" loading={createMut.isPending} disabled={!name.trim()}>
-            Generate key
-          </Button>
-        </form>
-        {createMut.isError && (
-          <p className="mt-3 text-sm text-red-600">
-            Failed to create key: {(createMut.error as Error).message}
-          </p>
-        )}
-      </Card>
+      {canManage && (
+        <Card title="Create a key" subtitle="One key per integration is the recommended model — easier to revoke if it leaks.">
+          <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[240px] flex-1">
+              <Input
+                label="Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. PartnerCo aggregator"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                Role
+              </label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'read' | 'write' | 'admin')}
+                className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a]"
+              >
+                <option value="read">read</option>
+                <option value="write">write</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <Button type="submit" loading={createMut.isPending} disabled={!name.trim()}>
+              Generate key
+            </Button>
+          </form>
+          {createMut.isError && (
+            <p className="mt-3 text-sm text-red-600">
+              Failed to create key: {(createMut.error as Error).message}
+            </p>
+          )}
+        </Card>
+      )}
 
       {/* List */}
       <Card title="Existing keys" subtitle="Revoked keys are kept for audit history. Plaintext is never recoverable.">
@@ -194,7 +208,7 @@ export default function ApiKeysPage() {
         )}
         {!isLoading && !isError && keys.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-400">
-            No API keys yet. Create one above to start integrating.
+            {canManage ? 'No API keys yet. Create one above to start integrating.' : 'No API keys yet.'}
           </p>
         )}
         {!isLoading && !isError && keys.length > 0 && (
@@ -232,7 +246,7 @@ export default function ApiKeysPage() {
                       {fmtIst(k.createdAt)}
                     </td>
                     <td className="py-2.5 text-right">
-                      {k.status === 'active' && (
+                      {canManage && k.status === 'active' && (
                         <Button
                           variant="danger"
                           size="sm"

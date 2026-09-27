@@ -18,8 +18,9 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
     const { tenantId } = req.params as { tenantId: string };
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
-    assertCap(ctx, 'integration.api_keys.manage');
-    return listApiKeys(tenantId);
+    assertCap(ctx, 'integration.read');
+    // The hash is the key's only secret at rest: it never leaves the server.
+    return (await listApiKeys(tenantId)).map(({ keyHash: _hash, ...key }) => key);
   });
 
   app.post('/v1/tenants/:tenantId/api-keys', { preHandler: requireAuth }, async (req) => {

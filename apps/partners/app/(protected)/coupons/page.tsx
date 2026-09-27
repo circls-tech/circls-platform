@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
+import { useCan } from '@/lib/use_can';
 import { useTenantCoupons, useTenantCouponStats, type Coupon } from '@/lib/api/coupons';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, StatusPill } from '@/lib/ui';
@@ -28,6 +29,8 @@ export default function CouponsPage() {
   const { data: stats } = useTenantCouponStats(activeTenantId ?? '');
   const { currencyFor, tenantCurrency } = useVenueCurrencies();
   const statByCoupon = new Map((stats?.byCoupon ?? []).map((s) => [s.couponId, s]));
+  // Coupons are set up by Owners and Managers.
+  const canWrite = useCan('discounts.write');
 
   if (!activeTenantId) {
     return (
@@ -47,9 +50,11 @@ export default function CouponsPage() {
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
           {activeTenant && <p className="mt-0.5 text-sm font-semibold text-[#EE5C2B]">{activeTenant.name}</p>}
         </div>
-        <Button size="sm" petal="#FFD2A1" onClick={() => router.push('/coupons/new')}>
-          Create coupon
-        </Button>
+        {canWrite && (
+          <Button size="sm" petal="#FFD2A1" onClick={() => router.push('/coupons/new')}>
+            Create coupon
+          </Button>
+        )}
       </div>
 
       {stats && (

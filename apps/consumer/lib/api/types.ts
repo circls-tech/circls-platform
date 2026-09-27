@@ -528,8 +528,9 @@ export interface QuestionThreadDetail {
     origin: QuestionOrigin;
     /** Interview triage category; null on forum threads. */
     category: QuestionCategory | null;
-    /** DB user id of the asker — compare against MyProfile.id, not the Firebase uid. */
-    authorUserId: string;
+    /** DB user id of the asker — compare against MyProfile.id, not the Firebase uid.
+     *  Only sent to the asker themselves; null for everyone else. */
+    authorUserId: string | null;
     messageCount: number;
     /** ISO-8601 */
     lastMessageAt: string;

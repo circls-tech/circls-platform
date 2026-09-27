@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useCreateCoupon, type CreateCouponInput, type CouponScopeType } from '@/lib/api/coupons';
-import { useVenues, useArenas } from '@/lib/api/queries';
+import { useMyRole, useVenues, useArenas } from '@/lib/api/queries';
+import { RoleNotice } from '@/components/RoleNotice';
 import { useTenantEvents } from '@/lib/api/events';
 import { useMemberships } from '@/lib/api/memberships';
 import { currencySymbol, useVenueCurrencies } from '@/lib/currency';
@@ -18,6 +19,7 @@ export default function NewCouponPage() {
   const router = useRouter();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const createCoupon = useCreateCoupon(tenantId);
 
   const [code, setCode] = useState('');
@@ -102,10 +104,26 @@ export default function NewCouponPage() {
 
   if (!activeTenantId) return <p className="text-sm text-slate-500">Select an organisation first.</p>;
 
-  return (
-    <div className="flex flex-col gap-6">
+  const header = (
+    <>
       <Link href="/coupons" className="text-sm text-slate-500 hover:text-slate-800">&larr; Coupons</Link>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New coupon</h1>
+    </>
+  );
+
+  // Coupons are set up by Owners and Managers.
+  if (!roleLoading && !can('discounts.write')) {
+    return (
+      <div className="flex flex-col gap-6">
+        {header}
+        <RoleNotice tenantId={tenantId}>Your role can&rsquo;t create coupons — Owners and Managers can.</RoleNotice>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {header}
       <Card title="Details">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <Input label="Code" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="SUMMER10" hint="Stored uppercase. Unique within your org." />

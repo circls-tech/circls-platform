@@ -1,9 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { supportIssues } from '../db/schema/support_issues.js';
-import { AppError, BadRequest } from '../lib/errors.js';
+import { tenantMembers, tenants } from '../db/schema/index.js';
+import { AppError, BadRequest, Forbidden, NotFound } from '../lib/errors.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
@@ -18,10 +19,14 @@ const createIssueSchema = z.object({
   message: z.string().min(10).max(2000),
 });
 
-const updateIssueSchema = z.object({
-  status: z.enum(['unresolved', 'in_progress', 'backlog', 'resolved']).optional(),
-  priority: z.enum(['low', 'medium', 'high']).optional(),
-});
+const updateIssueSchema = z
+  .object({
+    status: z.enum(['unresolved', 'in_progress', 'backlog', 'resolved']).optional(),
+    priority: z.enum(['low', 'medium', 'high']).optional(),
+  })
+  .refine((d) => d.status !== undefined || d.priority !== undefined, {
+    message: 'Nothing to update',
+  });
 
 // Consumer Help chatbot concern category (#114) — kept for the admin list filter.
 const concernCategory = z.enum([
@@ -41,13 +46,24 @@ const adminListQuery = z.object({
 });
 
 export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
-  // Partner: submit a support issue (unchanged; writes source = partner_help by default).
+  // Partner: submit a support issue (writes source = partner_help by default).
+  // Partners only — a member of some organisation other than Circls itself,
+  // suspended ones included, since that is who most needs to reach support.
   app.post('/v1/support/issues', { preHandler: requireAuth }, async (req) => {
     const parsed = createIssueSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new BadRequest('Invalid issue payload', 'bad_request', { issues: parsed.error.issues });
     }
     const user = await currentUser(req);
+    const [partner] = await db
+      .select({ tenantId: tenantMembers.tenantId })
+      .from(tenantMembers)
+      .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
+      .where(and(eq(tenantMembers.userId, user.id), eq(tenants.isPlatform, false)))
+      .limit(1);
+    if (!partner) {
+      throw new Forbidden('Only partner organisations can raise support issues', 'partner_only');
+    }
     const [issue] = await db
       .insert(supportIssues)
       .values({ userId: user.id, message: parsed.data.message })
@@ -78,7 +94,7 @@ export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const platformTenantId = await getPlatformTenantId();
     const ctx = await requireTenantMembership(user.id, platformTenantId);
-    assertCap(ctx, 'admin.tenants.read');
+    assertCap(ctx, 'admin.support.read');
 
     const parsed = adminListQuery.safeParse(req.query);
     if (!parsed.success) {
@@ -91,9 +107,12 @@ export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  // Admin: update an issue's status / priority (unchanged; works for both sources).
+  // Admin: update an issue's status / priority (works for both sources).
   app.patch('/v1/admin/support-issues/:id', { preHandler: requireAuth }, async (req) => {
     const { id } = req.params as { id: string };
+    if (!z.string().uuid().safeParse(id).success) {
+      throw new NotFound('Support issue not found', 'support_issue_not_found');
+    }
     const parsed = updateIssueSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new BadRequest('Invalid update payload', 'bad_request', { issues: parsed.error.issues });
@@ -101,7 +120,7 @@ export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const platformTenantId = await getPlatformTenantId();
     const ctx = await requireTenantMembership(user.id, platformTenantId);
-    assertCap(ctx, 'admin.tenants.read');
+    assertCap(ctx, 'admin.support.write');
 
     const updates: Partial<typeof supportIssues.$inferInsert> = {};
     if (parsed.data.status) updates.status = parsed.data.status;
@@ -112,6 +131,7 @@ export const supportIssueRoutes: FastifyPluginAsync = async (app) => {
       .set(updates)
       .where(eq(supportIssues.id, id))
       .returning();
+    if (!updated) throw new NotFound('Support issue not found', 'support_issue_not_found');
     return updated;
   });
 };

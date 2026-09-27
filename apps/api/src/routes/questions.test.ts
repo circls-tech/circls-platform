@@ -1439,11 +1439,12 @@ describe.skipIf(!runIntegration)('questions threads', () => {
                 'circls', 'external', 'confirmed', ${bookerId}::uuid, 40000, 'INR')
         RETURNING id
       `);
-      // Ownership via created_by_user_id (booked for someone else).
+      // Ownership via created_by_user_id: a consumer booking from before
+      // customers were stamped (July 2026), which carries only its creator.
       eventBookingId = await ins(sql`
-        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, created_by_user_id, total_paise, currency)
+        INSERT INTO bookings (tenant_id, item_type, item_data, channel, payment_method, status, created_by_user_id, total_paise, currency, created_at)
         VALUES (${tenantId}::uuid, 'event', ${JSON.stringify({ eventId, eventName: 'QT Cup' })}::jsonb,
-                'circls', 'free', 'confirmed', ${bookerId}::uuid, 0, 'INR')
+                'circls', 'free', 'confirmed', ${bookerId}::uuid, 0, 'INR', '2026-06-01T10:00:00Z')
         RETURNING id
       `);
       membershipBookingId = await ins(sql`

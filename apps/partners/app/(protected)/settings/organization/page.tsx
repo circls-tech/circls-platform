@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import {
+  useMyRole,
   useRemoveTenantLogo,
   useTenantProfile,
   useUpdateTenantProfile,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/api/queries';
 import { Button, Card, Input } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { RoleNotice } from '@/components/RoleNotice';
 
 const ACCEPT = VENUE_IMAGE_TYPES.join(',');
 
@@ -27,6 +29,9 @@ export default function OrganizationSettingsPage() {
   const tenantId = activeTenantId ?? '';
   const { data: profile, isLoading } = useTenantProfile(tenantId);
   const update = useUpdateTenantProfile(tenantId);
+  // Everyone can see the profile; Owners and Managers change it.
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  const readOnly = !can('tenant.update');
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,13 +52,19 @@ export default function OrganizationSettingsPage() {
       )}
       {!isLoading && profile && (
         <>
+          {!roleLoading && readOnly && (
+            <RoleNotice tenantId={tenantId}>
+              Your role can&rsquo;t change the organisation profile — Owners and Managers can.
+            </RoleNotice>
+          )}
           <Card title="Logo">
-            <LogoEditor tenantId={tenantId} logoUrl={profile.logoUrl} />
+            <LogoEditor tenantId={tenantId} logoUrl={profile.logoUrl} readOnly={readOnly} />
           </Card>
           <OrgProfileForm
             tenantId={tenantId}
             profile={profile}
             saving={update.isPending}
+            readOnly={readOnly}
             onSave={(input) => update.mutateAsync(input)}
           />
         </>
@@ -62,7 +73,15 @@ export default function OrganizationSettingsPage() {
   );
 }
 
-function LogoEditor({ tenantId, logoUrl }: { tenantId: string; logoUrl: string | null }) {
+function LogoEditor({
+  tenantId,
+  logoUrl,
+  readOnly,
+}: {
+  tenantId: string;
+  logoUrl: string | null;
+  readOnly: boolean;
+}) {
   const upload = useUploadTenantLogo(tenantId);
   const remove = useRemoveTenantLogo(tenantId);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -92,31 +111,33 @@ function LogoEditor({ tenantId, logoUrl }: { tenantId: string; logoUrl: string |
             <span className="text-xs text-slate-400">No logo</span>
           )}
         </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={upload.isPending}
-              onClick={() => fileInput.current?.click()}
-            >
-              {logoUrl ? 'Replace logo' : 'Upload logo'}
-            </Button>
-            {logoUrl && (
+        {!readOnly && (
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
               <Button
                 variant="secondary"
                 size="sm"
-                loading={remove.isPending}
-                onClick={() => setConfirmRemove(true)}
+                loading={upload.isPending}
+                onClick={() => fileInput.current?.click()}
               >
-                Remove
+                {logoUrl ? 'Replace logo' : 'Upload logo'}
               </Button>
-            )}
+              {logoUrl && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={remove.isPending}
+                  onClick={() => setConfirmRemove(true)}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-slate-400">
+              JPEG, PNG or WebP, up to {VENUE_IMAGE_MAX_BYTES / (1024 * 1024)} MB.
+            </p>
           </div>
-          <p className="text-xs text-slate-400">
-            JPEG, PNG or WebP, up to {VENUE_IMAGE_MAX_BYTES / (1024 * 1024)} MB.
-          </p>
-        </div>
+        )}
         <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={onFile} />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -152,11 +173,14 @@ function OrgProfileForm({
   tenantId,
   profile,
   saving,
+  readOnly,
   onSave,
 }: {
   tenantId: string;
   profile: ProfileShape;
   saving: boolean;
+  /** Shown, not editable: the signed-in member can't change the profile. */
+  readOnly: boolean;
   onSave: (input: UpdateTenantProfileInput) => Promise<unknown>;
 }) {
   const [name, setName] = useState(s(profile.name));
@@ -209,6 +233,7 @@ function OrgProfileForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-6">
+      <fieldset disabled={readOnly} className="contents">
       <Card title="About">
         <div className="flex max-w-2xl flex-col gap-3">
           <Input label="Organisation name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -252,14 +277,17 @@ function OrgProfileForm({
           <Input label="Country" value={country} onChange={(e) => setCountry(e.target.value)} />
         </div>
       </Card>
+      </fieldset>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" loading={saving}>
-          Save changes
-        </Button>
-        {saved && <span className="text-sm text-emerald-600">Saved.</span>}
-        {err && <span className="text-sm text-red-600">{err}</span>}
-      </div>
+      {!readOnly && (
+        <div className="flex items-center gap-3">
+          <Button type="submit" loading={saving}>
+            Save changes
+          </Button>
+          {saved && <span className="text-sm text-emerald-600">Saved.</span>}
+          {err && <span className="text-sm text-red-600">{err}</span>}
+        </div>
+      )}
     </form>
   );
 }

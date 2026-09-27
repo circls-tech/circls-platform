@@ -1,7 +1,9 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import { useAdminSupportIssues, useUpdateSupportIssue } from '@/lib/api/queries';
+import { ApiError } from '@/lib/api/client';
+import { useAdminSupportIssues, usePlatformRole, useUpdateSupportIssue } from '@/lib/api/queries';
+import { canTriageSupport } from '@/lib/roles';
 import type {
   AdminSupportIssue,
   SupportIssueCategory,
@@ -72,22 +74,47 @@ function SourceBadge({ source }: { source: SupportIssueSource }) {
   );
 }
 
-function IssueRow({ issue }: { issue: AdminSupportIssue }) {
+/** Why a change to an issue wasn't saved, in words an admin can act on. */
+function saveErrorMessage(e: unknown): string {
+  if (e instanceof ApiError && e.code === 'forbidden_capability') {
+    return 'Not saved — your role can view support issues but not change them.';
+  }
+  return e instanceof Error ? `Not saved: ${e.message}` : 'The change was not saved.';
+}
+
+function IssueRow({ issue, canTriage }: { issue: AdminSupportIssue; canTriage: boolean }) {
   const update = useUpdateSupportIssue();
   const [status, setStatus] = useState<SupportIssueStatus>(issue.status);
   const [priority, setPriority] = useState<SupportIssuePriority>(issue.priority);
   const [expanded, setExpanded] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const hasTranscript = (issue.flowAnswers?.length ?? 0) > 0;
 
+  // The select shows the new value straight away; if the change is refused,
+  // it goes back and says why rather than pretending it saved.
   async function handleStatusChange(newStatus: SupportIssueStatus) {
+    const previous = status;
     setStatus(newStatus);
-    await update.mutateAsync({ id: issue.id, status: newStatus });
+    setSaveError(null);
+    try {
+      await update.mutateAsync({ id: issue.id, status: newStatus });
+    } catch (e) {
+      setStatus(previous);
+      setSaveError(saveErrorMessage(e));
+    }
   }
 
   async function handlePriorityChange(newPriority: SupportIssuePriority) {
+    const previous = priority;
     setPriority(newPriority);
-    await update.mutateAsync({ id: issue.id, priority: newPriority });
+    setSaveError(null);
+    try {
+      await update.mutateAsync({ id: issue.id, priority: newPriority });
+    } catch (e) {
+      setPriority(previous);
+      setSaveError(saveErrorMessage(e));
+    }
   }
 
   return (
@@ -128,34 +155,47 @@ function IssueRow({ issue }: { issue: AdminSupportIssue }) {
           {IST_FMT.format(new Date(issue.createdAt))}
         </td>
         <td className="px-4 py-3">
-          <select
-            value={status}
-            onChange={(e) => void handleStatusChange(e.target.value as SupportIssueStatus)}
-            disabled={update.isPending}
-            className={[
-              'rounded px-2 py-1 text-xs font-medium border-0 cursor-pointer',
-              STATUS_COLORS[status],
-            ].join(' ')}
-          >
-            {(Object.keys(STATUS_LABELS) as SupportIssueStatus[]).map((s) => (
-              <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-            ))}
-          </select>
+          {canTriage ? (
+            <select
+              value={status}
+              onChange={(e) => void handleStatusChange(e.target.value as SupportIssueStatus)}
+              disabled={update.isPending}
+              className={[
+                'rounded px-2 py-1 text-xs font-medium border-0 cursor-pointer',
+                STATUS_COLORS[status],
+              ].join(' ')}
+            >
+              {(Object.keys(STATUS_LABELS) as SupportIssueStatus[]).map((s) => (
+                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+              ))}
+            </select>
+          ) : (
+            <span className={['inline-block rounded px-2 py-1 text-xs font-medium', STATUS_COLORS[status]].join(' ')}>
+              {STATUS_LABELS[status]}
+            </span>
+          )}
+          {saveError && <p className="mt-1 max-w-[12rem] text-xs text-red-600">{saveError}</p>}
         </td>
         <td className="px-4 py-3">
-          <select
-            value={priority}
-            onChange={(e) => void handlePriorityChange(e.target.value as SupportIssuePriority)}
-            disabled={update.isPending}
-            className={[
-              'rounded px-2 py-1 text-xs font-medium border border-slate-200 cursor-pointer capitalize',
-              PRIORITY_COLORS[priority],
-            ].join(' ')}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+          {canTriage ? (
+            <select
+              value={priority}
+              onChange={(e) => void handlePriorityChange(e.target.value as SupportIssuePriority)}
+              disabled={update.isPending}
+              className={[
+                'rounded px-2 py-1 text-xs font-medium border border-slate-200 cursor-pointer capitalize',
+                PRIORITY_COLORS[priority],
+              ].join(' ')}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          ) : (
+            <span className={['text-xs font-medium capitalize', PRIORITY_COLORS[priority]].join(' ')}>
+              {priority}
+            </span>
+          )}
         </td>
       </tr>
       {expanded && hasTranscript && (
@@ -191,6 +231,8 @@ export default function SupportIssuesPage() {
 
   const selectCls =
     'rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700';
+  // Changing an issue is admin.support.write: everyone but Read-only.
+  const canTriage = canTriageSupport(usePlatformRole());
 
   return (
     <div className="flex flex-col gap-6">
@@ -275,7 +317,7 @@ export default function SupportIssuesPage() {
             </thead>
             <tbody>
               {issues.map((issue) => (
-                <IssueRow key={issue.id} issue={issue} />
+                <IssueRow key={issue.id} issue={issue} canTriage={canTriage} />
               ))}
             </tbody>
           </table>

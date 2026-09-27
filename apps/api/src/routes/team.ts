@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { BadRequest, Forbidden } from '../lib/errors.js';
-import { can } from '../lib/authz/can.js';
+import { BadRequest } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
@@ -76,12 +75,14 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
       }
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
-      // Editing yourself needs no cap; editing others is owner/manager only.
+      // Editing yourself needs no cap; editing others is owner/manager only
+      // (and never someone above you — the service checks that).
       if (user.id !== targetUserId) assertCap(ctx, 'members.update');
       return updateMemberProfile({
         tenantId,
         targetUserId,
         actorUserId: user.id,
+        actorRole: ctx.role,
         displayName: parsed.data.displayName,
       });
     },
@@ -98,13 +99,7 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
       // Self-remove bypasses the cap.
-      if (user.id !== targetUserId) {
-        if (!can(ctx, 'members.remove')) {
-          throw new Forbidden('Missing capability members.remove', 'forbidden_capability', {
-            cap: 'members.remove',
-          });
-        }
-      }
+      if (user.id !== targetUserId) assertCap(ctx, 'members.remove');
       await removeMember({ tenantId, targetUserId, actorUserId: user.id, actorRole: ctx.role });
       return reply.status(204).send();
     },

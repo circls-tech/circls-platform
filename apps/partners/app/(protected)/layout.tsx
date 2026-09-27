@@ -8,6 +8,7 @@ import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
 import { ContextBar } from '@/components/ContextBar';
 import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
+import { SuspendedBanner } from '@/components/SuspendedBanner';
 import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
@@ -347,6 +348,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
           </header>
 
           <EmailVerificationBanner />
+          <SuspendedBanner />
 
           {/* Content area */}
           <main className="flex-1 bg-[#FAF3E8] p-4 sm:p-6">

@@ -269,10 +269,10 @@ describe.skipIf(!runIntegration)('partner role permissions', () => {
       { name: 'release a hold', method: 'POST', url: () => '/v1/slots/release-hold', payload: () => ({ slotIds: [slotId] }), cap: 'bookings.create', staff: true },
       { name: 'take a walk-in booking', method: 'POST', url: () => '/v1/bookings', payload: () => ({ slotIds: [slotId], customer: { name: 'Walk In', contact: '1234' } }), idempotent: true, cap: 'bookings.create', staff: true },
       // Webhooks are integration settings, like API keys — reading them too.
-      { name: 'list webhooks', method: 'GET', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions`, cap: 'integration.api_keys.manage', staff: false },
+      { name: 'list webhooks', method: 'GET', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions`, cap: 'integration.read', staff: false },
       { name: 'add a webhook', method: 'POST', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions`, payload: () => ({ url: 'https://example.com/hook', events: ['booking.created'] }), cap: 'integration.api_keys.manage', staff: false },
       { name: 'delete a webhook', method: 'DELETE', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions/${uuid()}`, cap: 'integration.api_keys.manage', staff: false },
-      { name: 'read webhook deliveries', method: 'GET', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions/${uuid()}/deliveries`, cap: 'integration.api_keys.manage', staff: false },
+      { name: 'read webhook deliveries', method: 'GET', url: () => `/v1/tenants/${tenantId}/webhook-subscriptions/${uuid()}/deliveries`, cap: 'integration.read', staff: false },
       // Cancelling last: it ends the event the other cases use.
       { name: 'cancel an event', method: 'POST', url: () => eventUrl('/cancel'), cap: 'events.write', staff: false },
     ];

@@ -1,5 +1,7 @@
 Coupons are discount codes your customers apply at checkout to reduce the price of an event, membership, or court booking. The discount comes off your base price; on top of the reduced price the customer sees a single "Other charges (incl taxes)" line, which covers the payment-processing charge and, where configured for your organisation, a Circls platform fee.
 
+Coupons are created and changed by Owners and Managers; the other [roles](/help/team) can see them and their results, but not change them.
+
 ## Creating a coupon
 
 Go to **Coupons** in the sidebar and click **Create coupon**, then set:

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { apiDownload } from '@/lib/api/client';
+import { ApiError, apiDownload } from '@/lib/api/client';
 import { useAdminConsumerUsers } from '@/lib/api/queries';
 import type { AdminConsumerUserRow } from '@/lib/api/types';
 
@@ -168,7 +168,10 @@ export default function ConsumerUsersPage() {
             {isError && (
               <tr>
                 <td colSpan={12} className="px-4 py-8 text-center text-sm text-red-600">
-                  Failed to load: {error instanceof Error ? error.message : 'unknown error'}
+                  {/* The reports carry contact details: Owners and Managers only. */}
+                  {error instanceof ApiError && error.code === 'forbidden_capability'
+                    ? 'Only platform Owners and Managers can see user reports.'
+                    : `Failed to load: ${error instanceof Error ? error.message : 'unknown error'}`}
                 </td>
               </tr>
             )}

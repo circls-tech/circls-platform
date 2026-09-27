@@ -2,6 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { type Tenant, type TenantSocials, tenantMembers, tenants } from '../db/schema/index.js';
+import type { TenantRole } from '../db/schema/tenant_members.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage } from '../lib/storage.js';
 import { CURRENT_TERMS_VERSION, type TermsRegion, termsRegionForCountry } from '../lib/terms.js';
@@ -45,14 +46,20 @@ export async function createTenant(ownerUserId: string, input: CreateTenantInput
   }
 }
 
-/** Tenants the user is a member of. */
-export async function listTenantsForUser(userId: string): Promise<Tenant[]> {
+/**
+ * Tenants the user is a member of, each with the user's own role there
+ * (`myRole`), so the portals can tell which controls to offer without
+ * fetching the whole team.
+ */
+export async function listTenantsForUser(
+  userId: string,
+): Promise<Array<Tenant & { myRole: TenantRole }>> {
   const rows = await db
-    .select({ tenant: tenants })
+    .select({ tenant: tenants, role: tenantMembers.role })
     .from(tenantMembers)
     .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
     .where(eq(tenantMembers.userId, userId));
-  return rows.map((r) => r.tenant);
+  return rows.map((r) => ({ ...r.tenant, myRole: r.role }));
 }
 
 /** Admin-only: every tenant on the platform. */

@@ -8,7 +8,6 @@ import { ApiError } from '@/lib/api/client';
 import { refundSentence } from '@/lib/bookings/refund_copy';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
-import { roleCan } from '@/lib/roles';
 import { Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -292,9 +291,9 @@ export function EventRegistrations({
   const refundPreview = useRefundPreview(pendingCancel?.id ?? null);
   // Refunding a registration cancels its booking, and adding one makes a
   // booking — neither of which Read-only can do.
-  const { role } = useMyRole(tenantId);
-  const canCancel = roleCan(role, 'bookings.cancel');
-  const canBook = roleCan(role, 'bookings.create');
+  const { can } = useMyRole(tenantId);
+  const canCancel = can('bookings.cancel');
+  const canBook = can('bookings.create');
 
   if (isLoading) {
     return (

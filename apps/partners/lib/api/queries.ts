@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { type PortalCapability, isSuspended, tenantCan } from '@/lib/roles';
 import { apiFetch } from './client';
 import type {
   Analytics,
@@ -910,40 +911,61 @@ export function useTeamMembers(tenantId: string) {
     queryKey: ['team-members', tenantId],
     queryFn: () => apiFetch<TeamMember[]>(`/v1/tenants/${tenantId}/members`),
     enabled: Boolean(tenantId),
-    // Also consumed by the sidebar user card, where members without the
-    // team.read capability get a 4xx — don't retry-spam it.
-    retry: false,
   });
 }
 
 /**
- * The signed-in user's role in `tenantId`, read off the team list (every
- * partner role can read it). `role` is null until the lists are in, or when
- * they aren't a member; `isLoading` tells the two apart.
+ * The signed-in user's role in `tenantId`, from their organisation list (the
+ * one query the whole portal already shares). `role` is null until the list
+ * is in, or when they aren't a member; `isLoading` tells the two apart.
+ *
+ * `can(cap)` is what to gate a control on: the role's grant (the platform one
+ * for the Circls organisation), of which a suspended organisation keeps only
+ * reading — it can then be viewed, not changed.
  */
 export function useMyRole(tenantId: string | null | undefined): {
   role: TenantRole | null;
   isLoading: boolean;
+  suspended: boolean;
+  can: (cap: PortalCapability) => boolean;
 } {
-  const me = useMe();
-  const members = useTeamMembers(tenantId ?? '');
+  const tenants = useMyTenants();
+  const tenant = tenantId ? tenants.data?.find((t) => t.id === tenantId) : undefined;
   return {
-    role: members.data?.find((m) => m.userId === me.data?.id)?.role ?? null,
-    // isPending rather than isLoading: a query still waiting for its tenant id
-    // is disabled, not fetching, but it has no answer yet either.
-    isLoading: me.isPending || members.isPending,
+    role: tenant?.myRole ?? null,
+    // isPending rather than isLoading: a query still waiting for its user is
+    // disabled, not fetching, but it has no answer yet either. Nor is there
+    // one before the page knows which organisation it's for.
+    isLoading: !tenantId || tenants.isPending,
+    suspended: isSuspended(tenant),
+    can: (cap) => tenantCan(tenant, cap),
   };
+}
+
+/**
+ * Your own role or membership changed: the organisation list carries both,
+ * and every control's gate reads it.
+ */
+function refreshMembership(
+  qc: ReturnType<typeof useQueryClient>,
+  tenantId: string,
+  userId: string,
+  me: User | undefined,
+) {
+  void qc.invalidateQueries({ queryKey: ['team-members', tenantId] });
+  if (userId === me?.id) void qc.invalidateQueries({ queryKey: ['tenants'] });
 }
 
 export function useUpdateMemberRole(tenantId: string) {
   const qc = useQueryClient();
+  const { data: me } = useMe();
   return useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: TenantRole }) =>
       apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({ role }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+    onSuccess: (_row, { userId }) => refreshMembership(qc, tenantId, userId, me),
   });
 }
 
@@ -961,10 +983,13 @@ export function useUpdateMemberProfile(tenantId: string) {
 
 export function useRemoveMember(tenantId: string) {
   const qc = useQueryClient();
+  const { data: me } = useMe();
   return useMutation({
     mutationFn: (userId: string) =>
       apiFetch<void>(`/v1/tenants/${tenantId}/members/${userId}`, { method: 'DELETE' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['team-members', tenantId] }),
+    // Leaving drops the organisation from your list, which moves you to
+    // another one (or to onboarding) rather than leaving you on a dead page.
+    onSuccess: (_void, userId) => refreshMembership(qc, tenantId, userId, me),
   });
 }
 

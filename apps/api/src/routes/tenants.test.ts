@@ -91,7 +91,8 @@ describe.skipIf(!runIntegration)('tenants', () => {
     expect(t.termsAcceptedAt).toBeTruthy();
 
     const mine = await app.inject({ method: 'GET', url: '/v1/me/tenants', headers: bearer('owner') });
-    expect(mine.json().some((x: { slug: string }) => x.slug === slug)).toBe(true);
+    // Each organisation comes with the caller's own role in it.
+    expect(mine.json()).toContainEqual(expect.objectContaining({ slug, myRole: 'owner' }));
   });
 
   it('isolates tenants per user (other user sees none of it)', async () => {

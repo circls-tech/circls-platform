@@ -23,7 +23,6 @@ import type { QrTicketConfig } from '@/lib/api/types';
 import { refundSentence } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
-import { roleCan } from '@/lib/roles';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, StatusPill } from '@/lib/ui';
 
@@ -56,11 +55,14 @@ export default function ArenaReceptionPage() {
   const { arenaId } = useParams<{ arenaId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
 
-  // ── Resolve venue timezone ──
+  // The arena's organisation: the one in the link, else the active one.
   const { activeTenantId } = useOrg();
+  const orgId = tenantId || activeTenantId;
+
+  // ── Resolve venue timezone ──
   const { data: arena } = useArena(arenaId);
   const setArenaOpen = useSetArenaOpen(arenaId, arena?.venueId ?? '');
-  const { data: venues } = useVenues(activeTenantId ?? '');
+  const { data: venues } = useVenues(orgId ?? '');
   const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
   const currency = useCurrency({ venueId: arena?.venueId });
 
@@ -141,11 +143,12 @@ export default function ArenaReceptionPage() {
       : 'Working out the refund…';
   // Staff work the desk — booking and cancelling — but not the arena's setup
   // (prices, blocks, schedule, QR rules, closing it); Read-only does neither.
-  const { role } = useMyRole(activeTenantId);
-  const canBook = roleCan(role, 'bookings.create');
-  const canCancel = roleCan(role, 'bookings.cancel');
-  const canSchedule = roleCan(role, 'schedules.write');
-  const canEditArena = roleCan(role, 'arenas.write');
+  // Decided by the arena's own organisation, which is what the API checks.
+  const { can } = useMyRole(orgId);
+  const canBook = can('bookings.create');
+  const canCancel = can('bookings.cancel');
+  const canSchedule = can('schedules.write');
+  const canEditArena = can('arenas.write');
 
   // ── Price-change confirm state ──
   const [priceConfirmOpen, setPriceConfirmOpen] = useState(false);
@@ -225,7 +228,7 @@ export default function ArenaReceptionPage() {
             </Link>
           )}
           {/* Closing an arena, like closing its venue, is venues.write. */}
-          {arena && roleCan(role, 'venues.write') && (
+          {arena && can('venues.write') && (
             <CloseReopenControl
               noun="arena"
               target={arena}
@@ -280,7 +283,7 @@ export default function ArenaReceptionPage() {
           onBulk={handleBulk}
           onBook={canBook ? handleBook : undefined}
           onCancel={canCancel ? handleCancel : undefined}
-          canSetPrice={roleCan(role, 'pricing.write')}
+          canSetPrice={can('pricing.write')}
           canBlock={canSchedule}
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}

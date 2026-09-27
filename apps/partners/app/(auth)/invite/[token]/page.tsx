@@ -14,6 +14,8 @@ import { ROLE_INFO, formatRole } from '@/lib/roles';
 
 interface InviteMeta {
   tenantName: string;
+  /** Circls has the organisation suspended: nobody can join until it's reinstated. */
+  tenantSuspended?: boolean;
   role: 'owner' | 'manager' | 'staff' | 'readonly';
   email: string;
   inviterEmail: string | null;
@@ -248,6 +250,20 @@ export default function AcceptInvitePage() {
         >
           Go to dashboard
         </Link>
+      </main>
+    );
+  }
+
+  // ── The organisation is suspended: nobody can join it for now ──
+  if (meta.tenantSuspended) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-3 p-6">
+        <h1 className="text-2xl font-semibold">Joining {meta.tenantName} is on hold</h1>
+        <p className="text-sm text-slate-600">
+          Circls has suspended this organisation, so nobody can join it for now. Once it&apos;s
+          reinstated you can accept this invitation — or, if the link has expired by then, ask
+          whoever invited you to send it again.
+        </p>
       </main>
     );
   }

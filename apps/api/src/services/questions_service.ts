@@ -27,7 +27,8 @@ import type { FlowAnswer } from '../db/schema/support_issues.js';
 import type { TenantRole } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
-import { can } from '../lib/authz/can.js';
+import { can, isSuspendedTenant } from '../lib/authz/can.js';
+import { ownBookingCondition } from './booking_ownership.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
@@ -119,7 +120,8 @@ export interface QuestionThreadDetail {
     origin: QuestionOrigin;
     /** Interview triage category; null on forum threads. */
     category: QuestionCategory | null;
-    authorUserId: string;
+    /** The author's user id — for staff and the author themselves; null for everyone else. */
+    authorUserId: string | null;
     messageCount: number;
     lastMessageAt: string;
     createdAt: string;
@@ -261,7 +263,8 @@ export async function resolveViewerRelation(
   tenantId: string,
 ): Promise<ViewerRelation> {
   const res = await db.execute<Record<string, unknown>>(sql`
-    select tm.tenant_id::text as tenant_id, tm.role as role, t.is_platform as is_platform
+    select tm.tenant_id::text as tenant_id, tm.role as role, t.is_platform as is_platform,
+           t.status as status
       from tenant_members tm
       join tenants t on t.id = tm.tenant_id
      where tm.user_id = ${userId}::uuid
@@ -270,13 +273,17 @@ export async function resolveViewerRelation(
   for (const r of rowsOf(res)) {
     const role = r['role'] as TenantRole;
     const isPlatform = Boolean(r['is_platform']);
+    // A suspended org's members can still read, but not answer as the org.
+    const suspended = isSuspendedTenant({ isPlatform, status: String(r['status']) });
     if (r['tenant_id'] === tenantId) {
       rel.isOrgMember = true;
-      if (can({ role, isPlatform }, 'questions.write')) rel.canPostAsOrg = true;
+      if (can({ role, isPlatform, suspended }, 'questions.write')) rel.canPostAsOrg = true;
     }
     if (isPlatform) {
       rel.isPlatformMember = true;
-      if (can({ role, isPlatform: true }, 'admin.support.write')) rel.canPostAsCircls = true;
+      if (can({ role, isPlatform: true, suspended: false }, 'admin.support.write')) {
+        rel.canPostAsCircls = true;
+      }
     }
   }
   return rel;
@@ -519,7 +526,7 @@ async function deriveSubjectFromBooking(booking: {
  * 2026-07-18-support-context-threads §3). Visibility is forced `private`;
  * `origin='support'`; the interview's category/transcript are stored for
  * staff. With a booking: the booking must belong to the caller
- * (customer_user_id OR created_by_user_id — else 404 `booking_not_found`;
+ * (by the rule of the consumer's own bookings list — else 404 `booking_not_found`;
  * cancelled bookings are ALLOWED — refund concerns are precisely about
  * cancelled bookings, and the thread must route to the org that owes the
  * refund), the subject is derived from the booking's item, the tenant is the
@@ -551,7 +558,8 @@ export async function createSupportThread(input: {
       .where(
         and(
           eq(bookings.id, input.bookingId),
-          sql`(${bookings.customerUserId} = ${input.userId}::uuid or ${bookings.createdByUserId} = ${input.userId}::uuid)`,
+          // The caller's own booking, as "My bookings" decides it.
+          ownBookingCondition(input.userId, 'bookings'),
         ),
       )
       .limit(1);
@@ -920,8 +928,9 @@ async function loadMessages(
 function serializeThread(
   t: QuestionThread,
   extras: ThreadExtras,
-  opts: { staff?: boolean } = {},
+  opts: { staff?: boolean; viewerUserId?: string | null } = {},
 ): QuestionThreadDetail['thread'] {
+  const seesAuthorId = opts.staff || (opts.viewerUserId != null && opts.viewerUserId === t.authorUserId);
   const subjectId = subjectIdOf(t);
   const thread: QuestionThreadDetail['thread'] = {
     id: t.id,
@@ -932,7 +941,7 @@ function serializeThread(
     status: t.status,
     origin: t.origin,
     category: t.category ?? null,
-    authorUserId: t.authorUserId,
+    authorUserId: seesAuthorId ? t.authorUserId : null,
     messageCount: t.messageCount,
     lastMessageAt: t.lastMessageAt.toISOString(),
     createdAt: t.createdAt.toISOString(),
@@ -1007,7 +1016,7 @@ export async function getThreadDetailForViewer(
       serializeMessage(m, displayName, extras.tenantName, { viewerUserId: viewer.userId }),
     );
 
-  return { thread: serializeThread(t, extras), messages };
+  return { thread: serializeThread(t, extras, { viewerUserId: viewer.userId }), messages };
 }
 
 /** Partner/admin thread detail: hidden messages marked, never omitted. */
@@ -1216,7 +1225,7 @@ export async function setStatusAsAuthor(input: {
       throw new Conflict('This question is closed', 'question_closed');
     }
     return next;
-  });
+  }, { viewerUserId: input.userId });
 }
 
 /**
@@ -1253,7 +1262,7 @@ export async function setStatusAsStaff(input: {
 async function persistStatus(
   threadId: string,
   compute: (locked: QuestionThread) => QuestionStatus,
-  opts: { staff?: boolean } = {},
+  opts: { staff?: boolean; viewerUserId?: string | null } = {},
 ): Promise<QuestionThreadDetail['thread']> {
   const updated = await db.transaction(async (tx) => {
     const [locked] = await tx

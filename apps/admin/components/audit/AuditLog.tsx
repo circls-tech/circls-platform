@@ -128,10 +128,11 @@ function AuditLogContent({ fixedTenantId }: { fixedTenantId?: string }) {
             />
           </Field>
           <p className="mt-1 text-xs text-slate-500">
-            Matches an organisation&apos;s name or slug, and a person&apos;s name,
-            email or phone — whether they acted or were acted upon — or an event,
-            venue or membership name. Phone numbers match with or without spaces
-            or a country code.
+            Matches an organisation&apos;s name or slug, and a person&apos;s name
+            (and, for platform Owners and Managers, their email or phone) —
+            whether they acted or were acted upon — or an event, venue or
+            membership name. Phone numbers match with or without spaces or a
+            country code.
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

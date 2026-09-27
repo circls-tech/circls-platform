@@ -2,7 +2,7 @@ Your organisation profile is how customers see your brand across Circls — on e
 
 ## Where to find it
 
-Go to **Settings → Organisation profile** (the **Edit organisation profile** card). The editor always applies to the organisation currently selected in the top-bar org switcher.
+Go to **Settings → Organisation profile** (the **Edit organisation profile** card). The editor always applies to the organisation currently selected in the top-bar org switcher. Owners and Managers edit the profile; the other [roles](/help/team) see it read-only (the card says **View organisation profile**).
 
 ## Logo
 

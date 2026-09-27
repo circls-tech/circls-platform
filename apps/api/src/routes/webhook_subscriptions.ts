@@ -12,15 +12,24 @@ import {
   listSubscriptions,
 } from '../services/webhook_subscriptions_service.js';
 
+const NO_CREDENTIALS = "Webhook URLs can't include a username or password";
+
 const createSchema = z.object({
-  url: z.string().url(),
+  url: z
+    .string()
+    .url()
+    // fetch refuses a URL with credentials in it, so it could never deliver.
+    .refine((raw) => {
+      const url = new URL(raw);
+      return !url.username && !url.password;
+    }, NO_CREDENTIALS),
   events: z.array(z.string().min(1)).min(1),
 });
 
 /**
- * Webhook subscriptions are integration settings, like API keys: every route
- * needs integration.api_keys.manage (Owner/Manager). Deliveries carry event
- * payloads, so even reading them does.
+ * Webhook subscriptions are integration settings, like API keys: Owners and
+ * Managers only. Deliveries carry event payloads, so even reading them needs
+ * integration.read; changes need integration.api_keys.manage.
  */
 export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
   app.get(
@@ -30,7 +39,7 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId } = req.params as { tenantId: string };
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
-      assertCap(ctx, 'integration.api_keys.manage');
+      assertCap(ctx, 'integration.read');
       return listSubscriptions(tenantId);
     },
   );
@@ -44,10 +53,13 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, 'integration.api_keys.manage');
       const parsed = createSchema.safeParse(req.body);
-      if (!parsed.success)
-        throw new BadRequest('Invalid webhook payload', 'bad_request', {
+      if (!parsed.success) {
+        // Say what to fix when it's the credentials, not just "invalid".
+        const credentials = parsed.error.issues.some((i) => i.message === NO_CREDENTIALS);
+        throw new BadRequest(credentials ? NO_CREDENTIALS : 'Invalid webhook payload', 'bad_request', {
           issues: parsed.error.issues,
         });
+      }
       return createSubscription({ tenantId, ...parsed.data });
     },
   );
@@ -74,7 +86,7 @@ export const webhookSubscriptionRoutes: FastifyPluginAsync = async (app) => {
       const { tenantId, subId } = req.params as { tenantId: string; subId: string };
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
-      assertCap(ctx, 'integration.api_keys.manage');
+      assertCap(ctx, 'integration.read');
       const q = req.query as { limit?: string; cursor?: string };
       const limit = q.limit ? Math.min(Number(q.limit) || 50, 100) : 50;
       return listDeliveries(subId, tenantId, {

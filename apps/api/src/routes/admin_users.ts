@@ -11,8 +11,9 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 
 /**
- * Platform-admin user reports. Mounted under /v1/admin/users/*. Gated the same
- * way as admin_tenants.ts (platform membership + admin.tenants.read).
+ * Platform-admin user reports. Mounted under /v1/admin/users/*. Platform
+ * membership + admin.users.read (Owner and Manager): the rows carry contact
+ * details, and CSV exports them wholesale.
  *
  * Two datasets:
  *  - consumers: one row per user account, with booking/activity/login rollups
@@ -96,7 +97,7 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const platformTenantId = await getPlatformTenantId();
       const ctx = await requireTenantMembership(user.id, platformTenantId);
-      assertCap(ctx, 'admin.tenants.read');
+      assertCap(ctx, 'admin.users.read');
 
       const parsed = listQuerySchema.safeParse(req.query);
       if (!parsed.success) {
@@ -223,7 +224,7 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const platformTenantId = await getPlatformTenantId();
       const ctx = await requireTenantMembership(user.id, platformTenantId);
-      assertCap(ctx, 'admin.tenants.read');
+      assertCap(ctx, 'admin.users.read');
 
       const parsed = listQuerySchema.safeParse(req.query);
       if (!parsed.success) {

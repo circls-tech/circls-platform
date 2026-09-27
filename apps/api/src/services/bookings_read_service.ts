@@ -122,6 +122,8 @@ export interface BookingDetailSlot {
 
 export interface BookingDetail {
   id: string;
+  /** The booking's organisation — whose roles decide what a member may do with it. */
+  tenantId: string;
   customerName: string | null;
   customerContact: string | null;
   note: string | null;
@@ -213,6 +215,7 @@ export async function getBookingDetail(
 
   return {
     id: booking['id'] as string,
+    tenantId,
     customerName: (booking['customer_name'] as string | null) ?? null,
     customerContact: (booking['customer_contact'] as string | null) ?? null,
     note: (booking['note'] as string | null) ?? null,

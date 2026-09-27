@@ -15,6 +15,7 @@ import {
   prepareOnlineBookingWithPayment,
 } from '../services/booking_service.js';
 import { getBookingDetail, listBookings } from '../services/bookings_read_service.js';
+import { assertEventBookable } from '../services/consumer_service.js';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { slots } from '../db/schema/index.js';
@@ -157,7 +158,9 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
   // walk-in and paid bookings via the cancellation engine.
 
   // Book a published event (Phase 15). Open to any authenticated user — the
-  // tenant scope comes from the event row, not the caller.
+  // tenant scope comes from the event row, not the caller — on the same on-sale
+  // rules as /v1/consumer/events/:eventId/book. (The Flutter partner app records
+  // door registrations through here.)
   app.post('/v1/events/:eventId/book', { preHandler: requireAuth }, async (req) => {
     const { eventId } = req.params as { eventId: string };
     const user = await currentUser(req);
@@ -167,6 +170,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         issues: parsed.error.issues,
       });
     }
+    await assertEventBookable(eventId);
     return bookEvent(
       eventId,
       {

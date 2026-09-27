@@ -8,7 +8,6 @@ import { useOrg } from '@/lib/org_context';
 import { useCreateMembership, useUploadMembershipCover } from '@/lib/api/memberships';
 import { useMyRole, useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
-import { roleCan } from '@/lib/roles';
 import { Button, Card } from '@/lib/ui';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
@@ -39,8 +38,8 @@ export default function NewMembershipPage() {
   const uploadCover = useUploadMembershipCover(tenantId);
   // The form gives way to a notice only once the role has loaded, so the
   // notice never flashes at those who can create plans.
-  const { role, isLoading: roleLoading } = useMyRole(tenantId);
-  const cannotCreate = !roleLoading && !roleCan(role, 'memberships.write');
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  const cannotCreate = !roleLoading && !can('memberships.write');
 
   const [draft, setDraft] = useState<MembershipPlanDraft>(emptyPlanDraft);
   const [artwork, setArtwork] = useState<PendingPhoto[]>([]);
