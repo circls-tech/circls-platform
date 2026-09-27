@@ -8,7 +8,14 @@ import { useMemberships } from '@/lib/api/memberships';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { useTimezone } from '@/lib/timezone_context';
 import { useOrg } from '@/lib/org_context';
-import { type CurrencyCode, asCurrencyCode, formatMoney, useCurrency } from '@/lib/currency';
+import {
+  type CurrencyCode,
+  asCurrencyCode,
+  formatMoney,
+  useCurrency,
+  useVenueCurrencies,
+} from '@/lib/currency';
+import { planSummary } from '@/lib/plan_summary';
 import { useCan } from '@/lib/use_can';
 import { Card, StatusPill } from '@/lib/ui';
 import type {
@@ -255,6 +262,22 @@ function EmptySection({
   );
 }
 
+/**
+ * The first few, and the way to the rest.
+ *
+ * The dashboard is glanced at, so no section may grow without bound: an org
+ * with forty plans would push everything under it off the page.
+ */
+const SECTION_LIMIT = 6;
+
+function MoreLink({ href, count, noun }: { href: string; count: number; noun: string }) {
+  return (
+    <Link href={href} className="text-xs font-semibold text-[#EE5C2B] hover:underline">
+      All {count} {noun} →
+    </Link>
+  );
+}
+
 function SectionSpinner({ what }: { what: string }) {
   return (
     <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -271,13 +294,18 @@ function SectionSpinner({ what }: { what: string }) {
  * only points straight at a grid when there is exactly one arena to mean. With
  * several it goes to the venue, where each arena carries its own button; that
  * is one extra click, and honest, rather than guessing which court is meant.
+ *
+ * Every arena counts, whatever its listing status. Nothing in the walk-in path
+ * checks it, and the venue page offers reception on every row — so filtering
+ * to `active` here hid a working desk from exactly the partner most likely to
+ * want it: one who has just created a venue and whose arenas await review.
  */
 function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
   const { data: arenas } = useArenas(venue.id);
-  const bookable = (arenas ?? []).filter((a) => a.status === 'active');
+  const desks = arenas ?? [];
   const deskHref =
-    bookable.length === 1
-      ? `/arenas/${bookable[0]!.id}?tenantId=${tenantId}`
+    desks.length === 1
+      ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}`
       : `/venues/${venue.id}?tenantId=${tenantId}`;
 
   return (
@@ -297,9 +325,9 @@ function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
       <div className="flex items-end justify-between gap-2">
         <p className="text-xs text-slate-400">
           {venue.tzName ?? '\u00a0'}
-          {bookable.length > 1 && ` · ${bookable.length} arenas`}
+          {desks.length > 1 && ` · ${desks.length} arenas`}
         </p>
-        {bookable.length > 0 && <ReceptionButton href={deskHref} />}
+        {desks.length > 0 && <ReceptionButton href={deskHref} />}
       </div>
     </div>
   );
@@ -322,20 +350,25 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
     );
   }
 
+  const shown = venues.slice(0, SECTION_LIMIT);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {venues.map((venue) => (
+        {shown.map((venue) => (
           <VenueTile key={venue.id} venue={venue} tenantId={tenantId} />
         ))}
       </div>
-      {canAddVenue && (
-        <div className="pt-1">
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {canAddVenue && (
           <Link href="/venues" className={ADD_LINK_CLASS}>
             ＋ Add venue
           </Link>
-        </div>
-      )}
+        )}
+        {venues.length > shown.length && (
+          <MoreLink href="/venues" count={venues.length} noun="venues" />
+        )}
+      </div>
     </div>
   );
 }
@@ -412,7 +445,7 @@ function EventsSection({ tenantId }: { tenantId: string }) {
   const past = events
     .filter((e) => e.endsAt < now)
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
-  const shown = [...upcoming, ...past].slice(0, 6);
+  const shown = [...upcoming, ...past].slice(0, SECTION_LIMIT);
 
   return (
     <div className="flex flex-col gap-3">
@@ -428,37 +461,17 @@ function EventsSection({ tenantId }: { tenantId: string }) {
           </Link>
         )}
         {events.length > shown.length && (
-          <Link href="/events" className="text-xs font-semibold text-[#EE5C2B] hover:underline">
-            All {events.length} events →
-          </Link>
+          <MoreLink href="/events" count={events.length} noun="events" />
         )}
       </div>
     </div>
   );
 }
 
-/**
- * What a plan costs, in one line — the same summary the Memberships list
- * shows. A legacy plan carrying no tiers falls back to its own price rather
- * than reporting "0 tiers", which reads as a fault when it is just an older
- * plan shape.
- */
-function planSummary(plan: Membership, currency: CurrencyCode): string {
-  const prices = plan.tiers.map((t) => t.pricePaise);
-  if (prices.length === 0) return formatMoney(plan.pricePaise, currency);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range =
-    min === max
-      ? formatMoney(min, currency)
-      : `${formatMoney(min, currency)}–${formatMoney(max, currency)}`;
-  return `${plan.tiers.length} ${plan.tiers.length === 1 ? 'tier' : 'tiers'} · ${range}`;
-}
-
 function MembershipsSection({ tenantId }: { tenantId: string }) {
   const { data: plans, isLoading } = useMemberships(tenantId);
   const canAddPlan = useCan('memberships.write', tenantId);
-  const currency = useCurrency();
+  const { currencyFor } = useVenueCurrencies();
 
   if (isLoading) return <SectionSpinner what="memberships" />;
 
@@ -473,10 +486,12 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
     );
   }
 
+  const shown = plans.slice(0, SECTION_LIMIT);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {plans.map((plan) => (
+        {shown.map((plan) => (
           <div key={plan.id} className={TILE_CLASS}>
             <div className="flex items-start justify-between gap-2">
               <Link
@@ -488,7 +503,9 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
               <StatusPill status={plan.status} />
             </div>
             <div className="flex items-end justify-between gap-2">
-              <p className="text-xs text-slate-400">{planSummary(plan, currency)}</p>
+              <p className="text-xs text-slate-400">
+                {planSummary(plan, currencyFor(plan.venueId))}
+              </p>
               {/* Straight to the walk-in form, open on arrival: a plan has one
                   desk, so unlike a venue there is nothing to disambiguate. */}
               <ReceptionButton href={`/memberships/${plan.id}?tenantId=${tenantId}&desk=1`} />
@@ -496,13 +513,16 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
           </div>
         ))}
       </div>
-      {canAddPlan && (
-        <div className="pt-1">
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {canAddPlan && (
           <Link href="/memberships/new" className={ADD_LINK_CLASS}>
             ＋ New plan
           </Link>
-        </div>
-      )}
+        )}
+        {plans.length > shown.length && (
+          <MoreLink href="/memberships" count={plans.length} noun="plans" />
+        )}
+      </div>
     </div>
   );
 }

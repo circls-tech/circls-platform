@@ -4,14 +4,11 @@ import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
 import { useMemberships } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
-import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
+import { useVenueCurrencies } from '@/lib/currency';
+import { planSummary } from '@/lib/plan_summary';
 import type { Membership } from '@/lib/api/types';
 import { useCan } from '@/lib/use_can';
 import { Button, Card, StatusPill } from '@/lib/ui';
-
-function fmtPrice(pricePaise: number, currency: CurrencyCode) {
-  return pricePaise === 0 ? 'Free' : formatMoney(pricePaise, currency, { decimals: 2 });
-}
 
 /**
  * One line describing a plan's tiers, e.g. "3 tiers · ₹500–₹2,000".
@@ -20,17 +17,6 @@ function fmtPrice(pricePaise: number, currency: CurrencyCode) {
  * which made a row as tall as the plan was complicated. The full tier detail
  * lives on the plan's own page now, where there is room for it.
  */
-function tiersSummary(m: Membership, currency: CurrencyCode): string {
-  if (m.tiers.length === 0) return '—';
-  const prices = m.tiers.map((t) => t.pricePaise);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const count = `${m.tiers.length} tier${m.tiers.length === 1 ? '' : 's'}`;
-  const range =
-    min === max ? fmtPrice(min, currency) : `${fmtPrice(min, currency)}–${fmtPrice(max, currency)}`;
-  return `${count} · ${range}`;
-}
-
 export default function MembershipsPage() {
   const { activeTenantId, tenants } = useOrg();
   const activeTenant = tenants.find((t) => t.id === activeTenantId) ?? null;
@@ -106,7 +92,7 @@ export default function MembershipsPage() {
                     </div>
                     <div className="flex justify-between gap-2">
                       <dt className="text-slate-400">Tiers</dt>
-                      <dd className="text-right">{tiersSummary(m, currencyFor(m.venueId))}</dd>
+                      <dd className="text-right">{planSummary(m, currencyFor(m.venueId))}</dd>
                     </div>
                   </dl>
                 </li>
@@ -148,7 +134,7 @@ export default function MembershipsPage() {
                         )}
                       </td>
                       <td className="py-2.5 pr-4 whitespace-nowrap text-slate-700">
-                        {tiersSummary(m, currencyFor(m.venueId))}
+                        {planSummary(m, currencyFor(m.venueId))}
                       </td>
                       <td className="py-2.5">
                         <StatusPill status={m.status} />
