@@ -267,7 +267,7 @@ function useRouteDepth(): { depth: RouteDepth; venueId: string | null; arenaId: 
     return { depth: 'venue', venueId, arenaId: null };
   }
 
-  // Everything else: dashboard, /venues (list), /settings, /onboarding, /tenants/...
+  // Everything else: dashboard, /venues (list), /settings, /onboarding
   return { depth: 'org', venueId: null, arenaId: null };
 }
 
