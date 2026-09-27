@@ -43,6 +43,7 @@ export type Capability =
   | 'admin.tenants.read'
   | 'admin.tenants.suspend'
   | 'admin.tenants.billing'
+  | 'admin.users.read'
   | 'admin.listings.review'
   | 'admin.payouts.read'
   | 'admin.payouts.execute'
@@ -69,6 +70,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'questions.read', 'questions.write',
   'integration.api_keys.manage',
   'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
+  'admin.users.read',
   'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
   'admin.audit.read',
   'admin.coupons.read', 'admin.coupons.write',

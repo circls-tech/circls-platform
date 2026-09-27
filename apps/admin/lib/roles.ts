@@ -32,11 +32,11 @@ export const PLATFORM_ROLE_INFO: Record<TenantRole, string> = {
   owner:
     'Founder-level access — every admin power plus full management of the Circls organisation and its team.',
   manager:
-    'Ops lead — every admin power: suspend or reactivate tenants, review listings, read and execute payouts, manage coupons, handle support, view audit logs. Cannot manage the Circls team.',
+    'Ops lead — every admin power: suspend or reactivate tenants, review listings, read and execute payouts, manage coupons, handle support, view audit logs and user reports. Cannot manage the Circls team.',
   staff:
-    'Ops team member — review listings, handle support, and view tenants, payouts, coupons and audit logs. Cannot execute payouts or suspend tenants.',
+    'Ops team member — review listings, handle support, and view tenants, payouts, coupons and audit logs. Cannot execute payouts, suspend tenants or see user reports.',
   readonly:
-    'Auditor access — view tenants, payouts, coupons, support and audit logs. Cannot review listings or make any changes.',
+    'Auditor access — view tenants, payouts, coupons, support and audit logs. Cannot review listings, see user reports or make any changes.',
 };
 
 /** Label for a role value that may come back untyped from the API. */

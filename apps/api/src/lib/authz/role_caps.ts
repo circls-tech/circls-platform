@@ -63,6 +63,7 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   owner: [
     ...PARTNER_CAPS.owner,
     'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
+    'admin.users.read',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
     'admin.coupons.read', 'admin.coupons.write',
@@ -75,6 +76,8 @@ export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
     'payments.refund',
     'integration.api_keys.manage',
     'admin.tenants.read', 'admin.tenants.suspend', 'admin.tenants.billing',
+    // The consumer and partner user reports (contact details, CSV exports).
+    'admin.users.read',
     'admin.listings.review', 'admin.payouts.read', 'admin.payouts.execute',
     'admin.audit.read',
     'admin.coupons.read', 'admin.coupons.write',

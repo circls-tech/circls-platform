@@ -96,6 +96,14 @@ describe.skipIf(!runIntegration)('consumer support concerns (#114)', () => {
     const ome = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('owner') });
     ownerUserId = (ome.json() as { id: string }).id;
 
+    // `partner` raises support issues, which takes membership of an organisation.
+    const pme = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer('partner') });
+    const partnerUserId = (pme.json() as { id: string }).id;
+    await db.execute(sql`
+      INSERT INTO tenant_members (tenant_id, user_id, role)
+      VALUES (${tenantId}::uuid, ${partnerUserId}::uuid, 'staff')
+    `);
+
     const bRows = await db.execute<{ id: string }>(sql`
       INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id)
       VALUES (${tenantId}::uuid, 'event', 'circls', 'free', 'confirmed', ${consumerId}::uuid)
