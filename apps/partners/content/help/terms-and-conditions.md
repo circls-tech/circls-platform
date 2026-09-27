@@ -15,6 +15,8 @@ Existing venues, bookings, events and memberships keep working — the gate only
 
 Accepting binds the organisation, so only members with the **owner** or **manager** role can accept. If you sign in with a staff or read-only role while your organisation is gated, ask an owner or manager to sign in and accept.
 
+While Circls has your organisation [suspended](/help/team), nothing can be accepted or changed, so the Terms screen doesn't appear and you can still view everything. It comes back once the organisation is reinstated, if an acceptance is still due.
+
 ## Which document applies
 
 The region is taken from where your organisation is based:

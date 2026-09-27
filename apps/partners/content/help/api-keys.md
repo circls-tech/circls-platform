@@ -8,7 +8,7 @@ circls offers a REST API and outbound webhooks so aggregators and your own syste
 
 ## API keys
 
-API keys and webhooks are managed by Owners and Managers; other roles don't see them under **Settings**.
+API keys and webhooks are managed by Owners and Managers; other roles don't see them under **Settings**. While Circls has your organisation [suspended](/help/team), Owners and Managers can still see them, but can't create, revoke or delete any.
 
 ### Generating a key
 
@@ -48,7 +48,7 @@ Webhooks push events to a URL you control the moment they happen, so you don't h
 ### Creating a subscription
 
 1. Go to **Settings → Outbound webhooks**.
-2. In **Create a subscription**, enter your **Delivery URL** (e.g. `https://example.com/webhooks/circls`). It must use `https://` and be reachable on the public internet; circls doesn't follow redirects, so give the final address.
+2. In **Create a subscription**, enter your **Delivery URL** (e.g. `https://example.com/webhooks/circls`). It must use `https://` and be reachable on the public internet; circls doesn't follow redirects, so give the final address, and it can't contain a username or password (verify deliveries with the signing secret instead).
 3. Select the **events** to subscribe to:
    - `booking.confirmed`
    - `booking.cancelled`

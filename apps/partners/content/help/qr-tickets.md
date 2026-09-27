@@ -44,7 +44,7 @@ cancelled, its passes are revoked automatically.
 
 ## Checking guests in
 
-Any member of your organisation can check guests in — Read-only members included, so a door volunteer only needs that role.
+Any member of your organisation can check guests in — Read-only members included, so a door volunteer only needs that role. While Circls has your organisation [suspended](/help/team), passes can still be looked up with **Peek**, but nobody can be checked in; the Check-in page says so.
 
 Open **Check-in** in the portal navigation. There are two ways to validate:
 

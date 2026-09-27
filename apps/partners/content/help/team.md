@@ -9,7 +9,7 @@ Every member has one of four roles:
 | **Owner** | Full control — manage the team and roles, manage all venues, arenas, schedules, pricing, bookings, events, memberships and discounts, answer and manage [customer questions](/help/questions), view financial reports, issue refunds, manage [API keys](/help/api-keys), and update or delete the organisation. |
 | **Manager** | Everything an Owner can do — team and roles, venues, schedules, pricing, bookings, events, financial reports, refunds and API keys. The exceptions: a Manager cannot delete the organisation, and cannot make anyone an Owner or change or remove an Owner. |
 | **Staff** | Day-to-day operations — create and cancel bookings (cancelling one paid online refunds the customer in full), run the event door and membership desks (add registrations and members; renew, cancel or refund members), check customers in, view analytics, and reply to and manage customer questions. Can view venues, arenas, schedules, pricing, events and membership plans, but cannot change them — including slot prices and blocking slots on the reception grid. No team management, no API keys or webhooks, and no access to financial reports. |
-| **Read-only** | View-only access to everything (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or taking, cancelling and refunding bookings. The one exception: they can check customers in at the door, so a door volunteer only needs this role. |
+| **Read-only** | View-only access to everything except API keys and webhooks (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or taking, cancelling and refunding bookings. The one exception: they can check customers in at the door, so a door volunteer only needs this role. |
 
 Choose the least-privileged role that lets someone do their job — you can always upgrade them later. These descriptions are also shown on the **Settings → Team** page itself, and next to the role picker when you send an invite.
 
@@ -47,7 +47,7 @@ Invitations only carry an email address, so a teammate who accepted an invite ma
 1. In the **Members** list, click **Edit** next to the person.
 2. Set their **name** and click **Save**. Leaving it blank clears it.
 
-Any member can edit their own entry, whatever their role.
+As with roles, nobody can edit someone above them — a Manager can't rename an Owner (a name shows everywhere that person appears on circls, not just in your organisation). Any member can edit their own entry, whatever their role.
 
 A member's **phone number** can't be typed in here — phone numbers on circls always come from the person themselves verifying the number with an OTP (for example when they sign in to the circls consumer app). When a member has a verified number it appears alongside their name automatically.
 
@@ -57,7 +57,7 @@ Owners and managers can remove members: in the **Members** list, click **Remove*
 
 ## If your organisation is suspended
 
-Circls can suspend an organisation — for example over an unpaid bill or a policy issue. While it is suspended, a banner says so at the top of every page, and every member, whatever their role, can still **view** everything: bookings, customers, events, memberships, reports. Nothing can be **changed**: no new bookings or registrations, cancellations or refunds, edits, invitations, role changes, API keys or webhooks, and passes can be looked up at the door but not admitted. Customers can still cancel their own bookings, and you can still raise a support issue with Circls from the Help page.
+Circls can suspend an organisation — for example over an unpaid bill or a policy issue. While it is suspended, a banner says so at the top of every page, and every member, whatever their role, can still **view** what their role lets them see: bookings, customers, events, memberships, reports, and (for Owners and Managers) API keys and webhooks. Nothing about the organisation can be **changed**: no new bookings or registrations, cancellations or refunds, edits, replies to customer questions, invitations (pending ones can't be accepted either), role changes, API keys or webhooks, and passes can be looked up at the door but not admitted. If the organisation still owes an acceptance of the Partner Terms, that waits until it's reinstated too. Customers can still cancel their own bookings, members can still edit their own name or leave, and you can still raise a support issue with Circls from the Help page.
 
 ## Tips
 
