@@ -1,7 +1,9 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
+import type { TenantRole } from '@/lib/roles';
 import { apiFetch } from './client';
 import type {
+  MeTenant,
   AdminAuditLogPage,
   AdminChangeRequestDetail,
   AdminChangeRequestListResponse,
@@ -44,6 +46,20 @@ function qs(params: Record<string, string | number | undefined>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of entries) sp.set(k, String(v));
   return `?${sp.toString()}`;
+}
+
+/**
+ * The signed-in member's role on the Circls platform organisation — which
+ * admin actions to offer (the API enforces them either way). Null until known.
+ */
+export function usePlatformRole(): TenantRole | null {
+  const { user } = useAuth();
+  const { data } = useQuery({
+    queryKey: ['me', 'tenants', user?.uid],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<MeTenant[]>('/v1/me/tenants'),
+  });
+  return data?.find((t) => t.isPlatform)?.myRole ?? null;
 }
 
 export function useAdminStats() {

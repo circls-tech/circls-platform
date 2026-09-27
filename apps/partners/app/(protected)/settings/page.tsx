@@ -4,8 +4,10 @@ import { Card } from '@/lib/ui';
 import { useCan } from '@/lib/use_can';
 
 export default function SettingsPage() {
-  // API keys and webhooks are integration settings, for Owners and Managers.
-  const canManageIntegrations = useCan('integration.api_keys.manage');
+  // API keys and webhooks are integration settings, for Owners and Managers
+  // (who can still look at them while the organisation is suspended).
+  const canSeeIntegrations = useCan('integration.read');
+  const canEditProfile = useCan('tenant.update');
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -22,7 +24,7 @@ export default function SettingsPage() {
           href="/settings/organization"
           className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
-          Edit organisation profile &rarr;
+          {canEditProfile ? 'Edit organisation profile' : 'View organisation profile'} &rarr;
         </Link>
       </Card>
       <Card
@@ -69,7 +71,7 @@ export default function SettingsPage() {
           Manage memberships &rarr;
         </Link>
       </Card>
-      {canManageIntegrations && (
+      {canSeeIntegrations && (
         <>
           <Card
             title="API keys"

@@ -80,35 +80,34 @@ export default function WebhookDeliveriesPage() {
 
   const rows: WebhookDeliveryItem[] = data?.pages.flatMap((p) => p.rows) ?? [];
 
-  // Integration settings are for Owners and Managers (integration.api_keys.manage).
-  if (!roleLoading && !can('integration.api_keys.manage')) {
+  const header = (
+    <div className="flex items-center gap-4">
+      <Link
+        href="/settings/webhooks"
+        className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+      >
+        &larr; Webhooks
+      </Link>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Recent deliveries</h1>
+    </div>
+  );
+
+  // Integration settings are for Owners and Managers (integration.read) —
+  // still readable while the organisation is suspended.
+  if (!roleLoading && !can('integration.read')) {
     return (
       <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/settings/webhooks"
-            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-          >
-            &larr; Webhooks
-          </Link>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Recent deliveries</h1>
-        </div>
-        <RoleNotice>Your role can&rsquo;t view webhook deliveries — Owners and Managers can.</RoleNotice>
+        {header}
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t view webhook deliveries — Owners and Managers can.
+        </RoleNotice>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/settings/webhooks"
-          className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-        >
-          &larr; Webhooks
-        </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Recent deliveries</h1>
-      </div>
+      {header}
 
       <Card
         title="Delivery attempts"

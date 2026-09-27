@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
+import { useCan } from '@/lib/use_can';
 import { useTenantCoupons, useTenantCouponStats, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
 import { type CurrencyCode, currencySymbol, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -26,6 +27,7 @@ export default function CouponDetailPage() {
   const couponStats = stats?.byCoupon.find((s) => s.couponId === couponId);
   const update = useUpdateCoupon(tenantId);
   const del = useDeleteCoupon(tenantId);
+  const canWrite = useCan('discounts.write', tenantId);
 
   // Venue-scoped coupons display in that venue's currency; every other scope
   // (org/arena/event/membership) falls back to the tenant's currency.
@@ -125,16 +127,19 @@ export default function CouponDetailPage() {
                 <div><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Sales with this coupon</dt><dd className="mt-1 text-sm tabular-nums text-slate-700">{couponStats ? formatMoney(couponStats.basePaise, currency, { decimals: 2 }) : '—'}</dd></div>
                 {coupon.description && <div className="sm:col-span-2"><dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">Description</dt><dd className="mt-1 text-sm text-slate-700">{coupon.description}</dd></div>}
               </dl>
-              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
-                <Button variant="secondary" size="sm" onClick={startEdit}>Edit</Button>
-                {coupon.status === 'active' && <Button variant="secondary" size="sm" loading={update.isPending} onClick={() => setStatus('paused')}>Pause</Button>}
-                {coupon.status === 'paused' && <Button size="sm" loading={update.isPending} onClick={() => setStatus('active')}>Resume</Button>}
-                <Button variant="danger" size="sm" loading={del.isPending} onClick={onDelete}>Delete</Button>
-              </div>
+              {/* Coupons are changed by Owners and Managers. */}
+              {canWrite && (
+                <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#f1f5f9] pt-4">
+                  <Button variant="secondary" size="sm" onClick={startEdit}>Edit</Button>
+                  {coupon.status === 'active' && <Button variant="secondary" size="sm" loading={update.isPending} onClick={() => setStatus('paused')}>Pause</Button>}
+                  {coupon.status === 'paused' && <Button size="sm" loading={update.isPending} onClick={() => setStatus('active')}>Resume</Button>}
+                  <Button variant="danger" size="sm" loading={del.isPending} onClick={onDelete}>Delete</Button>
+                </div>
+              )}
             </Card>
           )}
 
-          {editing && (
+          {editing && canWrite && (
             <Card title="Edit coupon">
               <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
                 <p className="text-xs text-slate-500">Code, scope, and discount type/amount can&apos;t be changed after creation. Create a new coupon to change those.</p>

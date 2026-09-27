@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useEffect, useRef, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useValidateQrTicket } from '@/lib/api/qr';
+import { useMyRole } from '@/lib/api/queries';
 import type { QrScanOutcome, QrScanResult } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input } from '@/lib/ui';
@@ -51,6 +52,9 @@ const TONE_CLASSES: Record<'green' | 'amber' | 'red', string> = {
   red: 'border-red-300 bg-red-50 text-red-800',
 };
 
+const ADMIT_PAUSED =
+  'This organisation is suspended: you can look passes up, but not check anyone in. Contact Circls for help.';
+
 function fmt(iso: string, tz: string) {
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: tz,
@@ -68,6 +72,8 @@ function CheckInInner() {
   const tenantId = activeTenantId ?? '';
   const codeParam = useSearchParams().get('code') ?? '';
   const validate = useValidateQrTicket(tenantId);
+  // A suspended organisation can still look passes up, but not admit anyone.
+  const { suspended } = useMyRole(tenantId);
   const { resolveTz } = useTimezone();
   const tz = resolveTz();
 
@@ -99,7 +105,8 @@ function CheckInInner() {
   useEffect(() => {
     if (!codeParam || !tenantId || autoRan.current) return;
     autoRan.current = true;
-    void run(codeParam, true);
+    // While suspended the scan can only be looked up.
+    void run(codeParam, !suspended);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codeParam, tenantId]);
 
@@ -146,6 +153,7 @@ function CheckInInner() {
               autoComplete="off"
             />
             {err && <p className="text-sm text-red-600">{err}</p>}
+            {suspended && <p className="text-sm text-slate-500">{ADMIT_PAUSED}</p>}
             <div className="flex items-center justify-end gap-2">
               <Button
                 type="button"
@@ -160,7 +168,7 @@ function CheckInInner() {
                 size="sm"
                 petal="#CDBBF7"
                 loading={validate.isPending}
-                disabled={!code.trim()}
+                disabled={!code.trim() || suspended}
               >
                 Check in
               </Button>
@@ -229,8 +237,15 @@ function CheckInInner() {
               </dl>
             )}
 
+            {/* A refused check-in after a peek: say so here, or the green
+                "let them in" above would read as if it had counted. */}
+            {err && <p className="text-sm text-red-600">Not checked in: {err}</p>}
+            {peeked && result.outcome === 'valid' && suspended && (
+              <p className="text-sm text-slate-500">{ADMIT_PAUSED}</p>
+            )}
+
             <div className="flex items-center justify-end gap-2 border-t border-[#f1f5f9] pt-4">
-              {peeked && result.outcome === 'valid' && (
+              {peeked && result.outcome === 'valid' && !suspended && (
                 <Button
                   variant="secondary"
                   loading={validate.isPending}

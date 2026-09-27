@@ -219,8 +219,8 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
   const router = useRouter();
   const { data: detail, isLoading, isError } = useBookingDetail(bookingId);
   const { data: paymentRows } = useBookingPayments(bookingId);
-  const { activeTenantId } = useOrg();
-  const { can } = useMyRole(activeTenantId);
+  // The booking's own organisation decides, as it does for the API.
+  const { can } = useMyRole(detail?.tenantId);
 
   // Read-only members can't cancel (or so refund) a booking.
   const isCancellable = detail && detail.status !== 'cancelled' && can('bookings.cancel');

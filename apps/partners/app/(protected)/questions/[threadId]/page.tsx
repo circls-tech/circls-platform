@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { ApiError } from '@/lib/api/client';
+import { useMyRole } from '@/lib/api/queries';
 import { asCurrencyCode, formatMoney } from '@/lib/currency';
 import {
   useArchiveQuestionThread,
@@ -24,6 +25,7 @@ import type {
 } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { RoleNotice } from '@/components/RoleNotice';
 import { CATEGORY_LABELS, SUBJECT_LABELS } from '../labels';
 
 const MAX_BODY = 2000;
@@ -64,6 +66,7 @@ function MessageBubble({
   isRoot,
   isPublicThread,
   isArchivedThread,
+  canModerate,
   onModerate,
   moderating,
 }: {
@@ -71,6 +74,8 @@ function MessageBubble({
   isRoot: boolean;
   isPublicThread: boolean;
   isArchivedThread: boolean;
+  /** The signed-in member may hide and unhide replies (questions.write). */
+  canModerate: boolean;
   onModerate: (messageId: string, action: 'hide' | 'unhide') => void;
   moderating: boolean;
 }) {
@@ -94,10 +99,15 @@ function MessageBubble({
   // question (server enforces both; this only controls where the button shows).
   // Archived threads reject moderation entirely (unarchive first).
   const canHide =
-    isPublicThread && !isArchivedThread && !isRoot && message.authorKind === 'consumer' && !hidden;
+    canModerate &&
+    isPublicThread &&
+    !isArchivedThread &&
+    !isRoot &&
+    message.authorKind === 'consumer' &&
+    !hidden;
   // The org can only undo its own hides; Circls hides are read-only here.
   const hiddenByCircls = hidden && message.hiddenByKind === 'circls';
-  const canUnhide = hidden && !hiddenByCircls && !isArchivedThread;
+  const canUnhide = canModerate && hidden && !hiddenByCircls && !isArchivedThread;
 
   return (
     <div className={['flex flex-col', fromOrgSide ? 'items-end' : 'items-start'].join(' ')}>
@@ -394,6 +404,10 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
   const setStatus = useSetQuestionStatus(tenantId, threadId);
   const moderate = useModerateQuestionMessage(tenantId, threadId);
   const archive = useArchiveQuestionThread(tenantId, threadId);
+  // Answering and managing threads is questions.write: Owners, Managers and
+  // Staff — not Read-only, and nobody while the organisation is suspended.
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  const canAnswer = can('questions.write');
 
   const [body, setBody] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
@@ -492,6 +506,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
         )}
         <StatusPill status={thread.status} />
         {isArchived && <Badge tone="warning" label="Archived" />}
+        {canAnswer && (
         <div className="ml-auto flex items-center gap-2">
           {/* Status changes are rejected on archived threads — unarchive first. */}
           {!isArchived && thread.status === 'open' && (
@@ -535,6 +550,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
             </Button>
           )}
         </div>
+        )}
       </div>
       <p className="-mt-4 text-xs text-slate-400">
         Asked by {thread.authorName}
@@ -559,14 +575,16 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               Archived by Circls — only the Circls team can unarchive it
             </span>
           ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={archive.isPending}
-              onClick={() => void handleArchive('unarchive')}
-            >
-              Unarchive
-            </Button>
+            canAnswer && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={archive.isPending}
+                onClick={() => void handleArchive('unarchive')}
+              >
+                Unarchive
+              </Button>
+            )
           )}
         </div>
       )}
@@ -603,6 +621,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
               isRoot={i === 0}
               isPublicThread={thread.visibility === 'public'}
               isArchivedThread={isArchived}
+              canModerate={canAnswer}
               onModerate={(messageId, action) => void handleModerate(messageId, action)}
               moderating={moderate.isPending}
             />
@@ -611,6 +630,11 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
       </Card>
 
       {/* Reply composer */}
+      {!roleLoading && !canAnswer ? (
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t reply to customers — Owners, Managers and Staff can.
+        </RoleNotice>
+      ) : (
       <Card title="Reply">
         {isArchived ? (
           <p className="text-sm text-slate-500">
@@ -652,6 +676,7 @@ function ThreadView({ tenantId, threadId }: { tenantId: string; threadId: string
           </form>
         )}
       </Card>
+      )}
 
       <ConfirmDialog
         open={confirmClose}

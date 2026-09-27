@@ -62,8 +62,27 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = useState<TenantRole>('manager');
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [lastToken, setLastToken] = useState<string | null>(null);
+  // Each list shows the error of its latest action: starting one clears the
+  // other's, so an old failure never hides (or outlives) a newer outcome.
   const memberError = updateRole.error ?? removeMember.error;
   const pendingError = resendInvite.error ?? revokeInvite.error;
+
+  function changeRole(userId: string, role: TenantRole) {
+    removeMember.reset();
+    updateRole.mutate({ userId, role });
+  }
+  function remove(userId: string) {
+    updateRole.reset();
+    removeMember.mutate(userId);
+  }
+  function resend(invitationId: string) {
+    revokeInvite.reset();
+    resendInvite.mutate(invitationId);
+  }
+  function revoke(invitationId: string) {
+    resendInvite.reset();
+    revokeInvite.mutate(invitationId);
+  }
 
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -209,7 +228,7 @@ export default function TeamPage() {
                   {roleCanActOn(myRole, inv.role) && (
                     <button
                       type="button"
-                      onClick={() => resendInvite.mutate(inv.id)}
+                      onClick={() => resend(inv.id)}
                       className="text-xs text-brand-700 hover:underline"
                     >
                       Resend
@@ -217,7 +236,7 @@ export default function TeamPage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => revokeInvite.mutate(inv.id)}
+                    onClick={() => revoke(inv.id)}
                     className="text-xs text-red-700 hover:underline"
                   >
                     Revoke
@@ -259,9 +278,7 @@ export default function TeamPage() {
                   {canChangeRoles && roleCanActOn(myRole, m.role) ? (
                     <select
                       value={m.role}
-                      onChange={(e) =>
-                        updateRole.mutate({ userId: m.userId, role: e.target.value as TenantRole })
-                      }
+                      onChange={(e) => changeRole(m.userId, e.target.value as TenantRole)}
                       title={ROLE_INFO[m.role].description}
                       className="rounded border border-slate-300 px-2 py-1 text-xs"
                     >
@@ -276,8 +293,8 @@ export default function TeamPage() {
                       {ROLE_INFO[m.role].label}
                     </span>
                   )}
-                  {/* Your own name is always yours to edit. */}
-                  {(canEditOthers || m.userId === me?.id) && (
+                  {/* Your own name is always yours to edit; others' stop at your own role. */}
+                  {(m.userId === me?.id || (canEditOthers && roleCanActOn(myRole, m.role))) && (
                     <button
                       type="button"
                       onClick={() => (editingUserId === m.userId ? setEditingUserId(null) : startEdit(m))}
@@ -292,7 +309,7 @@ export default function TeamPage() {
                       type="button"
                       onClick={() => {
                         if (confirm(`Remove ${m.displayName ?? m.email ?? 'this member'}?`)) {
-                          removeMember.mutate(m.userId);
+                          remove(m.userId);
                         }
                       }}
                       className="text-xs text-red-700 hover:underline"

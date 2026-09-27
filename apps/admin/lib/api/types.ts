@@ -1,12 +1,16 @@
 // Response shapes consumed by the Admin Console. Keep aligned with
 // apps/api/src/routes/admin_*.ts.
 
+import type { TenantRole } from '@/lib/roles';
+
 /** Shape returned by GET /v1/me/tenants — used to gate the platform check. */
 export interface MeTenant {
   id: string;
   name: string;
   slug: string;
   isPlatform: boolean;
+  /** The signed-in user's own role in this organisation. */
+  myRole?: TenantRole;
 }
 
 export interface AdminStats {
@@ -180,7 +184,10 @@ export interface AdminAuditLogItem {
    *  no name of its own, such as a booking or a payment. */
   entityName: string | null;
   actorName: string | null;
-  /** Phone or email of whoever acted — identifies a row without any id. */
+  /**
+   * Phone or email of whoever acted — identifies a row without any id. Only
+   * platform Owners and Managers (admin.users.read) get it; null otherwise.
+   */
   actorContact: string | null;
   /** Owning organisation's name; null for platform-level entries. */
   tenantName: string | null;

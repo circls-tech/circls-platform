@@ -20,6 +20,8 @@ export interface Tenant {
   termsVersion?: string | null;
   termsRegion?: 'US' | 'IN' | null;
   termsAcceptedAt?: string | null;
+  /** The signed-in user's own role here — only on /v1/me/tenants rows. */
+  myRole?: TenantRole;
 }
 
 /** Social handles/URLs an org advertises (PR #107). All optional. */
@@ -301,6 +303,8 @@ export interface BookingSlot {
 
 export interface BookingDetail {
   id: string;
+  /** The booking's organisation — whose roles decide what you may do with it. */
+  tenantId: string;
   customerName: string | null;
   customerContact: string | null;
   note: string | null;

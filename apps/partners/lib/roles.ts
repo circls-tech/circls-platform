@@ -26,7 +26,7 @@ export const ROLE_INFO: Record<TenantRole, { label: string; description: string 
   readonly: {
     label: 'Read-only',
     description:
-      'View-only access to everything, including financial reports and analytics. Cannot create, change or delete anything — except checking customers in at the door.',
+      'View-only access to everything except API keys and webhooks — financial reports and analytics included. Cannot create, change or delete anything, apart from checking customers in at the door.',
   },
 };
 
@@ -41,66 +41,86 @@ export function formatRole(role: string): string {
 }
 
 /**
- * The capabilities the portal hides actions behind. The desk ones —
+ * The capabilities the portal gates controls on. The desk ones —
  * `bookings.create` (take a booking, add a registration or a member) and
- * `bookings.cancel` (cancel, and so refund, any of those) — are Staff's too;
- * the rest are setup and administration, for Owners and Managers.
+ * `bookings.cancel` (cancel, and so refund, any of those) — are Staff's too,
+ * as is answering customers; the rest are setup and administration, for
+ * Owners and Managers. The type is derived from this list, so a capability
+ * can't be added to one and forgotten in the other.
  */
-export type PortalCapability =
-  | 'bookings.create'
-  | 'bookings.cancel'
-  | 'events.write'
-  | 'memberships.write'
-  | 'venues.write'
-  | 'arenas.write'
-  | 'schedules.write'
-  | 'pricing.write'
-  | 'members.invite'
-  | 'members.role_change'
-  | 'members.update'
-  | 'members.remove'
-  | 'integration.api_keys.manage';
-
-const DESK: readonly PortalCapability[] = ['bookings.create', 'bookings.cancel'];
-const ALL: readonly PortalCapability[] = [
+const DESK = ['bookings.create', 'bookings.cancel'] as const;
+const ALL = [
   ...DESK,
+  'questions.write',
   'events.write',
   'memberships.write',
   'venues.write',
   'arenas.write',
   'schedules.write',
   'pricing.write',
+  'discounts.write',
+  'tenant.update',
   'members.invite',
   'members.role_change',
   'members.update',
   'members.remove',
+  'integration.read',
   'integration.api_keys.manage',
-];
+] as const;
+export type PortalCapability = (typeof ALL)[number];
 
 /**
- * Those capabilities' grants in PARTNER_CAPS (apps/api/src/lib/authz/role_caps.ts).
- * The API enforces them either way; this only keeps the portal from offering
- * what it will refuse.
+ * Those capabilities' grants in PARTNER_CAPS and, for the Circls team's own
+ * organisation, PLATFORM_CAPS (apps/api/src/lib/authz/role_caps.ts). The API
+ * enforces them either way; this only keeps the portal from offering what it
+ * will refuse.
  */
-const ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
+const PARTNER_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
   owner: ALL,
   manager: ALL,
-  staff: DESK,
+  staff: [...DESK, 'questions.write'],
+  readonly: [],
+};
+const PLATFORM_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
+  owner: ALL,
+  manager: ['tenant.update', 'integration.read', 'integration.api_keys.manage'],
+  staff: [],
   readonly: [],
 };
 
 /**
- * Whether `role` holds `cap`. No role (still loading, or not a member) holds
- * nothing, and nor does one this build doesn't know yet.
+ * Whether `role` holds `cap` — on a partner organisation, or on the Circls
+ * platform one with `isPlatform`. No role (still loading, or not a member)
+ * holds nothing, and nor does one this build doesn't know yet.
  */
-export function roleCan(role: TenantRole | null | undefined, cap: PortalCapability): boolean {
-  return role != null && (ROLE_CAPS[role]?.includes(cap) ?? false);
+export function roleCan(
+  role: TenantRole | null | undefined,
+  cap: PortalCapability,
+  { isPlatform = false }: { isPlatform?: boolean | undefined } = {},
+): boolean {
+  if (role == null) return false;
+  const grants = isPlatform ? PLATFORM_ROLE_CAPS : PARTNER_ROLE_CAPS;
+  return grants[role]?.includes(cap) ?? false;
 }
 
 /**
- * Whether a member holding `actor` may grant `role`, or change or remove a
- * member who holds it: never above their own, so a Manager can't make or
- * unmake an Owner. Mirrors canActOnRole in the API.
+ * Whether the signed-in member may use `cap` in `tenant` (a /v1/me/tenants
+ * row, which carries their role): their role's grant, of which a suspended
+ * organisation keeps only the read capabilities. Mirrors can() in the API.
+ */
+export function tenantCan(
+  tenant: Pick<Tenant, 'status' | 'isPlatform' | 'myRole'> | undefined,
+  cap: PortalCapability,
+): boolean {
+  if (!tenant) return false;
+  if (isSuspended(tenant) && !cap.endsWith('.read')) return false;
+  return roleCan(tenant.myRole, cap, { isPlatform: tenant.isPlatform });
+}
+
+/**
+ * Whether a member holding `actor` may grant `role`, or change, rename or
+ * remove a member who holds it: never above their own, so a Manager can't
+ * make or unmake an Owner. Mirrors canActOnRole in the API.
  */
 export function roleCanActOn(actor: TenantRole | null | undefined, role: TenantRole): boolean {
   if (actor == null || !ROLE_ORDER.includes(actor)) return false;

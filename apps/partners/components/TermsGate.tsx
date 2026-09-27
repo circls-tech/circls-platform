@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAcceptTerms, useMyTenants } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
+import { isSuspended } from '@/lib/roles';
 import {
   CURRENT_TERMS_VERSION,
   needsTermsAcceptance,
@@ -84,11 +85,26 @@ export function TermsGate() {
   );
 }
 
-/** Whether the gate should replace the portal content for this tenant. */
+/**
+ * Whether the gate should replace the portal content for this tenant. Not
+ * while Circls has it suspended: nothing can be changed then, accepting
+ * included, and its members must still be able to look at everything. The
+ * gate comes back once it's reinstated.
+ */
 export function tenantNeedsTermsGate(
-  tenant: { termsVersion?: string | null; termsAcceptedAt?: string | null; isPlatform?: boolean } | undefined,
+  tenant:
+    | {
+        termsVersion?: string | null;
+        termsAcceptedAt?: string | null;
+        isPlatform?: boolean;
+        status?: string;
+      }
+    | undefined,
 ): boolean {
   if (!tenant) return false;
+  if (isSuspended({ status: tenant.status ?? 'active', isPlatform: tenant.isPlatform ?? false })) {
+    return false;
+  }
   return needsTermsAcceptance({
     termsVersion: tenant.termsVersion ?? null,
     termsAcceptedAt: tenant.termsAcceptedAt ?? null,

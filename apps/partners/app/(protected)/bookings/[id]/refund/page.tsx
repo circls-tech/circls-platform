@@ -13,7 +13,6 @@ import { ApiError } from '@/lib/api/client';
 import type { CancelResult } from '@/lib/api/types';
 import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
-import { useOrg } from '@/lib/org_context';
 import { RoleNotice } from '@/components/RoleNotice';
 import { Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
@@ -48,9 +47,9 @@ export default function RefundBookingPage() {
   const firstSlotStart = booking?.slots[0]?.startAt;
   const isAlreadyCancelled = booking?.status === 'cancelled';
 
-  // Owners, Managers and Staff can cancel (and so refund); Read-only can't.
-  const { activeTenantId } = useOrg();
-  const { can, isLoading: roleLoading } = useMyRole(activeTenantId);
+  // Owners, Managers and Staff can cancel (and so refund); Read-only can't —
+  // in the booking's own organisation, as the API decides it.
+  const { can, isLoading: roleLoading } = useMyRole(booking?.tenantId);
   const canCancel = can('bookings.cancel');
   const cancellable = Boolean(booking) && !isAlreadyCancelled && !result;
 
@@ -141,7 +140,9 @@ export default function RefundBookingPage() {
           </Card>
 
           {cancellable && !roleLoading && !canCancel && (
-            <RoleNotice>Your role can&apos;t cancel or refund bookings — Owners, Managers and Staff can.</RoleNotice>
+            <RoleNotice tenantId={booking.tenantId}>
+              Your role can&apos;t cancel or refund bookings — Owners, Managers and Staff can.
+            </RoleNotice>
           )}
 
           {/* Refund preview */}

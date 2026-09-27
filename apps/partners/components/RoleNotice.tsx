@@ -10,11 +10,18 @@ export const SUSPENDED_MESSAGE =
 /**
  * Stands in for a form or page the signed-in member can't use: `children` says
  * why for their role — unless Circls has the organisation suspended, which is
- * the reason for every role then.
+ * the reason for every role then. `tenantId` is the organisation the page is
+ * about (by default the active one).
  */
-export function RoleNotice({ children }: { children: React.ReactNode }) {
+export function RoleNotice({
+  children,
+  tenantId,
+}: {
+  children: React.ReactNode;
+  tenantId?: string | null | undefined;
+}) {
   const { activeTenantId, tenants } = useOrg();
-  const suspended = isSuspended(tenants.find((t) => t.id === activeTenantId));
+  const suspended = isSuspended(tenants.find((t) => t.id === (tenantId || activeTenantId)));
   return (
     <Card>
       <p className="py-2 text-sm text-slate-600">{suspended ? SUSPENDED_MESSAGE : children}</p>

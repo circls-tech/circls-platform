@@ -67,10 +67,14 @@ export default function WebhooksPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!url.trim() || events.length === 0) return;
-    const res = await createMut.mutateAsync({ url: url.trim(), events });
-    setNewSub({ id: res.id, url: url.trim(), secret: res.secret });
-    setUrl('');
-    setCopied(false);
+    try {
+      const res = await createMut.mutateAsync({ url: url.trim(), events });
+      setNewSub({ id: res.id, url: url.trim(), secret: res.secret });
+      setUrl('');
+      setCopied(false);
+    } catch {
+      // Shown under the form from createMut.error.
+    }
   }
 
   async function copyToClipboard(text: string) {
@@ -90,35 +94,44 @@ export default function WebhooksPage() {
     await deleteMut.mutateAsync(s.id);
   }
 
-  // Integration settings are for Owners and Managers (integration.api_keys.manage).
-  if (!roleLoading && !can('integration.api_keys.manage')) {
+  // Integration settings are for Owners and Managers: seeing them needs
+  // integration.read, changing them integration.api_keys.manage (which a
+  // suspended organisation doesn't keep).
+  const canSee = roleLoading || can('integration.read');
+  const canManage = can('integration.api_keys.manage');
+
+  const header = (
+    <div className="flex items-center gap-4">
+      <Link
+        href="/settings"
+        className="text-sm text-slate-500 transition-colors hover:text-slate-800"
+      >
+        &larr; Settings
+      </Link>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
+    </div>
+  );
+
+  if (!canSee) {
     return (
       <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/settings"
-            className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-          >
-            &larr; Settings
-          </Link>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
-        </div>
-        <RoleNotice>Your role can&rsquo;t manage webhooks — Owners and Managers can.</RoleNotice>
+        {header}
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t see webhooks — Owners and Managers can.
+        </RoleNotice>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/settings"
-          className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-        >
-          &larr; Settings
-        </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
-      </div>
+      {header}
+
+      {!roleLoading && !canManage && (
+        <RoleNotice tenantId={tenantId}>
+          Your role can&rsquo;t change webhooks — Owners and Managers can.
+        </RoleNotice>
+      )}
 
       {newSub && (
         <Card
@@ -153,57 +166,59 @@ export default function WebhooksPage() {
         </Card>
       )}
 
-      <Card title="Create a subscription">
-        <form onSubmit={handleCreate} className="flex flex-col gap-4">
-          <Input
-            label="Delivery URL"
-            type="url"
-            placeholder="https://example.com/webhooks/circls"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-          />
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
-              Events
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {AVAILABLE_EVENTS.map((ev) => {
-                const active = events.includes(ev);
-                return (
-                  <button
-                    key={ev}
-                    type="button"
-                    onClick={() => toggleEvent(ev)}
-                    className={[
-                      'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                      active
-                        ? 'bg-brand-600 text-slate-900'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-                    ].join(' ')}
-                  >
-                    {ev}
-                  </button>
-                );
-              })}
+      {canManage && (
+        <Card title="Create a subscription">
+          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <Input
+              label="Delivery URL"
+              type="url"
+              placeholder="https://example.com/webhooks/circls"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              required
+            />
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                Events
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_EVENTS.map((ev) => {
+                  const active = events.includes(ev);
+                  return (
+                    <button
+                      key={ev}
+                      type="button"
+                      onClick={() => toggleEvent(ev)}
+                      className={[
+                        'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                        active
+                          ? 'bg-brand-600 text-slate-900'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      ].join(' ')}
+                    >
+                      {ev}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div>
-            <Button
-              type="submit"
-              loading={createMut.isPending}
-              disabled={!url.trim() || events.length === 0}
-            >
-              Create subscription
-            </Button>
-          </div>
-          {createMut.isError && (
-            <p className="text-sm text-red-600">
-              Failed to create subscription: {(createMut.error as Error).message}
-            </p>
-          )}
-        </form>
-      </Card>
+            <div>
+              <Button
+                type="submit"
+                loading={createMut.isPending}
+                disabled={!url.trim() || events.length === 0}
+              >
+                Create subscription
+              </Button>
+            </div>
+            {createMut.isError && (
+              <p className="text-sm text-red-600">
+                Failed to create subscription: {(createMut.error as Error).message}
+              </p>
+            )}
+          </form>
+        </Card>
+      )}
 
       <Card title="Active subscriptions">
         {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading&hellip;</p>}
@@ -257,14 +272,16 @@ export default function WebhooksPage() {
                         >
                           Deliveries
                         </Link>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          loading={deleteMut.isPending && deleteMut.variables === s.id}
-                          onClick={() => void handleDelete(s)}
-                        >
-                          Delete
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            loading={deleteMut.isPending && deleteMut.variables === s.id}
+                            onClick={() => void handleDelete(s)}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
