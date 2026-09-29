@@ -95,6 +95,7 @@ How it works:
 - **Declined** — the event stays as it was; the reviewer's reason (if given) is shown on the event page, and you can submit a corrected request.
 - **Tier safety rules** — a tier that already has registrations can't be removed, and a tier's capacity can't be set below the number of tickets already sold. Editing a tier keeps sold tickets attached to it (renames and price changes never affect tickets people already hold — new buyers pay the new price).
 - If the event is **cancelled** while a request is pending, the request can no longer be approved.
+- **Moving the date moves the payout.** Money taken online for an event is held until shortly after the event ends, so refunds are always possible while it is still ahead. Rescheduling a live event re-times that hold for every ticket already sold: push the event later and its revenue is paid out later, bring it forward and the payout follows. Revenue already paid out in an earlier payout stays where it is.
 
 Note that tier renames also update how past registrations are displayed and exported — the registrations table shows the tier's current name.
 
