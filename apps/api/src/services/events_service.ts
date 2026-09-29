@@ -18,6 +18,7 @@ import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
+import { reholdForEvent } from './settlement_hold_service.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import {
@@ -724,6 +725,16 @@ async function applyEventPatchTx(
 
   if (Object.keys(set).length > 0) {
     await tx.update(events).set(set).where(eq(events.id, eventId));
+  }
+
+  // A moved window re-anchors the settlement hold on every ticket already paid
+  // for. The hold is computed from `events.ends_at`, but only at capture — so
+  // without this the money for a rescheduled event releases against the old end
+  // date: paid out before the event happened (moved later, nothing left to claw
+  // back on a refund) or held past its settlement week (moved earlier). Same tx
+  // as the `ends_at` write, so the two can't diverge.
+  if (set.endsAt !== undefined && set.endsAt.getTime() !== existing.endsAt.getTime()) {
+    await reholdForEvent(eventId, tx);
   }
 
   if (patch.tiers !== undefined) {

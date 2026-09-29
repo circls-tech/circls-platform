@@ -11,11 +11,17 @@
  *     captured charge on a booking, based on when the purchased thing ends.
  *     Called from the webhook capture path. Accepts an optional executor so
  *     callers inside a transaction don't open a nested one.
+ *   - reholdForEvent(): an event's window moved after tickets sold — recompute
+ *     the hold for every still-unreleased captured charge on that event's
+ *     bookings. Called from the event-update path (direct edit and approved
+ *     change request) inside the writer's transaction, so the new `ends_at` and
+ *     the new holds land together. Floors the new hold at now + buffer, so an
+ *     end date moved into the past can't release money with no refund window.
  *   - releaseDueSettlements(): worker handler — marks payments whose hold has
  *     passed as `settlement_released_at`. The actual fund movement is Razorpay's
  *     job; we just track release-eligibility for our reconciliation.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { bookings, events, payments } from '../db/schema/index.js';
 import { env } from '../config/env.js';
@@ -23,6 +29,29 @@ import { logger } from '../lib/logger.js';
 
 /** Anything that can run a drizzle UPDATE/SELECT — both `db` and a `tx` satisfy this. */
 type Executor = Pick<typeof db, 'select' | 'update'>;
+
+/**
+ * The hold anchor, as SQL: a correlated subquery resolving one booking's
+ * settlement hold. `bookingRef` is whatever identifies that booking in the
+ * enclosing statement — a literal id for the single-booking path, or the
+ * updated row's `booking_id` column for the bulk path.
+ *
+ * Shared by {@link holdForBooking} and {@link reholdForEvent} so capture and
+ * reschedule can never compute the hold two different ways.
+ */
+function holdAnchorFor(bookingRef: SQL): SQL {
+  const buffer = sql`(${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute')`;
+  return sql`(
+    select coalesce(
+      upper(b.time_range) + ${buffer},
+      e.ends_at + ${buffer},
+      now() + (${env.SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN}::int * interval '1 minute')
+    )
+    from ${bookings} b
+    left join ${events} e on e.id = (b.item_data->>'eventId')::uuid
+    where b.id = ${bookingRef}
+  )`;
+}
 
 /**
  * Set the settlement hold on the (single, latest) captured charge for this
@@ -40,18 +69,7 @@ type Executor = Pick<typeof db, 'select' | 'update'>;
 export async function holdForBooking(bookingId: string, exec: Executor = db): Promise<void> {
   const updated = await exec
     .update(payments)
-    .set({
-      settlementHoldUntil: sql`(
-        select coalesce(
-          upper(b.time_range) + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute'),
-          e.ends_at + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute'),
-          now() + (${env.SETTLEMENT_HOLD_FALLBACK_BUFFER_MIN}::int * interval '1 minute')
-        )
-        from ${bookings} b
-        left join ${events} e on e.id = (b.item_data->>'eventId')::uuid
-        where b.id = ${bookingId}
-      )`,
-    })
+    .set({ settlementHoldUntil: holdAnchorFor(sql`${bookingId}`) })
     .where(
       and(
         eq(payments.bookingId, bookingId),
@@ -64,6 +82,69 @@ export async function holdForBooking(bookingId: string, exec: Executor = db): Pr
   if (updated.length === 0) {
     logger.debug({ bookingId }, 'settlement_hold_no_captured_charge');
   }
+}
+
+/**
+ * Re-anchor the settlement hold for an event whose window moved after money
+ * was taken. Without this a rescheduled event keeps paying out against its
+ * original end date: moved later, the partner is paid before the event has
+ * happened and a refund has nothing left to claw back; moved earlier, the
+ * money sits in custody past the date it should have settled. Either way the
+ * revenue lands in the wrong reconciliation week, since
+ * `reconcileWeeklyPayouts` grosses by `settlement_released_at`.
+ *
+ * Which rows move:
+ *   - the three charge statuses payout reconciliation counts as gross
+ *     ('captured', 'refunded', 'partially_refunded') — a charge refunded
+ *     before its hold elapsed still releases, so its hold still matters;
+ *   - only rows with `settlement_released_at is null`. A released charge has
+ *     already been counted into a payout week; moving its hold now would not
+ *     un-count it, it would only make the ledger disagree with what was paid.
+ *   - only rows that already carry a hold. A NULL hold means the money never
+ *     came through Route (walk-in / paid-at-venue), and payout reconciliation
+ *     deliberately ignores those — this recomputes holds, it never creates one.
+ *
+ * The new hold is floored at `now() + SETTLEMENT_HOLD_BUFFER_MIN`, because
+ * nothing stops an event's end date being moved into the past (the only window
+ * validation is `starts_at < ends_at`). A past end date would otherwise make
+ * every charge immediately due and the next `releaseDueSettlements` pass would
+ * release money that has had no refund window at all — worse than the stale
+ * hold this function exists to fix. With the floor, correcting a mis-typed end
+ * date still frees the money promptly, just not before anyone could react.
+ * Capture deliberately keeps no such floor: changing {@link holdForBooking}
+ * would move holds for every existing flow, and this is the only path that can
+ * retro-date an anchor.
+ *
+ * Runs in the caller's transaction. Returns the number of holds moved.
+ */
+export async function reholdForEvent(eventId: string, exec: Executor = db): Promise<number> {
+  const moved = await exec
+    .update(payments)
+    .set({
+      settlementHoldUntil: sql`greatest(
+        ${holdAnchorFor(sql`${payments.bookingId}`)},
+        now() + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute')
+      )`,
+    })
+    .where(
+      and(
+        eq(payments.kind, 'charge'),
+        sql`${payments.status} in ('captured', 'refunded', 'partially_refunded')`,
+        isNull(payments.settlementReleasedAt),
+        sql`${payments.settlementHoldUntil} is not null`,
+        sql`${payments.bookingId} in (
+          select eb.id from ${bookings} eb
+          where eb.item_type = 'event' and eb.item_data->>'eventId' = ${eventId}
+        )`,
+      ),
+    )
+    .returning({ id: payments.id });
+
+  if (moved.length > 0) {
+    logger.info({ eventId, moved: moved.length }, 'settlement_hold_reanchored');
+  }
+
+  return moved.length;
 }
 
 /**
