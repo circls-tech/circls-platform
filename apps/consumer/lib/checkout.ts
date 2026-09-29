@@ -15,6 +15,8 @@
  * with no order) skip this module entirely.
  */
 
+import { loadScriptOnce } from './load_script';
+
 interface RazorpayHandler {
   (response: {
     razorpay_payment_id?: string;
@@ -48,39 +50,11 @@ declare global {
 
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 
-let loadPromise: Promise<void> | null = null;
-
-/** Dynamically inject the Razorpay Checkout script exactly once. */
-function loadRazorpayScript(): Promise<void> {
-  if (typeof window === 'undefined') return Promise.reject(new Error('not in browser'));
-  if (window.Razorpay) return Promise.resolve();
-  if (loadPromise) return loadPromise;
-  loadPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${CHECKOUT_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Razorpay')));
-      if (window.Razorpay) resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = CHECKOUT_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      loadPromise = null;
-      reject(new Error('Failed to load Razorpay Checkout'));
-    };
-    document.body.appendChild(script);
-  });
-  return loadPromise;
-}
-
 export type CheckoutResult =
   | { kind: 'paid' }
   /**
    * A payment attempt finished but the browser can't tell its outcome
-   * (Cashfree) — the webhook confirms the booking if it succeeded.
+   * (Cashfree) — the checkout asks the API how it went.
    */
   | { kind: 'submitted' }
   | { kind: 'dismissed' }
@@ -106,8 +80,7 @@ export interface OpenCheckoutInput {
 export async function openRazorpayCheckout(input: OpenCheckoutInput): Promise<CheckoutResult> {
   if (!input.keyId || !input.orderId) return { kind: 'reserved' };
 
-  await loadRazorpayScript();
-  if (!window.Razorpay) return { kind: 'reserved' };
+  await loadScriptOnce(CHECKOUT_SRC, () => Boolean(window.Razorpay), { name: 'Razorpay checkout' });
 
   return new Promise<CheckoutResult>((resolve) => {
     let settled = false;

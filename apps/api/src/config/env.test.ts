@@ -53,7 +53,36 @@ describe('envSchema production refinement', () => {
     expect(ok.success).toBe(true);
   });
 
-  it('defaults INR to razorpay and does not require Cashfree keys', () => {
+  it('refuses live Cashfree keys pointed at the sandbox, even while INR is on Razorpay', () => {
+    const base = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://x',
+      RAZORPAY_KEY_ID: 'key',
+      RAZORPAY_KEY_SECRET: 'secret',
+      RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      CASHFREE_CLIENT_ID: 'id',
+      CASHFREE_CLIENT_SECRET: 'secret',
+    };
+    const sandbox = envSchema.safeParse(base);
+    expect(sandbox.success).toBe(false);
+    if (!sandbox.success) {
+      expect(sandbox.error.issues.map((i) => i.path.join('.'))).toEqual(['CASHFREE_ENV']);
+    }
+    expect(envSchema.safeParse({ ...base, CASHFREE_ENV: 'production' }).success).toBe(true);
+  });
+
+  it('defaults the gateway timeout and failover tuning', () => {
+    const result = envSchema.safeParse({ NODE_ENV: 'development', DATABASE_URL: 'postgres://x' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.GATEWAY_HTTP_TIMEOUT_MS).toBe(10_000);
+      expect(result.data.INR_FAILOVER_THRESHOLD).toBe(3);
+      expect(result.data.INR_FAILOVER_WINDOW_SEC).toBe(300);
+      expect(result.data.INR_FAILOVER_COOLDOWN_SEC).toBe(600);
+    }
+  });
+
+  it('without Cashfree keys, INR defaults to Razorpay and needs nothing more', () => {
     const result = envSchema.safeParse({
       NODE_ENV: 'production',
       DATABASE_URL: 'postgres://x',
@@ -63,6 +92,46 @@ describe('envSchema production refinement', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.INR_PAYMENT_GATEWAY).toBe('razorpay');
+  });
+
+  it('INR defaults to Cashfree once both Cashfree keys are set', () => {
+    const prod = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://x',
+      RAZORPAY_KEY_ID: 'key',
+      RAZORPAY_KEY_SECRET: 'secret',
+      RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      CASHFREE_CLIENT_ID: 'id',
+      CASHFREE_CLIENT_SECRET: 'secret',
+      CASHFREE_ENV: 'production',
+    };
+    const byDefault = envSchema.safeParse(prod);
+    expect(byDefault.success && byDefault.data.INR_PAYMENT_GATEWAY).toBe('cashfree');
+    // Blank is unset (compose passes an empty value through).
+    const blank = envSchema.safeParse({ ...prod, INR_PAYMENT_GATEWAY: '' });
+    expect(blank.success && blank.data.INR_PAYMENT_GATEWAY).toBe('cashfree');
+    // One key alone isn't a Cashfree setup.
+    const oneKey = envSchema.safeParse({
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgres://x',
+      CASHFREE_CLIENT_ID: 'id',
+    });
+    expect(oneKey.success && oneKey.data.INR_PAYMENT_GATEWAY).toBe('razorpay');
+  });
+
+  it('an explicit INR_PAYMENT_GATEWAY wins over the keys', () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://x',
+      RAZORPAY_KEY_ID: 'key',
+      RAZORPAY_KEY_SECRET: 'secret',
+      RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      CASHFREE_CLIENT_ID: 'id',
+      CASHFREE_CLIENT_SECRET: 'secret',
+      CASHFREE_ENV: 'production',
+      INR_PAYMENT_GATEWAY: 'razorpay',
+    });
+    expect(result.success && result.data.INR_PAYMENT_GATEWAY).toBe('razorpay');
   });
 
   it('allows the stub (missing razorpay keys) in development', () => {

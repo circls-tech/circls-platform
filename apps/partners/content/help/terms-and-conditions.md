@@ -26,8 +26,10 @@ The region is taken from where your organisation is based:
 | India (or anywhere outside the US) | India Terms | ₹ INR via Razorpay or Cashfree |
 | United States | US Terms | $ USD via Stripe |
 
-If your organisation predates the Terms feature and has no country on file yet, the acceptance screen asks for it and saves it to your organisation profile.
+The acceptance screen shows the document for the country on your organisation profile. If your organisation predates the Terms feature and has no country on file yet, the screen asks for it and saves it to your profile.
 
 ## Version updates
 
 When circls publishes a new version of the Terms, every organisation is asked to accept it again before creating new listings. The currently accepted version is stored on your organisation, and each acceptance is recorded with its version and timestamp.
+
+You can only accept the version you're shown. If the partner app says a new version is available, update the app, or accept in the Partner Portal in your browser (reload the page if it says the Terms have been updated).

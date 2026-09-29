@@ -34,10 +34,14 @@ const createTenantSchema = z.object({
   country: z.enum(['India', 'USA']),
   /** Creating an org binds it to the current Terms; consent must be explicit. */
   acceptTerms: z.literal(true),
+  /** The Terms revision whose text the client showed (see acceptTenantTerms). */
+  documentVersion: z.string().min(1).max(40).optional(),
 });
 
 const acceptTermsSchema = z.object({
   version: z.string().min(1).max(40).optional(),
+  /** The Terms revision whose text the client showed; required (see acceptTenantTerms). */
+  documentVersion: z.string().min(1).max(40).optional(),
   country: z.enum(['India', 'USA']).optional(),
 });
 
@@ -107,8 +111,8 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid tenant payload', 'bad_request', { issues: parsed.error.issues });
     }
     const user = await currentUser(req);
-    const { name, slug, country } = parsed.data;
-    return createTenant(user.id, { name, slug, country });
+    const { name, slug, country, documentVersion } = parsed.data;
+    return createTenant(user.id, { name, slug, country, documentVersion });
   });
 
   // Public: the current Terms revision (document text ships with the clients).

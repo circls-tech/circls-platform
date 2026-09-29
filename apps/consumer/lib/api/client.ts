@@ -14,6 +14,13 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Sent on every request that can start a checkout: the gateways this site's
+ * checkout can open. The API only hands a Cashfree order to a client that
+ * lists it — older app builds don't, and pay through Razorpay.
+ */
+export const CHECKOUT_GATEWAYS_HEADER = { 'X-Checkout-Gateways': 'razorpay,stripe,cashfree' } as const;
+
 /** fetch wrapper that attaches the Firebase ID token and unwraps the error shape. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;

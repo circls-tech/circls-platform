@@ -25,6 +25,8 @@ A customer can book slots across several of your courts in one go (a single book
 
 A booking paid online stays **pending** while the customer completes payment — a failed card attempt doesn't cancel it, since the customer can retry right away. If payment isn't completed within about 15 minutes, the booking is cancelled automatically and its slots are released. In the rare case a payment completes after the booking was already cancelled, the customer is refunded in full automatically.
 
+In India, if the payment page doesn't work for a customer (or the gateway is having trouble), their checkout can move from Cashfree to Razorpay. The booking's payments ledger then shows the abandoned attempt as **failed**, next to the payment that went through. If a customer ends up paying twice for the same booking, the extra payment is refunded to them automatically and never counts toward your payout.
+
 ## The booking detail
 
 The detail view shows the customer's information, the arena (or **Multiple courts** for a cross-court booking), status, total, the booking channel and payment method, the list of **slots** with their times and prices — each labelled with its court when the booking spans more than one — and a **payments ledger** (charges, refunds and adjustments with their status and amounts). If the booking isn't already cancelled, Owners, Managers and Staff see a **Refund booking** action; Read-only members can view the booking but not cancel or refund it.

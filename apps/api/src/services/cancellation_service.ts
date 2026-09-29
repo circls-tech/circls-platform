@@ -29,7 +29,13 @@ import {
   type RefundTier,
   decideRefund,
 } from './cancellation_policy.js';
-import { type RefundExec, issueRefund, sumPriorRefunds } from './refund_service.js';
+import {
+  type RefundExec,
+  issueRefund,
+  lockBookingCharges,
+  selectRefundableCharge,
+  sumPriorRefunds,
+} from './refund_service.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 
 export interface CancelInput {
@@ -85,6 +91,12 @@ async function loadCancellationInputs(
   bookingId: string,
   lockCharge: boolean,
 ): Promise<CancellationInputs> {
+  // The cancel locks every charge of the booking before reading it, so a
+  // capture on any of them (a booking can carry several after a gateway
+  // switch or failover) either commits first — and the reads below see the
+  // confirmed booking and captured charge — or waits for the cancel and then
+  // takes applyPaymentCaptured's cancelled-booking refund.
+  if (lockCharge) await lockBookingCharges(exec, bookingId);
   const [booking] = await exec.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
 
   if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
@@ -92,17 +104,11 @@ async function loadCancellationInputs(
     throw new Conflict('Booking already cancelled', 'already_cancelled');
   }
 
-  // Most-recent charge payment row, if any. Phase 12 inserts one per booking;
-  // legacy walk-ins have none. Locked FOR UPDATE by the cancel so the charge's
-  // status is authoritative for the whole tx — a concurrent webhook capture
-  // blocks behind this lock instead of flipping the row under our feet.
-  const chargeQuery = exec
-    .select()
-    .from(payments)
-    .where(and(eq(payments.bookingId, bookingId), eq(payments.kind, 'charge')))
-    .orderBy(sql`${payments.createdAt} desc`)
-    .limit(1);
-  const [charge] = lockCharge ? await chargeQuery.for('update') : await chargeQuery;
+  // The charge the refund decision is about: the newest that took money,
+  // else the newest (a booking can carry a dead charge from a gateway switch
+  // or failover). Legacy walk-ins have none. The cancel already holds every
+  // charge's lock (above), so no capture can flip one under our feet.
+  const charge = await selectRefundableCharge(exec, bookingId, lockCharge);
 
   // Slot start instant. Prefer the booking's persisted `time_range` (Track A
   // fixed cancelled-booking visibility by stamping arena + span on the row);
@@ -151,7 +157,7 @@ async function loadCancellationInputs(
     throw new Conflict('Cannot determine slot start time', 'no_slot_start');
   }
 
-  const { refundedPaise } = await sumPriorRefunds(exec, bookingId);
+  const { refundedPaise } = await sumPriorRefunds(exec, bookingId, charge?.id);
   return { booking, charge, slotStart, alreadyRefundedPaise: refundedPaise };
 }
 
@@ -189,9 +195,9 @@ export async function previewCancellation(
 }
 
 export async function cancelPaidBooking(input: CancelInput): Promise<CancelResult> {
-  // The gateway order to void after commit, when the cancelled booking's
-  // charge was never captured (see below).
-  let orderToCancel: { provider: PaymentProviderId; orderId: string } | undefined;
+  // Gateway orders to void after commit: every never-captured charge of the
+  // cancelled booking (see below).
+  let ordersToCancel: { provider: PaymentProviderId; orderId: string }[] = [];
 
   const result = await db.transaction(async (tx) => {
     const inputs = await loadCancellationInputs(tx as RefundExec, input.bookingId, true);
@@ -220,22 +226,30 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
 
     await revokeQrTicketsForBooking(input.bookingId, tx);
 
-    // 2b. A never-captured charge (customer never completed payment — the
+    // 2b. Never-captured charges (customer never completed payment — the
     //     card form may still be open with a retryable gateway order behind
-    //     it): terminally fail the row and queue the gateway order for
-    //     cancellation after commit, so a late retry can't charge the
-    //     customer for a booking that no longer exists. Nothing was captured,
-    //     so the decision refunds nothing ('uncaptured').
+    //     it): terminally fail every pending charge of the booking and queue
+    //     their gateway orders for cancellation after commit, so a late retry
+    //     can't charge the customer for a booking that no longer exists.
+    //     When the decided charge itself was never captured, the decision
+    //     refunds nothing ('uncaptured').
     const chargeNeverCaptured = charge?.status === 'pending';
-    if (charge && chargeNeverCaptured) {
-      await tx
-        .update(payments)
-        .set({ status: 'failed' })
-        .where(and(eq(payments.id, charge.id), eq(payments.status, 'pending')));
-      if (isGatewayProvider(charge.provider) && charge.providerOrderId) {
-        orderToCancel = { provider: charge.provider, orderId: charge.providerOrderId };
-      }
-    }
+    const failedPending = await tx
+      .update(payments)
+      .set({ status: 'failed' })
+      .where(
+        and(
+          eq(payments.bookingId, input.bookingId),
+          eq(payments.kind, 'charge'),
+          eq(payments.status, 'pending'),
+        ),
+      )
+      .returning({ provider: payments.provider, providerOrderId: payments.providerOrderId });
+    ordersToCancel = failedPending.flatMap((c) =>
+      isGatewayProvider(c.provider) && c.providerOrderId
+        ? [{ provider: c.provider, orderId: c.providerOrderId }]
+        : [],
+    );
 
     // 3. Refund, if any — decideRefund only grants one against a captured
     //    charge, capped at what earlier refunds left. issueRefund() runs in its
@@ -249,6 +263,7 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
           amountPaise: decision.refundPaise,
           reason: input.reason,
           actorUserId: input.actorUserId,
+          ...(charge ? { chargePaymentId: charge.id } : {}),
         },
         tx as RefundExec,
       );
@@ -277,21 +292,23 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
     };
   });
 
-  // Void the gateway order AFTER commit — a network call doesn't belong in
+  // Void the gateway orders AFTER commit — a network call doesn't belong in
   // the row-locked tx, and a gateway error must not roll back the
-  // cancellation. Best-effort: if the cancel loses to a retry-capture, the
+  // cancellation. Best-effort: if a cancel loses to a retry-capture, the
   // capture webhook's auto-refund safety net settles it. (Razorpay's adapter
   // is a documented no-op — no order-cancel API.)
-  if (orderToCancel) {
-    try {
-      await getGateway(orderToCancel.provider).cancelOrder(orderToCancel.orderId);
-    } catch (err) {
-      logger.error(
-        { err, bookingId: input.bookingId, ...orderToCancel },
-        'cancel_booking_gateway_cancel_failed',
-      );
-    }
-  }
+  await Promise.all(
+    ordersToCancel.map(async (order) => {
+      try {
+        await getGateway(order.provider).cancelOrder(order.orderId);
+      } catch (err) {
+        logger.error(
+          { err, bookingId: input.bookingId, ...order },
+          'cancel_booking_gateway_cancel_failed',
+        );
+      }
+    }),
+  );
 
   return result;
 }

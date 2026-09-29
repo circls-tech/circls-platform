@@ -5,6 +5,7 @@ import { sweepExpiredHolds } from '../services/slot_service.js';
 import { processPendingNotifications } from '../services/notification_service.js';
 import { releaseDueSettlements } from '../services/settlement_hold_service.js';
 import { sweepAbandonedCarts } from '../services/booking_service_track_b.js';
+import { reconcileCashfreePayments } from '../services/payment_recovery_service.js';
 import { reconcileWeeklyPayouts } from '../services/payout_service.js';
 import { deliverPendingOutboundWebhooks } from '../services/webhook_subscriptions_service.js';
 import { autoArchiveEndedEvents, expireLapsedMemberships } from '../services/lifecycle_sweeps.js';
@@ -56,6 +57,17 @@ const JOBS: ScheduledJob[] = [
     run: async () => {
       const cancelled = await sweepAbandonedCarts();
       if (cancelled > 0) logger.info({ cancelled }, 'abandoned_cart_sweep_complete');
+    },
+  },
+  {
+    // Cashfree stops retrying webhooks after ~40 min and may send no refund
+    // webhooks: confirm payments and settle refunds it never told us about.
+    // A no-op unless Cashfree is live.
+    queue: 'cashfree-reconcile',
+    cron: '*/5 * * * *',
+    run: async () => {
+      const r = await reconcileCashfreePayments();
+      if (r.captured > 0 || r.refundsResolved > 0) logger.info(r, 'cashfree_reconcile_complete');
     },
   },
   {

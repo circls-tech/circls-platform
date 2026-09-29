@@ -18,6 +18,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
 const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
+const { CURRENT_TERMS_VERSION } = await import('../lib/terms.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -176,7 +177,7 @@ describe.skipIf(!runIntegration)('tenants', () => {
       method: 'POST',
       url: `/v1/tenants/${legacyId}/terms/accept`,
       headers: bearer('owner'),
-      payload: {},
+      payload: { documentVersion: CURRENT_TERMS_VERSION },
     });
     expect(noCountry.statusCode).toBe(400);
     expect(noCountry.json().error.code).toBe('country_required');
@@ -186,17 +187,33 @@ describe.skipIf(!runIntegration)('tenants', () => {
       method: 'POST',
       url: `/v1/tenants/${legacyId}/terms/accept`,
       headers: bearer('owner'),
-      payload: { version: 'obsolete-version', country: 'India' },
+      payload: { version: 'obsolete-version', documentVersion: CURRENT_TERMS_VERSION, country: 'India' },
     });
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error.code).toBe('terms_version_stale');
+
+    // … as is a client that doesn't say which text it showed, or showed an
+    // older one (an app build from before the Terms changed) …
+    for (const payload of [
+      { version: CURRENT_TERMS_VERSION, country: 'India' },
+      { version: CURRENT_TERMS_VERSION, documentVersion: 'obsolete-version', country: 'India' },
+    ]) {
+      const unseen = await app.inject({
+        method: 'POST',
+        url: `/v1/tenants/${legacyId}/terms/accept`,
+        headers: bearer('owner'),
+        payload,
+      });
+      expect(unseen.statusCode).toBe(409);
+      expect(unseen.json().error.code).toBe('terms_version_stale');
+    }
 
     // … and a proper acceptance unblocks creation and backfills the country.
     const accepted = await app.inject({
       method: 'POST',
       url: `/v1/tenants/${legacyId}/terms/accept`,
       headers: bearer('owner'),
-      payload: { country: 'India' },
+      payload: { documentVersion: CURRENT_TERMS_VERSION, country: 'India' },
     });
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json().termsRegion).toBe('IN');
@@ -215,6 +232,57 @@ describe.skipIf(!runIntegration)('tenants', () => {
     await db.execute(sql`DELETE FROM venues WHERE tenant_id = ${legacyId}::uuid`);
     await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${legacyId}::uuid`);
     await db.execute(sql`DELETE FROM tenants WHERE id = ${legacyId}::uuid`);
+  });
+
+  it("an org re-accepting is held to its own country's document", async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: { name: 'US Re-accept', slug: `us-reaccept-${SUFFIX}`, country: 'USA', acceptTerms: true },
+    });
+    const usId = created.json().id as string;
+    // As after a Terms version bump.
+    await db.execute(sql`UPDATE tenants SET terms_version = 'older-version' WHERE id = ${usId}::uuid`);
+
+    const india = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${usId}/terms/accept`,
+      headers: bearer('owner'),
+      payload: { documentVersion: CURRENT_TERMS_VERSION, country: 'India' },
+    });
+    expect(india.statusCode).toBe(409);
+    expect(india.json().error.code).toBe('terms_region_mismatch');
+
+    const own = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${usId}/terms/accept`,
+      headers: bearer('owner'),
+      payload: { documentVersion: CURRENT_TERMS_VERSION },
+    });
+    expect(own.statusCode).toBe(200);
+    expect(own.json().termsRegion).toBe('US');
+
+    await db.execute(sql`DELETE FROM audit_log WHERE tenant_id = ${usId}::uuid`);
+    await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${usId}::uuid`);
+    await db.execute(sql`DELETE FROM tenants WHERE id = ${usId}::uuid`);
+  });
+
+  it('refuses to create an org from a client showing outdated Terms', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('owner'),
+      payload: {
+        name: 'Stale Co',
+        slug: `stale-co-${SUFFIX}`,
+        country: 'India',
+        acceptTerms: true,
+        documentVersion: 'obsolete-version',
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('terms_version_stale');
   });
 
   it('exposes the current terms version publicly', async () => {

@@ -32,7 +32,12 @@ import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
 import { ownBookingCondition } from './booking_ownership.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
-import type { PrepareOnlineBookingResult, BookEventResult, CouponPricing } from './booking_service.js';
+import type {
+  PrepareOnlineBookingResult,
+  BookEventCustomer,
+  BookEventResult,
+  CouponPricing,
+} from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { listQuestions, type RegistrationAnswerInput } from './event_registration_questions_service.js';
@@ -766,6 +771,8 @@ export interface ConsumerSlotBookingInput {
   actorUserId: string;
   /** Optional coupon typed at checkout; resolved + validated before booking. */
   couponCode?: string;
+  /** The gateways the customer's checkout can open (see resolvePaymentContext). */
+  checkoutGateways?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -854,6 +861,7 @@ export async function consumerBookSlots(
       // The consumer books for themselves — the actor IS the customer. Lets
       // notifications resolve the profile's phone + email.
       customerUserId: input.actorUserId,
+      checkoutGateways: input.checkoutGateways,
     },
     pricing,
   );
@@ -895,7 +903,7 @@ export async function assertMembershipPurchasable(membershipId: string): Promise
 /** Book an event seat as a consumer (event must be published + venue visible). */
 export async function consumerBookEvent(
   eventId: string,
-  customer: { userId: string; name?: string | null; contact?: string | null },
+  customer: BookEventCustomer,
   lines: EventLine[],
   couponCode?: string,
   answers: RegistrationAnswerInput[] = [],
@@ -913,6 +921,7 @@ export async function consumerPurchaseMembership(
   userId: string,
   couponCode?: string,
   membershipTierId?: string,
+  checkoutGateways?: ReadonlySet<string>,
 ): Promise<PurchaseMembershipResult> {
   await assertMembershipPurchasable(membershipId);
   const pricing = couponCode
@@ -922,7 +931,7 @@ export async function consumerPurchaseMembership(
         couponCode,
       )
     : null;
-  return purchaseMembership({ membershipId, userId, membershipTierId }, pricing);
+  return purchaseMembership({ membershipId, userId, membershipTierId, checkoutGateways }, pricing);
 }
 
 // ── My bookings ──────────────────────────────────────────────────────────────

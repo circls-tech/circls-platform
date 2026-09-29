@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { BadRequest } from '../lib/errors.js';
+import { checkoutGatewaysOf } from '../lib/gateway.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { type CheckoutBreakdown, computeCheckout } from '../services/checkout_pricing.js';
@@ -70,6 +71,7 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
     const payCtx = await resolvePaymentContext({
       venueId: priced.item.venueId,
       tenantId: priced.tenantId,
+      checkoutGateways: checkoutGatewaysOf(req.headers),
     });
 
     // Same billing knobs the booking path will resolve, so quote and charge

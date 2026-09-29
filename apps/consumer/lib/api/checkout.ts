@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiFetch } from './client';
+import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
 
 export type QuoteItem =
   | { itemType: 'event'; eventId: string; lines: { tierId: string; quantity: number }[] }
@@ -36,7 +36,11 @@ export interface PublicCoupon {
 export function useCheckoutQuote() {
   return useMutation({
     mutationFn: (req: QuoteRequest) =>
-      apiFetch<QuoteResponse>('/v1/consumer/checkout/quote', { method: 'POST', body: JSON.stringify(req) }),
+      apiFetch<QuoteResponse>('/v1/consumer/checkout/quote', {
+        method: 'POST',
+        headers: CHECKOUT_GATEWAYS_HEADER,
+        body: JSON.stringify(req),
+      }),
   });
 }
 

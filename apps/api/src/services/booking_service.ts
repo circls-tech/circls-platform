@@ -182,6 +182,8 @@ export interface PrepareOnlineBookingInput {
    *  Distinct from the audit actor: a staff-created booking must NOT stamp the
    *  staff member as the customer. Drives notification contact lookup. */
   customerUserId?: string | null;
+  /** The gateways the customer's checkout can open (see resolvePaymentContext). */
+  checkoutGateways?: ReadonlySet<string> | undefined;
 }
 
 export interface PrepareOnlineBookingResult {
@@ -211,9 +213,13 @@ export async function prepareOnlineBookingWithPayment(
   if (input.slotIds.length === 0) throw new Conflict('No slots selected', 'no_slots');
 
   // Gateway + currency follow the venue's country (Stripe/USD for US venues,
-  // Razorpay/INR otherwise) — resolved up front so the gross-up, the booking
-  // row, and the order all agree.
-  const payCtx = await resolvePaymentContext({ venueId, tenantId: ctx.tenantId });
+  // INR otherwise) — resolved up front so the gross-up, the booking row, and
+  // the order all agree.
+  const payCtx = await resolvePaymentContext({
+    venueId,
+    tenantId: ctx.tenantId,
+    checkoutGateways: input.checkoutGateways,
+  });
 
   // Same claim flow as walk-in, but staged: bookings.status='pending', and we
   // capture the price total so the Razorpay order has the right paise amount.
@@ -391,7 +397,12 @@ export async function prepareOnlineBookingWithPayment(
   // to the gateway doesn't roll back the pending booking + slot claim. If
   // createPaymentOrder ultimately fails, the abandoned-cart sweep will clean the
   // pending booking after the grace window.
-  const { paymentId: _paymentId, providerOrderId, clientSecret } = await createPaymentOrder({
+  const {
+    paymentId: _paymentId,
+    providerOrderId,
+    clientSecret,
+    provider,
+  } = await createPaymentOrder({
     bookingId,
     tenantId: ctx.tenantId,
     amountPaise: totalPaise,
@@ -408,12 +419,13 @@ export async function prepareOnlineBookingWithPayment(
   return {
     bookingId,
     payment: {
-      gateway: payCtx.provider,
+      // The gateway the order landed on — Razorpay when Cashfree failed over.
+      gateway: provider,
       orderId: providerOrderId,
       // Frontend uses this to open checkout (Razorpay JS / Stripe.js / Cashfree JS). Stub
       // mode has no key; we surface an empty string so the response shape
       // stays stable and the client shows "reserved".
-      keyId: publicKeyIdFor(payCtx.provider),
+      keyId: publicKeyIdFor(provider),
       ...(clientSecret !== undefined ? { clientSecret } : {}),
       amountPaise: totalPaise,
       currency: payCtx.currency,
@@ -456,6 +468,8 @@ export interface BookEventCustomer {
   /** Phone / email kept for notifications + walk-up reconciliation. */
   contact?: string | null;
   note?: string | null;
+  /** The gateways the customer's checkout can open (see resolvePaymentContext). */
+  checkoutGateways?: ReadonlySet<string> | undefined;
 }
 
 export type BookEventPaymentMethod = 'razorpay_route' | 'external' | 'free';
@@ -760,7 +774,7 @@ export async function bookEvent(
 
     // Gateway + currency follow the event's venue country (fallback: tenant).
     const payCtx = await resolvePaymentContext(
-      { venueId: ev.venueId, tenantId: ev.tenantId },
+      { venueId: ev.venueId, tenantId: ev.tenantId, checkoutGateways: customer.checkoutGateways },
       tx,
     );
 
@@ -890,6 +904,7 @@ export async function bookEvent(
   let providerOrderId: string | undefined;
   let paymentId: string | undefined;
   let clientSecret: string | undefined;
+  let gateway = reserved.payCtx.provider;
   try {
     const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.booking.id,
@@ -907,6 +922,7 @@ export async function bookEvent(
     providerOrderId = result.providerOrderId;
     paymentId = result.paymentId;
     clientSecret = result.clientSecret;
+    gateway = result.provider;
   } catch (err) {
     if (err instanceof Error && err.message.includes('not implemented')) {
       throw new Conflict('Payments not yet enabled', 'payment_not_available');
@@ -918,8 +934,8 @@ export async function bookEvent(
     booking: reserved.booking,
     paymentId,
     providerOrderId,
-    gateway: reserved.payCtx.provider,
-    keyId: publicKeyIdFor(reserved.payCtx.provider),
+    gateway,
+    keyId: publicKeyIdFor(gateway),
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
     currency: reserved.payCtx.currency,

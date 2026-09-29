@@ -15,8 +15,11 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { auditLog, bookings, payments, slots } from '../db/schema/index.js';
 import { env } from '../config/env.js';
-import { getGateway, isGatewayProvider } from '../lib/gateway.js';
+import { getGateway, isGatewayProvider, type PaymentProviderId } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
+
+/** Gateway order cancels the sweep runs at once. */
+const GATEWAY_CANCEL_CONCURRENCY = 5;
 
 /**
  * Cancel pending online-payment bookings that never got their webhook capture
@@ -54,6 +57,17 @@ export async function sweepAbandonedCarts(): Promise<number> {
           eq(bookings.status, 'pending'),
           eq(bookings.paymentMethod, 'razorpay_route'),
           sql`${bookings.createdAt} < now() - (${graceMin}::int * interval '1 minute')`,
+          // A checkout moved to another gateway ("Try another way to pay")
+          // gets the full window from its new order, not what's left of the
+          // booking's: its customer may be paying right now, on a gateway
+          // whose orders can't be cancelled.
+          sql`not exists (
+            select 1 from payments p
+            where p.booking_id = ${bookings.id}
+              and p.kind = 'charge'
+              and p.status = 'pending'
+              and p.created_at >= now() - (${graceMin}::int * interval '1 minute')
+          )`,
         ),
       )
       .returning({ id: bookings.id, tenantId: bookings.tenantId });
@@ -115,18 +129,25 @@ export async function sweepAbandonedCarts(): Promise<number> {
   // belong inside the row-locked transaction, and a gateway error must not
   // roll back the cancellation. Best-effort per order: a failure (e.g. the
   // intent already succeeded because a retry-capture won) is logged and left
-  // to the capture safety net.
-  for (const charge of ordersToCancel) {
-    if (!isGatewayProvider(charge.provider)) continue; // stub/external
-    if (!charge.providerOrderId) continue;
-    try {
-      await getGateway(charge.provider).cancelOrder(charge.providerOrderId);
-    } catch (err) {
-      logger.error(
-        { err, paymentId: charge.id, provider: charge.provider, orderId: charge.providerOrderId },
-        'abandoned_cart_gateway_cancel_failed',
-      );
-    }
+  // to the capture safety net. A few at a time, so a slow gateway (each call
+  // capped by GATEWAY_HTTP_TIMEOUT_MS) can't stall the one-at-a-time sweep
+  // queue for long.
+  const cancellable = ordersToCancel.filter(
+    (c) => isGatewayProvider(c.provider) && c.providerOrderId,
+  );
+  for (let i = 0; i < cancellable.length; i += GATEWAY_CANCEL_CONCURRENCY) {
+    await Promise.all(
+      cancellable.slice(i, i + GATEWAY_CANCEL_CONCURRENCY).map(async (charge) => {
+        try {
+          await getGateway(charge.provider as PaymentProviderId).cancelOrder(charge.providerOrderId!);
+        } catch (err) {
+          logger.error(
+            { err, paymentId: charge.id, provider: charge.provider, orderId: charge.providerOrderId },
+            'abandoned_cart_gateway_cancel_failed',
+          );
+        }
+      }),
+    );
   }
 
   return count;

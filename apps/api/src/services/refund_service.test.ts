@@ -10,7 +10,7 @@
  *   - Audit row 'payment.refunded' is written.
  */
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import {
   arenas,
@@ -23,7 +23,8 @@ import {
   users,
   venues,
 } from '../db/schema/index.js';
-import { computeSettleRefundPaise, issueRefund } from './refund_service.js';
+import { computeSettleRefundPaise, issueRefund, refundKey } from './refund_service.js';
+import { getCashfree } from '../lib/cashfree.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -525,6 +526,176 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
     expect(refundRows).toHaveLength(1);
     const totalRefunded = refundRows.reduce((s, r) => s + Math.abs(Number(r.amountPaise)), 0);
     expect(totalRefunded).toBe(40000);
+  });
+
+  // ── Bookings with more than one charge (gateway switch / INR failover) ──
+
+  /** A bare booking plus the given charge rows, oldest first. */
+  async function seedMultiCharge(
+    charges: {
+      provider?: 'stub' | 'razorpay' | 'cashfree';
+      amountPaise: number;
+      status: 'captured' | 'failed' | 'pending';
+      providerPaymentId?: string | null;
+      providerOrderId?: string | null;
+    }[],
+  ): Promise<{ bookingId: string; chargeIds: string[] }> {
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        itemType: 'slot',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: charges[0]!.amountPaise,
+        createdByUserId: actorUserId,
+      })
+      .returning();
+    const chargeIds: string[] = [];
+    let at = Date.now() - 60_000;
+    for (const c of charges) {
+      const [row] = await db
+        .insert(payments)
+        .values({
+          bookingId: b!.id,
+          tenantId,
+          provider: c.provider ?? 'stub',
+          providerPaymentId: c.providerPaymentId ?? null,
+          providerOrderId: c.providerOrderId ?? null,
+          amountPaise: c.amountPaise,
+          currency: 'INR',
+          status: c.status,
+          kind: 'charge',
+          createdAt: new Date((at += 1000)),
+        })
+        .returning();
+      chargeIds.push(row!.id);
+    }
+    return { bookingId: b!.id, chargeIds };
+  }
+
+  it('refunds the charge that took the money, not a newer dead one', async () => {
+    const { bookingId, chargeIds } = await seedMultiCharge([
+      { amountPaise: 15000, status: 'captured' },
+      // A newer charge that never took money (e.g. a gateway switch).
+      { amountPaise: 15000, status: 'failed' },
+    ]);
+    await issueRefund({ bookingId, amountPaise: 15000, reason: 'dead-charge test', actorUserId });
+    const [paid] = await db.select().from(payments).where(sql`id = ${chargeIds[0]}`);
+    const [dead] = await db.select().from(payments).where(sql`id = ${chargeIds[1]}`);
+    expect(paid!.status).toBe('refunded');
+    expect(dead!.status).toBe('failed');
+  });
+
+  it('counts earlier refunds per charge', async () => {
+    const { bookingId, chargeIds } = await seedMultiCharge([
+      { amountPaise: 30000, status: 'captured' },
+      { amountPaise: 20000, status: 'captured' },
+    ]);
+    // Refund the first charge in full, by id.
+    await issueRefund({
+      bookingId,
+      amountPaise: 30000,
+      reason: 'first charge',
+      actorUserId,
+      chargePaymentId: chargeIds[0],
+    });
+    // The second charge still has its whole 20000 to refund — a per-booking
+    // count would see 30000 refunded against a 20000 charge and refuse.
+    const res = await issueRefund({ bookingId, amountPaise: 20000, reason: 'second charge', actorUserId });
+    expect(res.status).toBe('processed');
+    const [second] = await db.select().from(payments).where(sql`id = ${chargeIds[1]}`);
+    expect(second!.status).toBe('refunded');
+  });
+
+  it('a duplicate-payment refund leaves the payout untouched', async () => {
+    const { bookingId, chargeIds } = await seedMultiCharge([{ amountPaise: 12000, status: 'captured' }]);
+    await issueRefund({
+      bookingId,
+      amountPaise: 12000,
+      reason: 'duplicate',
+      actorUserId: null,
+      chargePaymentId: chargeIds[0],
+      settleNeutral: true,
+    });
+    const [row] = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+    expect(Number(row!.amountPaise)).toBe(-12000);
+    expect(Number(row!.settleBasePaise)).toBe(0);
+    expect(row!.metadata['duplicatePayment']).toBe(true);
+  });
+
+  it('keys each refund by its charge, sequence and amount, surviving a rollback', async () => {
+    const { bookingId, chargeIds } = await seedMultiCharge([{ amountPaise: 40000, status: 'captured' }]);
+    const chargeId = chargeIds[0]!;
+    // An attempt whose transaction rolls back (as when the gateway call throws)
+    // must not use up a sequence number: a retry of the same refund sends the
+    // same key, whatever its reason (the reason isn't sent to the gateway).
+    await expect(
+      db.transaction(async (tx) => {
+        await issueRefund({ bookingId, amountPaise: 10000, reason: 'rolled back', actorUserId }, tx);
+        throw new Error('simulated gateway failure after the call');
+      }),
+    ).rejects.toThrow(/simulated/);
+    await issueRefund({ bookingId, amountPaise: 10000, reason: 'retry', actorUserId });
+    await issueRefund({ bookingId, amountPaise: 5000, reason: 'second refund', actorUserId });
+    const rows = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${bookingId} and kind = 'refund'`)
+      .orderBy(sql`created_at asc`);
+    expect(rows.map((r) => r.metadata['refundKey'])).toEqual([
+      refundKey(chargeId, 1, 10000),
+      refundKey(chargeId, 2, 5000),
+    ]);
+    // Cashfree's refund_id: alphanumeric, at most 40 chars.
+    expect(refundKey(chargeId, 1, 10000)).toMatch(/^r[0-9a-f]{32}$/);
+  });
+
+  it('a retry for a different amount gets a different key', async () => {
+    // e.g. a cancel whose refund threw, retried after the policy tier moved:
+    // reusing the key would clash with the gateway's stored first attempt.
+    expect(refundKey('c1', 1, 10000)).not.toBe(refundKey('c1', 1, 5000));
+    expect(refundKey('c1', 1, 10000)).toBe(refundKey('c1', 1, 10000));
+    expect(refundKey('c1', 1, 10000)).not.toBe(refundKey('c1', 2, 10000));
+  });
+
+  it('refuses a gateway charge with no payment or order id instead of faking it', async () => {
+    const { bookingId } = await seedMultiCharge([
+      { provider: 'razorpay', amountPaise: 9000, status: 'captured' },
+    ]);
+    await expect(
+      issueRefund({ bookingId, amountPaise: 9000, reason: 'no ids', actorUserId }),
+    ).rejects.toMatchObject({ code: 'no_gateway_payment' });
+  });
+
+  it('refunds a Cashfree charge by its order id with the refund key', async () => {
+    const orderId = `cf-order-refund-${Date.now()}`;
+    const { bookingId, chargeIds } = await seedMultiCharge([
+      {
+        provider: 'cashfree',
+        amountPaise: 25000,
+        status: 'captured',
+        providerPaymentId: `cfpay-${Date.now()}`,
+        providerOrderId: orderId,
+      },
+    ]);
+    const spy = vi.spyOn(getCashfree(), 'refundPayment');
+    try {
+      await issueRefund({ bookingId, amountPaise: 25000, reason: 'cashfree', actorUserId });
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderId,
+          refundId: refundKey(chargeIds[0]!, 1, 25000),
+          amountMinor: 25000,
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('writes a payment.refunded audit row', async () => {

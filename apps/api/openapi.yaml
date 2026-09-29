@@ -1207,6 +1207,20 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/payment-settings:
+    get:
+      responses:
+        '200':
+          description: Default Response
+    put:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/payment-settings/failover/clear:
+    post:
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/listings:
     get:
       responses:
@@ -1440,6 +1454,28 @@ paths:
             type: string
           in: path
           name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/payments/{orderId}/status:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: orderId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/payments/{orderId}/switch-gateway:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: orderId
           required: true
       responses:
         '200':

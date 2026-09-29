@@ -35,6 +35,21 @@ puts it back.
 - Messed it up? `./sandbox reset` — wipes and reseeds to a clean state.
 - Stop: `./sandbox down`
 
+## Payments
+Payments are simulated: with no gateway keys, a paid checkout just reserves the
+booking. To try Cashfree's real test checkout, put your Cashfree **test** keys
+in the gitignored `.env` at the repo root (never in `.sandbox/env/api.env`,
+which is committed):
+
+    CASHFREE_CLIENT_ID=...
+    CASHFREE_CLIENT_SECRET=...
+
+Run `./sandbox up` again: with the keys set, Indian payments go to Cashfree by
+default, as in production (the admin console's **Payments** page can switch
+them). The sandbox always uses Cashfree's test environment. Cashfree's webhooks
+can't reach your machine without a tunnel, but the checkout still confirms
+payments by asking Cashfree directly.
+
 ## Shipping your work
 Ask Claude Code to commit your changes, create a feature **branch in this repo**,
 push the branch to `origin`, and **open a pull request against `main`**. A

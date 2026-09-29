@@ -17,6 +17,7 @@
  */
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
+import { gatewayRequest } from './gateway_http.js';
 import { logger } from './logger.js';
 import type {
   CreateOrderInput,
@@ -30,6 +31,18 @@ import type {
 let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
 let stubCancelledOrders: string[] = [];
+
+/**
+ * A stub adapter in production means the keys were removed while real
+ * charges still point at this gateway (charges created in stub mode are
+ * stored as provider 'stub' and never reach here). Faking a refund or cancel
+ * then would mark money returned that never moved — fail loudly instead.
+ */
+function assertStubMayMoveMoney(op: string): void {
+  if (env.NODE_ENV === 'production') {
+    throw new Error(`Stripe is not configured — cannot ${op} (payments_unconfigured)`);
+  }
+}
 
 class StubStripe implements PaymentGateway {
   readonly provider = 'stripe' as const;
@@ -46,10 +59,12 @@ class StubStripe implements PaymentGateway {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    assertStubMayMoveMoney('cancelOrder');
     stubCancelledOrders.push(orderId);
   }
 
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
+    assertStubMayMoveMoney('refundPayment');
     return { id: nextStubId('re'), status: 'processed', amountMinor: input.amountMinor };
   }
 
@@ -73,27 +88,25 @@ class LiveStripe implements PaymentGateway {
     private readonly webhookSecret: string | undefined,
   ) {}
 
-  private async call<T>(path: string, body: Record<string, string>): Promise<T> {
-    const res = await fetch(`${STRIPE_API}${path}`, {
+  private async call<T>(
+    path: string,
+    body: Record<string, string>,
+    idempotencyKey?: string,
+  ): Promise<T> {
+    return gatewayRequest<T>({
+      provider: 'stripe',
+      label: 'Stripe',
       method: 'POST',
+      baseUrl: STRIPE_API,
+      path,
       headers: {
         Authorization: `Bearer ${this.secretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: new URLSearchParams(body).toString(),
+      errorMessage: (b) => (b as { error?: { message?: string } }).error?.message,
     });
-    const text = await res.text();
-    if (!res.ok) {
-      let message = text;
-      try {
-        message = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? text;
-      } catch {
-        /* keep raw text */
-      }
-      logger.error({ status: res.status, path, message }, 'stripe_api_error');
-      throw new Error(`Stripe ${path} failed (${res.status}): ${message}`);
-    }
-    return JSON.parse(text) as T;
   }
 
   // https://docs.stripe.com/api/payment_intents/create
@@ -147,12 +160,20 @@ class LiveStripe implements PaymentGateway {
     const target = input.paymentId.startsWith('pi_')
       ? { payment_intent: input.paymentId }
       : { charge: input.paymentId };
-    const refund = await this.call<{ id: string; status: string; amount: number }>('/refunds', {
-      ...target,
-      amount: String(input.amountMinor),
-      'metadata[reference]': input.reference,
-      ...(input.reason ? { 'metadata[reason]': input.reason } : {}),
-    });
+    // The refund key is stable across retries of the same refund (see
+    // refund_service), so a retry after a lost response can't refund twice.
+    // Stripe rejects a reused key whose parameters differ, so the body holds
+    // nothing that can change between retries: no free-text reason (that
+    // stays in our ledger and audit log).
+    const refund = await this.call<{ id: string; status: string; amount: number }>(
+      '/refunds',
+      {
+        ...target,
+        amount: String(input.amountMinor),
+        'metadata[reference]': input.reference,
+      },
+      input.refundId,
+    );
     const status: GatewayRefundResult['status'] =
       refund.status === 'succeeded'
         ? 'processed'

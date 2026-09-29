@@ -303,6 +303,20 @@ export interface MembershipPurchaseResult {
   currency?: string;
 }
 
+/**
+ * Where a checkout's payment stands (GET /v1/consumer/payments/:orderId/status):
+ * 'processing' = an attempt is still being processed (a UPI request awaiting
+ * approval, say), so don't invite a second payment; 'failed' = the last
+ * attempt was declined or abandoned and can be retried; 'expired' = the
+ * checkout can't be paid any more.
+ */
+export type CheckoutPaymentStatus = 'paid' | 'processing' | 'pending' | 'failed' | 'expired';
+
+/** "Try another way to pay" (POST /v1/consumer/payments/:orderId/switch-gateway). */
+export type SwitchGatewayResult =
+  | { outcome: 'paid' }
+  | { outcome: 'switched'; payment: SlotBookingResult['payment'] };
+
 // ── Booking / purchase inputs ─────────────────────────────────────────────────
 
 export interface PurchaseMembershipInput {

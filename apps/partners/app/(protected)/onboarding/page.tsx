@@ -8,7 +8,7 @@ import { useOrg } from '@/lib/org_context';
 import { Badge, Button, Card, Input, TagsInput } from '@/lib/ui';
 import type { Tenant } from '@/lib/api/types';
 import { TermsAcceptance } from '@/components/TermsAcceptance';
-import type { TermsCountry } from '@/lib/terms/constants';
+import { CURRENT_TERMS_VERSION, type TermsCountry } from '@/lib/terms/constants';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,6 +122,8 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
         slug: slug.trim(),
         country,
         acceptTerms: true,
+        // The text shown is this bundle's copy of the current version.
+        documentVersion: CURRENT_TERMS_VERSION,
       });
       setActiveTenantId(tenant.id);
       onDone(tenant);

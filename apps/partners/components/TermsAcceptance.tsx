@@ -28,17 +28,27 @@ export function TermsDocument({ country }: { country: TermsCountry }) {
  */
 export function TermsAcceptance({
   country,
+  countryLocked = false,
   onCountryChange,
   agreed,
   onAgreedChange,
 }: {
   country: TermsCountry;
+  /** The org already has a country on file: show its document, no picker. */
+  countryLocked?: boolean;
   onCountryChange: (c: TermsCountry) => void;
   agreed: boolean;
   onAgreedChange: (v: boolean) => void;
 }) {
+  const countryLabel = TERMS_COUNTRY_OPTIONS.find((o) => o.value === country)?.label ?? country;
   return (
     <div className="flex flex-col gap-3">
+      {countryLocked ? (
+        <p className="text-sm text-slate-600">
+          These are the Terms &amp; Conditions for organisations based in{' '}
+          <strong>{countryLabel}</strong>, the country on your organisation&apos;s profile.
+        </p>
+      ) : (
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Where is your organisation based?
@@ -57,6 +67,7 @@ export function TermsAcceptance({
           your customers pay in.
         </p>
       </div>
+      )}
 
       <TermsDocument country={country} />
 

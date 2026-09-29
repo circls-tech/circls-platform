@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '/users', label: 'Consumers' },
   { href: '/partner-users', label: 'Partner users' },
   { href: '/payouts', label: 'Payouts' },
+  { href: '/payments', label: 'Payments' },
   { href: '/listings', label: 'Review queue' },
   { href: '/coupons', label: 'Coupons' },
   { href: '/audit-log', label: 'Audit log' },

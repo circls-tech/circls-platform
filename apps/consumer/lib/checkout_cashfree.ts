@@ -10,12 +10,15 @@
  *
  * Unlike Razorpay/Stripe, the SDK's completion callback fires whatever the
  * payment's outcome, so we can't tell "paid" from "failed" in the browser —
- * that result is `{ kind: 'submitted' }` and the webhook decides.
+ * that result is `{ kind: 'submitted' }`, and the checkout then asks the API
+ * (which asks Cashfree) how it went. The pop-up can also be closed after a
+ * payment, so a 'dismissed' checkout is checked too.
  *
  * Stub / "payments not enabled" mode: an empty mode or session id resolves
  * `{ kind: 'reserved' }` — the booking row already exists as `pending`.
  */
 import type { CheckoutResult } from './checkout';
+import { loadScriptOnce } from './load_script';
 
 type CashfreeMode = 'sandbox' | 'production';
 
@@ -43,34 +46,6 @@ declare global {
 
 const CASHFREE_SRC = 'https://sdk.cashfree.com/js/v3/cashfree.js';
 
-let loadPromise: Promise<void> | null = null;
-
-/** Dynamically inject the Cashfree JS SDK exactly once. */
-function loadCashfreeScript(): Promise<void> {
-  if (typeof window === 'undefined') return Promise.reject(new Error('not in browser'));
-  if (window.Cashfree) return Promise.resolve();
-  if (loadPromise) return loadPromise;
-  loadPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${CASHFREE_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Cashfree')));
-      if (window.Cashfree) resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = CASHFREE_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      loadPromise = null;
-      reject(new Error('Failed to load Cashfree checkout'));
-    };
-    document.body.appendChild(script);
-  });
-  return loadPromise;
-}
-
 export interface OpenCashfreeCheckoutInput {
   /** From the API's `keyId`: the SDK mode. Empty in stub mode. */
   mode: string;
@@ -82,7 +57,7 @@ export interface OpenCashfreeCheckoutInput {
  * Opens Cashfree's pop-up checkout and resolves once it closes.
  * - `{ kind: 'reserved' }` if mode/session is empty (stub mode).
  * - `{ kind: 'submitted' }` once a payment attempt completes (or Cashfree
- *   takes over with a redirect) — the webhook confirms the booking.
+ *   takes over with a redirect) — paid or declined, the API can say.
  * - `{ kind: 'dismissed' }` if the customer closes it without paying.
  */
 export async function openCashfreeCheckout(
@@ -92,10 +67,9 @@ export async function openCashfreeCheckout(
     return { kind: 'reserved' };
   }
 
-  await loadCashfreeScript();
-  if (!window.Cashfree) return { kind: 'reserved' };
+  await loadScriptOnce(CASHFREE_SRC, () => Boolean(window.Cashfree), { name: 'Cashfree checkout' });
 
-  const cashfree = window.Cashfree({ mode: input.mode });
+  const cashfree = window.Cashfree!({ mode: input.mode });
   const result = await cashfree.checkout({
     paymentSessionId: input.paymentSessionId,
     redirectTarget: '_modal',

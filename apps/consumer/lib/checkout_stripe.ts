@@ -13,6 +13,7 @@
  * `pending`, same as the Razorpay stub path.
  */
 import type { CheckoutResult } from './checkout';
+import { loadScriptOnce } from './load_script';
 
 interface StripePaymentElement {
   mount: (el: HTMLElement) => void;
@@ -45,34 +46,6 @@ declare global {
 
 const STRIPE_SRC = 'https://js.stripe.com/v3/';
 
-let loadPromise: Promise<void> | null = null;
-
-/** Dynamically inject Stripe.js exactly once. */
-function loadStripeScript(): Promise<void> {
-  if (typeof window === 'undefined') return Promise.reject(new Error('not in browser'));
-  if (window.Stripe) return Promise.resolve();
-  if (loadPromise) return loadPromise;
-  loadPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${STRIPE_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Stripe')));
-      if (window.Stripe) resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = STRIPE_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      loadPromise = null;
-      reject(new Error('Failed to load Stripe.js'));
-    };
-    document.body.appendChild(script);
-  });
-  return loadPromise;
-}
-
 export interface OpenStripeCheckoutInput {
   publishableKey: string;
   clientSecret: string;
@@ -91,10 +64,9 @@ export interface OpenStripeCheckoutInput {
 export async function openStripeCheckout(input: OpenStripeCheckoutInput): Promise<CheckoutResult> {
   if (!input.publishableKey || !input.clientSecret) return { kind: 'reserved' };
 
-  await loadStripeScript();
-  if (!window.Stripe) return { kind: 'reserved' };
+  await loadScriptOnce(STRIPE_SRC, () => Boolean(window.Stripe), { name: 'Stripe checkout' });
 
-  const stripe = window.Stripe(input.publishableKey);
+  const stripe = window.Stripe!(input.publishableKey);
   const elements = stripe.elements({
     clientSecret: input.clientSecret,
     appearance: { variables: { colorPrimary: '#2563eb' } },

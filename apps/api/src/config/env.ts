@@ -55,11 +55,30 @@ export const envSchema = z
   CASHFREE_CLIENT_ID: z.string().optional(),
   CASHFREE_CLIENT_SECRET: z.string().optional(),
   CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
-  // Which gateway NEW INR orders are created on. Flipping it never strands
-  // existing money: refunds, cancels and webhooks follow the provider stored
-  // on each charge row, so both gateways must stay configured while either
-  // holds refundable charges. Razorpay stays required in prod as the backup.
-  INR_PAYMENT_GATEWAY: z.enum(['razorpay', 'cashfree']).default('razorpay'),
+  // Which gateway NEW INR orders are created on, until a platform admin picks
+  // one in the admin portal (that setting wins; see payment_settings_service).
+  // Unset (or blank), it's Cashfree once both Cashfree keys are configured and
+  // Razorpay otherwise — resolved at the end of this schema — so adding the
+  // Cashfree keys is what moves INR over, and a deploy without them keeps
+  // working on Razorpay. Flipping it never strands existing money: refunds,
+  // cancels and webhooks follow the provider stored on each charge row, so
+  // both gateways must stay configured while either holds refundable charges.
+  // Razorpay stays required in prod as the backup.
+  INR_PAYMENT_GATEWAY: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['razorpay', 'cashfree']).optional(),
+  ),
+  // Hard ceiling on every payment-gateway API call. Refunds run inside
+  // row-locked transactions, so a gateway that stops answering must fail fast
+  // rather than pin locks and pool connections for undici's ~5 min default.
+  GATEWAY_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).default(10_000),
+  // Automatic INR failover: after this many Cashfree outages (timeouts,
+  // network errors, 5xx/429) within the window, new INR orders skip Cashfree
+  // and go to Razorpay for the cooldown. Any single failed Cashfree order is
+  // retried on Razorpay regardless.
+  INR_FAILOVER_THRESHOLD: z.coerce.number().int().min(1).default(3),
+  INR_FAILOVER_WINDOW_SEC: z.coerce.number().int().min(10).default(300),
+  INR_FAILOVER_COOLDOWN_SEC: z.coerce.number().int().min(10).default(600),
   // Settlement-hold buffer after a slot's/event's end (minutes). Default = 60.
   SETTLEMENT_HOLD_BUFFER_MIN: z.coerce.number().int().min(0).default(60),
   // Settlement-hold buffer after capture for bookings with no natural end
@@ -106,7 +125,8 @@ export const envSchema = z
   // Admin portal base URL (used to build Circls-internal invite links).
   ADMIN_BASE_URL: z.string().url().default('https://admin.circls.app'),
 
-  // Consumer app base URL (used to build "view your question" email links).
+  // Consumer app base URL (used to build "view your question" email links,
+  // and where Cashfree sends a customer back after a redirect checkout).
   CONSUMER_BASE_URL: z.string().url().default('https://circls.app'),
 
   // Outbound webhooks. Phase 17.
@@ -147,9 +167,10 @@ export const envSchema = z
           });
         }
       }
-      // Routing INR to Cashfree needs live Cashfree keys against the
-      // production host — otherwise every Indian booking would silently fall
-      // back to stub mode (reserved, never charged) or hit the sandbox.
+      // Explicitly routing INR to Cashfree needs live Cashfree keys against
+      // the production host — otherwise every Indian booking would silently
+      // fall back to stub mode (reserved, never charged) or hit the sandbox.
+      // (Left unset, INR only defaults to Cashfree when the keys are there.)
       if (val.INR_PAYMENT_GATEWAY === 'cashfree') {
         for (const key of ['CASHFREE_CLIENT_ID', 'CASHFREE_CLIENT_SECRET'] as const) {
           if (!val[key] || val[key].length === 0) {
@@ -160,13 +181,19 @@ export const envSchema = z
             });
           }
         }
-        if (val.CASHFREE_ENV !== 'production') {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['CASHFREE_ENV'],
-            message: 'CASHFREE_ENV must be production when INR_PAYMENT_GATEWAY=cashfree in production',
-          });
-        }
+      }
+      // Cashfree keys, when present, must talk to the production host even
+      // while INR runs on Razorpay: after a switch back they still refund and
+      // cancel the existing Cashfree charges.
+      if (
+        (val.INR_PAYMENT_GATEWAY === 'cashfree' || val.CASHFREE_CLIENT_ID) &&
+        val.CASHFREE_ENV !== 'production'
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CASHFREE_ENV'],
+          message: 'CASHFREE_ENV must be production when Cashfree is configured in production',
+        });
       }
       // Sandbox-only vars must NEVER be set in production: they silently reroute
       // auth/email to local emulators that don't exist in prod. Refuse to boot.
@@ -180,7 +207,14 @@ export const envSchema = z
         }
       }
     }
-  });
+  })
+  .transform((val) => ({
+    ...val,
+    // The INR default (see INR_PAYMENT_GATEWAY above).
+    INR_PAYMENT_GATEWAY:
+      val.INR_PAYMENT_GATEWAY ??
+      (val.CASHFREE_CLIENT_ID && val.CASHFREE_CLIENT_SECRET ? ('cashfree' as const) : ('razorpay' as const)),
+  }));
 
 export type Env = z.infer<typeof envSchema>;
 

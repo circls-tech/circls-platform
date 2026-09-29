@@ -23,11 +23,13 @@
  */
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
+import { gatewayRequest } from './gateway_http.js';
 import { logger } from './logger.js';
 import type {
   CreateOrderInput,
   GatewayCustomer,
   GatewayOrder,
+  GatewayOrderStatus,
   GatewayRefundInput,
   GatewayRefundResult,
   PaymentGateway,
@@ -92,6 +94,18 @@ let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
 let stubCancelledOrders: string[] = [];
 
+/**
+ * A stub adapter in production means the keys were removed while real
+ * Cashfree charges still exist (charges created in stub mode are stored as
+ * provider 'stub' and never reach here). Faking a refund or cancel then would
+ * mark money returned that never moved — fail loudly instead.
+ */
+function assertStubMayMoveMoney(op: string): void {
+  if (env.NODE_ENV === 'production') {
+    throw new Error(`Cashfree is not configured — cannot ${op} (payments_unconfigured)`);
+  }
+}
+
 class StubCashfree implements PaymentGateway {
   readonly provider = 'cashfree' as const;
   readonly mode = 'stub' as const;
@@ -107,11 +121,22 @@ class StubCashfree implements PaymentGateway {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    assertStubMayMoveMoney('cancelOrder');
     stubCancelledOrders.push(orderId);
   }
 
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
+    assertStubMayMoveMoney('refundPayment');
     return { id: nextStubId('cfrefund'), status: 'processed', amountMinor: input.amountMinor };
+  }
+
+  // Stub orders are never paid and stub refunds settle instantly.
+  async fetchOrderStatus(_orderId: string, _opts?: { lastAttempt?: boolean }): Promise<GatewayOrderStatus> {
+    return { state: 'open' };
+  }
+
+  async fetchRefundStatus(_input: { orderId: string; refundId: string }): Promise<GatewayRefundResult> {
+    return { id: nextStubId('cfrefund'), status: 'processed', amountMinor: 0 };
   }
 
   verifyWebhookSignature(_rawBody: string, _signature: string, _timestamp?: string): boolean {
@@ -133,6 +158,29 @@ interface CashfreeOrderEntity {
   payment_session_id?: string;
 }
 
+interface CashfreePaymentEntity {
+  cf_payment_id: string | number;
+  payment_status: string;
+  payment_time?: string;
+}
+
+/** An order's most recent payment attempt (the list's order isn't documented). */
+function latestAttempt(list: CashfreePaymentEntity[]): CashfreePaymentEntity | undefined {
+  const at = (p: CashfreePaymentEntity) => Date.parse(p.payment_time ?? '') || 0;
+  let latest: CashfreePaymentEntity | undefined;
+  for (const p of list) if (!latest || at(p) >= at(latest)) latest = p;
+  return latest;
+}
+
+/**
+ * An attempt on a still-open order: declined or abandoned ones can be retried.
+ * Anything else, including a status we don't know, counts as still processing
+ * — better to keep a customer waiting than to invite a second payment.
+ */
+function attemptState(status: string): 'pending' | 'failed' {
+  return ['FAILED', 'USER_DROPPED', 'CANCELLED', 'VOID'].includes(status) ? 'failed' : 'pending';
+}
+
 class LiveCashfree implements PaymentGateway {
   readonly provider = 'cashfree' as const;
   readonly mode = 'live' as const;
@@ -143,32 +191,27 @@ class LiveCashfree implements PaymentGateway {
   ) {}
 
   private async call<T>(
-    method: 'POST' | 'PATCH',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
-    body: Record<string, unknown>,
+    body?: Record<string, unknown>,
+    idempotencyKey?: string,
   ): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    return gatewayRequest<T>({
+      provider: 'cashfree',
+      label: 'Cashfree',
       method,
+      baseUrl: this.baseUrl,
+      path,
       headers: {
         'x-client-id': this.clientId,
         'x-client-secret': this.clientSecret,
         'x-api-version': CASHFREE_API_VERSION,
         'Content-Type': 'application/json',
+        ...(idempotencyKey ? { 'x-idempotency-key': idempotencyKey } : {}),
       },
-      body: JSON.stringify(body),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      errorMessage: (b) => (b as { message?: string }).message,
     });
-    const text = await res.text();
-    if (!res.ok) {
-      let message = text;
-      try {
-        message = (JSON.parse(text) as { message?: string }).message ?? text;
-      } catch {
-        /* keep raw text */
-      }
-      logger.error({ status: res.status, path, message }, 'cashfree_api_error');
-      throw new Error(`Cashfree ${path} failed (${res.status}): ${message}`);
-    }
-    return JSON.parse(text) as T;
   }
 
   // https://www.cashfree.com/docs/api-reference/payments/latest/orders/create-order
@@ -215,27 +258,65 @@ class LiveCashfree implements PaymentGateway {
 
   // https://www.cashfree.com/docs/api-reference/payments/latest/refunds/create-refund
   // Cashfree refunds by ORDER id (its orders carry at most one successful
-  // payment). Our refund row id is the merchant refund_id, which makes a
-  // retried call idempotent on Cashfree's side.
+  // payment). `input.refundId` is refund_service's key for this refund, the
+  // same on every retry of it, so it serves as both the merchant refund_id
+  // and the x-idempotency-key: a retry after a lost response gets the
+  // original refund back instead of creating a second one.
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
     if (!input.orderId) {
       throw new Error(`Cashfree refund for payment ${input.paymentId} needs the order id`);
     }
-    const note = boundedText(input.reason);
-    const refund = await this.call<{
-      cf_refund_id: string | number;
-      refund_status: string;
-      refund_amount: number;
-    }>('POST', `/orders/${encodeURIComponent(input.orderId)}/refunds`, {
-      refund_amount: minorToCashfreeAmount(input.amountMinor),
-      refund_id: alphanumeric(input.refundId, 40),
-      ...(note ? { refund_note: note } : {}),
-    });
+    // Cashfree rejects a reused idempotency key whose body differs (422), so
+    // the body holds nothing that can change between retries: no free-text
+    // refund_note (the reason stays in our ledger and audit log).
+    const refund = await this.call<CashfreeRefundEntity>(
+      'POST',
+      `/orders/${encodeURIComponent(input.orderId)}/refunds`,
+      {
+        refund_amount: minorToCashfreeAmount(input.amountMinor),
+        refund_id: cashfreeRefundId(input.refundId),
+      },
+      input.refundId,
+    );
+    return refundResult(refund);
+  }
+
+  // https://www.cashfree.com/docs/api-reference/payments/latest/orders/get-order
+  // A PAID order's successful payment comes from its payments list. The
+  // amount reported is the order amount we set, not the payer's amount.
+  async fetchOrderStatus(orderId: string, opts?: { lastAttempt?: boolean }): Promise<GatewayOrderStatus> {
+    const path = `/orders/${encodeURIComponent(orderId)}`;
+    const order = await this.call<CashfreeOrderEntity & { order_currency?: string }>('GET', path);
+    if (order.order_status !== 'ACTIVE' && order.order_status !== 'PAID') return { state: 'closed' };
+    if (order.order_status === 'ACTIVE' && !opts?.lastAttempt) return { state: 'open' };
+    const list = await this.call<CashfreePaymentEntity[]>('GET', `${path}/payments`);
+    if (order.order_status === 'ACTIVE') {
+      const latest = latestAttempt(list);
+      return { state: 'open', ...(latest ? { lastAttempt: attemptState(latest.payment_status) } : {}) };
+    }
+    const paid = list.find((p) => p.payment_status === 'SUCCESS');
     return {
-      id: String(refund.cf_refund_id),
-      status: mapCashfreeRefundStatus(refund.refund_status),
-      amountMinor: cashfreeAmountToMinor(Number(refund.refund_amount)),
+      state: 'paid',
+      ...(paid
+        ? {
+            payment: {
+              id: String(paid.cf_payment_id),
+              amountMinor: cashfreeAmountToMinor(Number(order.order_amount)),
+              currency: order.order_currency ?? 'INR',
+            },
+          }
+        : {}),
     };
+  }
+
+  // https://www.cashfree.com/docs/api-reference/payments/latest/refunds/get-refund
+  async fetchRefundStatus(input: { orderId: string; refundId: string }): Promise<GatewayRefundResult> {
+    const orderPath = `/orders/${encodeURIComponent(input.orderId)}`;
+    const refund = await this.call<CashfreeRefundEntity>(
+      'GET',
+      `${orderPath}/refunds/${encodeURIComponent(cashfreeRefundId(input.refundId))}`,
+    );
+    return refundResult(refund);
   }
 
   // https://www.cashfree.com/docs/api-reference/webhooks/payloads-and-signatures
@@ -253,6 +334,25 @@ class LiveCashfree implements PaymentGateway {
     if (expected.length !== received.length) return false;
     return crypto.timingSafeEqual(expected, received);
   }
+}
+
+interface CashfreeRefundEntity {
+  cf_refund_id: string | number;
+  refund_status: string;
+  refund_amount: number;
+}
+
+function refundResult(refund: CashfreeRefundEntity): GatewayRefundResult {
+  return {
+    id: String(refund.cf_refund_id),
+    status: mapCashfreeRefundStatus(refund.refund_status),
+    amountMinor: cashfreeAmountToMinor(Number(refund.refund_amount)),
+  };
+}
+
+/** A refund key as a Cashfree refund_id (alphanumeric, at most 40 chars). */
+export function cashfreeRefundId(refundKey: string): string {
+  return alphanumeric(refundKey, 40);
 }
 
 /** Cashfree refund status → our gateway refund status. */

@@ -6,7 +6,7 @@ import type { Tenant } from '@/lib/api/types';
  * gateway's currencyForCountry). Keep the two constants in sync: the accept
  * endpoint 409s ('terms_version_stale') if this client falls behind.
  */
-export const CURRENT_TERMS_VERSION = '2026-07-19.v1';
+export const CURRENT_TERMS_VERSION = '2026-09-28.v1';
 
 export type TermsRegion = 'US' | 'IN';
 
@@ -17,6 +17,15 @@ export const TERMS_COUNTRY_OPTIONS = [
 ] as const;
 
 export type TermsCountry = (typeof TERMS_COUNTRY_OPTIONS)[number]['value'];
+
+/**
+ * The Terms document for an org's country on file, or null when it has none
+ * (an org that predates the Terms), in which case the user picks one.
+ */
+export function termsCountryFor(country: string | null | undefined): TermsCountry | null {
+  if (!country?.trim()) return null;
+  return termsRegionForCountry(country) === 'US' ? 'USA' : 'India';
+}
 
 export function termsRegionForCountry(country: string | null | undefined): TermsRegion {
   const c = (country ?? '').trim().toUpperCase();

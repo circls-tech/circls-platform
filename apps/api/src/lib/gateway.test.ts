@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  checkoutGatewaysOf,
   currencyForCountry,
   getGateway,
   providerForCountry,
@@ -20,6 +21,23 @@ describe('providerForCountry / currencyForCountry', () => {
       expect(providerForCountry(c)).toBe('razorpay');
       expect(currencyForCountry(c)).toBe('INR');
     }
+  });
+});
+
+describe('checkoutGatewaysOf', () => {
+  it('reads the gateways a client can open from X-Checkout-Gateways', () => {
+    const gateways = checkoutGatewaysOf({ 'x-checkout-gateways': 'razorpay, Stripe,cashfree' });
+    expect([...gateways]).toEqual(['razorpay', 'stripe', 'cashfree']);
+  });
+
+  it('is empty for a client that sends nothing (older app builds)', () => {
+    expect(checkoutGatewaysOf({}).size).toBe(0);
+    expect(checkoutGatewaysOf({ 'x-checkout-gateways': ' , ' }).size).toBe(0);
+  });
+
+  it('joins a header sent more than once', () => {
+    const gateways = checkoutGatewaysOf({ 'x-checkout-gateways': ['razorpay', 'cashfree'] });
+    expect(gateways.has('cashfree')).toBe(true);
   });
 });
 

@@ -16,6 +16,8 @@ export interface Tenant {
   isPlatform?: boolean;
   subscriptionStatus: string;
   status: string;
+  /** Where the org is based (free text on the profile); picks its Terms document. */
+  country?: string | null;
   /** Terms & Conditions acceptance state — null until the org accepts. */
   termsVersion?: string | null;
   termsRegion?: 'US' | 'IN' | null;

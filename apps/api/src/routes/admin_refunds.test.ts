@@ -177,4 +177,54 @@ describe.skipIf(!runIntegration)('admin refund route authz (M7)', () => {
     const res = await refund('padmin', 1000);
     expect(res.statusCode).toBe(200);
   });
+
+  // A booking can carry more than one charge (a gateway switch, a failover,
+  // a duplicate payment): the refund goes to the one in the URL.
+  it('refunds the charge in the URL, not another charge of the booking', async () => {
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        itemType: 'slot',
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        totalPaise: 30000,
+        createdByUserId: userIds['owner']!,
+      })
+      .returning();
+    const charge = (createdAt: Date) =>
+      db
+        .insert(payments)
+        .values({
+          bookingId: b!.id,
+          tenantId,
+          provider: 'stub',
+          amountPaise: 30000,
+          currency: 'INR',
+          status: 'captured',
+          kind: 'charge',
+          createdAt,
+        })
+        .returning();
+    const [first] = await charge(new Date(Date.now() - 60_000));
+    const [second] = await charge(new Date());
+
+    // The older charge: without its id the refund would go to the newest.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/payments/${first!.id}/refund`,
+      headers: bearer('padmin'),
+      payload: { amountPaise: 30000, reason: 'duplicate' },
+    });
+    expect(res.statusCode).toBe(200);
+    const refunds = await db
+      .select()
+      .from(payments)
+      .where(sql`booking_id = ${b!.id} and kind = 'refund'`);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]!.metadata['chargePaymentId']).toBe(first!.id);
+    const [untouched] = await db.select().from(payments).where(sql`id = ${second!.id}`);
+    expect(untouched!.status).toBe('captured');
+  });
 });

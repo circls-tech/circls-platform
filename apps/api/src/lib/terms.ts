@@ -9,14 +9,14 @@ import { isUsCountry } from './gateway.js';
  * venues/events/memberships until an owner/manager accepts the new revision.
  * Keep the mirrored constant in apps/partners/lib/terms/constants.ts in sync.
  */
-export const CURRENT_TERMS_VERSION = '2026-07-19.v1';
+export const CURRENT_TERMS_VERSION = '2026-09-28.v1';
 
 /** Which regional Terms document an org signs. */
 export type TermsRegion = 'US' | 'IN';
 
 /**
  * US orgs sign the US document; everyone else signs the India document —
- * mirroring the payment-gateway split (Stripe/USD vs Razorpay/INR).
+ * mirroring the payment-gateway split (Stripe/USD vs Razorpay or Cashfree/INR).
  */
 export function termsRegionForCountry(country: string | null | undefined): TermsRegion {
   return isUsCountry(country) ? 'US' : 'IN';

@@ -12,6 +12,27 @@ export interface CreateTenantInput {
   slug: string;
   /** Canonical country ('India' | 'USA') — picks the regional Terms document. */
   country: string;
+  /**
+   * The Terms revision whose text the client showed. When sent it must be the
+   * current one (see acceptTenantTerms); clients that predate it don't send it.
+   */
+  documentVersion?: string | undefined;
+}
+
+/**
+ * An org consents to the Terms text it was shown. A client whose own copy of
+ * the text is older than the current revision (a portal tab opened before a
+ * release, an app build that predates it) must not record consent to text its
+ * user never saw.
+ */
+function assertShownCurrentTerms(documentVersion: string | undefined): void {
+  if (documentVersion !== CURRENT_TERMS_VERSION) {
+    throw new Conflict(
+      'The Terms & Conditions have been updated — reload the page or update the app to review the current version',
+      'terms_version_stale',
+      { currentVersion: CURRENT_TERMS_VERSION },
+    );
+  }
 }
 
 /**
@@ -20,6 +41,7 @@ export interface CreateTenantInput {
  * acceptTerms flag), so the acceptance columns are stamped in the same insert.
  */
 export async function createTenant(ownerUserId: string, input: CreateTenantInput): Promise<Tenant> {
+  if (input.documentVersion !== undefined) assertShownCurrentTerms(input.documentVersion);
   try {
     return await db.transaction(async (tx) => {
       const [tenant] = await tx
@@ -131,11 +153,17 @@ function toTenantProfile(t: Tenant): TenantProfileDTO {
 
 export interface AcceptTermsInput {
   /**
-   * The revision the accepting user was shown. Optional — when present it must
-   * match the current version, so a stale client can't record consent to a
-   * document its user never saw.
+   * The revision the client asks to accept. Optional — when present it must
+   * match the current version.
    */
   version?: string | undefined;
+  /**
+   * The revision whose text the client showed the accepting user; required,
+   * and must be the current one (see assertShownCurrentTerms). `version` alone
+   * can't prove that: the partner app sends the server's current version
+   * whatever text it displays.
+   */
+  documentVersion?: string | undefined;
   /** Canonical country ('India' | 'USA'). Required if the org has none yet. */
   country?: string | undefined;
 }
@@ -154,9 +182,24 @@ export async function acceptTenantTerms(
       currentVersion: CURRENT_TERMS_VERSION,
     });
   }
+  assertShownCurrentTerms(input.documentVersion);
   const tenant = await getTenantById(tenantId);
   if (!tenant) throw new NotFound('Tenant not found', 'tenant_not_found');
-  const country = input.country ?? tenant.country;
+  // The org's country on file picks its document. A client that showed
+  // another region's Terms showed the wrong text: refuse rather than record
+  // consent to it.
+  if (
+    tenant.country &&
+    input.country &&
+    termsRegionForCountry(input.country) !== termsRegionForCountry(tenant.country)
+  ) {
+    throw new Conflict(
+      `These Terms are for another country — your organisation is based in ${tenant.country}`,
+      'terms_region_mismatch',
+      { country: tenant.country },
+    );
+  }
+  const country = tenant.country ?? input.country;
   if (!country) {
     throw new BadRequest('Organisation country is required to pick the applicable Terms', 'country_required');
   }

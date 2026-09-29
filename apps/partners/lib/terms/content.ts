@@ -7,7 +7,7 @@ import { CURRENT_TERMS_VERSION, type TermsRegion } from './constants';
  * revision it is shown.
  */
 
-const COMMON_INTRO = `**Version ${CURRENT_TERMS_VERSION} — effective 19 July 2026**
+const COMMON_INTRO = `**Version ${CURRENT_TERMS_VERSION} — effective 28 September 2026**
 
 These Partner Terms & Conditions (the "Terms") are an agreement between the
 organisation identified at registration (the "Partner", "you") and Circls (the
@@ -63,7 +63,8 @@ the booked service.
 ## 5. Payments and payouts
 
 Circls is the merchant of record for Customer payments. Payments are collected
-in Indian Rupees (INR) through Circls's payment partner (currently Razorpay).
+in Indian Rupees (INR) through Circls's payment partners (currently Razorpay
+and Cashfree).
 Circls pays out to the Partner on a weekly cycle: gross collections, net of
 refunds and of the platform commission set out in the Partner Agreement.
 Payout timing may be adjusted for holidays, risk review or gateway settlement
