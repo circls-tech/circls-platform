@@ -54,6 +54,8 @@ import { supportIssueRoutes } from './routes/support_issues.js';
 import { couponRoutes } from './routes/coupons.js';
 // Consumer checkout quote + public coupons picker.
 import { checkoutRoutes } from './routes/checkout.js';
+import { consumerPaymentRoutes } from './routes/consumer_payments.js';
+import { adminPaymentSettingsRoutes } from './routes/admin_payment_settings.js';
 // QR ticket door check-in (validate/consume scanned codes).
 import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
@@ -302,6 +304,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(couponRoutes);
   // Consumer checkout quote + public coupons picker.
   await app.register(checkoutRoutes);
+  await app.register(consumerPaymentRoutes);
+  await app.register(adminPaymentSettingsRoutes);
   // QR ticket door check-in (validate/consume scanned codes).
   await app.register(qrTicketRoutes);
   // Partner portal Activity page: unified tenant activity feed + calendar counts.

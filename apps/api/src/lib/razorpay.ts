@@ -14,6 +14,7 @@
  */
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
+import { gatewayRequest } from './gateway_http.js';
 import { logger } from './logger.js';
 import type {
   CreateOrderInput,
@@ -28,6 +29,18 @@ let stubCounter = 0;
 const nextStubId = (prefix: string): string => `stub_${prefix}_${++stubCounter}`;
 let stubCancelledOrders: string[] = [];
 
+/**
+ * A stub adapter in production means the keys were removed while real
+ * charges still point at this gateway (charges created in stub mode are
+ * stored as provider 'stub' and never reach here). Faking a refund or cancel
+ * then would mark money returned that never moved — fail loudly instead.
+ */
+function assertStubMayMoveMoney(op: string): void {
+  if (env.NODE_ENV === 'production') {
+    throw new Error(`Razorpay is not configured — cannot ${op} (payments_unconfigured)`);
+  }
+}
+
 class StubRazorpay implements PaymentGateway {
   readonly provider = 'razorpay' as const;
   readonly mode = 'stub' as const;
@@ -37,10 +50,12 @@ class StubRazorpay implements PaymentGateway {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    assertStubMayMoveMoney('cancelOrder');
     stubCancelledOrders.push(orderId);
   }
 
   async refundPayment(input: GatewayRefundInput): Promise<GatewayRefundResult> {
+    assertStubMayMoveMoney('refundPayment');
     return { id: nextStubId('rfnd'), status: 'processed', amountMinor: input.amountMinor };
   }
 
@@ -67,23 +82,16 @@ class LiveRazorpay implements PaymentGateway {
   }
 
   private async call<T>(method: 'POST', path: string, body: Record<string, unknown>): Promise<T> {
-    const res = await fetch(`${RAZORPAY_API}${path}`, {
+    return gatewayRequest<T>({
+      provider: 'razorpay',
+      label: 'Razorpay',
       method,
+      baseUrl: RAZORPAY_API,
+      path,
       headers: { Authorization: this.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      errorMessage: (b) => (b as { error?: { description?: string } }).error?.description,
     });
-    const text = await res.text();
-    if (!res.ok) {
-      let message = text;
-      try {
-        message = (JSON.parse(text) as { error?: { description?: string } }).error?.description ?? text;
-      } catch {
-        /* keep raw text */
-      }
-      logger.error({ status: res.status, path, message }, 'razorpay_api_error');
-      throw new Error(`Razorpay ${path} failed (${res.status}): ${message}`);
-    }
-    return JSON.parse(text) as T;
   }
 
   // Circls is the merchant — a plain Orders API order (no Route/transfers).

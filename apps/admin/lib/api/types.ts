@@ -299,6 +299,34 @@ export interface AdminPayoutListPage {
   nextCursor: string | null;
 }
 
+/** A gateway that can take Indian (INR) payments. */
+export type InrGateway = 'razorpay' | 'cashfree';
+
+/** GET /v1/admin/payment-settings — the Payments page. */
+export interface AdminPaymentSettings {
+  /** Where new INR checkouts go. */
+  inrGateway: InrGateway;
+  /** 'admin' = chosen on the Payments page; 'env' = the deployment default. */
+  source: 'admin' | 'env';
+  envDefault: InrGateway;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  /** 'stub' = no keys on this server: checkouts can't take money through it. */
+  gateways: {
+    razorpay: { mode: 'live' | 'stub' };
+    cashfree: { mode: 'live' | 'stub'; environment: 'sandbox' | 'production' };
+  };
+  /** Automatic failover from Cashfree to Razorpay after repeated Cashfree errors. */
+  failover: {
+    active: boolean;
+    until: string | null;
+    recentOutages: number;
+    threshold: number;
+    windowSec: number;
+    cooldownSec: number;
+  };
+}
+
 export type AdminListingType = 'venue' | 'arena' | 'event' | 'membership';
 
 export interface AdminListingRow {

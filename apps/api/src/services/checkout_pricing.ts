@@ -82,7 +82,7 @@ export function grossUpShared(
  * grossed total, plus any fixed per-transaction amount), we net the input.
  * The customer-pays-everything special case of `grossUpShared`.
  */
-export function grossUp(amountPaise: number, provider: PaymentProviderId = 'razorpay'): number {
+export function grossUp(amountPaise: number, provider: PaymentProviderId): number {
   return grossUpShared(amountPaise, provider, 10_000);
 }
 
@@ -138,7 +138,7 @@ export interface CheckoutBreakdown {
 export function computeCheckout(
   basePaise: number,
   coupon: CouponForPricing | null,
-  provider: PaymentProviderId = 'razorpay',
+  provider: PaymentProviderId,
   billing: BillingKnobs = DEFAULT_BILLING,
 ): CheckoutBreakdown {
   const discountPaise = coupon ? computeDiscountPaise(basePaise, coupon) : 0;

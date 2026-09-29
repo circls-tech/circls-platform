@@ -14,12 +14,14 @@ vi.mock('../config/env.js', () => ({
     CASHFREE_ENV: 'sandbox',
     INR_PAYMENT_GATEWAY: 'cashfree',
     CONSUMER_BASE_URL: 'https://circls.app',
+    GATEWAY_HTTP_TIMEOUT_MS: 10_000,
   },
 }));
 
 import {
   CASHFREE_API_VERSION,
   cashfreeAmountToMinor,
+  cashfreeRefundId,
   getCashfree,
   mapCashfreeRefundStatus,
   minorToCashfreeAmount,
@@ -182,7 +184,7 @@ describe('LiveCashfree.cancelOrder', () => {
 });
 
 describe('LiveCashfree.refundPayment', () => {
-  it('refunds by order id with our refund row id as refund_id', async () => {
+  it('refunds by order id, keyed for idempotency by our refund key', async () => {
     const fetchMock = stubFetch(200, {
       cf_refund_id: 11325632,
       refund_status: 'PENDING',
@@ -203,6 +205,9 @@ describe('LiveCashfree.refundPayment', () => {
       refund_id: 'aaaabbbbcccc',
       refund_note: 'customer cancelled',
     });
+    // The same key on every retry of this refund: Cashfree returns the
+    // original refund instead of creating a second one.
+    expect(call.headers['x-idempotency-key']).toBe('aaaa-bbbb-cccc');
     expect(res).toEqual({ id: '11325632', status: 'pending', amountMinor: 25050 });
   });
 
@@ -223,6 +228,116 @@ describe('LiveCashfree.refundPayment', () => {
     expect(mapCashfreeRefundStatus('REJECTED')).toBe('failed');
     expect(mapCashfreeRefundStatus('ONHOLD')).toBe('pending');
     expect(mapCashfreeRefundStatus('PENDING_APPROVAL')).toBe('pending');
+  });
+});
+
+/** A fetch stub answering by URL, recording every request. */
+function routeFetch(routes: Record<string, { status?: number; body: unknown }>) {
+  const fetchMock = vi.fn(async (url: string) => {
+    const hit = routes[url];
+    if (!hit) return new Response('{"message":"not found"}', { status: 404 });
+    return new Response(JSON.stringify(hit.body), { status: hit.status ?? 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+describe('LiveCashfree.fetchOrderStatus', () => {
+  const base = 'https://sandbox.cashfree.com/pg/orders/charge-1';
+
+  it('an ACTIVE order is still open', async () => {
+    const fetchMock = routeFetch({
+      [base]: { body: { order_id: 'charge-1', order_status: 'ACTIVE', order_amount: 154.83 } },
+    });
+    await expect(getCashfree().fetchOrderStatus!('charge-1')).resolves.toEqual({ state: 'open' });
+    // Attempts are only looked up when asked for.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports how an open order's latest attempt went, when asked", async () => {
+    const active = { body: { order_id: 'charge-1', order_status: 'ACTIVE', order_amount: 154.83 } };
+    routeFetch({
+      [base]: active,
+      [`${base}/payments`]: {
+        body: [
+          { cf_payment_id: 2, payment_status: 'USER_DROPPED', payment_time: '2026-09-28T10:05:00+05:30' },
+          { cf_payment_id: 1, payment_status: 'PENDING', payment_time: '2026-09-28T10:01:00+05:30' },
+        ],
+      },
+    });
+    await expect(
+      getCashfree().fetchOrderStatus!('charge-1', { lastAttempt: true }),
+    ).resolves.toEqual({ state: 'open', lastAttempt: 'failed' });
+
+    routeFetch({
+      [base]: active,
+      [`${base}/payments`]: {
+        body: [
+          { cf_payment_id: 1, payment_status: 'FAILED', payment_time: '2026-09-28T10:01:00+05:30' },
+          { cf_payment_id: 2, payment_status: 'PENDING', payment_time: '2026-09-28T10:05:00+05:30' },
+        ],
+      },
+    });
+    await expect(
+      getCashfree().fetchOrderStatus!('charge-1', { lastAttempt: true }),
+    ).resolves.toEqual({ state: 'open', lastAttempt: 'pending' });
+
+    routeFetch({ [base]: active, [`${base}/payments`]: { body: [] } });
+    await expect(
+      getCashfree().fetchOrderStatus!('charge-1', { lastAttempt: true }),
+    ).resolves.toEqual({ state: 'open' });
+  });
+
+  it('a PAID order reports its successful payment at the ORDER amount', async () => {
+    const fetchMock = routeFetch({
+      [base]: {
+        body: { order_id: 'charge-1', order_status: 'PAID', order_amount: 154.83, order_currency: 'INR' },
+      },
+      [`${base}/payments`]: {
+        body: [
+          { cf_payment_id: 111, payment_status: 'FAILED', payment_amount: 154.83 },
+          // A Cashfree offer: the payer paid less than the order amount.
+          { cf_payment_id: '1457455569833708544', payment_status: 'SUCCESS', payment_amount: 139.35 },
+        ],
+      },
+    });
+    await expect(getCashfree().fetchOrderStatus!('charge-1')).resolves.toEqual({
+      state: 'paid',
+      payment: { id: '1457455569833708544', amountMinor: 15483, currency: 'INR' },
+    });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('an expired or terminated order is closed', async () => {
+    routeFetch({ [base]: { body: { order_id: 'charge-1', order_status: 'TERMINATED', order_amount: 10 } } });
+    await expect(getCashfree().fetchOrderStatus!('charge-1')).resolves.toEqual({ state: 'closed' });
+  });
+});
+
+describe('LiveCashfree.fetchRefundStatus', () => {
+  it('looks the refund up by order and refund key', async () => {
+    const key = 'r0b1c2d3eaaaabbbbcccc111122223333n1';
+    const fetchMock = routeFetch({
+      [`https://sandbox.cashfree.com/pg/orders/charge-1/refunds/${cashfreeRefundId(key)}`]: {
+        body: { cf_refund_id: 1319890210, refund_status: 'SUCCESS', refund_amount: 464.49 },
+      },
+    });
+    await expect(
+      getCashfree().fetchRefundStatus!({ orderId: 'charge-1', refundId: key }),
+    ).resolves.toEqual({ id: '1319890210', status: 'processed', amountMinor: 46449 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a refund on hold pending', async () => {
+    routeFetch({
+      'https://sandbox.cashfree.com/pg/orders/charge-1/refunds/rabcn1': {
+        body: { cf_refund_id: '9', refund_status: 'ONHOLD', refund_amount: 1 },
+      },
+    });
+    const r = await getCashfree().fetchRefundStatus!({ orderId: 'charge-1', refundId: 'rabcn1' });
+    expect(r.status).toBe('pending');
   });
 });
 

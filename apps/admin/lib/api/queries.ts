@@ -14,6 +14,8 @@ import type {
   AdminListingType,
   AdminPartnerUsersPage,
   AdminPayoutListPage,
+  AdminPaymentSettings,
+  InrGateway,
   AdminQuestionFilters,
   AdminQuestionReplyResult,
   AdminQuestionThreadContext,
@@ -336,6 +338,43 @@ export function useExecutePayout() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
     },
+  });
+}
+
+/** Where new INR checkouts go, and the automatic failover's state. */
+export function useAdminPaymentSettings() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'payment-settings'],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<AdminPaymentSettings>('/v1/admin/payment-settings'),
+    // The failover can trip at any moment: keep the page current.
+    refetchInterval: 30_000,
+  });
+}
+
+/** Send new INR checkouts to Razorpay or Cashfree. */
+export function useSetInrGateway() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (inrGateway: InrGateway) =>
+      apiFetch<AdminPaymentSettings>('/v1/admin/payment-settings', {
+        method: 'PUT',
+        body: JSON.stringify({ inrGateway }),
+      }),
+    onSuccess: (settings) => qc.setQueryData(['admin', 'payment-settings'], settings),
+  });
+}
+
+/** End an automatic failover early: the next INR checkout tries Cashfree again. */
+export function useClearInrFailover() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<AdminPaymentSettings>('/v1/admin/payment-settings/failover/clear', {
+        method: 'POST',
+      }),
+    onSuccess: (settings) => qc.setQueryData(['admin', 'payment-settings'], settings),
   });
 }
 

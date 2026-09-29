@@ -6,7 +6,7 @@ import type { Tenant } from '@/lib/api/types';
  * gateway's currencyForCountry). Keep the two constants in sync: the accept
  * endpoint 409s ('terms_version_stale') if this client falls behind.
  */
-export const CURRENT_TERMS_VERSION = '2026-07-19.v1';
+export const CURRENT_TERMS_VERSION = '2026-09-28.v1';
 
 export type TermsRegion = 'US' | 'IN';
 

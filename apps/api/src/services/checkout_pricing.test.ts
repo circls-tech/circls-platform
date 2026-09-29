@@ -17,10 +17,12 @@ const billing = (over: Partial<BillingKnobs>): BillingKnobs => ({ ...DEFAULT_BIL
 describe('grossUp', () => {
   it('grosses up to recover the Razorpay fee, rounding up', () => {
     // 50000 / (1 - 0.0236) = 51208.52… → ceil 51209
-    expect(grossUp(50000)).toBe(51209);
+    expect(grossUp(50000, 'razorpay')).toBe(51209);
   });
-  it('defaults to the razorpay fee model', () => {
-    expect(grossUp(50000)).toBe(grossUp(50000, 'razorpay'));
+  it('prices Cashfree exactly like Razorpay (INR failover never changes the total)', () => {
+    for (const base of [1, 99, 50000, 123457]) {
+      expect(grossUp(base, 'cashfree')).toBe(grossUp(base, 'razorpay'));
+    }
   });
   it('grosses up Stripe with the fixed 30¢ component included', () => {
     // (50000 + 30) / (1 - 0.029) = 51524.20… → ceil 51525
@@ -30,8 +32,8 @@ describe('grossUp', () => {
     expect(total - (STRIPE_FEE_RATE * total + STRIPE_FEE_FIXED_MINOR)).toBeGreaterThanOrEqual(1299);
   });
   it('returns 0 for a zero or negative base on either gateway', () => {
-    expect(grossUp(0)).toBe(0);
-    expect(grossUp(-10)).toBe(0);
+    expect(grossUp(0, 'razorpay')).toBe(0);
+    expect(grossUp(-10, 'razorpay')).toBe(0);
     expect(grossUp(0, 'stripe')).toBe(0);
   });
   it('uses the published rate constants', () => {
@@ -62,7 +64,7 @@ describe('computeDiscountPaise', () => {
 
 describe('computeCheckout', () => {
   it('grosses up the base when there is no coupon', () => {
-    expect(computeCheckout(50000, null)).toEqual({
+    expect(computeCheckout(50000, null, 'razorpay')).toEqual({
       basePaise: 50000,
       discountPaise: 0,
       discountedBasePaise: 50000,
@@ -75,7 +77,7 @@ describe('computeCheckout', () => {
     });
   });
   it('applies the discount to the base, then grosses up the reduced base', () => {
-    expect(computeCheckout(50000, { discountType: 'percent', discountValue: 1000, maxDiscountPaise: null })).toEqual({
+    expect(computeCheckout(50000, { discountType: 'percent', discountValue: 1000, maxDiscountPaise: null }, 'razorpay')).toEqual({
       basePaise: 50000,
       discountPaise: 5000,
       discountedBasePaise: 45000,
@@ -88,7 +90,7 @@ describe('computeCheckout', () => {
     });
   });
   it('yields a free total when the discount covers the whole base', () => {
-    expect(computeCheckout(50000, { discountType: 'fixed', discountValue: 60000, maxDiscountPaise: null })).toEqual({
+    expect(computeCheckout(50000, { discountType: 'fixed', discountValue: 60000, maxDiscountPaise: null }, 'razorpay')).toEqual({
       basePaise: 50000,
       discountPaise: 50000,
       discountedBasePaise: 0,
@@ -130,7 +132,7 @@ describe('billing knobs', () => {
   });
 
   it('grossUpShared at 10000 bps equals grossUp; at 0 bps the total is the bare amount', () => {
-    expect(grossUpShared(50000, 'razorpay', 10_000)).toBe(grossUp(50000));
+    expect(grossUpShared(50000, 'razorpay', 10_000)).toBe(grossUp(50000, 'razorpay'));
     expect(grossUpShared(50000, 'stripe', 10_000)).toBe(grossUp(50000, 'stripe'));
     expect(grossUpShared(50000, 'razorpay', 0)).toBe(50000);
     expect(grossUpShared(50000, 'stripe', 0)).toBe(50000);
@@ -145,7 +147,7 @@ describe('billing knobs', () => {
   });
 
   it('consumer commission is floored on the discounted base and grossed up with it', () => {
-    // K = floor(45000 × 200 / 10000) = 900; T = grossUp(45900) = ceil(47009.42…) = 47010
+    // K = floor(45000 × 200 / 10000) = 900; T = grossUp(45900, 'razorpay') = ceil(47009.42…) = 47010
     const b = computeCheckout(
       50000,
       { discountType: 'percent', discountValue: 1000, maxDiscountPaise: null },

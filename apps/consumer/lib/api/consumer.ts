@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
-import { apiFetch } from './client';
+import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
 import type {
+  CheckoutPaymentStatus,
   EventBookingResult,
   MembershipPurchaseResult,
   MyBooking,
@@ -17,6 +18,7 @@ import type {
   PublicVenue,
   PurchaseMembershipInput,
   SlotBookingResult,
+  SwitchGatewayResult,
   VenueDetail,
 } from './types';
 
@@ -181,6 +183,7 @@ export function useBookSlots() {
     mutationFn: (input: BookSlotsInput) =>
       apiFetch<SlotBookingResult>('/v1/consumer/bookings', {
         method: 'POST',
+        headers: CHECKOUT_GATEWAYS_HEADER,
         body: JSON.stringify(input),
       }),
     onSuccess: () => {
@@ -207,6 +210,7 @@ export function useBookEvent() {
     mutationFn: ({ eventId, ...body }: BookEventInput) =>
       apiFetch<EventBookingResult>(`/v1/consumer/events/${eventId}/book`, {
         method: 'POST',
+        headers: CHECKOUT_GATEWAYS_HEADER,
         body: JSON.stringify(body),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['my-bookings'] }),
@@ -221,6 +225,7 @@ export function usePurchaseMembership() {
         `/v1/consumer/memberships/${membershipId}/purchase`,
         {
           method: 'POST',
+          headers: CHECKOUT_GATEWAYS_HEADER,
           body: JSON.stringify({
             ...(membershipTierId ? { membershipTierId } : {}),
             ...(couponCode ? { couponCode } : {}),
@@ -321,6 +326,25 @@ export async function fetchPostBookingRedirect(
     if (i < attempts - 1) await new Promise((r) => setTimeout(r, intervalMs));
   }
   return null;
+}
+
+/**
+ * Whether a checkout's payment went through, by its gateway order id. For a
+ * Cashfree order the API asks Cashfree itself, so this doesn't wait on
+ * webhooks. Only the booking's customer gets an answer.
+ */
+export function fetchCheckoutPaymentStatus(orderId: string) {
+  return apiFetch<{ status: CheckoutPaymentStatus }>(
+    `/v1/consumer/payments/${encodeURIComponent(orderId)}/status`,
+  );
+}
+
+/** "Try another way to pay": move an unpaid Cashfree checkout to Razorpay. */
+export function switchCheckoutGateway(orderId: string) {
+  return apiFetch<SwitchGatewayResult>(
+    `/v1/consumer/payments/${encodeURIComponent(orderId)}/switch-gateway`,
+    { method: 'POST' },
+  );
 }
 
 export function useMyBooking(id: string) {

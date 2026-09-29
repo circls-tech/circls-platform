@@ -408,6 +408,8 @@ export async function setMembershipActive(
 export interface PurchaseMembershipInput {
   membershipId: string;
   userId: string;
+  /** The gateways the buyer's checkout can open (see resolvePaymentContext). */
+  checkoutGateways?: ReadonlySet<string> | undefined;
   /**
    * The tier to buy. When omitted, the cheapest live tier is used (so a
    * single-tier membership "just works"). Price, duration and capacity come
@@ -822,7 +824,7 @@ export async function purchaseMembership(
     // Gateway + currency follow the membership's venue country when venue-
     // scoped, else the owning tenant's country.
     const payCtx = await paymentsService.resolvePaymentContext(
-      { venueId: m.venueId, tenantId: m.tenantId },
+      { venueId: m.venueId, tenantId: m.tenantId, checkoutGateways: input.checkoutGateways },
       tx,
     );
 
@@ -1002,6 +1004,7 @@ export async function purchaseMembership(
   let orderId: string | undefined;
   let paymentId: string | undefined;
   let clientSecret: string | undefined;
+  let gateway = reserved.payCtx.provider;
   try {
     const result = await paymentsService.createPaymentOrder({
       bookingId: reserved.bookingId,
@@ -1019,6 +1022,7 @@ export async function purchaseMembership(
     orderId = result.providerOrderId;
     paymentId = result.paymentId;
     clientSecret = result.clientSecret;
+    gateway = result.provider;
   } catch (err) {
     if (err instanceof Error && err.message.includes('not implemented')) {
       throw new Conflict('Payments not yet enabled', 'payment_not_available');
@@ -1038,8 +1042,8 @@ export async function purchaseMembership(
     userMembershipId: reserved.userMembershipId,
     paymentId,
     orderId,
-    gateway: reserved.payCtx.provider,
-    keyId: publicKeyIdFor(reserved.payCtx.provider),
+    gateway,
+    keyId: publicKeyIdFor(gateway),
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     amountPaise: reserved.totalPaise,
     currency: reserved.payCtx.currency,

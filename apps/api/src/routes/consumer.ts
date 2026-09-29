@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
+import { checkoutGatewaysOf } from '../lib/gateway.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
@@ -185,6 +186,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       note: parsed.data.note ?? null,
       actorUserId: user.id,
       ...(parsed.data.couponCode ? { couponCode: parsed.data.couponCode } : {}),
+      checkoutGateways: checkoutGatewaysOf(req.headers),
     });
   });
 
@@ -211,6 +213,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
         userId: user.id,
         name: parsed.data.name ?? null,
         contact: parsed.data.contact ?? null,
+        checkoutGateways: checkoutGatewaysOf(req.headers),
       },
       parsed.data.lines,
       parsed.data.couponCode,
@@ -232,6 +235,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
       user.id,
       parsed.data.couponCode,
       parsed.data.membershipTierId,
+      checkoutGatewaysOf(req.headers),
     );
   });
 

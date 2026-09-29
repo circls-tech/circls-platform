@@ -12,6 +12,7 @@ vi.mock('./payments_service.js', async (importOriginal) => {
         bookingId: string;
         tenantId: string;
         amountPaise: number;
+        provider: string;
       }) => {
         // Lazy import to avoid module-load cycle inside the mock factory.
         const { db } = await import('../db/client.js');
@@ -33,6 +34,7 @@ vi.mock('./payments_service.js', async (importOriginal) => {
         return {
           paymentId: p!.id,
           providerOrderId: `order_stub_${input.bookingId}`,
+          provider: input.provider,
         };
       },
     ),

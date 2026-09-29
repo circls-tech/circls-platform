@@ -3,10 +3,18 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/lib/ui';
 import { formatPaiseExact } from '@/lib/format';
-import { openRazorpayCheckout } from '@/lib/checkout';
+import { openRazorpayCheckout, type CheckoutResult } from '@/lib/checkout';
 import { openCashfreeCheckout } from '@/lib/checkout_cashfree';
 import { openStripeCheckout } from '@/lib/checkout_stripe';
-import { fetchPostBookingRedirect, useBookSlots, useBookEvent, useMyProfile, usePurchaseMembership } from '@/lib/api/consumer';
+import {
+  fetchCheckoutPaymentStatus,
+  fetchPostBookingRedirect,
+  switchCheckoutGateway,
+  useBookSlots,
+  useBookEvent,
+  useMyProfile,
+  usePurchaseMembership,
+} from '@/lib/api/consumer';
 import { ApiError } from '@/lib/api/client';
 import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -15,11 +23,29 @@ import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
 import { type RegistrationAnswers, toAnswerPayload } from './answers';
+import { pollCheckoutPayment } from './payment_status';
 import type { CheckoutItem, CheckoutPrefill } from './types';
 
 type Phase =
   | { kind: 'quoting' } | { kind: 'ready' } | { kind: 'paying' }
+  /** Cashfree's pop-up closed: asking the API whether the payment went through. */
+  | { kind: 'confirming' }
+  /** A Cashfree checkout closed unpaid: try again, or pay through Razorpay. */
+  | { kind: 'unpaid'; message: string }
   | { kind: 'success'; message: string } | { kind: 'reserved'; message: string } | { kind: 'error'; message: string };
+
+/** A payment order to open checkout on, as the API returns it. */
+interface CheckoutOrder {
+  gateway: 'razorpay' | 'stripe' | 'cashfree';
+  orderId: string;
+  keyId: string;
+  clientSecret: string;
+  amountPaise: number;
+  currency: string;
+}
+
+const RESERVED = 'Payments aren’t enabled yet — your booking is reserved.';
+const PAID = 'Payment received! See it in My Bookings.';
 
 const COUPON_ERRORS: Record<string, string> = {
   coupon_not_found: 'That code isn’t valid.',
@@ -110,14 +136,17 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   }
   function clearCode() { setAppliedCode(undefined); setCodeInput(''); setCouponMsg(null); }
 
+  // The order being paid, and for events its booking: kept so a Cashfree
+  // checkout that closes unpaid can be retried or moved to Razorpay.
+  const orderRef = useRef<CheckoutOrder | null>(null);
+  const eventBookingIdRef = useRef<string | null>(null);
+
   async function onPay() {
     if (!breakdown) return;
     setPhase({ kind: 'paying' });
+    let order: CheckoutOrder =
+      { gateway: 'razorpay', orderId: '', keyId: '', clientSecret: '', amountPaise: breakdown.totalPaise, currency: breakdown.currency ?? 'INR' };
     try {
-      // Set on the event path so a paid success can look up its redirect.
-      let eventBookingId: string | null = null;
-      let order: { gateway: 'razorpay' | 'stripe' | 'cashfree'; orderId: string; keyId: string; clientSecret: string; amountPaise: number; currency: string } =
-        { gateway: 'razorpay', orderId: '', keyId: '', clientSecret: '', amountPaise: breakdown.totalPaise, currency: breakdown.currency ?? 'INR' };
       if (item.kind === 'slot') {
         const r = await bookSlots.mutateAsync({
           slotIds: item.slotIds,
@@ -140,51 +169,13 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
         });
         // Present only on the free path; paid bookings resolve it after payment.
         setRedirect(r.postBookingRedirect ?? null);
-        eventBookingId = r.booking?.id ?? null;
+        eventBookingIdRef.current = r.booking?.id ?? null;
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.providerOrderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       } else {
         const r = await purchaseMembership.mutateAsync({ membershipId: item.membershipId, ...(item.membershipTierId ? { membershipTierId: item.membershipTierId } : {}), ...(appliedCode ? { couponCode: appliedCode } : {}) });
         order = { gateway: r.gateway ?? 'razorpay', orderId: r.orderId ?? '', keyId: r.keyId ?? '', clientSecret: r.clientSecret ?? '', amountPaise: r.amountPaise ?? 0, currency: r.currency ?? 'INR' };
       }
 
-      if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.' }); return; }
-      // Stripe opens from the client secret, Cashfree from its payment session
-      // (also carried in clientSecret); Razorpay from the order id. Either way
-      // an empty browser key means stub mode → the booking is reserved.
-      const canOpen = order.keyId && (order.gateway === 'razorpay' ? order.orderId : order.clientSecret);
-      if (!canOpen) { setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' }); return; }
-
-      const result = order.gateway === 'stripe'
-        ? await openStripeCheckout({
-            publishableKey: order.keyId, clientSecret: order.clientSecret,
-            payLabel: `Pay ${formatPaiseExact(order.amountPaise, order.currency)}`,
-            description: item.title,
-          })
-        : order.gateway === 'cashfree'
-        ? await openCashfreeCheckout({ mode: order.keyId, paymentSessionId: order.clientSecret })
-        : await openRazorpayCheckout({
-            keyId: order.keyId, orderId: order.orderId, amountPaise: order.amountPaise, currency: order.currency,
-            description: item.title,
-            prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
-          });
-      if (result.kind === 'paid' || result.kind === 'submitted') {
-        setPhase({
-          kind: 'success',
-          message: result.kind === 'paid'
-            ? 'Payment received! See it in My Bookings.'
-            : 'Payment submitted! Your booking shows as confirmed in My Bookings once the payment clears.',
-        });
-        // The booking only earns its post-booking link once the webhook flips
-        // it to confirmed, which usually lands just after this callback.
-        if (eventBookingId) {
-          setRedirectPending(true);
-          void fetchPostBookingRedirect(eventBookingId)
-            .then(setRedirect)
-            .finally(() => setRedirectPending(false));
-        }
-      }
-      else if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: 'Payments aren’t enabled yet — your booking is reserved.' });
-      else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
     } catch (e) {
       // A rejected answer is fixable — reopen the questions form (pre-filled)
       // with the server's message instead of dead-ending on the error screen.
@@ -204,10 +195,103 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
         ? 'A ticket tier just sold out — go back and adjust quantities.'
         : raw;
       setPhase({ kind: 'error', message });
+      return;
+    }
+
+    if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.' }); return; }
+    orderRef.current = order;
+    await payOrder(order);
+  }
+
+  /** Open `order`'s gateway checkout and show how it ended. */
+  async function payOrder(order: CheckoutOrder) {
+    setPhase({ kind: 'paying' });
+    // Stripe opens from the client secret, Cashfree from its payment session
+    // (also carried in clientSecret); Razorpay from the order id. Either way
+    // an empty browser key means stub mode → the booking is reserved.
+    const canOpen = order.keyId && (order.gateway === 'razorpay' ? order.orderId : order.clientSecret);
+    if (!canOpen) { setPhase({ kind: 'reserved', message: RESERVED }); return; }
+
+    let result: CheckoutResult;
+    try {
+      result = order.gateway === 'stripe'
+        ? await openStripeCheckout({
+            publishableKey: order.keyId, clientSecret: order.clientSecret,
+            payLabel: `Pay ${formatPaiseExact(order.amountPaise, order.currency)}`,
+            description: item.title,
+          })
+        : order.gateway === 'cashfree'
+        ? await openCashfreeCheckout({ mode: order.keyId, paymentSessionId: order.clientSecret })
+        : await openRazorpayCheckout({
+            keyId: order.keyId, orderId: order.orderId, amountPaise: order.amountPaise, currency: order.currency,
+            description: item.title,
+            prefill: { ...(prefill.name ? { name: prefill.name } : {}), ...(prefill.contact ? { contact: prefill.contact } : {}) },
+          });
+    } catch (e) {
+      // Cashfree's checkout didn't open (say its script failed to load): the
+      // customer can try again, or pay through Razorpay instead.
+      if (order.gateway === 'cashfree') setPhase({ kind: 'unpaid', message: 'The payment page didn’t open.' });
+      else setPhase({ kind: 'error', message: (e as Error).message });
+      return;
+    }
+
+    if (result.kind === 'reserved') setPhase({ kind: 'reserved', message: RESERVED });
+    else if (order.gateway === 'cashfree') await settleCashfree(order, result);
+    else if (result.kind === 'paid') onPaid(PAID);
+    else setPhase({ kind: 'error', message: 'Payment cancelled. Your slot may be held briefly.' });
+  }
+
+  /**
+   * Cashfree's pop-up can't tell a paid checkout from a declined one, and can
+   * be closed after paying, so ask the API, which asks Cashfree.
+   */
+  async function settleCashfree(order: CheckoutOrder, result: CheckoutResult) {
+    setPhase({ kind: 'confirming' });
+    const status = await pollCheckoutPayment(
+      () => fetchCheckoutPaymentStatus(order.orderId).then((r) => r.status),
+      // A finished attempt gets time to clear; a closed pop-up gets a second
+      // look, in case it was closed just as a payment went through.
+      result.kind === 'submitted' ? { attempts: 8, intervalMs: 2000 } : { attempts: 2, intervalMs: 1500 },
+    );
+    if (status === 'paid') onPaid(PAID);
+    else if (status === 'expired') setPhase({ kind: 'error', message: 'This checkout has expired. Please book again.' });
+    else if (status === 'failed') setPhase({ kind: 'unpaid', message: 'Your payment didn’t go through.' });
+    // Still processing at the bank: the booking confirms once it clears.
+    else if (result.kind === 'submitted') onPaid('Payment submitted! Your booking shows as confirmed in My Bookings once the payment clears.');
+    else setPhase({ kind: 'unpaid', message: 'Payment not completed.' });
+  }
+
+  function onPaid(message: string) {
+    setPhase({ kind: 'success', message });
+    // The booking only earns its post-booking link once the webhook flips
+    // it to confirmed, which usually lands just after this callback.
+    const bookingId = eventBookingIdRef.current;
+    if (bookingId) {
+      setRedirectPending(true);
+      void fetchPostBookingRedirect(bookingId)
+        .then(setRedirect)
+        .finally(() => setRedirectPending(false));
     }
   }
 
-  const busy = phase.kind === 'quoting' || phase.kind === 'paying';
+  /** "Try another way to pay": move this checkout from Cashfree to Razorpay. */
+  async function onSwitchGateway() {
+    const current = orderRef.current;
+    if (!current) return;
+    setPhase({ kind: 'paying' });
+    try {
+      const r = await switchCheckoutGateway(current.orderId);
+      if (r.outcome === 'paid') { onPaid(PAID); return; }
+      const next: CheckoutOrder = { ...r.payment, clientSecret: r.payment.clientSecret ?? '' };
+      orderRef.current = next;
+      await payOrder(next);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'checkout_expired') setPhase({ kind: 'error', message: e.message });
+      else setPhase({ kind: 'unpaid', message: 'We couldn’t switch the payment method.' });
+    }
+  }
+
+  const busy = phase.kind === 'quoting' || phase.kind === 'paying' || phase.kind === 'confirming';
   const done = phase.kind === 'success' || phase.kind === 'reserved' || phase.kind === 'error';
   // Display currency: the caller seeds it from the item's venue/location
   // country (instant), then the server quote confirms it (authoritative).
@@ -230,7 +314,15 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   return (
     <Modal open onClose={onClose} title="Checkout">
       <p className="mb-4 text-sm text-[var(--color-text-secondary)]">{item.title}</p>
-      {!done && needsContactDetails ? (
+      {phase.kind === 'unpaid' ? (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-[var(--radius)] border-[2px] border-ink bg-tone-warning-bg px-4 py-3 text-sm font-medium text-tone-warning-text shadow-offset-sm">
+            {phase.message} Your booking is held for a few minutes.
+          </div>
+          <Button onClick={() => { if (orderRef.current) void payOrder(orderRef.current); }}>Try again</Button>
+          <Button variant="secondary" onClick={() => void onSwitchGateway()}>Try another way to pay</Button>
+        </div>
+      ) : !done && needsContactDetails ? (
         <ContactDetailsForm
           initialName={(profile.data?.displayName ?? prefill.name ?? user?.displayName ?? '').trim()}
           initialEmail={(profile.data?.email ?? user?.email ?? '').trim()}
@@ -344,6 +436,9 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           <Button className="mt-2" onClick={onPay} loading={busy} disabled={!breakdown || busy || profile.isLoading}>
             {breakdown && breakdown.totalPaise === 0 ? 'Confirm' : `Pay ${breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : ''}`}
           </Button>
+          {phase.kind === 'confirming' && (
+            <p className="text-center text-xs text-[var(--color-text-secondary)]">Checking your payment…</p>
+          )}
         </div>
       )}
     </Modal>

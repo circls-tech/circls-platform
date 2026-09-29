@@ -1,17 +1,25 @@
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import {
   arenas,
   auditLog,
   bookings,
   payments,
+  platformSettings,
   slots,
   tenants,
   users,
   venues,
 } from '../db/schema/index.js';
-import { __resetCashfreeForTesting } from '../lib/cashfree.js';
+import { __resetCashfreeForTesting, getCashfree } from '../lib/cashfree.js';
+import { GatewayHttpError } from '../lib/gateway_http.js';
+import {
+  __resetInrFailoverForTesting,
+  cashfreeFailoverState,
+  recordCashfreeOutage,
+} from '../lib/inr_failover.js';
+import { __resetPaymentSettingsCacheForTesting } from './payment_settings_service.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 import { __resetStripeForTesting } from '../lib/stripe.js';
 import { cancelPaidBooking } from './cancellation_service.js';
@@ -141,8 +149,8 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       bookingId: booking!.id,
       tenantId,
       amountPaise: 50000,
-      ...(opts?.provider ? { provider: opts.provider } : {}),
-      ...(opts?.currency ? { currency: opts.currency } : {}),
+      provider: opts?.provider ?? 'razorpay',
+      currency: opts?.currency ?? 'INR',
       actorUserId: userId,
     });
 
@@ -979,8 +987,222 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     });
   });
 
+  describe('Cashfree captures with offers or surcharges', () => {
+    it('confirms on the ORDER amount when the payer paid a different amount', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-05-03T05:00:00.000Z',
+        { provider: 'cashfree' },
+      );
+      await handleCashfreeWebhook({
+        type: 'PAYMENT_SUCCESS_WEBHOOK',
+        eventId: `cf_offer_${Date.now()}`,
+        data: {
+          order: { order_id: orderId, order_amount: 500, order_currency: 'INR' },
+          // A Cashfree-funded offer knocked ₹50 off what the customer paid.
+          payment: {
+            cf_payment_id: `cfp_offer_${Date.now()}`,
+            payment_status: 'SUCCESS',
+            payment_amount: 450,
+            payment_currency: 'INR',
+          },
+        },
+      });
+      const [pay] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(pay?.status).toBe('captured');
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+  });
+
+  describe('duplicate payments', () => {
+    it('refunds a second capture on an already-paid booking, outside the payout', async () => {
+      const { bookingId, orderId, paymentId } = await seedPendingBookingWithOrder(
+        '2032-05-10T05:00:00.000Z',
+      );
+      const capture = (order: string, payId: string, eventId: string) =>
+        handleRazorpayWebhook({
+          event: 'payment.captured',
+          eventId,
+          payload: {
+            payment: {
+              entity: { order_id: order, id: payId, status: 'captured', amount: 50000, currency: 'INR' },
+            },
+          },
+        });
+      const stamp = Date.now();
+      await capture(orderId, `pay_dup_a_${stamp}`, `evt_dup_a_${stamp}`);
+
+      // The customer also paid a second checkout for the same booking (e.g.
+      // they switched gateway and both payments went through).
+      const second = await createPaymentOrder({
+        bookingId,
+        tenantId,
+        amountPaise: 50000,
+        settleBasePaise: 48000,
+        partnerCommissionPaise: 1500,
+        provider: 'razorpay',
+        currency: 'INR',
+        actorUserId: userId,
+      });
+      await db.update(payments).set({ status: 'failed' }).where(sql`id = ${second.paymentId}`);
+      await capture(second.providerOrderId, `pay_dup_b_${stamp}`, `evt_dup_b_${stamp}`);
+
+      const [first] = await db.select().from(payments).where(sql`id = ${paymentId}`);
+      expect(first?.status).toBe('captured');
+      const [dup] = await db.select().from(payments).where(sql`id = ${second.paymentId}`);
+      expect(dup?.status).toBe('refunded');
+      // Never a sale: out of the partner's gross and commission.
+      expect(Number(dup?.settleBasePaise)).toBe(0);
+      expect(Number(dup?.partnerCommissionPaise)).toBe(0);
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]!.metadata['chargePaymentId']).toBe(second.paymentId);
+      expect(Number(refunds[0]!.amountPaise)).toBe(-50000);
+      expect(Number(refunds[0]!.settleBasePaise)).toBe(0);
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('confirmed');
+    });
+  });
+
+  describe('INR failover', () => {
+    const outage = () => new GatewayHttpError('Cashfree /orders failed (503): down', 'cashfree', 503, true);
+
+    it('retries a Cashfree order that fails on Razorpay and records the outage', async () => {
+      __resetInrFailoverForTesting();
+      const { bookingId } = await seedPendingBookingWithOrder('2032-05-17T05:00:00.000Z');
+      const spy = vi.spyOn(getCashfree(), 'createOrder').mockRejectedValueOnce(outage());
+      try {
+        const result = await createPaymentOrder({
+          bookingId,
+          tenantId,
+          amountPaise: 50000,
+          provider: 'cashfree',
+          currency: 'INR',
+          actorUserId: userId,
+        });
+        expect(result.provider).toBe('razorpay');
+        expect(result.providerOrderId).toMatch(/^stub_order_/);
+        const rows = await db
+          .select()
+          .from(payments)
+          .where(sql`booking_id = ${bookingId} and kind = 'charge'`)
+          .orderBy(sql`created_at asc`);
+        // [initial seed order, dead Cashfree attempt, Razorpay retry]
+        const dead = rows[rows.length - 2]!;
+        const retry = rows[rows.length - 1]!;
+        expect(dead.status).toBe('failed');
+        expect(dead.metadata['orderError']).toMatch(/503/);
+        expect(retry.status).toBe('pending');
+        expect(retry.id).toBe(result.paymentId);
+        expect(retry.metadata['failedOverFrom']).toBe('cashfree');
+        expect(cashfreeFailoverState().recentOutages).toBe(1);
+      } finally {
+        spy.mockRestore();
+        __resetInrFailoverForTesting();
+      }
+    });
+
+    it('while failover is active, Cashfree orders go straight to Razorpay', async () => {
+      __resetInrFailoverForTesting();
+      for (let i = 0; i < 3; i++) recordCashfreeOutage();
+      const { bookingId } = await seedPendingBookingWithOrder('2032-05-24T05:00:00.000Z');
+      const spy = vi.spyOn(getCashfree(), 'createOrder');
+      try {
+        const result = await createPaymentOrder({
+          bookingId,
+          tenantId,
+          amountPaise: 50000,
+          provider: 'cashfree',
+          currency: 'INR',
+          actorUserId: userId,
+        });
+        expect(spy).not.toHaveBeenCalled();
+        expect(result.provider).toBe('razorpay');
+      } finally {
+        spy.mockRestore();
+        __resetInrFailoverForTesting();
+      }
+    });
+
+    it('a refused Cashfree order still falls back but is not an outage', async () => {
+      __resetInrFailoverForTesting();
+      const { bookingId } = await seedPendingBookingWithOrder('2032-05-31T05:00:00.000Z');
+      const spy = vi
+        .spyOn(getCashfree(), 'createOrder')
+        .mockRejectedValueOnce(
+          new GatewayHttpError('Cashfree /orders failed (400): bad phone', 'cashfree', 400, false),
+        );
+      try {
+        const result = await createPaymentOrder({
+          bookingId,
+          tenantId,
+          amountPaise: 50000,
+          provider: 'cashfree',
+          currency: 'INR',
+          actorUserId: userId,
+        });
+        expect(result.provider).toBe('razorpay');
+        expect(cashfreeFailoverState().recentOutages).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe('INR gateway setting', () => {
+    it("routes Indian venues to the admin's pick, if the client can open it", async () => {
+      const [inVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'IN V2', tzName: 'Asia/Kolkata', country: 'India' })
+        .returning();
+      const [saved] = await db
+        .select()
+        .from(platformSettings)
+        .where(sql`key = 'inr_payment_gateway'`);
+      try {
+        await db
+          .insert(platformSettings)
+          .values({ key: 'inr_payment_gateway', value: 'cashfree' })
+          .onConflictDoUpdate({ target: platformSettings.key, set: { value: 'cashfree' } });
+        __resetPaymentSettingsCacheForTesting();
+        const website = new Set(['razorpay', 'stripe', 'cashfree']);
+        expect(
+          await resolvePaymentContext({ venueId: inVenue!.id, tenantId, checkoutGateways: website }),
+        ).toEqual({ provider: 'cashfree', currency: 'INR' });
+        // An app build that can't open Cashfree's checkout pays through Razorpay.
+        expect(
+          await resolvePaymentContext({ venueId: inVenue!.id, tenantId, checkoutGateways: new Set() }),
+        ).toEqual({ provider: 'razorpay', currency: 'INR' });
+        expect(await resolvePaymentContext({ venueId: inVenue!.id, tenantId })).toEqual({
+          provider: 'razorpay',
+          currency: 'INR',
+        });
+      } finally {
+        if (saved) {
+          await db
+            .update(platformSettings)
+            .set({ value: saved.value })
+            .where(sql`key = 'inr_payment_gateway'`);
+        } else {
+          await db.delete(platformSettings).where(sql`key = 'inr_payment_gateway'`);
+        }
+        __resetPaymentSettingsCacheForTesting();
+        await db.execute(sql`delete from venues where id = ${inVenue!.id}`);
+      }
+    });
+  });
+
   describe('resolvePaymentContext', () => {
     it('US venue → stripe/USD; Indian venue → razorpay/INR; no country → razorpay/INR', async () => {
+      // Assumes no admin INR-gateway choice; the setting test above restores it.
+      const [setting] = await db
+        .select()
+        .from(platformSettings)
+        .where(sql`key = 'inr_payment_gateway'`);
+      if (setting && setting.value !== 'razorpay') return;
       const [usVenue] = await db
         .insert(venues)
         .values({ tenantId, name: 'US V', tzName: 'America/New_York', country: 'USA' })

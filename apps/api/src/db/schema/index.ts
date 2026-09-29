@@ -39,3 +39,5 @@ export * from './event_registration_questions.js';
 export * from './event_registration_answers.js';
 // Admin-approved edits to published events.
 export * from './event_change_requests.js';
+// Platform-wide runtime settings (e.g. the INR payment gateway switch).
+export * from './platform_settings.js';

@@ -407,6 +407,13 @@
       "when": 1783850000000,
       "tag": "0058_payment_provider_cashfree",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1783930000000,
+      "tag": "0059_platform_settings",
+      "breakpoints": true
     }
   ]
 }

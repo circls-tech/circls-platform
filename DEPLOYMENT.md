@@ -61,13 +61,64 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `STRIPE_SECRET_KEY` | for US venues | — | Stripe dashboard → Developers → API keys (`sk_live_…`). The three Stripe vars are **all-or-nothing**: unless ALL are set, Stripe runs in stub mode (US-venue bookings are reserved, never charged) and a partial config logs `stripe_partially_configured_using_stub`. |
 | `STRIPE_PUBLISHABLE_KEY` | for US venues | — | Same page (`pk_live_…`) — returned to the browser to open the payment form. |
 | `STRIPE_WEBHOOK_SECRET` | for US venues | — | Developers → Webhooks (newer UI: Event destinations → **Add destination**, type "Webhook endpoint") → URL `https://api.circls.app/webhooks/stripe` with events `payment_intent.succeeded`, `payment_intent.payment_failed`, `refund.updated`, `refund.failed`; then reveal the destination's signing secret (`whsec_…`). |
-| `INR_PAYMENT_GATEWAY` | no | `razorpay` | Which gateway **new** INR orders go to: `razorpay` or `cashfree`. Flipping it (redeploy/restart) is safe mid-flight: refunds, cancels and webhooks always use the provider stored on each charge, so keep **both** gateways configured while either still holds refundable payments. |
-| `CASHFREE_CLIENT_ID` | when INR → cashfree | — | Cashfree Merchant Dashboard → Payment Gateway → Developers → API Keys (App ID). Both Cashfree keys must be set or it runs in stub mode; boot fails in production if `INR_PAYMENT_GATEWAY=cashfree` without them. |
+| `INR_PAYMENT_GATEWAY` | no | Cashfree once both Cashfree keys are set, else `razorpay` | Forces the **default** gateway for new INR orders: `razorpay` or `cashfree`. Platform admins override it without a restart on the admin console's **Payments** page (stored in the `platform_settings` table, picked up within ~15 s). Switching is safe mid-flight: refunds, cancels and webhooks always use the provider stored on each charge, so keep **both** gateways configured while either still holds refundable payments. |
+| `CASHFREE_CLIENT_ID` | when INR → cashfree | — | Cashfree Merchant Dashboard → Payment Gateway → Developers → API Keys (App ID). Both Cashfree keys must be set or it runs in stub mode; boot fails in production if `INR_PAYMENT_GATEWAY=cashfree` without them, and the Payments page won't switch INR to a gateway without keys. |
 | `CASHFREE_CLIENT_SECRET` | when INR → cashfree | — | Same page. Also verifies webhooks — Cashfree signs them with this secret, so there's no separate webhook secret. Webhook URL (Developers → Webhooks, subscribe to payment success/failed/user-dropped + refund status): `https://api.circls.app/webhooks/cashfree`. |
-| `CASHFREE_ENV` | when INR → cashfree | `sandbox` | `sandbox` or `production` — picks the API host and the browser SDK mode; must match the keys. Must be `production` in prod when INR routes to Cashfree. |
+| `CASHFREE_ENV` | when INR → cashfree | `sandbox` | `sandbox` or `production` — picks the API host and the browser SDK mode; must match the keys. Boot fails in production if Cashfree is configured and this isn't `production`. The local sandbox pins `sandbox`. |
+| `GATEWAY_HTTP_TIMEOUT_MS` | no | `10000` | Timeout for each Razorpay, Stripe and Cashfree API call. A Cashfree order that times out is retried on Razorpay. |
+| `INR_FAILOVER_THRESHOLD` | no | `3` | Automatic failover: after this many Cashfree outages (timeouts, network errors, 5xx, 429)… |
+| `INR_FAILOVER_WINDOW_SEC` | no | `300` | …within this window, new INR orders skip Cashfree… |
+| `INR_FAILOVER_COOLDOWN_SEC` | no | `600` | …for this long, then Cashfree is tried again. Kept in the API process's memory (a restart resets it); the admin **Payments** page shows it and can end it early. |
 | `GEOCODER_PROVIDER` | no | `stub` | `stub` resolves + searches venue addresses against a built-in India/USA city gazetteer (no external calls). Set `photon` in prod to geocode arbitrary addresses **and power the address autocomplete** via OpenStreetMap Photon (free/keyless; ODbL permits storing results; built for type-ahead). |
 | `GEOCODER_BASE_URL` | no | `https://photon.komoot.io` | Photon endpoint. Point at a self-hosted instance if you outgrow the public one's fair-use limits. |
 | `GEOCODER_USER_AGENT` | with photon | `circls-platform/1.0 (+https://circls.app)` | Identifies the app per OSM policy — app name + a contact URL. |
+
+## Moving Indian payments to Cashfree
+
+Razorpay stays configured as the backup. Customers pay the same fee on either
+gateway. Cashfree becomes the default as soon as both of its keys are on the
+API service, so finish the dashboard setup before adding them.
+
+Only the website moves: the API gives a checkout a Cashfree order only when
+the client lists Cashfree in its `X-Checkout-Gateways` header. The website does;
+current app builds don't, so the app keeps paying through Razorpay. An app
+build moves over by sending that header, once it supports Cashfree and its
+Google Play / App Store listing is whitelisted (Cashfree whitelists apps by
+store link).
+
+1. **Cashfree Merchant Dashboard → Payment Gateway, in production mode:**
+   - **Developers → Whitelisting → Add New:** `https://circls.app` (and
+     `https://www.circls.app` if the site is also reached through www); the
+     app's Google Play and App Store links come later, with its Cashfree
+     build. Each entry is reviewed, usually within 24 hours, and live
+     checkout won't open from anywhere unlisted. The review looks for Contact,
+     Terms and Refund pages and INR prices on the site.
+   - **Developers → Webhooks → Add Webhook Endpoint:** URL
+     `https://api.circls.app/webhooks/cashfree`, webhook version **2026-01-01**
+     (the latest), and the events Success Payment, Failed Payment, User Dropped
+     Payment and Refund (whichever are listed). There's no separate webhook
+     secret: Cashfree signs with the API key's secret, so the endpoint's
+     **Test** only passes once the keys are live on the API.
+   - On that endpoint, set the **retry policy** to *Fixed*: 10 retries, 30
+     minutes apart. The default gives up after 3 retries (about 40 minutes).
+     The API also polls Cashfree every 5 minutes (payments for 48 hours,
+     refunds for 30 days), so a missed webhook still lands, just later.
+   - **Developers → API Keys → Generate API Keys** (OTP; available once the
+     gateway is activated) gives the **App ID** and **Secret Key**.
+2. **Coolify (API service):** set `CASHFREE_CLIENT_ID` (the App ID),
+   `CASHFREE_CLIENT_SECRET` (the Secret Key) and `CASHFREE_ENV=production`, keep
+   all three `RAZORPAY_*` vars, and make sure `INR_PAYMENT_GATEWAY` isn't set to
+   `razorpay` (unless you're holding INR there). Redeploy: new Indian payments
+   now go to Cashfree.
+3. **Check:** admin console → **Payments** shows Cashfree as *Live · production*
+   and *Taking new payments*.
+4. **Smoke test:** make a small real booking, then refund it from the partner
+   portal; the refund should reach *processed*.
+5. **If Cashfree misbehaves:** repeated Cashfree errors move new payments to
+   Razorpay on their own (see `INR_FAILOVER_*`), and a customer whose Cashfree
+   payment fails can pick *Try another way to pay*, which moves their checkout
+   to Razorpay. To move everyone back by hand: Payments → *Switch to Razorpay*.
+   Both steps affect only new checkouts.
 
 ## Gotchas captured this session
 

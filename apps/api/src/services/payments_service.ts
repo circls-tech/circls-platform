@@ -1,18 +1,27 @@
 /**
  * Payments service — Phase 12 (Track B). Owns the writes against the
- * `payments` table plus the Razorpay webhook handler.
+ * `payments` table plus the gateway webhook handlers.
  *
  * Contract surfaces (consumed by routes + booking flow):
  *   - createPaymentOrder(): called by booking_service.prepareOnlineBookingWithPayment
  *     when paymentMethod='razorpay_route'. Inserts a `pending` charge row, asks
  *     the payment gateway to create the order, and persists the provider_order_id.
  *   - handleRazorpayWebhook() / handleStripeWebhook() / handleCashfreeWebhook():
- *     called by the /webhooks/* routes (signature verified upstream). Both extract their
- *     provider's envelope and delegate to shared apply* cores, so idempotency
- *     and state transitions behave identically per gateway.
+ *     called by the /webhooks/* routes (signature verified upstream). Each
+ *     extracts its provider's envelope and delegates to the shared apply*
+ *     cores, so idempotency and state transitions behave identically per
+ *     gateway. payment_recovery_service feeds the same cores from Cashfree's
+ *     API when a webhook never arrives.
  *   - resolvePaymentContext(): which gateway/currency a booking charges
- *     through, from the venue's (fallback: tenant's) country.
+ *     through, from the venue's (fallback: tenant's) country and, for INR,
+ *     the platform's INR gateway setting.
  *   - listForBooking() / getPayment(): read endpoints used by partner + admin UIs.
+ *
+ * INR failover: a Cashfree order that can't be created is retried on
+ * Razorpay, and repeated Cashfree outages route new INR orders to Razorpay
+ * for a cooldown (lib/inr_failover). A booking can therefore carry more than
+ * one charge; a second capture for a booking another charge already paid is
+ * a duplicate payment and is refunded in full (applyPaymentCaptured).
  *
  * Webhook idempotency strategy: we look up the payments row by
  * `provider_order_id` and short-circuit if it's already in the destination
@@ -28,10 +37,10 @@
  * (ABANDONED_CART_GRACE_MIN) is the sole canceller of unpaid pending
  * bookings, and it terminally fails the charge + cancels the gateway order.
  * If a capture still lands after cancellation (Razorpay orders can't be
- * cancelled; Stripe cancel can lose the race), applyPaymentCaptured records
- * the capture and auto-refunds it in full.
+ * cancelled; a Stripe or Cashfree cancel can lose the race), applyPaymentCaptured
+ * records the capture and auto-refunds it in full.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   type Booking,
@@ -44,16 +53,20 @@ import {
 } from '../db/schema/index.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
-import { cashfreeAmountToMinor } from '../lib/cashfree.js';
+import { cashfreeAmountToMinor, mapCashfreeRefundStatus } from '../lib/cashfree.js';
 import {
   currencyForCountry,
   getGateway,
   providerForCountry,
   type GatewayCustomer,
+  type GatewayOrder,
   type PaymentProviderId,
 } from '../lib/gateway.js';
+import { GatewayHttpError } from '../lib/gateway_http.js';
+import { isCashfreeFailoverActive, recordCashfreeOutage } from '../lib/inr_failover.js';
 import { notifyBookingConfirmed } from './notification_service.js';
 import { issueQrTicketsForBooking } from './qr_ticket_service.js';
+import { getInrPaymentGateway } from './payment_settings_service.js';
 import { issueRefund } from './refund_service.js';
 import { holdForBooking } from './settlement_hold_service.js';
 
@@ -65,11 +78,19 @@ export interface PaymentContext {
 /**
  * Resolve which gateway settles a booking's money: the venue's country when
  * there is one, else the owning tenant's. Everything non-US (including a
- * missing country) charges INR via the configured INR gateway
- * (`INR_PAYMENT_GATEWAY`: Razorpay by default, or Cashfree).
+ * missing country) charges INR via the platform's INR gateway — the admin's
+ * choice (Payments page), else `INR_PAYMENT_GATEWAY` — except that only a
+ * client that can open Cashfree's checkout gets Cashfree; any other (older
+ * app builds, or no client at all) pays through Razorpay. createPaymentOrder
+ * may still fail a Cashfree order over to Razorpay.
  */
 export async function resolvePaymentContext(
-  opts: { venueId?: string | null | undefined; tenantId: string },
+  opts: {
+    venueId?: string | null | undefined;
+    tenantId: string;
+    /** What the paying client's checkout can open (lib/gateway checkoutGatewaysOf). */
+    checkoutGateways?: ReadonlySet<string> | undefined;
+  },
   exec: Pick<typeof db, 'select'> = db,
 ): Promise<PaymentContext> {
   let country: string | null = null;
@@ -89,7 +110,9 @@ export async function resolvePaymentContext(
       .limit(1);
     country = t?.country ?? null;
   }
-  return { provider: providerForCountry(country), currency: currencyForCountry(country) };
+  let provider = providerForCountry(country, await getInrPaymentGateway());
+  if (provider === 'cashfree' && !opts.checkoutGateways?.has('cashfree')) provider = 'razorpay';
+  return { provider, currency: currencyForCountry(country) };
 }
 
 export interface CreatePaymentOrderInput {
@@ -112,21 +135,21 @@ export interface CreatePaymentOrderInput {
   /** Billing-config forensics stored in metadata.billing (rates + org fee). */
   billingMetadata?: Record<string, number>;
   /**
-   * Gateway to charge through. Callers will resolve this from the venue's
-   * country (`providerForCountry`) once Stripe ships; today everything is
-   * Razorpay.
+   * Gateway to charge through, from resolvePaymentContext. Required so no
+   * caller silently bypasses the venue's country or the INR gateway setting.
+   * A 'cashfree' order may still land on Razorpay (INR failover).
    */
-  provider?: PaymentProviderId;
-  /** ISO 4217. Defaults to INR. */
-  currency?: string;
+  provider: PaymentProviderId;
+  /** ISO 4217, from resolvePaymentContext. */
+  currency: string;
   /** Audit actor — usually the customer (or the admin impersonating them). */
   actorUserId: string;
 }
 
 /**
- * The booking's customer as the gateway sees it. Only Cashfree uses it today
- * (its orders require customer details); a booking without a linked user
- * falls back to the booking id as the customer id.
+ * The booking's customer as the gateway sees it. Only live Cashfree reads it
+ * (its orders require customer details), so it's only loaded then; a booking
+ * without a linked user falls back to the booking id as the customer id.
  */
 async function loadGatewayCustomer(bookingId: string): Promise<GatewayCustomer> {
   const [row] = await db
@@ -159,6 +182,12 @@ export interface CreatePaymentOrderResult {
   paymentId: string;
   providerOrderId: string;
   /**
+   * The gateway the order was actually created on — 'razorpay' when a
+   * 'cashfree' order failed over. Responses to the browser use this, not the
+   * requested provider.
+   */
+  provider: PaymentProviderId;
+  /**
    * What the browser needs besides the order id: the Stripe PaymentIntent
    * client secret, or the Cashfree payment session id.
    */
@@ -166,18 +195,45 @@ export interface CreatePaymentOrderResult {
 }
 
 /**
- * Two-step write: insert a `pending` charge row first so we have a paymentId to
- * audit even if the gateway's create-order call later fails; then call the
- * gateway and patch the row with the returned order id. The stub adapter never
- * throws, but a live adapter will when creds are missing — the pending row
- * stays as a forensic breadcrumb.
+ * Create the gateway order for a charge, with INR failover: while Cashfree is
+ * in an outage window (lib/inr_failover) a 'cashfree' order goes straight to
+ * Razorpay, and a Cashfree order that fails to be created — for any reason —
+ * is retried on Razorpay. Only outages count towards the failover window; a
+ * rejected request (4xx) still falls back for this one customer. Both
+ * gateways charge the same total (checkout_pricing), so the price the
+ * customer saw holds.
  */
 export async function createPaymentOrder(
   input: CreatePaymentOrderInput,
 ): Promise<CreatePaymentOrderResult> {
-  const gateway = getGateway(input.provider ?? 'razorpay');
+  if (input.provider === 'cashfree' && isCashfreeFailoverActive()) {
+    logger.warn({ bookingId: input.bookingId }, 'inr_failover_routed_to_razorpay');
+    return mintOrder({ ...input, provider: 'razorpay' }, 'cashfree');
+  }
+  try {
+    return await mintOrder(input);
+  } catch (err) {
+    if (input.provider !== 'cashfree') throw err;
+    if (err instanceof GatewayHttpError && err.outage) recordCashfreeOutage();
+    logger.error({ err, bookingId: input.bookingId }, 'cashfree_order_failed_retrying_on_razorpay');
+    return mintOrder({ ...input, provider: 'razorpay' }, 'cashfree');
+  }
+}
+
+/**
+ * Two-step write: insert a `pending` charge row first so we have a paymentId to
+ * audit even if the gateway's create-order call later fails; then call the
+ * gateway and patch the row with the returned order id. The stub adapter never
+ * throws, but a live adapter will when creds are missing — the pending row
+ * stays as a forensic breadcrumb (marked failed when Cashfree fails over).
+ */
+async function mintOrder(
+  input: CreatePaymentOrderInput,
+  failedOverFrom?: 'cashfree',
+): Promise<CreatePaymentOrderResult> {
+  const gateway = getGateway(input.provider);
   const provider = gateway.mode === 'stub' ? 'stub' : gateway.provider;
-  const currency = input.currency ?? 'INR';
+  const currency = input.currency;
 
   const [row] = await db
     .insert(payments)
@@ -193,18 +249,39 @@ export async function createPaymentOrder(
       currency,
       status: 'pending',
       kind: 'charge',
-      metadata: input.billingMetadata ? { billing: input.billingMetadata } : {},
+      metadata: {
+        ...(input.billingMetadata ? { billing: input.billingMetadata } : {}),
+        ...(failedOverFrom ? { failedOverFrom } : {}),
+      },
     })
     .returning();
   if (!row) throw new Error('payments insert returned no row');
 
-  const order = await gateway.createOrder({
-    amountMinor: input.amountPaise,
-    currency,
-    reference: input.bookingId,
-    chargeId: row.id,
-    customer: await loadGatewayCustomer(input.bookingId),
-  });
+  let order: GatewayOrder;
+  try {
+    order = await gateway.createOrder({
+      amountMinor: input.amountPaise,
+      currency,
+      reference: input.bookingId,
+      chargeId: row.id,
+      ...(gateway.provider === 'cashfree' && gateway.mode === 'live'
+        ? { customer: await loadGatewayCustomer(input.bookingId) }
+        : {}),
+    });
+  } catch (err) {
+    // A Cashfree order that fails over leaves this row behind; fail it now so
+    // it can't be mistaken for the booking's live charge.
+    if (gateway.provider === 'cashfree') {
+      await db
+        .update(payments)
+        .set({
+          status: 'failed',
+          metadata: { ...row.metadata, orderError: err instanceof Error ? err.message : String(err) },
+        })
+        .where(and(eq(payments.id, row.id), eq(payments.status, 'pending')));
+    }
+    throw err;
+  }
 
   await db
     .update(payments)
@@ -217,11 +294,13 @@ export async function createPaymentOrder(
     amountPaise: input.amountPaise,
     provider,
     providerOrderId: order.id,
+    ...(failedOverFrom ? { failedOverFrom } : {}),
   });
 
   return {
     paymentId: row.id,
     providerOrderId: order.id,
+    provider: gateway.provider,
     ...(order.clientSecret !== undefined ? { clientSecret: order.clientSecret } : {}),
   };
 }
@@ -434,7 +513,12 @@ function asId(value: unknown): string | undefined {
  *   PAYMENT_SUCCESS_WEBHOOK                          → capture (orderId = our order_id)
  *   PAYMENT_FAILED_WEBHOOK / PAYMENT_USER_DROPPED_WEBHOOK → failed attempt
  *   REFUND_STATUS_WEBHOOK                            → refund resolution (terminal only)
- * Amounts arrive in rupees and are converted to paise before the amount check.
+ *
+ * The capture's amount check uses the ORDER amount — the one we set, carried
+ * in the signed payload — not payment_amount: a Cashfree-funded offer or a
+ * surcharge makes the payer's amount differ from the order's, and treating
+ * that as a mismatch would leave a paid booking unconfirmed and unrefunded.
+ * Amounts arrive in rupees and are converted to paise.
  */
 export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promise<void> {
   const order = asRecord(event.data['order']);
@@ -447,8 +531,9 @@ export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promis
         logger.warn({ eventId: event.eventId, provider: 'cashfree' }, 'webhook_missing_order_id');
         return;
       }
-      const amount = payment?.['payment_amount'];
-      const currency = payment?.['payment_currency'];
+      const orderAmount = order?.['order_amount'];
+      const amount = typeof orderAmount === 'number' ? orderAmount : payment?.['payment_amount'];
+      const currency = order?.['order_currency'] ?? payment?.['payment_currency'];
       await applyPaymentCaptured({
         provider: 'cashfree',
         orderId,
@@ -478,9 +563,9 @@ export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promis
         return;
       }
       const status = refund?.['refund_status'];
-      const failed = status === 'CANCELLED' || status === 'REJECTED';
+      const mapped = mapCashfreeRefundStatus(typeof status === 'string' ? status : undefined);
       // PENDING / ONHOLD / PENDING_APPROVAL don't move the ledger row.
-      if (!failed && status !== 'SUCCESS') {
+      if (mapped === 'pending') {
         logger.info(
           { refundId, status, eventId: event.eventId },
           'cashfree_refund_nonterminal_ignored',
@@ -490,7 +575,7 @@ export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promis
       await applyRefundResolution({
         provider: 'cashfree',
         refundId,
-        targetStatus: failed ? 'failed' : 'captured',
+        targetStatus: mapped === 'failed' ? 'failed' : 'captured',
         eventId: event.eventId,
       });
       return;
@@ -506,7 +591,7 @@ export async function handleCashfreeWebhook(event: CashfreeWebhookEvent): Promis
 
 // ── Shared webhook cores (provider-agnostic) ────────────────────────────────
 
-interface CaptureArgs {
+export interface CaptureArgs {
   provider: PaymentProviderId;
   /** The gateway order id we persisted as provider_order_id at create time. */
   orderId: string;
@@ -516,7 +601,7 @@ interface CaptureArgs {
   eventId: string;
 }
 
-async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
+export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
   const { provider, orderId, providerPaymentId, eventId } = args;
 
   await db.transaction(async (tx) => {
@@ -679,6 +764,61 @@ async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
           amountPaise: Number(pay.amountPaise),
           reason: 'auto-refund: payment captured after booking cancellation',
           actorUserId: null,
+          chargePaymentId: pay.id,
+        },
+        tx,
+      );
+      return;
+    }
+
+    // Another charge already paid for this booking: a duplicate payment (the
+    // customer switched gateway mid-checkout and both payments went through,
+    // or a late capture on a failed-over order). Keep one. Record this
+    // capture, take it out of the partner's payout (it was never a sale), and
+    // refund it in full atomically with this tx — a failed refund call rolls
+    // back and the gateway's redelivery retries it.
+    const [otherPaid] = await tx
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.bookingId, pay.bookingId),
+          eq(payments.kind, 'charge'),
+          ne(payments.id, pay.id),
+          sql`${payments.status} in ('captured', 'partially_refunded', 'refunded')`,
+        ),
+      )
+      .limit(1);
+    if (otherPaid) {
+      logger.error(
+        {
+          paymentId: pay.id,
+          bookingId: pay.bookingId,
+          paidBy: otherPaid.id,
+          amountPaise: Number(pay.amountPaise),
+          eventId,
+          provider,
+        },
+        'payment_duplicate_capture_auto_refunding',
+      );
+      await tx
+        .update(payments)
+        .set({
+          settleBasePaise: 0,
+          consumerCommissionPaise: 0,
+          partnerCommissionPaise: 0,
+          advancePaise: 0,
+        })
+        .where(eq(payments.id, pay.id));
+      await auditCapture({ duplicateOf: otherPaid.id, autoRefund: true });
+      await issueRefund(
+        {
+          bookingId: pay.bookingId,
+          amountPaise: Number(pay.amountPaise),
+          reason: 'auto-refund: duplicate payment for an already-paid booking',
+          actorUserId: null,
+          chargePaymentId: pay.id,
+          settleNeutral: true,
         },
         tx,
       );
@@ -782,7 +922,8 @@ async function applyPaymentFailed(args: FailureArgs): Promise<void> {
 }
 
 /**
- * Refund resolution core (Razorpay `refund.processed`, Stripe `refund.*`).
+ * Refund resolution core (Razorpay `refund.processed`, Stripe `refund.*`,
+ * Cashfree `REFUND_STATUS_WEBHOOK`, and payment_recovery_service polling).
  *
  * `issueRefund`/`runRefund` stores the provider refund id on the refund row's
  * `provider_payment_id` (and kind='refund'). Here we match on that id and move
@@ -795,7 +936,7 @@ async function applyPaymentFailed(args: FailureArgs): Promise<void> {
  * the gateway stops retrying — it just means we have no local ledger row to
  * flip (e.g. a refund issued out-of-band).
  */
-interface RefundResolutionArgs {
+export interface RefundResolutionArgs {
   provider: PaymentProviderId;
   /** The gateway's refund id, as persisted on the refund row. */
   refundId: string;
@@ -803,7 +944,7 @@ interface RefundResolutionArgs {
   eventId: string;
 }
 
-async function applyRefundResolution(args: RefundResolutionArgs): Promise<void> {
+export async function applyRefundResolution(args: RefundResolutionArgs): Promise<void> {
   const { provider, refundId, targetStatus, eventId } = args;
 
   await db.transaction(async (tx) => {
