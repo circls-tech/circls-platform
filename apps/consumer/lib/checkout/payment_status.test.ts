@@ -34,6 +34,15 @@ describe('pollCheckoutPayment', () => {
     await expect(pollCheckoutPayment(check, { attempts: 3, intervalMs: 0, wait: noWait })).resolves.toBe('paid');
   });
 
+  it('keeps waiting while a payment is processing, and says so if it still is', async () => {
+    const check = scripted('processing', 'processing', 'paid');
+    await expect(pollCheckoutPayment(check, { attempts: 8, intervalMs: 0, wait: noWait })).resolves.toBe('paid');
+    // Still in flight at the end — and a later failed request doesn't erase it.
+    await expect(
+      pollCheckoutPayment(scripted('processing', new Error('offline')), { attempts: 2, intervalMs: 0, wait: noWait }),
+    ).resolves.toBe('processing');
+  });
+
   it('gives up as pending, waiting between asks', async () => {
     const wait = vi.fn(noWait);
     const check = scripted();

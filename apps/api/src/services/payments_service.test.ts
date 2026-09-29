@@ -19,7 +19,12 @@ import {
   cashfreeFailoverState,
   recordCashfreeOutage,
 } from '../lib/inr_failover.js';
-import { __resetPaymentSettingsCacheForTesting } from './payment_settings_service.js';
+import {
+  __resetPaymentSettingsCacheForTesting,
+  getInrPaymentGateway,
+  getPaymentSettings,
+} from './payment_settings_service.js';
+import { env } from '../config/env.js';
 import { __resetRazorpayForTesting } from '../lib/razorpay.js';
 import { __resetStripeForTesting } from '../lib/stripe.js';
 import { cancelPaidBooking } from './cancellation_service.js';
@@ -955,6 +960,60 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
     });
   });
 
+  describe('cancelPaidBooking on a booking with more than one charge', () => {
+    // A checkout moved from Cashfree to Razorpay: the retired Cashfree charge
+    // C1 and the pending Razorpay charge C2. The customer's Cashfree payment
+    // lands on C1 just as someone cancels the booking.
+    it('a capture on the other charge is seen, and refunded, by a concurrent cancel', async () => {
+      const { bookingId, paymentId: c1 } = await seedPendingBookingWithOrder(
+        '2032-04-13T05:00:00.000Z',
+        { provider: 'cashfree' },
+      );
+      await db.update(payments).set({ status: 'failed' }).where(sql`id = ${c1}`);
+      await createPaymentOrder({
+        bookingId,
+        tenantId,
+        amountPaise: 50000,
+        provider: 'razorpay',
+        currency: 'INR',
+        actorUserId: userId,
+      });
+
+      // The capture holds C1 and the booking, uncommitted, while the cancel starts.
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let onCaptured!: () => void;
+      const captured = new Promise<void>((r) => (onCaptured = r));
+      const capture = db.transaction(async (tx) => {
+        await tx
+          .update(payments)
+          .set({ status: 'captured', providerPaymentId: `cfpay_race_${Date.now()}` })
+          .where(sql`id = ${c1}`);
+        await tx.update(bookings).set({ status: 'confirmed' }).where(sql`id = ${bookingId}`);
+        onCaptured();
+        await held;
+      });
+      await captured;
+      const cancel = cancelPaidBooking({ bookingId, actorUserId: userId, reason: 'race', bySelf: false });
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await capture;
+      const res = await cancel;
+
+      // Not "uncaptured, refund 0" read from C2: the cancel waited on C1,
+      // saw the payment and refunded it.
+      expect(res.refundPaise).toBe(50000);
+      const refunds = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'refund'`);
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]!.metadata['chargePaymentId']).toBe(c1);
+      const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+      expect(book?.status).toBe('cancelled');
+    });
+  });
+
   describe('cancelPaidBooking on an unpaid pending booking', () => {
     it('fails the charge, refunds nothing, and reports refundPaise 0', async () => {
       const { bookingId, paymentId } = await seedPendingBookingWithOrder(
@@ -1153,6 +1212,61 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
   });
 
   describe('INR gateway setting', () => {
+    // Inside a booking transaction, a read on the global pool takes a second
+    // connection while the first holds row locks: enough concurrent bookings
+    // exhaust the pool with every holder waiting for another connection.
+    it("is read on the caller's transaction, not the global pool", async () => {
+      const [inVenue] = await db
+        .insert(venues)
+        .values({ tenantId, name: 'IN tx', tzName: 'Asia/Kolkata', country: 'India' })
+        .returning();
+      __resetPaymentSettingsCacheForTesting();
+      const spy = vi.spyOn(db, 'select');
+      try {
+        await db.transaction(async (tx) => {
+          const ctx = await resolvePaymentContext({ venueId: inVenue!.id, tenantId }, tx);
+          expect(ctx.currency).toBe('INR');
+        });
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+        await db.execute(sql`delete from venues where id = ${inVenue!.id}`);
+      }
+    });
+
+    it('in production, a stored Cashfree choice without keys falls back to Razorpay', async () => {
+      const [saved] = await db
+        .select()
+        .from(platformSettings)
+        .where(sql`key = 'inr_payment_gateway'`);
+      const prevNodeEnv = env.NODE_ENV;
+      try {
+        await db
+          .insert(platformSettings)
+          .values({ key: 'inr_payment_gateway', value: 'cashfree' })
+          .onConflictDoUpdate({ target: platformSettings.key, set: { value: 'cashfree' } });
+        __resetPaymentSettingsCacheForTesting();
+        // Tests run Cashfree as a stub: no keys, as after they're removed.
+        (env as { NODE_ENV: string }).NODE_ENV = 'production';
+        expect(await getInrPaymentGateway()).toBe('razorpay');
+        await expect(getPaymentSettings()).resolves.toMatchObject({
+          inrGateway: 'razorpay',
+          unusableChoice: 'cashfree',
+        });
+      } finally {
+        (env as { NODE_ENV: string }).NODE_ENV = prevNodeEnv;
+        if (saved) {
+          await db
+            .update(platformSettings)
+            .set({ value: saved.value })
+            .where(sql`key = 'inr_payment_gateway'`);
+        } else {
+          await db.delete(platformSettings).where(sql`key = 'inr_payment_gateway'`);
+        }
+        __resetPaymentSettingsCacheForTesting();
+      }
+    });
+
     it("routes Indian venues to the admin's pick, if the client can open it", async () => {
       const [inVenue] = await db
         .insert(venues)

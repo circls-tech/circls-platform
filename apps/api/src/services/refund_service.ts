@@ -13,6 +13,7 @@
  *
  * Weekly payout reconciliation lives in `payout_service.ts`.
  */
+import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { couponRedemptions } from '../db/schema/coupon_redemptions.js';
@@ -163,15 +164,38 @@ export async function selectRefundableCharge(
 }
 
 /**
- * Our key for a refund, stable across retries of the same refund: the
- * charge plus the refund's sequence number on it. A retry after the gateway
- * accepted a refund but the response was lost rolls this transaction back,
- * so the refund row (and its count) is gone and the retry computes the same
- * key — which the gateway dedupes (see GatewayRefundInput.refundId).
- * Alphanumeric and at most 40 chars for Cashfree's refund_id.
+ * Lock every charge of `bookingId` (FOR UPDATE, in id order). A booking can
+ * carry more than one charge after a gateway switch or failover, and a cancel
+ * must block a capture landing on ANY of them: otherwise it can decide "no
+ * refund" from a pending charge while a capture on another charge confirms
+ * the booking, then cancel it anyway. Charges are locked before the booking
+ * row, the order applyPaymentCaptured takes them in.
  */
-export function refundKey(chargeId: string, sequence: number): string {
-  return `r${chargeId.replace(/-/g, '')}n${sequence}`;
+export async function lockBookingCharges(
+  exec: Pick<RefundExec, 'select'>,
+  bookingId: string,
+): Promise<void> {
+  await exec
+    .select({ id: payments.id })
+    .from(payments)
+    .where(and(eq(payments.bookingId, bookingId), eq(payments.kind, 'charge')))
+    .orderBy(payments.id)
+    .for('update');
+}
+
+/**
+ * Our key for a refund: the charge, the refund's sequence number on it and
+ * its amount, hashed. A retry of the same refund after the gateway accepted
+ * it but the response was lost rolls this transaction back, so the refund
+ * row (and its count) is gone and the retry computes the same key, which the
+ * gateway dedupes (see GatewayRefundInput.refundId). A different refund — a
+ * new amount, e.g. once the cancellation tier has moved on — gets a different
+ * key instead of colliding with the stored result of the old one. 33
+ * alphanumeric chars, within Cashfree's 40 for refund_id.
+ */
+export function refundKey(chargeId: string, sequence: number, amountMinor: number): string {
+  const digest = createHash('sha256').update(`${chargeId}:${sequence}:${amountMinor}`).digest('hex');
+  return `r${digest.slice(0, 32)}`;
 }
 
 /**
@@ -261,9 +285,11 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
         priorSettleDeductedPaise: prior.settleDeductedPaise,
       });
 
-  // 2c. This refund's key: its sequence number on the charge. Counted over
-  //     every refund row of the charge (failed ones too, so a new attempt
-  //     after a rejected refund gets a fresh key).
+  // 2c. This refund's key (see refundKey). The sequence counts the charge's
+  //     committed refund rows, failed ones included, so the next refund after
+  //     a recorded failure gets a fresh key; a gateway call that throws rolls
+  //     its row back, so its retry reuses the key only if the amount is the
+  //     same too.
   const [seq] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(payments)
@@ -274,7 +300,7 @@ async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<Issue
         sql`${payments.metadata}->>'chargePaymentId' = ${charge.id}`,
       ),
     );
-  const key = refundKey(charge.id, Number(seq?.n ?? 0) + 1);
+  const key = refundKey(charge.id, Number(seq?.n ?? 0) + 1, input.amountPaise);
 
   // 3. Insert the refund ledger row. Signed amount_paise — negative because
   //    it flows out of the held pot back to the customer. settle_base_paise is

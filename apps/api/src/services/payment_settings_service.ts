@@ -17,6 +17,7 @@ import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { getCashfree } from '../lib/cashfree.js';
 import { Conflict } from '../lib/errors.js';
 import { cashfreeFailoverState, type CashfreeFailoverState } from '../lib/inr_failover.js';
+import { logger } from '../lib/logger.js';
 import { getRazorpay } from '../lib/razorpay.js';
 
 export type InrGateway = 'razorpay' | 'cashfree';
@@ -25,14 +26,19 @@ const INR_GATEWAY_KEY = 'inr_payment_gateway';
 
 /** Bookings read the setting on every order; a short cache keeps that free. */
 const CACHE_MS = 15_000;
-let cached: { gateway: InrGateway | null; at: number } | null = null;
+let cached: { gateway: InrGateway; at: number } | null = null;
+
+/** A query runner: the global pool, or the caller's transaction. */
+type SettingsReader = Pick<typeof db, 'select'>;
 
 function parseGateway(value: unknown): InrGateway | null {
   return value === 'razorpay' || value === 'cashfree' ? value : null;
 }
 
-async function readSetting(): Promise<typeof platformSettings.$inferSelect | undefined> {
-  const [row] = await db
+async function readSetting(
+  exec: SettingsReader = db,
+): Promise<typeof platformSettings.$inferSelect | undefined> {
+  const [row] = await exec
     .select()
     .from(platformSettings)
     .where(eq(platformSettings.key, INR_GATEWAY_KEY))
@@ -40,17 +46,49 @@ async function readSetting(): Promise<typeof platformSettings.$inferSelect | und
   return row;
 }
 
-/** The gateway new INR orders go to: the admin's choice, else the env default. */
-export async function getInrPaymentGateway(now: number = Date.now()): Promise<InrGateway> {
-  if (!cached || now - cached.at > CACHE_MS) {
-    const row = await readSetting();
-    cached = { gateway: parseGateway(row?.value), at: now };
+/**
+ * The gateway that can actually take `chosen`'s orders. In production a
+ * choice of Cashfree is only honoured while Cashfree has live keys: a choice
+ * saved while it had them outlives them, and a key-less Cashfree only mints
+ * stub orders nobody can pay (they'd be "reserved" and swept). Razorpay's
+ * keys are required in production, so it can always take over.
+ */
+function usableGateway(chosen: InrGateway): InrGateway {
+  if (chosen === 'cashfree' && env.NODE_ENV === 'production' && getCashfree().mode !== 'live') {
+    return 'razorpay';
   }
-  return cached.gateway ?? env.INR_PAYMENT_GATEWAY;
+  return chosen;
+}
+
+/**
+ * The gateway new INR orders go to: the admin's choice, else the env default,
+ * as long as it can take payments (see usableGateway). Inside a transaction,
+ * pass it as `exec`: reading through the global pool from inside one takes a
+ * second connection, and enough concurrent bookings can then exhaust the pool
+ * with every holder waiting for another connection.
+ */
+export async function getInrPaymentGateway(exec: SettingsReader = db): Promise<InrGateway> {
+  const now = Date.now();
+  if (!cached || now - cached.at > CACHE_MS) {
+    const row = await readSetting(exec);
+    const chosen = parseGateway(row?.value) ?? env.INR_PAYMENT_GATEWAY;
+    const gateway = usableGateway(chosen);
+    if (gateway !== chosen) {
+      logger.error({ chosen, using: gateway }, 'inr_gateway_unusable_falling_back');
+    }
+    cached = { gateway, at: now };
+  }
+  return cached.gateway;
 }
 
 export interface PaymentSettingsView {
+  /** Where new INR orders actually go. */
   inrGateway: InrGateway;
+  /**
+   * The chosen gateway when it can't take payments and INR has fallen back
+   * to Razorpay (Cashfree chosen, but no keys on this server); else null.
+   */
+  unusableChoice: InrGateway | null;
   /** 'admin' when a platform admin chose it; 'env' when it's the deploy default. */
   source: 'admin' | 'env';
   envDefault: InrGateway;
@@ -68,8 +106,11 @@ export interface PaymentSettingsView {
 export async function getPaymentSettings(): Promise<PaymentSettingsView> {
   const row = await readSetting();
   const chosen = parseGateway(row?.value);
+  const wanted = chosen ?? env.INR_PAYMENT_GATEWAY;
+  const inrGateway = usableGateway(wanted);
   return {
-    inrGateway: chosen ?? env.INR_PAYMENT_GATEWAY,
+    inrGateway,
+    unusableChoice: inrGateway === wanted ? null : wanted,
     source: chosen ? 'admin' : 'env',
     envDefault: env.INR_PAYMENT_GATEWAY,
     updatedAt: chosen && row ? row.updatedAt.toISOString() : null,

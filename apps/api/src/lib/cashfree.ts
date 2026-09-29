@@ -266,14 +266,15 @@ class LiveCashfree implements PaymentGateway {
     if (!input.orderId) {
       throw new Error(`Cashfree refund for payment ${input.paymentId} needs the order id`);
     }
-    const note = boundedText(input.reason);
+    // Cashfree rejects a reused idempotency key whose body differs (422), so
+    // the body holds nothing that can change between retries: no free-text
+    // refund_note (the reason stays in our ledger and audit log).
     const refund = await this.call<CashfreeRefundEntity>(
       'POST',
       `/orders/${encodeURIComponent(input.orderId)}/refunds`,
       {
         refund_amount: minorToCashfreeAmount(input.amountMinor),
         refund_id: cashfreeRefundId(input.refundId),
-        ...(note ? { refund_note: note } : {}),
       },
       input.refundId,
     );

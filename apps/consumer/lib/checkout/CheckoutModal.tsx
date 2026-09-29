@@ -46,6 +46,7 @@ interface CheckoutOrder {
 
 const RESERVED = 'Payments aren’t enabled yet — your booking is reserved.';
 const PAID = 'Payment received! See it in My Bookings.';
+const PROCESSING = 'Payment submitted! Your booking shows as confirmed in My Bookings once the payment clears.';
 
 const COUPON_ERRORS: Record<string, string> = {
   coupon_not_found: 'That code isn’t valid.',
@@ -256,8 +257,10 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
     if (status === 'paid') onPaid(PAID);
     else if (status === 'expired') setPhase({ kind: 'error', message: 'This checkout has expired. Please book again.' });
     else if (status === 'failed') setPhase({ kind: 'unpaid', message: 'Your payment didn’t go through.' });
-    // Still processing at the bank: the booking confirms once it clears.
-    else if (result.kind === 'submitted') onPaid('Payment submitted! Your booking shows as confirmed in My Bookings once the payment clears.');
+    // Still processing (a UPI request awaiting approval, say), even if the
+    // pop-up was closed: the booking confirms once it clears, and offering
+    // another way to pay now could charge the customer twice.
+    else if (status === 'processing' || result.kind === 'submitted') onPaid(PROCESSING);
     else setPhase({ kind: 'unpaid', message: 'Payment not completed.' });
   }
 
@@ -286,7 +289,9 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       orderRef.current = next;
       await payOrder(next);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'checkout_expired') setPhase({ kind: 'error', message: e.message });
+      // The Cashfree payment turned out to be in flight after all.
+      if (e instanceof ApiError && e.code === 'payment_in_progress') onPaid(PROCESSING);
+      else if (e instanceof ApiError && e.code === 'checkout_expired') setPhase({ kind: 'error', message: e.message });
       else setPhase({ kind: 'unpaid', message: 'We couldn’t switch the payment method.' });
     }
   }

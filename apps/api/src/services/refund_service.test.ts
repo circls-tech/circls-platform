@@ -628,11 +628,12 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
     expect(row!.metadata['duplicatePayment']).toBe(true);
   });
 
-  it('keys each refund by its charge and sequence, surviving a rollback', async () => {
+  it('keys each refund by its charge, sequence and amount, surviving a rollback', async () => {
     const { bookingId, chargeIds } = await seedMultiCharge([{ amountPaise: 40000, status: 'captured' }]);
     const chargeId = chargeIds[0]!;
     // An attempt whose transaction rolls back (as when the gateway call throws)
-    // must not use up a sequence number: the retry sends the same key.
+    // must not use up a sequence number: a retry of the same refund sends the
+    // same key, whatever its reason (the reason isn't sent to the gateway).
     await expect(
       db.transaction(async (tx) => {
         await issueRefund({ bookingId, amountPaise: 10000, reason: 'rolled back', actorUserId }, tx);
@@ -647,10 +648,19 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
       .where(sql`booking_id = ${bookingId} and kind = 'refund'`)
       .orderBy(sql`created_at asc`);
     expect(rows.map((r) => r.metadata['refundKey'])).toEqual([
-      refundKey(chargeId, 1),
-      refundKey(chargeId, 2),
+      refundKey(chargeId, 1, 10000),
+      refundKey(chargeId, 2, 5000),
     ]);
-    expect(refundKey(chargeId, 1)).toMatch(/^r[0-9a-f]{32}n1$/);
+    // Cashfree's refund_id: alphanumeric, at most 40 chars.
+    expect(refundKey(chargeId, 1, 10000)).toMatch(/^r[0-9a-f]{32}$/);
+  });
+
+  it('a retry for a different amount gets a different key', async () => {
+    // e.g. a cancel whose refund threw, retried after the policy tier moved:
+    // reusing the key would clash with the gateway's stored first attempt.
+    expect(refundKey('c1', 1, 10000)).not.toBe(refundKey('c1', 1, 5000));
+    expect(refundKey('c1', 1, 10000)).toBe(refundKey('c1', 1, 10000));
+    expect(refundKey('c1', 1, 10000)).not.toBe(refundKey('c1', 2, 10000));
   });
 
   it('refuses a gateway charge with no payment or order id instead of faking it', async () => {
@@ -679,7 +689,7 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
       expect(spy).toHaveBeenCalledWith(
         expect.objectContaining({
           orderId,
-          refundId: refundKey(chargeIds[0]!, 1),
+          refundId: refundKey(chargeIds[0]!, 1, 25000),
           amountMinor: 25000,
         }),
       );

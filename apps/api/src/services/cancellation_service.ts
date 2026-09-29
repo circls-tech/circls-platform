@@ -32,6 +32,7 @@ import {
 import {
   type RefundExec,
   issueRefund,
+  lockBookingCharges,
   selectRefundableCharge,
   sumPriorRefunds,
 } from './refund_service.js';
@@ -90,6 +91,12 @@ async function loadCancellationInputs(
   bookingId: string,
   lockCharge: boolean,
 ): Promise<CancellationInputs> {
+  // The cancel locks every charge of the booking before reading it, so a
+  // capture on any of them (a booking can carry several after a gateway
+  // switch or failover) either commits first — and the reads below see the
+  // confirmed booking and captured charge — or waits for the cancel and then
+  // takes applyPaymentCaptured's cancelled-booking refund.
+  if (lockCharge) await lockBookingCharges(exec, bookingId);
   const [booking] = await exec.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
 
   if (!booking) throw new NotFound('Booking not found', 'booking_not_found');
@@ -99,10 +106,8 @@ async function loadCancellationInputs(
 
   // The charge the refund decision is about: the newest that took money,
   // else the newest (a booking can carry a dead charge from a gateway switch
-  // or failover). Legacy walk-ins have none. Locked FOR UPDATE by the cancel
-  // so the charge's status is authoritative for the whole tx — a concurrent
-  // webhook capture blocks behind this lock instead of flipping the row under
-  // our feet.
+  // or failover). Legacy walk-ins have none. The cancel already holds every
+  // charge's lock (above), so no capture can flip one under our feet.
   const charge = await selectRefundableCharge(exec, bookingId, lockCharge);
 
   // Slot start instant. Prefer the booking's persisted `time_range` (Track A

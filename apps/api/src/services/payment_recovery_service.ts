@@ -35,14 +35,17 @@ import { applyPaymentCaptured, applyRefundResolution, createPaymentOrder } from 
 
 /**
  * Where a checkout stands, from the customer's side:
- *   paid     the booking is confirmed.
- *   pending  not paid yet: a payment may still be processing, or none was made.
- *   failed   the latest attempt was declined or abandoned; the same checkout
- *            can be tried again, or moved to another gateway.
- *   expired  it can't be paid any more (the booking was cancelled, or this
- *            order was replaced by one on another gateway).
+ *   paid        the booking is confirmed.
+ *   processing  a payment attempt is still being processed (a UPI request
+ *               awaiting approval, say): don't offer a second payment.
+ *   pending     not paid, and nothing known to be in flight: no attempt yet,
+ *               or the gateway can't be asked.
+ *   failed      the latest attempt was declined or abandoned; the same
+ *               checkout can be tried again, or moved to another gateway.
+ *   expired     it can't be paid any more (the booking was cancelled, or this
+ *               order was replaced by one on another gateway).
  */
-export type CheckoutPaymentStatus = 'paid' | 'pending' | 'failed' | 'expired';
+export type CheckoutPaymentStatus = 'paid' | 'processing' | 'pending' | 'failed' | 'expired';
 
 /**
  * A charge by its gateway order id, only if it belongs to one of `userId`'s
@@ -147,6 +150,7 @@ export async function verifyCheckoutPayment(input: {
     }
     if (order?.state === 'closed') return { status: 'expired' };
     if (order?.lastAttempt === 'failed') return { status: 'failed' };
+    if (order?.lastAttempt === 'pending') return { status: 'processing' };
   } catch (err) {
     // The gateway can't be asked right now: the customer hears "pending"
     // and the webhook or reconciliation settles it.
@@ -170,10 +174,13 @@ export type SwitchGatewayResult =
 
 /**
  * "Try another way to pay": move a pending Cashfree checkout to Razorpay.
- * Checks Cashfree first — a customer who already paid is told so rather than
- * charged again. Terminating the Cashfree order is best-effort (Cashfree may
- * be the thing that's down); if both payments land, the second is refunded as
- * a duplicate (applyPaymentCaptured).
+ * Checks Cashfree first: a customer who already paid is told so, and one
+ * whose payment is still being processed (a UPI request awaiting approval,
+ * say) is asked to wait rather than invited to pay twice. The Razorpay order
+ * is created before anything is retired, so if Razorpay fails the Cashfree
+ * checkout is left exactly as it was. Terminating the Cashfree order is
+ * best-effort (Cashfree may be the thing that's down); if both payments land,
+ * the second is refunded as a duplicate (applyPaymentCaptured).
  */
 export async function switchCheckoutGateway(input: {
   userId: string;
@@ -188,35 +195,23 @@ export async function switchCheckoutGateway(input: {
     throw new Conflict('This checkout has expired — please book again', 'checkout_expired');
   }
 
-  const cashfree = getGateway('cashfree');
-  if (cashfree.mode === 'live') {
-    try {
-      if (await captureIfPaid(charge, 'switch')) return { outcome: 'paid' };
-    } catch (err) {
-      // Cashfree being unreachable is exactly why the customer is switching.
-      logger.warn({ err, paymentId: charge.id }, 'gateway_switch_status_check_failed');
-    }
-    try {
-      await cashfree.cancelOrder(input.orderId);
-    } catch (err) {
-      logger.warn({ err, paymentId: charge.id }, 'gateway_switch_cancel_failed');
-    }
+  let atCashfree: GatewayOrderStatus | null = null;
+  try {
+    atCashfree = await orderAtGateway(charge, { lastAttempt: true });
+    if (atCashfree && (await recordCapture(charge, atCashfree, 'switch'))) return { outcome: 'paid' };
+  } catch (err) {
+    // Cashfree being unreachable is exactly why the customer is switching.
+    logger.warn({ err, paymentId: charge.id }, 'gateway_switch_status_check_failed');
+  }
+  if (atCashfree?.state === 'open' && atCashfree.lastAttempt === 'pending') {
+    throw new Conflict(
+      'Your payment is still being processed — wait for it to finish before paying another way',
+      'payment_in_progress',
+    );
   }
 
-  // Retire the Cashfree charge. Status-guarded: a capture that landed in the
-  // meantime wins, and the customer is told they've paid.
-  const [retired] = await db
-    .update(payments)
-    .set({ status: 'failed', metadata: { ...charge.metadata, switchedTo: 'razorpay' } })
-    .where(and(eq(payments.id, charge.id), eq(payments.status, 'pending')))
-    .returning({ id: payments.id });
-  if (!retired) {
-    const now = await bookingStatusOf(charge.bookingId);
-    if (now && PAID_BOOKING.has(now)) return { outcome: 'paid' };
-    throw new Conflict('This checkout has expired — please book again', 'checkout_expired');
-  }
-
-  // Same money, same snapshots, new gateway.
+  // Same money, same snapshots, new gateway — created first, so that if
+  // Razorpay fails nothing has been retired and the customer can retry.
   const billing = charge.metadata['billing'] as Record<string, number> | undefined;
   const order = await createPaymentOrder({
     bookingId: charge.bookingId,
@@ -235,6 +230,36 @@ export async function switchCheckoutGateway(input: {
     currency: charge.currency,
     actorUserId: input.userId,
   });
+
+  // Retire the Cashfree charge. Status-guarded: a capture that landed in the
+  // meantime wins, the new Razorpay charge is retired instead, and the
+  // customer is told they've paid.
+  const [retired] = await db
+    .update(payments)
+    .set({
+      status: 'failed',
+      metadata: sql`${payments.metadata} || ${JSON.stringify({ switchedTo: 'razorpay' })}::jsonb`,
+    })
+    .where(and(eq(payments.id, charge.id), eq(payments.status, 'pending')))
+    .returning({ id: payments.id });
+  if (!retired) {
+    await db
+      .update(payments)
+      .set({ status: 'failed' })
+      .where(and(eq(payments.id, order.paymentId), eq(payments.status, 'pending')));
+    const now = await bookingStatusOf(charge.bookingId);
+    if (now && PAID_BOOKING.has(now)) return { outcome: 'paid' };
+    throw new Conflict('This checkout has expired — please book again', 'checkout_expired');
+  }
+
+  const cashfree = getGateway('cashfree');
+  if (cashfree.mode === 'live') {
+    try {
+      await cashfree.cancelOrder(input.orderId);
+    } catch (err) {
+      logger.warn({ err, paymentId: charge.id }, 'gateway_switch_cancel_failed');
+    }
+  }
 
   // A membership purchase points at its charge; follow the switch.
   await db
@@ -275,8 +300,12 @@ const RECONCILE_BATCH = 50;
  *     payment on a swept or switched order — applyPaymentCaptured records it
  *     and refunds it, since that booking is cancelled or already paid);
  *   - refunds still pending (Cashfree may send no refund webhooks).
- * Re-checks the same failed charge or refund at most every 30 minutes. Stops
- * early when Cashfree is down; the next run carries on.
+ * Pending charges come first: they're the ones a lost webhook costs a
+ * customer their booking over, once the abandoned-cart sweep cancels it.
+ * Failed charges and refunds are re-checked at most every 30 minutes, least
+ * recently checked first; a row whose check fails is pushed back too, so it
+ * can't hold the head of every run. Stops early when Cashfree is down; the
+ * next run carries on.
  */
 export async function reconcileCashfreePayments(): Promise<{ captured: number; refundsResolved: number }> {
   const gateway = getGateway('cashfree');
@@ -286,28 +315,48 @@ export async function reconcileCashfreePayments(): Promise<{ captured: number; r
   }
 
   const recheckDue = sql`coalesce((${payments.metadata}->>'reconciledAt')::timestamptz, 'epoch') < now() - interval '30 minutes'`;
+  const leastRecentlyChecked = sql`coalesce((${payments.metadata}->>'reconciledAt')::timestamptz, ${payments.createdAt})`;
+  // Merged in SQL, not rewritten from our copy, so keys other writers add
+  // to the row meanwhile survive.
   const stamp = (row: Payment) =>
     db
       .update(payments)
-      .set({ metadata: { ...row.metadata, reconciledAt: new Date().toISOString() } })
-      .where(eq(payments.id, row.id));
+      .set({
+        metadata: sql`${payments.metadata} || ${JSON.stringify({ reconciledAt: new Date().toISOString() })}::jsonb`,
+      })
+      .where(eq(payments.id, row.id))
+      .catch((err: unknown) => logger.error({ err, paymentId: row.id }, 'cashfree_reconcile_stamp_failed'));
 
-  const charges = await db
+  const recentCharge = and(
+    eq(payments.provider, 'cashfree'),
+    eq(payments.kind, 'charge'),
+    isNotNull(payments.providerOrderId),
+    sql`${payments.createdAt} > now() - interval '48 hours'`,
+  );
+  // Oldest first: the closest to being swept.
+  const pending = await db
     .select()
     .from(payments)
     .where(
       and(
-        eq(payments.provider, 'cashfree'),
-        eq(payments.kind, 'charge'),
-        isNotNull(payments.providerOrderId),
-        sql`${payments.createdAt} > now() - interval '48 hours'`,
-        sql`((${payments.status} = 'pending' and ${payments.createdAt} < now() - interval '3 minutes') or (${payments.status} = 'failed' and ${recheckDue}))`,
+        recentCharge,
+        eq(payments.status, 'pending'),
+        sql`${payments.createdAt} < now() - interval '3 minutes'`,
       ),
     )
     .orderBy(payments.createdAt)
     .limit(RECONCILE_BATCH);
+  const failed =
+    pending.length < RECONCILE_BATCH
+      ? await db
+          .select()
+          .from(payments)
+          .where(and(recentCharge, eq(payments.status, 'failed'), recheckDue))
+          .orderBy(leastRecentlyChecked)
+          .limit(RECONCILE_BATCH - pending.length)
+      : [];
 
-  for (const charge of charges) {
+  for (const charge of [...pending, ...failed]) {
     try {
       if (await captureIfPaid(charge, 'reconcile')) {
         result.captured++;
@@ -318,6 +367,7 @@ export async function reconcileCashfreePayments(): Promise<{ captured: number; r
     } catch (err) {
       logger.error({ err, paymentId: charge.id }, 'cashfree_reconcile_charge_failed');
       if (err instanceof GatewayHttpError && err.outage) return result;
+      if (charge.status === 'failed') await stamp(charge);
     }
   }
 
@@ -335,7 +385,7 @@ export async function reconcileCashfreePayments(): Promise<{ captured: number; r
         recheckDue,
       ),
     )
-    .orderBy(payments.createdAt)
+    .orderBy(leastRecentlyChecked)
     .limit(RECONCILE_BATCH);
 
   for (const refund of refunds) {
@@ -370,6 +420,7 @@ export async function reconcileCashfreePayments(): Promise<{ captured: number; r
     } catch (err) {
       logger.error({ err, paymentId: refund.id }, 'cashfree_reconcile_refund_failed');
       if (err instanceof GatewayHttpError && err.outage) return result;
+      await stamp(refund);
     }
   }
   return result;

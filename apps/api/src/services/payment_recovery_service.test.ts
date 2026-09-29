@@ -3,6 +3,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { closeDb, db, pingDb } from '../db/client.js';
 import { bookings, payments, tenants, users } from '../db/schema/index.js';
 import { __resetCashfreeForTesting, getCashfree } from '../lib/cashfree.js';
+import { GatewayHttpError } from '../lib/gateway_http.js';
+import { getRazorpay } from '../lib/razorpay.js';
 import type { GatewayOrderStatus, GatewayRefundResult, PaymentGateway } from '../lib/gateway.js';
 import {
   reconcileCashfreePayments,
@@ -158,9 +160,11 @@ describe.skipIf(!runIntegration)('payment_recovery_service', () => {
       const [charge] = await db.select().from(payments).where(sql`id = ${chargeId}`);
       expect(charge!.status).toBe('pending');
 
+      // One still in flight (a UPI request awaiting approval) is "processing":
+      // the checkout must not offer another way to pay.
       orderStatus[orderId] = { state: 'open', lastAttempt: 'pending' };
       await expect(verifyCheckoutPayment({ userId: customerId, orderId })).resolves.toEqual({
-        status: 'pending',
+        status: 'processing',
       });
     });
 
@@ -240,6 +244,43 @@ describe.skipIf(!runIntegration)('payment_recovery_service', () => {
       expect(rows[0]!.status).toBe('captured');
     });
 
+    it('refuses while a payment is still being processed', async () => {
+      scriptCashfree();
+      const { chargeId, orderId } = await seedCheckout();
+      orderStatus[orderId] = { state: 'open', lastAttempt: 'pending' };
+      await expect(switchCheckoutGateway({ userId: customerId, orderId })).rejects.toMatchObject({
+        code: 'payment_in_progress',
+      });
+      const [charge] = await db.select().from(payments).where(sql`id = ${chargeId}`);
+      expect(charge!.status).toBe('pending');
+      expect(cancelled).toEqual([]);
+    });
+
+    it('leaves the Cashfree checkout untouched when Razorpay fails', async () => {
+      scriptCashfree();
+      const { bookingId, chargeId, orderId } = await seedCheckout();
+      const spy = vi
+        .spyOn(getRazorpay(), 'createOrder')
+        .mockRejectedValueOnce(new GatewayHttpError('Razorpay /orders failed (503): down', 'razorpay', 503, true));
+      await expect(switchCheckoutGateway({ userId: customerId, orderId })).rejects.toThrow(/503/);
+      spy.mockRestore();
+
+      // Nothing retired or terminated: "Try again" on Cashfree still works,
+      // and so does a second switch.
+      const [charge] = await db.select().from(payments).where(sql`id = ${chargeId}`);
+      expect(charge!.status).toBe('pending');
+      expect(cancelled).toEqual([]);
+      const retry = await switchCheckoutGateway({ userId: customerId, orderId });
+      expect(retry.outcome).toBe('switched');
+      expect(cancelled).toEqual([orderId]);
+      const live = await db
+        .select()
+        .from(payments)
+        .where(sql`booking_id = ${bookingId} and kind = 'charge' and status = 'pending'`);
+      expect(live).toHaveLength(1);
+      expect(live[0]!.provider).not.toBe('cashfree');
+    });
+
     it('only switches Cashfree checkouts', async () => {
       const { orderId } = await seedCheckout({ provider: 'razorpay' });
       await expect(switchCheckoutGateway({ userId: customerId, orderId })).rejects.toMatchObject({
@@ -282,6 +323,44 @@ describe.skipIf(!runIntegration)('payment_recovery_service', () => {
       expect(booking!.status).toBe('confirmed');
       const [dup] = await db.select().from(payments).where(sql`id = ${switched.chargeId}`);
       expect(dup!.status).toBe('refunded');
+    });
+
+    it('gets to a pending charge even when a batch of failed rechecks is due', async () => {
+      scriptCashfree();
+      // 50 failed charges due for a recheck, all older than the pending one.
+      const { bookingId: old } = await seedCheckout({ chargeStatus: 'failed', createdMinutesAgo: 120 });
+      await db.insert(payments).values(
+        Array.from({ length: 50 }, (_, i) => ({
+          bookingId: old,
+          tenantId,
+          provider: 'cashfree' as const,
+          providerOrderId: `cf-rec-${stamp}-old-${i}`,
+          amountPaise: 30000,
+          currency: 'INR',
+          status: 'failed' as const,
+          kind: 'charge' as const,
+          createdAt: new Date(Date.now() - (119 - i / 100) * 60_000),
+        })),
+      );
+      // A paid checkout whose webhook never came.
+      const fresh = await seedCheckout({ createdMinutesAgo: 10 });
+      orderStatus[fresh.orderId] = paidAt();
+
+      await reconcileCashfreePayments();
+      const [booking] = await db.select().from(bookings).where(sql`id = ${fresh.bookingId}`);
+      expect(booking!.status).toBe('confirmed');
+    });
+
+    it('pushes back a failed charge whose check errors, instead of retrying it every run', async () => {
+      scriptCashfree();
+      const { chargeId, orderId } = await seedCheckout({ chargeStatus: 'failed', createdMinutesAgo: 60 });
+      vi.spyOn(cashfree(), 'fetchOrderStatus').mockImplementation(async (id: string) => {
+        if (id === orderId) throw new GatewayHttpError('Cashfree /orders failed (404): gone', 'cashfree', 404, false);
+        return { state: 'open' };
+      });
+      await reconcileCashfreePayments();
+      const [charge] = await db.select().from(payments).where(sql`id = ${chargeId}`);
+      expect(typeof charge!.metadata['reconciledAt']).toBe('string');
     });
 
     it('settles a pending refund Cashfree never sent a webhook for', async () => {

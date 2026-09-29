@@ -18,6 +18,15 @@ export const TERMS_COUNTRY_OPTIONS = [
 
 export type TermsCountry = (typeof TERMS_COUNTRY_OPTIONS)[number]['value'];
 
+/**
+ * The Terms document for an org's country on file, or null when it has none
+ * (an org that predates the Terms), in which case the user picks one.
+ */
+export function termsCountryFor(country: string | null | undefined): TermsCountry | null {
+  if (!country?.trim()) return null;
+  return termsRegionForCountry(country) === 'US' ? 'USA' : 'India';
+}
+
 export function termsRegionForCountry(country: string | null | undefined): TermsRegion {
   const c = (country ?? '').trim().toUpperCase();
   const isUs = c === 'US' || c === 'USA' || c === 'UNITED STATES' || c === 'UNITED STATES OF AMERICA';

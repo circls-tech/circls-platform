@@ -57,7 +57,14 @@ export function useMyTenants() {
 export function useCreateTenant() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; slug: string; country: string; acceptTerms: true }) =>
+    mutationFn: (input: {
+      name: string;
+      slug: string;
+      country: string;
+      acceptTerms: true;
+      /** The Terms revision this client showed (its bundled text). */
+      documentVersion: string;
+    }) =>
       apiFetch<Tenant>('/v1/tenants', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenants'] }),
   });
@@ -70,7 +77,7 @@ export function useCreateTenant() {
 export function useAcceptTerms(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { version: string; country?: string }) =>
+    mutationFn: (input: { version: string; documentVersion: string; country?: string }) =>
       apiFetch<TenantProfile>(`/v1/tenants/${tenantId}/terms/accept`, {
         method: 'POST',
         body: JSON.stringify(input),

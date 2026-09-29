@@ -181,6 +181,8 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
         status: 'pending',
         kind: 'charge',
         metadata: {},
+        // Created with its booking, a day ago.
+        createdAt: new Date(Date.now() - 24 * 3600_000),
       })
       .returning();
 
@@ -210,11 +212,56 @@ describe.skipIf(!runIntegration)('booking_service_track_b.sweepAbandonedCarts', 
       status: 'pending',
       kind: 'charge',
       metadata: {},
+      createdAt: new Date(Date.now() - 24 * 3600_000),
     });
 
     await sweepAbandonedCarts();
 
     expect(__getStubCashfreeCancelledOrders()).toContain('cf_sweep_test_1');
+  });
+
+  // "Try another way to pay" mints a new order late in the booking's window;
+  // the customer may be paying on it right now.
+  it('gives a checkout moved to another gateway the full window from its new order', async () => {
+    const { bookingId } = await seedOldPending('2032-04-19T05:00:00.000Z');
+    await db.insert(payments).values([
+      {
+        bookingId,
+        tenantId,
+        provider: 'cashfree',
+        providerOrderId: 'cf_sweep_switched_1',
+        amountPaise: 50000,
+        currency: 'INR',
+        status: 'failed',
+        kind: 'charge',
+        metadata: { switchedTo: 'razorpay' },
+        createdAt: new Date(Date.now() - 24 * 3600_000),
+      },
+      {
+        bookingId,
+        tenantId,
+        provider: 'razorpay',
+        providerOrderId: 'order_sweep_switched_1',
+        amountPaise: 50000,
+        currency: 'INR',
+        status: 'pending',
+        kind: 'charge',
+        metadata: {},
+      },
+    ]);
+
+    await sweepAbandonedCarts();
+    const [book] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+    expect(book?.status).toBe('pending');
+
+    // Once the new order's window has passed too, it goes like any other.
+    await db.execute(sql`
+      update payments set created_at = now() - interval '1 day'
+      where booking_id = ${bookingId}::uuid and provider = 'razorpay'
+    `);
+    await sweepAbandonedCarts();
+    const [after] = await db.select().from(bookings).where(sql`id = ${bookingId}`);
+    expect(after?.status).toBe('cancelled');
   });
 
   it('leaves captured charges alone when sweeping', async () => {

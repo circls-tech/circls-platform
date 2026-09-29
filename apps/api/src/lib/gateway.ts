@@ -83,7 +83,8 @@ export interface GatewayRefundInput {
    * Our key for this refund, stable across retries of the same refund (see
    * refund_service.refundKey): Cashfree takes it as refund_id and
    * x-idempotency-key, Stripe as Idempotency-Key. A retry after a lost
-   * response therefore can't refund twice.
+   * response therefore can't refund twice. Keyed requests must be identical
+   * on retry, so adapters that send the key leave `reason` out of the body.
    */
   refundId: string;
   amountMinor: number;

@@ -90,6 +90,13 @@ export default function PaymentsPage() {
 
       {data && (
         <>
+          {data.unusableChoice && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {GATEWAY_NAME[data.unusableChoice]} is chosen but has no keys on this server, so new
+              Indian payments are going to {GATEWAY_NAME[data.inrGateway]} instead. Add the keys, or
+              switch to {GATEWAY_NAME[data.inrGateway]} here.
+            </div>
+          )}
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-slate-900">New Indian payments go to</h2>
             <p className="mt-0.5 text-xs text-slate-500">

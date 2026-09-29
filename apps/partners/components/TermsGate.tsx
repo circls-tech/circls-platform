@@ -7,6 +7,7 @@ import { isSuspended } from '@/lib/roles';
 import {
   CURRENT_TERMS_VERSION,
   needsTermsAcceptance,
+  termsCountryFor,
   type TermsCountry,
 } from '@/lib/terms/constants';
 import { Button, Card } from '@/lib/ui';
@@ -25,16 +26,26 @@ export function TermsGate() {
   const tenant = tenants?.find((t) => t.id === activeTenantId);
   const acceptTerms = useAcceptTerms(activeTenantId ?? '');
 
-  const [country, setCountry] = useState<TermsCountry>('India');
+  const [pickedCountry, setCountry] = useState<TermsCountry>('India');
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!tenant) return null;
 
+  // The org's country on file picks its document. Only an org with none on
+  // file (one that predates the Terms) chooses here.
+  const fixedCountry = termsCountryFor(tenant.country);
+  const country = fixedCountry ?? pickedCountry;
+
   async function handleAccept() {
     setError(null);
     try {
-      await acceptTerms.mutateAsync({ version: CURRENT_TERMS_VERSION, country });
+      await acceptTerms.mutateAsync({
+        version: CURRENT_TERMS_VERSION,
+        // The text shown is this bundle's copy of the current version.
+        documentVersion: CURRENT_TERMS_VERSION,
+        ...(fixedCountry ? {} : { country }),
+      });
     } catch (err) {
       const msg = (err as Error).message ?? 'Could not record acceptance.';
       setError(
@@ -62,6 +73,7 @@ export function TermsGate() {
         <div className="flex flex-col gap-5">
           <TermsAcceptance
             country={country}
+            countryLocked={fixedCountry !== null}
             onCountryChange={setCountry}
             agreed={agreed}
             onAgreedChange={setAgreed}

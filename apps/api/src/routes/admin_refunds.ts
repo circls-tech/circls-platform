@@ -91,8 +91,11 @@ export const adminRefundRoutes: FastifyPluginAsync = async (app) => {
         throw new Forbidden('Admin refund requires platform-admin or tenant-owner', 'admin_required');
       }
 
+      // Refund the charge in the URL: a booking can carry several (a
+      // gateway switch, a failover, a duplicate payment).
       return issueRefund({
         bookingId: payment.bookingId,
+        chargePaymentId: payment.id,
         amountPaise: parsed.data.amountPaise,
         reason: parsed.data.reason,
         actorUserId: user.id,

@@ -57,6 +57,7 @@ import { cashfreeAmountToMinor, mapCashfreeRefundStatus } from '../lib/cashfree.
 import {
   currencyForCountry,
   getGateway,
+  isUsCountry,
   providerForCountry,
   type GatewayCustomer,
   type GatewayOrder,
@@ -110,7 +111,12 @@ export async function resolvePaymentContext(
       .limit(1);
     country = t?.country ?? null;
   }
-  let provider = providerForCountry(country, await getInrPaymentGateway());
+  // Only INR needs the INR gateway setting, read on the caller's connection
+  // (see getInrPaymentGateway); US venues pay through Stripe regardless.
+  let provider = providerForCountry(
+    country,
+    isUsCountry(country) ? undefined : await getInrPaymentGateway(exec),
+  );
   if (provider === 'cashfree' && !opts.checkoutGateways?.has('cashfree')) provider = 'razorpay';
   return { provider, currency: currencyForCountry(country) };
 }
@@ -269,17 +275,17 @@ async function mintOrder(
         : {}),
     });
   } catch (err) {
-    // A Cashfree order that fails over leaves this row behind; fail it now so
-    // it can't be mistaken for the booking's live charge.
-    if (gateway.provider === 'cashfree') {
-      await db
-        .update(payments)
-        .set({
-          status: 'failed',
-          metadata: { ...row.metadata, orderError: err instanceof Error ? err.message : String(err) },
-        })
-        .where(and(eq(payments.id, row.id), eq(payments.status, 'pending')));
-    }
+    // A charge whose order was never created can't be paid. Fail it now, so
+    // it can't be mistaken for the booking's live charge (after a Cashfree
+    // failover or a failed gateway switch) or keep the booking's hold open
+    // (the abandoned-cart sweep waits out the newest pending charge).
+    await db
+      .update(payments)
+      .set({
+        status: 'failed',
+        metadata: { ...row.metadata, orderError: err instanceof Error ? err.message : String(err) },
+      })
+      .where(and(eq(payments.id, row.id), eq(payments.status, 'pending')));
     throw err;
   }
 

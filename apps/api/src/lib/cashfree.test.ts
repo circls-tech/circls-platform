@@ -200,10 +200,11 @@ describe('LiveCashfree.refundPayment', () => {
     });
     const call = lastCall(fetchMock);
     expect(call.url).toBe('https://sandbox.cashfree.com/pg/orders/charge-uuid-1/refunds');
+    // No refund_note: a retry with another reason would change the body under
+    // the same idempotency key, which Cashfree rejects.
     expect(call.body).toEqual({
       refund_amount: 250.5,
       refund_id: 'aaaabbbbcccc',
-      refund_note: 'customer cancelled',
     });
     // The same key on every retry of this refund: Cashfree returns the
     // original refund instead of creating a second one.

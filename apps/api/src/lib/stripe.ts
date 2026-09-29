@@ -162,13 +162,15 @@ class LiveStripe implements PaymentGateway {
       : { charge: input.paymentId };
     // The refund key is stable across retries of the same refund (see
     // refund_service), so a retry after a lost response can't refund twice.
+    // Stripe rejects a reused key whose parameters differ, so the body holds
+    // nothing that can change between retries: no free-text reason (that
+    // stays in our ledger and audit log).
     const refund = await this.call<{ id: string; status: string; amount: number }>(
       '/refunds',
       {
         ...target,
         amount: String(input.amountMinor),
         'metadata[reference]': input.reference,
-        ...(input.reason ? { 'metadata[reason]': input.reason } : {}),
       },
       input.refundId,
     );

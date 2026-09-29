@@ -57,6 +57,17 @@ export async function sweepAbandonedCarts(): Promise<number> {
           eq(bookings.status, 'pending'),
           eq(bookings.paymentMethod, 'razorpay_route'),
           sql`${bookings.createdAt} < now() - (${graceMin}::int * interval '1 minute')`,
+          // A checkout moved to another gateway ("Try another way to pay")
+          // gets the full window from its new order, not what's left of the
+          // booking's: its customer may be paying right now, on a gateway
+          // whose orders can't be cancelled.
+          sql`not exists (
+            select 1 from payments p
+            where p.booking_id = ${bookings.id}
+              and p.kind = 'charge'
+              and p.status = 'pending'
+              and p.created_at >= now() - (${graceMin}::int * interval '1 minute')
+          )`,
         ),
       )
       .returning({ id: bookings.id, tenantId: bookings.tenantId });

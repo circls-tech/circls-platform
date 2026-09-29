@@ -306,6 +306,11 @@ export type InrGateway = 'razorpay' | 'cashfree';
 export interface AdminPaymentSettings {
   /** Where new INR checkouts go. */
   inrGateway: InrGateway;
+  /**
+   * The chosen gateway when it can't take payments (Cashfree chosen, but no
+   * keys on this server) and INR has fallen back to Razorpay; else null.
+   */
+  unusableChoice: InrGateway | null;
   /** 'admin' = chosen on the Payments page; 'env' = the deployment default. */
   source: 'admin' | 'env';
   envDefault: InrGateway;
