@@ -15,7 +15,8 @@
  *     the hold for every still-unreleased captured charge on that event's
  *     bookings. Called from the event-update path (direct edit and approved
  *     change request) inside the writer's transaction, so the new `ends_at` and
- *     the new holds land together.
+ *     the new holds land together. Floors the new hold at now + buffer, so an
+ *     end date moved into the past can't release money with no refund window.
  *   - releaseDueSettlements(): worker handler — marks payments whose hold has
  *     passed as `settlement_released_at`. The actual fund movement is Razorpay's
  *     job; we just track release-eligibility for our reconciliation.
@@ -103,12 +104,28 @@ export async function holdForBooking(bookingId: string, exec: Executor = db): Pr
  *     came through Route (walk-in / paid-at-venue), and payout reconciliation
  *     deliberately ignores those — this recomputes holds, it never creates one.
  *
+ * The new hold is floored at `now() + SETTLEMENT_HOLD_BUFFER_MIN`, because
+ * nothing stops an event's end date being moved into the past (the only window
+ * validation is `starts_at < ends_at`). A past end date would otherwise make
+ * every charge immediately due and the next `releaseDueSettlements` pass would
+ * release money that has had no refund window at all — worse than the stale
+ * hold this function exists to fix. With the floor, correcting a mis-typed end
+ * date still frees the money promptly, just not before anyone could react.
+ * Capture deliberately keeps no such floor: changing {@link holdForBooking}
+ * would move holds for every existing flow, and this is the only path that can
+ * retro-date an anchor.
+ *
  * Runs in the caller's transaction. Returns the number of holds moved.
  */
 export async function reholdForEvent(eventId: string, exec: Executor = db): Promise<number> {
   const moved = await exec
     .update(payments)
-    .set({ settlementHoldUntil: holdAnchorFor(sql`${payments.bookingId}`) })
+    .set({
+      settlementHoldUntil: sql`greatest(
+        ${holdAnchorFor(sql`${payments.bookingId}`)},
+        now() + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute')
+      )`,
+    })
     .where(
       and(
         eq(payments.kind, 'charge'),
