@@ -13,7 +13,7 @@ Go to **Coupons** in the sidebar and click **Create coupon**, then set:
   - **A specific event / arena / membership** — only that item.
 - **Discount type** — **Percentage** (e.g. 10% off, with an optional maximum-discount cap) or **Fixed** (e.g. ₹50 or $5 off). Money fields are in the currency of the coupon's scope — the field labels show ₹ or $ to match (a coupon scoped to a US venue is in dollars; org-wide coupons follow your organisation's country).
 - **Minimum order** — optional; the base price must be at least this for the code to apply.
-- **Visibility** — **Private** (the customer must know and type the code) or **Public** (the code is offered in a "Select an offer" list at checkout, and codes that apply to an event are also shown as tappable offers on that event's public page — tapping one applies it when the customer books).
+- **Visibility** — **Private** (the customer must know and type the code) or **Public** (the code is offered in a "Select an offer" list at checkout, and is also shown as a tappable offer on the public page of whatever it applies to — an event, a membership plan, or a venue, where it appears in the cart bar once the customer has picked their first slot. Tapping one applies it when the customer books).
 - **Valid from / until** — optional window; outside it the code won't apply.
 - **Total max redemptions** and **Per-user limit** — optional caps on how many times the code can be used overall and by a single customer.
 

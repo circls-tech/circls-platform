@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SportImage } from '@/components/SportImage';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import type { PublicMembershipWithScope } from '@/lib/api/types';
@@ -41,15 +42,15 @@ export function MembershipCard({
       href={href}
       className={`block overflow-hidden rounded-card border-[2px] border-ink bg-lav text-ink shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
     >
-      {membership.artworkUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={membership.artworkUrl}
-          alt={membership.name}
-          loading="lazy"
-          className="h-28 w-full border-b-[2px] border-ink object-cover"
-        />
-      )}
+      {/* Always a header band, even with no artwork: SportImage falls back to
+          the court-line motif. Rendering nothing left a plan without a photo
+          starting at a different height from one beside it, and — since the
+          grid stretches both — trailing a block of empty lavender. */}
+      <SportImage
+        input={{ imageUrl: membership.artworkUrl ?? null }}
+        alt={membership.name}
+        className="h-28 w-full border-b-[2px] border-ink"
+      />
       <div className="p-4">
         {brand && (
           <div className="mb-2 flex items-center gap-1.5">
