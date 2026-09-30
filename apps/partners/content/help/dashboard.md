@@ -33,6 +33,8 @@ One bar per day, showing the money taken that day, with the number of bookings i
 
 Below the chart, one section per kind of thing you run, so the jobs done daily are on the page you already land on rather than three clicks into a tab.
 
+These sections list what you are **currently running**, so anything withdrawn from sale is left out: closed and rejected venues, cancelled and rejected events, and deactivated and rejected plans. None of those is on the consumer app either, and mixed in they buried the ones you are actually selling. Each stays on its own page — **Venues**, **Events**, **Memberships** — where you can reopen, reactivate or read it back. Anything **awaiting review** does appear here, and so does an event still in **draft**: both are on their way to live and still yours to work on.
+
 **Venues** carry a **Reception** button. A venue has no single desk — reception is run per arena — so the button goes straight to the grid when the venue has exactly one arena to mean, and to the venue otherwise, where each arena carries its own button. The tile also says how many arenas there are.
 
 **Memberships** carry a **Reception** button too, and a plan has only one desk, so it opens the walk-in form directly — ready for a name, with no hunting.

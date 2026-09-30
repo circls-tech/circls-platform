@@ -4,18 +4,11 @@ import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues, useCreateVenue } from '@/lib/api/queries';
 import { useCan } from '@/lib/use_can';
+import { OFF_SHELF_VENUE } from '@/lib/shelf';
 import { Badge, Button, Card, Input, Modal, StatusPill, TagsInput } from '@/lib/ui';
 import type { Venue } from '@/lib/api/types';
 
 type VenueShelf = 'open' | 'closed';
-
-/**
- * Closed and rejected venues live on their own tab. Neither is on the consumer
- * portal, and mixed in with live ones they buried the venues a partner is
- * actually running. Awaiting review stays with the open ones: it is on its way
- * to live, and the partner is still working on it.
- */
-const OFF_SHELF: ReadonlySet<Venue['status']> = new Set(['suspended', 'rejected']);
 
 const SHELF_TABS: { key: VenueShelf; label: string }[] = [
   { key: 'open', label: 'Active' },
@@ -132,8 +125,8 @@ function VenueList({
     );
   }
 
-  const offShelf = venues.filter((v) => OFF_SHELF.has(v.status));
-  const shown = shelf === 'closed' ? offShelf : venues.filter((v) => !OFF_SHELF.has(v.status));
+  const offShelf = venues.filter((v) => OFF_SHELF_VENUE.has(v.status));
+  const shown = shelf === 'closed' ? offShelf : venues.filter((v) => !OFF_SHELF_VENUE.has(v.status));
   const counts: Record<VenueShelf, number> = {
     open: venues.length - offShelf.length,
     closed: offShelf.length,
