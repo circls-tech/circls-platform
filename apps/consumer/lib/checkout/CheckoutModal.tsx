@@ -16,7 +16,13 @@ import {
   usePurchaseMembership,
 } from '@/lib/api/consumer';
 import { ApiError } from '@/lib/api/client';
-import { useCheckoutQuote, usePublicCoupons, type QuoteRequest, type QuoteResponse } from '@/lib/api/checkout';
+import {
+  useCheckoutQuote,
+  usePublicCoupons,
+  type PublicCouponItem,
+  type QuoteRequest,
+  type QuoteResponse,
+} from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
 import type { PostBookingRedirect } from '@/lib/api/types';
@@ -98,9 +104,12 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
   const [redirectPending, setRedirectPending] = useState(false);
 
-  const offersItem = item.kind === 'event' ? { itemType: 'event' as const, itemId: item.eventId }
-    : item.kind === 'membership' ? { itemType: 'membership' as const, itemId: item.membershipId } : null;
-  // Load public offers eagerly (event/membership) so the picker dropdown is populated.
+  const offersItem: PublicCouponItem =
+    item.kind === 'event' ? { itemType: 'event', itemId: item.eventId }
+    : item.kind === 'membership' ? { itemType: 'membership', itemId: item.membershipId }
+    : { itemType: 'slot', slotIds: item.slotIds };
+  // Load public offers eagerly for every item kind — venue carts included — so
+  // the picker dropdown is populated.
   const offers = usePublicCoupons(offersItem);
 
   useEffect(() => {
@@ -410,7 +419,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
 
           {!appliedCode ? (
             <div className="mt-2 flex flex-col gap-2">
-              {offersItem && (offers.data?.rows.length ?? 0) > 0 && (
+              {(offers.data?.rows.length ?? 0) > 0 && (
                 <select
                   aria-label="Available offers"
                   className="w-full rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-[var(--color-ink)]"

@@ -6,7 +6,9 @@ import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
+import { OffersStrip } from '@/components/OffersStrip';
 import { useMembership, usePublicOrg } from '@/lib/api/consumer';
+import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
@@ -47,6 +49,13 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   // the compact brand summary (name + logo) if this 404s or is still loading.
   const orgQ = usePublicOrg(m?.brand?.slug ?? '');
 
+  // Public offers on this plan (partner- and Circls-funded alike); tapping one
+  // carries it into checkout pre-applied. Listed against the cheapest tier, so
+  // a code is only offered when the smallest purchase can use it.
+  const offersQ = usePublicCoupons(m ? { itemType: 'membership', itemId: m.id } : null);
+  const offers = offersQ.data?.rows ?? [];
+  const [offerCode, setOfferCode] = useState<string | null>(null);
+
   const scope = m ? membershipScope(m) : null;
   // Prices are denominated by the plan's venue/tenant country.
   const currency = currencyForCountry(m?.country);
@@ -71,9 +80,10 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
 
   function buy(tier: PublicMembershipTier | undefined) {
     if (!m) return;
-    const prefill: { name?: string; contact?: string } = {};
+    const prefill: { name?: string; contact?: string; couponCode?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
+    if (offerCode) prefill.couponCode = offerCode;
     openCheckout(
       {
         kind: 'membership',
@@ -198,6 +208,14 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                 </Link>
               )}
             </Card>
+
+            <OffersStrip
+              offers={offers}
+              currency={currency}
+              selected={offerCode}
+              onSelect={setOfferCode}
+              heading="Offers on this plan"
+            />
 
             {m.brand && (
               <section className="mt-6">

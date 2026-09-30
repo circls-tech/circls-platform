@@ -16,6 +16,7 @@ import {
   useVenueCurrencies,
 } from '@/lib/currency';
 import { planSummary } from '@/lib/plan_summary';
+import { isEventOnShelf, isMembershipOnShelf, isVenueOnShelf } from '@/lib/shelf';
 import { useCan } from '@/lib/use_can';
 import { Card, StatusPill } from '@/lib/ui';
 import type {
@@ -250,14 +251,22 @@ function EmptySection({
   addLabel: string;
   canAdd: boolean;
 }) {
+  // Ink, not grey: this is the only thing in the section, and the one
+  // instruction a partner with nothing yet needs to read. The gap goes on this
+  // inner wrapper because Card puts its children inside a padding div of its
+  // own — a flex class on Card itself only ever sees that one child.
+  // Sized to its content, not to the grid: a full-width card holding one short
+  // sentence read as a section that had failed to load.
   return (
-    <Card className="flex flex-col items-start gap-3">
-      <p className="text-sm text-slate-500">{message}</p>
-      {canAdd && (
-        <Link href={addHref} className={ADD_LINK_CLASS}>
-          {addLabel}
-        </Link>
-      )}
+    <Card className="w-fit max-w-full">
+      <div className="flex flex-col items-start gap-4">
+        <p className="text-sm font-medium text-[#17151D]">{message}</p>
+        {canAdd && (
+          <Link href={addHref} className={ADD_LINK_CLASS}>
+            {addLabel}
+          </Link>
+        )}
+      </div>
     </Card>
   );
 }
@@ -276,6 +285,15 @@ function MoreLink({ href, count, noun }: { href: string; count: number; noun: st
       All {count} {noun} →
     </Link>
   );
+}
+
+/**
+ * A section with rows, all of them off shelf, must not claim there are none at
+ * all: that reads as data loss to a partner who can see them on the list page.
+ * It says what is there and where, rather than counting what it is hiding.
+ */
+function sectionEmptyMessage(total: number, none: string, allOffShelf: string): string {
+  return total === 0 ? none : allOffShelf;
 }
 
 function SectionSpinner({ what }: { what: string }) {
@@ -301,7 +319,7 @@ function SectionSpinner({ what }: { what: string }) {
  * want it: one who has just created a venue and whose arenas await review.
  */
 function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
-  const { data: arenas } = useArenas(venue.id);
+  const { data: arenas, isLoading: arenasLoading } = useArenas(venue.id);
   const desks = arenas ?? [];
   const deskHref =
     desks.length === 1
@@ -322,10 +340,17 @@ function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
           {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
         />
       </div>
-      <div className="flex items-end justify-between gap-2">
+      {/* min-h holds the row at the button's height, so the meta line sits at
+          the same place on every card whether or not it has one. */}
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        {/* Nothing is claimed until the arenas are in: an empty list while
+            they load is not the same as a venue with no courts. */}
         <p className="text-xs text-slate-400">
-          {venue.tzName ?? '\u00a0'}
-          {desks.length > 1 && ` · ${desks.length} arenas`}
+          {arenasLoading
+            ? '\u00a0'
+            : desks.length > 0
+              ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'}`
+              : 'No arenas yet'}
         </p>
         {desks.length > 0 && <ReceptionButton href={deskHref} />}
       </div>
@@ -339,10 +364,18 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
 
   if (isLoading) return <SectionSpinner what="venues" />;
 
-  if (!venues || venues.length === 0) {
+  // Closed and rejected venues are off shelf: not on the consumer portal, so
+  // not on the surface for what is running now. They stay on /venues.
+  const onShelf = (venues ?? []).filter(isVenueOnShelf);
+
+  if (onShelf.length === 0) {
     return (
       <EmptySection
-        message={`No venues yet.${canAddVenue ? ' Add your first venue to get started.' : ''}`}
+        message={sectionEmptyMessage(
+          venues?.length ?? 0,
+          `No venues yet.${canAddVenue ? ' Add your first venue to get started.' : ''}`,
+          'No venues open right now. Your closed and rejected ones are on the Venues page.',
+        )}
         addHref="/venues"
         addLabel="＋ Add venue"
         canAdd={canAddVenue}
@@ -350,7 +383,7 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
     );
   }
 
-  const shown = venues.slice(0, SECTION_LIMIT);
+  const shown = onShelf.slice(0, SECTION_LIMIT);
 
   return (
     <div className="flex flex-col gap-3">
@@ -365,8 +398,10 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
             ＋ Add venue
           </Link>
         )}
-        {venues.length > shown.length && (
-          <MoreLink href="/venues" count={venues.length} noun="venues" />
+        {/* On-shelf here is right: /venues opens on its Active tab, which
+            splits on this same rule, so the number holds on arrival. */}
+        {onShelf.length > shown.length && (
+          <MoreLink href="/venues" count={onShelf.length} noun="venues" />
         )}
       </div>
     </div>
@@ -424,10 +459,19 @@ function EventsSection({ tenantId }: { tenantId: string }) {
 
   if (isLoading) return <SectionSpinner what="events" />;
 
-  if (!events || events.length === 0) {
+  // Cancelled and rejected events are off shelf. The API's default shelf only
+  // drops what the partner has archived by hand, so an event pulled a minute
+  // ago would otherwise sit at the top of the dashboard.
+  const onShelf = (events ?? []).filter(isEventOnShelf);
+
+  if (onShelf.length === 0) {
     return (
       <EmptySection
-        message={`No events yet.${canAddEvent ? ' Create one to start taking registrations.' : ''}`}
+        message={sectionEmptyMessage(
+          events?.length ?? 0,
+          `No events yet.${canAddEvent ? ' Create one to start taking registrations.' : ''}`,
+          'No events running right now. Your cancelled and rejected ones are on the Events page.',
+        )}
         addHref="/events/new"
         addLabel="＋ New event"
         canAdd={canAddEvent}
@@ -439,10 +483,10 @@ function EventsSection({ tenantId }: { tenantId: string }) {
   // Sorting on the date alone put a fortnight-old event at the front, which is
   // the opposite of quick access.
   const now = new Date().toISOString();
-  const upcoming = events
+  const upcoming = onShelf
     .filter((e) => e.endsAt >= now)
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  const past = events
+  const past = onShelf
     .filter((e) => e.endsAt < now)
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const shown = [...upcoming, ...past].slice(0, SECTION_LIMIT);
@@ -460,8 +504,12 @@ function EventsSection({ tenantId }: { tenantId: string }) {
             ＋ New event
           </Link>
         )}
-        {events.length > shown.length && (
-          <MoreLink href="/events" count={events.length} noun="events" />
+        {/* Counted over every event, not the on-shelf ones: /events opens on
+            its "active" shelf, which still lists the cancelled and rejected
+            rows this section hides. A count of the filtered set would change
+            the moment the partner arrived. */}
+        {(events?.length ?? 0) > shown.length && (
+          <MoreLink href="/events" count={events?.length ?? 0} noun="events" />
         )}
       </div>
     </div>
@@ -475,10 +523,17 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
 
   if (isLoading) return <SectionSpinner what="memberships" />;
 
-  if (!plans || plans.length === 0) {
+  // Deactivated and rejected plans are off shelf; they stay on /memberships.
+  const onShelf = (plans ?? []).filter(isMembershipOnShelf);
+
+  if (onShelf.length === 0) {
     return (
       <EmptySection
-        message={`No membership plans yet.${canAddPlan ? ' Create one to start selling.' : ''}`}
+        message={sectionEmptyMessage(
+          plans?.length ?? 0,
+          `No membership plans yet.${canAddPlan ? ' Create one to start selling.' : ''}`,
+          'No plans on sale right now. Your deactivated and rejected ones are on the Memberships page.',
+        )}
         addHref="/memberships/new"
         addLabel="＋ New plan"
         canAdd={canAddPlan}
@@ -486,7 +541,7 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
     );
   }
 
-  const shown = plans.slice(0, SECTION_LIMIT);
+  const shown = onShelf.slice(0, SECTION_LIMIT);
 
   return (
     <div className="flex flex-col gap-3">
@@ -502,7 +557,9 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
               </Link>
               <StatusPill status={plan.status} />
             </div>
-            <div className="flex items-end justify-between gap-2">
+            {/* Same min-h as the venue tile, so the meta line keeps its place
+                whatever sits beside it. */}
+            <div className="flex min-h-8 items-center justify-between gap-2">
               <p className="text-xs text-slate-400">
                 {planSummary(plan, currencyFor(plan.venueId))}
               </p>
@@ -519,8 +576,9 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
             ＋ New plan
           </Link>
         )}
-        {plans.length > shown.length && (
-          <MoreLink href="/memberships" count={plans.length} noun="plans" />
+        {/* As with events: /memberships lists every plan, unfiltered. */}
+        {(plans?.length ?? 0) > shown.length && (
+          <MoreLink href="/memberships" count={plans?.length ?? 0} noun="plans" />
         )}
       </div>
     </div>

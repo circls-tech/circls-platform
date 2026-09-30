@@ -9,23 +9,13 @@ import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { useEvent, usePublicOrg } from '@/lib/api/consumer';
-import { usePublicCoupons, type PublicCoupon } from '@/lib/api/checkout';
+import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 import { AddressLink } from '@/components/AddressLink';
-
-function offerLabel(o: PublicCoupon, currency: ReturnType<typeof currencyForCountry>): string {
-  return o.discountType === 'percent'
-    ? `${o.discountValue / 100}% off`
-    : `${formatPaiseExact(o.discountValue, currency)} off`;
-}
-
-function selectedOfferDescription(offers: PublicCoupon[], code: string): string {
-  const d = offers.find((o) => o.code === code)?.description;
-  return d ? ` ${d}` : '';
-}
+import { OffersStrip } from '@/components/OffersStrip';
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -243,42 +233,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               )}
             </Card>
 
-            {offers.length > 0 && (
-              <section className="mt-6">
-                <Card>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
-                    Offers for this event
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {offers.map((o) => {
-                      const selected = o.code === offerCode;
-                      return (
-                        <button
-                          key={o.code}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => setOfferCode(selected ? null : o.code)}
-                          className={[
-                            'rounded-[var(--radius)] border-[2px] border-dashed border-ink px-3 py-1.5 text-sm font-semibold',
-                            selected ? 'bg-ink text-white' : 'bg-white text-ink hover:bg-ink/5',
-                          ].join(' ')}
-                        >
-                          {o.code}
-                          <span className={selected ? 'font-normal opacity-80' : 'font-normal text-text-secondary'}>
-                            {' '}· {offerLabel(o, currency)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-2 text-xs text-text-secondary">
-                    {offerCode
-                      ? `${offerCode} will be applied at checkout.${selectedOfferDescription(offers, offerCode)}`
-                      : 'Tap a code to use it — it’s applied when you book.'}
-                  </p>
-                </Card>
-              </section>
-            )}
+            <OffersStrip
+              offers={offers}
+              currency={currency}
+              selected={offerCode}
+              onSelect={setOfferCode}
+              heading="Offers for this event"
+            />
 
             {ev.brand && (
               <section className="mt-6">

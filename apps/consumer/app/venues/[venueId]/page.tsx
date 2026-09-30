@@ -30,6 +30,8 @@ import {
   telHref,
 } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { usePublicCoupons } from '@/lib/api/checkout';
+import { OffersStrip } from '@/components/OffersStrip';
 import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
 import type { CartSlot } from '@/lib/checkout/types';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -103,7 +105,10 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
   return (
     <div className="min-h-screen">
       <Header />
-      <main className={`mx-auto max-w-5xl px-4 pt-8${cart.size > 0 ? ' pb-32' : ' pb-8'}`}>
+      {/* No bottom reserve for the cart bar here: it is fixed, its height
+          varies with the offers strip, and the footer below is the layout's,
+          outside this page. CartBar measures itself onto the body instead. */}
+      <main className="mx-auto max-w-5xl px-4 pb-8 pt-8">
         <BackBar fallbackHref="/venues" />
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
@@ -451,6 +456,39 @@ function CartBar({
 }) {
   const { openCheckout } = useCheckoutModal();
   const [expanded, setExpanded] = useState(false);
+  const [offerCode, setOfferCode] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // The bar is fixed, and its height changes with the offers strip, the
+  // expanded cart and how far the chips wrap — which on a phone is most of a
+  // screen — so no padding class can reserve the right amount. The reserve
+  // also has to sit below the LAYOUT's footer, not below this page, or the
+  // footer is what ends up under the bar.
+  //
+  // It has to be a real element, too: `body` is `min-h-full`, so its own box
+  // is one viewport tall and the page overflows it — and neither padding on
+  // an overflowed flex container nor a margin on its last child counts toward
+  // scrollable overflow. A sibling with a height does.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const spacer = document.createElement('div');
+    spacer.setAttribute('aria-hidden', 'true');
+    // body is a flex column, and its items are already overflowing it, so an
+    // unguarded spacer is shrunk straight back to nothing.
+    spacer.style.flexShrink = '0';
+    document.body.appendChild(spacer);
+    const apply = () => {
+      spacer.style.height = `${el.offsetHeight}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      spacer.remove();
+    };
+  }, []);
 
   // Stable order: by court name, then start time.
   const items = [...cart.values()].sort(
@@ -459,22 +497,37 @@ function CartBar({
   const total = items.reduce((sum, i) => sum + i.pricePaise, 0);
   const courts = new Set(items.map((i) => i.arenaId)).size;
   const n = items.length;
+  const slotIds = items.map((i) => i.id);
+
+  // A venue has no single price to test a coupon's minimum order against, so
+  // the offers are listed for the cart itself — there is nothing to list until
+  // a slot is in it.
+  const offersQ = usePublicCoupons(slotIds.length > 0 ? { itemType: 'slot', slotIds } : null);
+  const offers = offersQ.data?.rows ?? [];
+
+  // Derived, never stored: dropping a slot can put the cart under a code's
+  // minimum, and a selection kept past that would reach checkout only to be
+  // refused there.
+  const appliedCode = offers.some((o) => o.code === offerCode) ? offerCode : null;
 
   function book() {
     openCheckout(
       {
         kind: 'slot',
-        slotIds: items.map((i) => i.id),
+        slotIds,
         title: `${venueName} · ${n} slot${n > 1 ? 's' : ''}${courts > 1 ? ` · ${courts} courts` : ''}`,
         currency,
       },
-      {},
+      appliedCode ? { couponCode: appliedCode } : {},
       { onSuccess: onClear },
     );
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t-[2px] border-ink bg-white shadow-offset-sm [padding-bottom:env(safe-area-inset-bottom)]">
+    <div
+      ref={barRef}
+      className="fixed inset-x-0 bottom-0 z-40 border-t-[2px] border-ink bg-white shadow-offset-sm [padding-bottom:env(safe-area-inset-bottom)]"
+    >
       <div className="mx-auto max-w-5xl px-4">
         {expanded && (
           <div className="max-h-64 overflow-y-auto border-b-[1.5px] border-dashed border-ink/20 py-3">
@@ -510,6 +563,14 @@ function CartBar({
             </ul>
           </div>
         )}
+        <OffersStrip
+          offers={offers}
+          currency={currency}
+          selected={appliedCode}
+          onSelect={setOfferCode}
+          heading="Offers on this booking"
+          variant="bare"
+        />
         <div className="flex items-center justify-between gap-3 py-3">
           <button
             type="button"
