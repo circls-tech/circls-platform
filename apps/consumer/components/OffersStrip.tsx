@@ -37,7 +37,15 @@ export function OffersStrip({
   const body = (
     <>
       <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">{heading}</p>
-      <div className="mt-2 flex flex-wrap gap-2">
+      {/* In the bar the chips are capped and scroll, like the cart list
+          beside them: a tenant running six public codes would otherwise wrap
+          them over six rows and take most of a phone screen. */}
+      <div
+        className={[
+          'mt-2 flex flex-wrap gap-2',
+          variant === 'bare' ? 'max-h-28 overflow-y-auto' : '',
+        ].join(' ')}
+      >
         {offers.map((o) => {
           const isSelected = o.code === selected;
           return (

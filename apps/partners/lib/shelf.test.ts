@@ -10,6 +10,9 @@ describe('isVenueOnShelf', () => {
   it('drops the ones a customer cannot reach', () => {
     expect(isVenueOnShelf({ status: 'rejected' })).toBe(false);
     expect(isVenueOnShelf({ status: 'suspended' })).toBe(false);
+    // Not reachable from the venue enum today, but the type admits it, and a
+    // status nobody has classified must not default to visible.
+    expect(isVenueOnShelf({ status: 'inactive' })).toBe(false);
   });
 });
 
@@ -39,5 +42,7 @@ describe('isMembershipOnShelf', () => {
   it('drops a deactivated or rejected plan', () => {
     expect(isMembershipOnShelf({ status: 'inactive' })).toBe(false);
     expect(isMembershipOnShelf({ status: 'rejected' })).toBe(false);
+    // As above: the membership enum has no suspended row yet, the type does.
+    expect(isMembershipOnShelf({ status: 'suspended' })).toBe(false);
   });
 });

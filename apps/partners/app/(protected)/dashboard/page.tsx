@@ -398,6 +398,8 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
             ＋ Add venue
           </Link>
         )}
+        {/* On-shelf here is right: /venues opens on its Active tab, which
+            splits on this same rule, so the number holds on arrival. */}
         {onShelf.length > shown.length && (
           <MoreLink href="/venues" count={onShelf.length} noun="venues" />
         )}
@@ -502,8 +504,12 @@ function EventsSection({ tenantId }: { tenantId: string }) {
             ＋ New event
           </Link>
         )}
-        {onShelf.length > shown.length && (
-          <MoreLink href="/events" count={onShelf.length} noun="events" />
+        {/* Counted over every event, not the on-shelf ones: /events opens on
+            its "active" shelf, which still lists the cancelled and rejected
+            rows this section hides. A count of the filtered set would change
+            the moment the partner arrived. */}
+        {(events?.length ?? 0) > shown.length && (
+          <MoreLink href="/events" count={events?.length ?? 0} noun="events" />
         )}
       </div>
     </div>
@@ -570,8 +576,9 @@ function MembershipsSection({ tenantId }: { tenantId: string }) {
             ＋ New plan
           </Link>
         )}
-        {onShelf.length > shown.length && (
-          <MoreLink href="/memberships" count={onShelf.length} noun="plans" />
+        {/* As with events: /memberships lists every plan, unfiltered. */}
+        {(plans?.length ?? 0) > shown.length && (
+          <MoreLink href="/memberships" count={plans?.length ?? 0} noun="plans" />
         )}
       </div>
     </div>

@@ -32,11 +32,19 @@ const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().m
  * A venue cart's slot ids on the offers-listing query string: either a
  * comma-separated `slotIds=a,b` or repeated `slotIds=a&slotIds=b` (Fastify
  * hands the latter over as an array).
+ *
+ * Capped because this route, unlike the quote below, takes no auth: each id
+ * widens two `in (…)` scans, and an uncapped array is a free fan-out for
+ * anyone. The cap is far above any real cart, and the quote/booking path is
+ * deliberately left uncapped — a cart past this size simply gets no offers
+ * listed rather than being unable to book.
  */
+const MAX_LISTED_CART_SLOTS = 50;
+
 const slotIdsQuery = z
   .union([z.string(), z.array(z.string())])
   .transform((v) => (Array.isArray(v) ? v : v.split(',')).map((s) => s.trim()).filter(Boolean))
-  .pipe(z.array(z.string().uuid()).min(1));
+  .pipe(z.array(z.string().uuid()).min(1).max(MAX_LISTED_CART_SLOTS));
 
 /** The money fields a quote response exposes to consumers. */
 interface QuoteMoneyFields {
