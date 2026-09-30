@@ -11,6 +11,8 @@ Every member has one of four roles:
 | **Staff** | Day-to-day operations — create and cancel bookings (cancelling one paid online refunds the customer in full), run the event door and membership desks (add registrations and members; renew, cancel or refund members), check customers in, view analytics, and reply to and manage customer questions. Can view venues, arenas, schedules, pricing, events and membership plans, but cannot change them — including slot prices and blocking slots on the reception grid. No team management, no API keys or webhooks, and no access to financial reports. |
 | **Read-only** | View-only access to everything except API keys and webhooks (venues, bookings, events, memberships, analytics, financial reports, customer questions). Cannot create, change or delete anything — including replying to questions, or taking, cancelling and refunding bookings. The one exception: they can check customers in at the door, so a door volunteer only needs this role. |
 
+"Financial reports" above means the [Earnings](/help/earnings) page, which shows what circls will pay you. Owners, Managers and Read-only members see it in the sidebar; Staff do not.
+
 Choose the least-privileged role that lets someone do their job — you can always upgrade them later. These descriptions are also shown on the **Settings → Team** page itself, and next to the role picker when you send an invite.
 
 ## Inviting a colleague

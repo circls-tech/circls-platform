@@ -65,6 +65,15 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 12,
   },
   {
+    slug: 'earnings',
+    title: 'Earnings: what circls will pay you',
+    category: 'Bookings',
+    summary:
+      'Net payout for any period you choose — across events, memberships and venues, and for each one individually. Every figure is what reaches you after commission, gateway charges and refunds, not what your customers were charged.',
+    quickLink: true,
+    order: 16,
+  },
+  {
     slug: 'activity',
     title: 'The Activity page: your organisation’s live feed',
     category: 'Bookings',

@@ -24,6 +24,7 @@ import type {
   SupportIssue,
   TeamMember,
   Tenant,
+  TenantEarnings,
   TenantInvitation,
   TenantProfile,
   TenantRole,
@@ -770,6 +771,28 @@ export function useAnalytics(tenantId: string) {
     queryKey: ['analytics', tenantId],
     queryFn: () => apiFetch<Analytics>(`/v1/tenants/${tenantId}/analytics`),
     enabled: Boolean(tenantId),
+  });
+}
+
+// ── Earnings hooks ────────────────────────────────────────────────────────────
+
+/**
+ * Net payable for [from, to). `enabled` lets the page hold the request back
+ * until it knows the organisation and that the member may see financials —
+ * a Staff member would only get a 403.
+ */
+export function useEarnings(
+  tenantId: string | null,
+  range: { from: string; to: string },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['earnings', tenantId, range.from, range.to],
+    queryFn: () =>
+      apiFetch<TenantEarnings>(
+        `/v1/tenants/${tenantId}/earnings?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
+      ),
+    enabled: Boolean(tenantId) && enabled,
   });
 }
 

@@ -364,6 +364,52 @@ export interface Analytics {
   trend7d: AnalyticsTrendSeries[];
 }
 
+// ── Earnings ──────────────────────────────────────────────────────────────────
+// Net payable for a chosen window. Mirrors apps/api/src/services/earnings_service.ts,
+// which returns net ONLY — there is deliberately no gross, commission or fee
+// field to render, so the portal cannot show a partner a figure that isn't
+// theirs to keep.
+
+/** What was sold. 'venue' covers court/arena slot bookings. */
+export type EarningsStream = 'event' | 'membership' | 'venue';
+
+/** A net total in one currency. Currencies are never summed together. */
+export interface EarningsTotal {
+  currency: string;
+  /** Net payable, in minor units. Negative when refunds outran sales. */
+  netPaise: number;
+  bookings: number;
+}
+
+export interface EarningsStreamTotal extends EarningsTotal {
+  stream: EarningsStream;
+}
+
+/** Net for one individual event, membership plan, or venue. */
+export interface EarningsItem extends EarningsStreamTotal {
+  /** Null when the booking carried nothing to attribute the money to. */
+  id: string | null;
+  name: string | null;
+  venueName: string | null;
+}
+
+/** Cash taken at the partner's own desk. Never part of a Circls payout. */
+export interface DeskTakings {
+  currency: string;
+  amountMinor: number;
+  bookings: number;
+}
+
+export interface TenantEarnings {
+  from: string;
+  to: string;
+  total: EarningsTotal[];
+  byStream: EarningsStreamTotal[];
+  items: EarningsItem[];
+  /** Not included in any total above. */
+  desk: DeskTakings[];
+}
+
 export interface AuditLogItem {
   id: string;
   action: string;
