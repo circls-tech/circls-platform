@@ -28,6 +28,16 @@ const itemSchema = z.union([
 ]);
 const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().min(1).max(64).optional() }));
 
+/**
+ * A venue cart's slot ids on the offers-listing query string: either a
+ * comma-separated `slotIds=a,b` or repeated `slotIds=a&slotIds=b` (Fastify
+ * hands the latter over as an array).
+ */
+const slotIdsQuery = z
+  .union([z.string(), z.array(z.string())])
+  .transform((v) => (Array.isArray(v) ? v : v.split(',')).map((s) => s.trim()).filter(Boolean))
+  .pipe(z.array(z.string().uuid()).min(1));
+
 /** The money fields a quote response exposes to consumers. */
 interface QuoteMoneyFields {
   basePaise: number;
@@ -119,13 +129,16 @@ export const checkoutRoutes: FastifyPluginAsync = async (app) => {
       .union([
         z.object({ itemType: z.literal('event'), itemId: z.string().uuid() }),
         z.object({ itemType: z.literal('membership'), itemId: z.string().uuid() }),
+        z.object({ itemType: z.literal('slot'), slotIds: slotIdsQuery }),
       ])
       .safeParse(req.query);
     if (!q.success) throw new BadRequest('Invalid query', 'bad_request', { issues: q.error.issues });
     const priced =
       q.data.itemType === 'event'
         ? await priceItem({ itemType: 'event', eventId: q.data.itemId })
-        : await priceItem({ itemType: 'membership', membershipId: q.data.itemId });
+        : q.data.itemType === 'membership'
+          ? await priceItem({ itemType: 'membership', membershipId: q.data.itemId })
+          : await priceItem({ itemType: 'slot', slotIds: q.data.slotIds });
     const rows = await listPublicCouponsForItem(priced, new Date());
     return {
       rows: rows.map((c) => ({

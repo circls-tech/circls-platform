@@ -44,11 +44,24 @@ export function useCheckoutQuote() {
   });
 }
 
-export function usePublicCoupons(item: { itemType: 'event' | 'membership'; itemId: string } | null) {
+/** The thing being bought, for the offers list. A venue cart is its slot ids —
+ *  the base price (min-order tests) and the venue/arena scope come from them. */
+export type PublicCouponItem =
+  | { itemType: 'event'; itemId: string }
+  | { itemType: 'membership'; itemId: string }
+  | { itemType: 'slot'; slotIds: string[] };
+
+function publicCouponsQuery(item: PublicCouponItem): string {
+  const p = new URLSearchParams({ itemType: item.itemType });
+  if (item.itemType === 'slot') p.set('slotIds', item.slotIds.join(','));
+  else p.set('itemId', item.itemId);
+  return p.toString();
+}
+
+export function usePublicCoupons(item: PublicCouponItem | null) {
   return useQuery({
-    queryKey: ['public-coupons', item?.itemType, item?.itemId],
+    queryKey: ['public-coupons', item ? publicCouponsQuery(item) : null],
     enabled: Boolean(item),
-    queryFn: () =>
-      apiFetch<{ rows: PublicCoupon[] }>(`/v1/consumer/coupons?itemType=${item!.itemType}&itemId=${item!.itemId}`),
+    queryFn: () => apiFetch<{ rows: PublicCoupon[] }>(`/v1/consumer/coupons?${publicCouponsQuery(item!)}`),
   });
 }
