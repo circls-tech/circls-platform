@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
 
 export type QuoteItem =
@@ -63,5 +63,11 @@ export function usePublicCoupons(item: PublicCouponItem | null) {
     queryKey: ['public-coupons', item ? publicCouponsQuery(item) : null],
     enabled: Boolean(item),
     queryFn: () => apiFetch<{ rows: PublicCoupon[] }>(`/v1/consumer/coupons?${publicCouponsQuery(item!)}`),
+    // A venue cart's ids are in the key, so every slot added or removed is a
+    // NEW key — which would otherwise empty `rows` until the refetch lands,
+    // taking the customer's chosen code with it. Hold the last list instead:
+    // if the new cart no longer qualifies, the quote says so at checkout
+    // rather than the code vanishing silently.
+    placeholderData: keepPreviousData,
   });
 }

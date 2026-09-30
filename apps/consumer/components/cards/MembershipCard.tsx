@@ -47,7 +47,7 @@ export function MembershipCard({
           starting at a different height from one beside it, and — since the
           grid stretches both — trailing a block of empty lavender. */}
       <SportImage
-        input={{ imageUrl: membership.artworkUrl ?? null }}
+        input={{ imageUrl: membership.artworkUrl ?? null, tags: membership.venueTags }}
         alt={membership.name}
         className="h-28 w-full border-b-[2px] border-ink"
       />

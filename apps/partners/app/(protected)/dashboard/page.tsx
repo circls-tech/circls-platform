@@ -319,7 +319,7 @@ function SectionSpinner({ what }: { what: string }) {
  * want it: one who has just created a venue and whose arenas await review.
  */
 function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
-  const { data: arenas } = useArenas(venue.id);
+  const { data: arenas, isLoading: arenasLoading } = useArenas(venue.id);
   const desks = arenas ?? [];
   const deskHref =
     desks.length === 1
@@ -343,10 +343,14 @@ function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
       {/* min-h holds the row at the button's height, so the meta line sits at
           the same place on every card whether or not it has one. */}
       <div className="flex min-h-8 items-center justify-between gap-2">
+        {/* Nothing is claimed until the arenas are in: an empty list while
+            they load is not the same as a venue with no courts. */}
         <p className="text-xs text-slate-400">
-          {desks.length > 0
-            ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'}`
-            : 'No arenas yet'}
+          {arenasLoading
+            ? '\u00a0'
+            : desks.length > 0
+              ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'}`
+              : 'No arenas yet'}
         </p>
         {desks.length > 0 && <ReceptionButton href={deskHref} />}
       </div>
