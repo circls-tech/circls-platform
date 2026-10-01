@@ -11,6 +11,8 @@ This guide covers viewing bookings, exporting them, and handling cancellations, 
 
 The table shows the customer, contact, arena, date/time, number of slots, total and status. Totals are in the **venue's currency** (₹ for venues in India, $ for venues in the USA — set by the venue's Country). Click any row to open the **booking detail**.
 
+**The total is what the customer paid, not what you are paid.** It includes the gateway's processing charge and any circls fee. Don't add this column up to work out your takings — [Earnings](/help/earnings) does that properly, net of commission and charges, for any period and across all your venues at once.
+
 A customer can book slots across several of your courts in one go (a single booking that spans multiple courts). These appear with **Multiple courts** in the arena column, count toward each court when you filter by **Arena**, and list every slot's court in the booking detail.
 
 ## Booking statuses

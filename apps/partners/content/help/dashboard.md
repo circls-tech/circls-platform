@@ -21,6 +21,8 @@ A registration you gave away free adds nothing here, but it still counts under *
 
 If you sell in more than one currency, each gets its own figure rather than being added together.
 
+**This is the full amount your customers paid, not your payout.** circls' commission and the gateway's charges have not come out of it. For what will actually be transferred to you, see [Earnings](/help/earnings), which reports net figures for any period you choose.
+
 ## Bookings today
 
 **Everything booked today** — courts, events and memberships — whether paid online, taken at the desk, or free. A cancelled booking is not counted, and neither is a checkout still in progress.
@@ -49,5 +51,11 @@ The Activity feed lists every booking as it was made, with the amount you charge
 
 - **A booking whose payment did not go through** appears in the feed with its amount, because the customer tried to book. It adds nothing to revenue, because no money arrived.
 - **A refund** lowers revenue on the day you made it, while the original booking stays in the feed on the day it was made, showing what was originally charged.
+
+## How this compares with Earnings
+
+Revenue answers "how much trade did I do?" — the money that moved, at full value. [Earnings](/help/earnings) answers "how much is coming to me?" — the same sales net of commission, gateway charges and refunds, and without desk takings, which are already in your hands.
+
+Earnings will therefore always read lower than Revenue for the same period. Both are correct; they are different questions.
 
 If a figure still looks wrong after allowing for those, tell us through **Questions** and include the day you are looking at.

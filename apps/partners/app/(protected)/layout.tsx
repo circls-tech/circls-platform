@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { useMe, useMyRole, useMyTenants } from '@/lib/api/queries';
 import { useQuestionsSummary } from '@/lib/api/questions';
 import { OrgProvider, useOrg } from '@/lib/org_context';
+import { useCan } from '@/lib/use_can';
 import { ContextBar } from '@/components/ContextBar';
 import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
 import { SuspendedBanner } from '@/components/SuspendedBanner';
@@ -17,9 +18,12 @@ import { BrandMark } from '@/lib/ui';
 const ORG_SELECTED_KEY = 'circls.orgSelected';
 
 // Each entry carries its own petal pastel for the active highlight + an icon.
+// `cap`, where present, hides the link from members who don't hold it — the
+// page itself refuses them anyway, so offering it would only be a dead end.
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard', petal: '#FFB0A3', icon: 'dashboard' },
   { href: '/activity', label: 'Activity', petal: '#FCE38A', icon: 'activity' },
+  { href: '/earnings', label: 'Earnings', petal: '#BCE3A0', icon: 'earnings', cap: 'financials.read' },
   { href: '/venues', label: 'Venues', petal: '#BCE3A0', icon: 'venues' },
   { href: '/events', label: 'Events', petal: '#9CE0D4', icon: 'events' },
   { href: '/memberships', label: 'Memberships', petal: '#F9B4D4', icon: 'memberships' },
@@ -62,6 +66,15 @@ function NavIcon({ name }: { name: NavIconName }) {
       return (
         <svg {...common}>
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      );
+    // A banknote: this is money owed, not a chart.
+    case 'earnings':
+      return (
+        <svg {...common}>
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <circle cx="12" cy="12" r="2.5" />
+          <path d="M6 12h.01M18 12h.01" />
         </svg>
       );
     case 'venues':
@@ -231,6 +244,13 @@ function Sidebar({
   open: boolean;
   onClose: () => void;
 }) {
+  // Gates for the `cap` entries in NAV_LINKS. Resolved here, one hook call per
+  // capability, because a hook can't be called inside the map below. False
+  // until the member's role loads, so a link appears once it's known rather
+  // than flashing and vanishing.
+  const caps: Record<'financials.read', boolean> = {
+    'financials.read': useCan('financials.read'),
+  };
   return (
     <>
       {/* Mobile backdrop */}
@@ -256,7 +276,7 @@ function Sidebar({
 
         {/* Nav */}
         <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-2">
-          {NAV_LINKS.map(({ href, label, petal, icon }) => {
+          {NAV_LINKS.filter((link) => !('cap' in link) || caps[link.cap]).map(({ href, label, petal, icon }) => {
             const isActive = pathname === href || pathname.startsWith(href + '/');
             return (
               <Link

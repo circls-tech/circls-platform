@@ -59,6 +59,7 @@ import { adminPaymentSettingsRoutes } from './routes/admin_payment_settings.js';
 // QR ticket door check-in (validate/consume scanned codes).
 import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
+import { earningsRoutes } from './routes/earnings.js';
 import { questionRoutes } from './routes/questions.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -310,6 +311,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(qrTicketRoutes);
   // Partner portal Activity page: unified tenant activity feed + calendar counts.
   await app.register(activityRoutes);
+  // Partner portal Earnings page: net payable per window (financials.read).
+  await app.register(earningsRoutes);
   // Questions threads on events / arenas / memberships (consumer + org + admin).
   await app.register(questionRoutes);
 

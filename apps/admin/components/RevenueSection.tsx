@@ -16,6 +16,13 @@ import type { RevenueSlice } from '@/lib/api/types';
  * confused for each other: **gross** is what customers paid, **net** is what
  * partners are owed once commission comes out. The gap between them is
  * Circls' own revenue, so it is named rather than left to subtraction.
+ *
+ * They also count different payments, which is why the gap is not always the
+ * commission on everything above it. Gross counts every payment the customer
+ * made; net counts only what will actually settle to the partner. A payment
+ * that succeeded after its booking was cancelled shows up in gross (taken and
+ * given back, netting to nothing) but is absent from net entirely — Circls
+ * keeps no commission on a sale that never happened. See revenue_service.
  */
 
 /** The windows an admin actually asks for, plus a way to pick any other. */
