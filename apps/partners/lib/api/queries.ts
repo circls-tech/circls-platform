@@ -783,16 +783,18 @@ export function useAnalytics(tenantId: string) {
  */
 export function useEarnings(
   tenantId: string | null,
-  range: { from: string; to: string },
+  range: { from: string; to: string } | null,
   enabled = true,
 ) {
   return useQuery({
-    queryKey: ['earnings', tenantId, range.from, range.to],
+    queryKey: ['earnings', tenantId, range?.from, range?.to],
     queryFn: () =>
       apiFetch<TenantEarnings>(
-        `/v1/tenants/${tenantId}/earnings?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
+        `/v1/tenants/${tenantId}/earnings?from=${encodeURIComponent(range!.from)}&to=${encodeURIComponent(range!.to)}`,
       ),
-    enabled: Boolean(tenantId) && enabled,
+    // `range` is null while the period is incomplete — a cleared date field —
+    // so the query is disabled and queryFn never runs.
+    enabled: Boolean(tenantId) && range !== null && enabled,
   });
 }
 

@@ -104,6 +104,35 @@ export function listTimezones(): string[] {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** 'YYYY-MM-DD', with a real month and day — not just the right shape. */
+const YMD = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/**
+ * Whether `value` is a calendar date these helpers accept.
+ *
+ * Callers that take a date from a user — an `<input type="date">` can be
+ * cleared to `''` — must check this before passing it on, and decide for
+ * themselves what an empty field means. The helpers below cannot decide that:
+ * substituting today would silently show figures for a period nobody asked
+ * for, which on a money page is worse than refusing.
+ */
+export function isCalendarDate(value: string | null | undefined): value is string {
+  return typeof value === 'string' && YMD.test(value);
+}
+
+/**
+ * Guard the helpers' precondition with a message that names the culprit.
+ *
+ * Without this, a malformed date fails as `RangeError: Invalid time value`
+ * raised inside `Intl.DateTimeFormat.formatToParts`, four frames down from the
+ * call that actually went wrong and with no mention of the offending value.
+ */
+function assertCalendarDate(ymd: string, fn: string): void {
+  if (!isCalendarDate(ymd)) {
+    throw new RangeError(`${fn}: expected a YYYY-MM-DD calendar date, got ${JSON.stringify(ymd)}`);
+  }
+}
+
 /** The calendar date a instant falls on in `tz`, as 'YYYY-MM-DD'. */
 export function calendarDateInTz(date: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -122,6 +151,7 @@ export function calendarDateInTz(date: Date, tz: string): string {
  * calendar days ago whatever the clocks did in between.
  */
 export function addCalendarDays(ymd: string, days: number): string {
+  assertCalendarDate(ymd, 'addCalendarDays');
   const [y, m, d] = ymd.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d) + days * DAY_MS).toISOString().slice(0, 10);
 }
@@ -165,6 +195,7 @@ function tzOffsetMsAt(utcMs: number, tz: string): number {
  * US venue's "today" resolved to yesterday.
  */
 function startOfCalendarDateInTz(ymd: string, tz: string): number {
+  assertCalendarDate(ymd, 'boundsOfCalendarDateInTz');
   const [y, m, d] = ymd.split('-').map(Number) as [number, number, number];
   const wallAsUtc = Date.UTC(y, m - 1, d);
   const firstPass = wallAsUtc - tzOffsetMsAt(wallAsUtc, tz);

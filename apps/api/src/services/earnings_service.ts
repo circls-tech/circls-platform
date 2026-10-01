@@ -51,6 +51,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { logger } from '../lib/logger.js';
 import { moneyRows } from './revenue_service.js';
 
 /** A net total in one currency. Currencies are never summed together. */
@@ -166,11 +167,21 @@ export async function getTenantEarnings(
 
   const items: EarningsItem[] = [];
   for (const r of raw as unknown as Record<string, unknown>[]) {
-    const stream = STREAM_OF[r['item_type'] as string];
-    // A booking item type this build doesn't know about yet: skipping it would
-    // hide money, so it can't be silently dropped — but nor can it be filed
-    // under a stream that doesn't exist. Nothing else creates one today.
-    if (!stream) continue;
+    const itemType = r['item_type'] as string;
+    const stream = STREAM_OF[itemType];
+    // A booking item type this build doesn't know about — a fourth value added
+    // to the item_type enum without this map being extended. It can't be filed
+    // under a stream that doesn't exist, but dropping it quietly would take its
+    // money out of the partner's headline total with nothing to show for it.
+    // So it is dropped loudly: the figure is still understated until someone
+    // extends STREAM_OF, and the log is what tells them to.
+    if (!stream) {
+      logger.error(
+        { tenantId, itemType, netPaise: Number(r['net'] ?? 0), currency: r['currency'] },
+        'earnings_unknown_item_type_excluded',
+      );
+      continue;
+    }
     items.push({
       stream,
       id: (r['item_id'] as string | null) ?? null,

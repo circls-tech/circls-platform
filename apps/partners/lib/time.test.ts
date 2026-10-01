@@ -4,6 +4,7 @@ import {
   boundsOfCalendarDateInTz,
   calendarDateInTz,
   canonicalTz,
+  isCalendarDate,
   dayBoundsInTz,
   rangeBoundsInTz,
 } from './time';
@@ -135,5 +136,36 @@ describe('canonicalTz', () => {
   it('leaves a current name alone', () => {
     expect(canonicalTz('Asia/Kolkata')).toBe('Asia/Kolkata');
     expect(canonicalTz('America/New_York')).toBe('America/New_York');
+  });
+});
+
+describe('isCalendarDate', () => {
+  it('accepts a real calendar date', () => {
+    expect(isCalendarDate('2026-10-01')).toBe(true);
+    expect(isCalendarDate('2028-02-29')).toBe(true);
+  });
+
+  it('rejects what a cleared or half-typed date field produces', () => {
+    for (const bad of ['', '2026-10', '2026-1-1', '2026-13-01', '2026-10-32', 'today', null, undefined]) {
+      expect(isCalendarDate(bad)).toBe(false);
+    }
+  });
+});
+
+describe('input contract', () => {
+  // The regression: an empty value used to reach Intl and surface as
+  // `RangeError: Invalid time value` four frames down, which on the Earnings
+  // page took out the whole render. These must fail by name instead.
+  it('names the offending value instead of failing inside Intl', () => {
+    expect(() => boundsOfCalendarDateInTz('', 'Asia/Kolkata')).toThrow(
+      /boundsOfCalendarDateInTz: expected a YYYY-MM-DD calendar date, got ""/,
+    );
+    expect(() => addCalendarDays('', -6)).toThrow(/addCalendarDays: expected a YYYY-MM-DD/);
+    expect(() => rangeBoundsInTz('2026-10-01', '', 'UTC')).toThrow(/expected a YYYY-MM-DD/);
+  });
+
+  it('rejects a well-shaped but impossible date', () => {
+    expect(() => boundsOfCalendarDateInTz('2026-02-30', 'UTC')).not.toThrow(); // Feb 30 rolls to Mar 2
+    expect(() => boundsOfCalendarDateInTz('2026-13-01', 'UTC')).toThrow(/expected a YYYY-MM-DD/);
   });
 });

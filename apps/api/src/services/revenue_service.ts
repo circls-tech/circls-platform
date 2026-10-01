@@ -68,7 +68,17 @@ export interface RevenueSlice {
   commissionPaise: number;
   /** Refunded customer money in the window, as a positive number. */
   refundsPaise: number;
-  /** Distinct bookings that took money in the window. */
+  /**
+   * Distinct bookings that made a sale in the window — charges that will
+   * settle to the partner, the same set `net` is computed over.
+   *
+   * A payment that succeeded after its booking was already cancelled is not a
+   * sale: it is auto-refunded and never settles. Its money still shows in
+   * `gross` (taken and given back, netting to nothing) because the customer
+   * really was charged, but counting it here would report sales a tenant
+   * never made, and leave a positive count sitting beside a `net` of zero
+   * with nothing to explain the gap.
+   */
   bookings: number;
 }
 
@@ -156,7 +166,8 @@ export async function getPlatformRevenue(from: string, to: string): Promise<Reve
              - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
            coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
            coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id) filter (where kind = 'charge')        as bookings
+           count(distinct booking_id)
+             filter (where kind = 'charge' and payout_basis)                 as bookings
       from money
      group by item_type, currency
      order by item_type, currency
@@ -222,7 +233,8 @@ export async function getTenantItemRevenue(
              - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
            coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
            coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id) filter (where kind = 'charge')        as bookings
+           count(distinct booking_id)
+             filter (where kind = 'charge' and payout_basis)                 as bookings
       from money
      where item_type = ${wanted}
      group by 1, 2, 3

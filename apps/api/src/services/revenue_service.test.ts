@@ -294,6 +294,7 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
         refundsPaise: 50000, // and it is still reported as a refund
         netPaise: 0,         // but nothing is owed, and nothing is withheld
         commissionPaise: 0,  // Circls took no cut of a sale that never was
+        bookings: 0,         // and it was never a sale to begin with
       });
     });
 

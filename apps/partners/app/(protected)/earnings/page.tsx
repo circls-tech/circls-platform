@@ -6,7 +6,13 @@ import type { EarningsItem, EarningsStream, TenantEarnings } from '@/lib/api/typ
 import { asCurrencyCode, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { useOrg } from '@/lib/org_context';
-import { addCalendarDays, calendarDateInTz, canonicalTz, rangeBoundsInTz } from '@/lib/time';
+import {
+  addCalendarDays,
+  calendarDateInTz,
+  canonicalTz,
+  isCalendarDate,
+  rangeBoundsInTz,
+} from '@/lib/time';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input } from '@/lib/ui';
 import { useCan } from '@/lib/use_can';
@@ -139,20 +145,26 @@ export default function EarningsPage() {
   const [tab, setTab] = useState<TabKey>('all');
 
   const dates = range === 'custom' ? { from: customFrom, to: customTo } : presetDates(range, today);
+  // A date input can be cleared, which leaves `''`. Both dates must be real
+  // before any of this is a period: rangeBoundsInTz rejects anything else, and
+  // it is computed during render, so an unguarded empty field takes the whole
+  // page down rather than just failing the fetch.
+  const complete = isCalendarDate(dates.from) && isCalendarDate(dates.to);
+
   // Not named `window` — that shadows the global in a client component.
   const bounds = useMemo(
-    () => rangeBoundsInTz(dates.from, dates.to, tz),
-    [dates.from, dates.to, tz],
+    () => (complete ? rangeBoundsInTz(dates.from, dates.to, tz) : null),
+    [complete, dates.from, dates.to, tz],
   );
 
   const { data, isLoading, isError, error } = useEarnings(
     activeTenantId ?? null,
     bounds,
-    canRead && Boolean(dates.from) && Boolean(dates.to),
+    canRead && bounds !== null,
   );
 
   function exportCsv() {
-    if (!data) return;
+    if (!data || !complete) return;
     const rows = data.items.map((i) => [
       STREAM_LABEL[i.stream],
       i.name ?? 'Unattributed',
@@ -270,8 +282,14 @@ export default function EarningsPage() {
           </div>
         )}
         <p className="mt-3 text-xs text-slate-500">
-          {dates.from === dates.to ? dates.from : `${dates.from} → ${dates.to}`} · days counted in{' '}
-          {canonicalTz(tz)}
+          {complete ? (
+            <>
+              {dates.from === dates.to ? dates.from : `${dates.from} → ${dates.to}`} · days counted
+              in {canonicalTz(tz)}
+            </>
+          ) : (
+            'Pick both a start and an end date.'
+          )}
         </p>
       </Card>
 

@@ -17,7 +17,7 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { dayBoundsInTz, rangeBoundsInTz } from '@/lib/time';
+import { dayBoundsInTz, isCalendarDate, rangeBoundsInTz } from '@/lib/time';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Timezone-aware helpers
@@ -71,7 +71,11 @@ function computeDateBounds(
     }
     case 'custom': {
       // customFrom/customTo are 'YYYY-MM-DD' calendar dates in the venue tz.
-      if (!customFrom || !customTo) return dayBoundsInTz('today', tz);
+      // A cleared date field leaves ''; rangeBoundsInTz rejects it, and this
+      // runs during render, so fall back rather than throw.
+      if (!isCalendarDate(customFrom) || !isCalendarDate(customTo)) {
+        return dayBoundsInTz('today', tz);
+      }
       return rangeBoundsInTz(customFrom, customTo, tz);
     }
   }
