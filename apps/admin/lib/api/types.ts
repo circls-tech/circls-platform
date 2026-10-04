@@ -71,6 +71,8 @@ export interface AdminTenantDetail {
     country: string | null;
     subscriptionStatus: string;
     status: AdminTenantListItem['status'];
+    /** Off everything consumers see (demo / test orgs). */
+    hiddenFromCatalog: boolean;
     // Billing knobs (basis points, 100 bps = 1%).
     commissionBps: number;
     consumerCommissionBps: number;

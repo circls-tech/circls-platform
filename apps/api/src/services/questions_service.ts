@@ -317,7 +317,7 @@ export async function resolveVisibleSubject(
         left join venues v on v.id = e.venue_id
        where e.id = ${subjectId}::uuid
          and e.status = 'published'
-         and tn.status = 'active'
+         and tn.status = 'active' and not tn.hidden_from_catalog
          and (e.venue_id is null or v.status = 'active')
        limit 1
     `);
@@ -334,7 +334,7 @@ export async function resolveVisibleSubject(
        where a.id = ${subjectId}::uuid
          and a.status = 'active'
          and v.status = 'active'
-         and tn.status = 'active'
+         and tn.status = 'active' and not tn.hidden_from_catalog
        limit 1
     `);
     const r = rowsOf(res)[0];
@@ -348,7 +348,7 @@ export async function resolveVisibleSubject(
       left join venues v on v.id = m.venue_id
      where m.id = ${subjectId}::uuid
        and m.status = 'active'
-       and tn.status = 'active'
+       and tn.status = 'active' and not tn.hidden_from_catalog
        and (m.venue_id is null or v.status = 'active')
      limit 1
   `);

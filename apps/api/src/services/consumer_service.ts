@@ -3,9 +3,10 @@
  * circls.app portal.
  *
  * Visibility rule (subproject B, decision 4): a listing is public iff it is in
- * its approved state AND the owning tenant is not suspended. Every read here
- * enforces that — the consumer portal must never surface a pending_review,
- * rejected, or suspended-tenant listing.
+ * its approved state AND the owning tenant is active and not hidden from the
+ * catalogue (`hidden_from_catalog`: App Review demo and test orgs). Every read
+ * here enforces that — the consumer portal must never surface a
+ * pending_review, rejected, suspended-tenant or hidden-tenant listing.
  *
  * Booking/purchase reuse the existing services (prepareOnlineBookingWithPayment,
  * bookEvent, purchaseMembership) but first re-check public visibility so a
@@ -138,6 +139,7 @@ export async function listPublicVenues(opts: { search?: string; limit?: number }
   const conds = [
     eq(venues.status, 'active'),
     eq(tenants.status, 'active'),
+    eq(tenants.hiddenFromCatalog, false),
     // Only surface venues a consumer can actually book at (§12.1).
     sql`exists (select 1 from ${arenas} a where a.venue_id = ${venues.id} and a.status = 'active')`,
   ];
@@ -166,7 +168,7 @@ export async function getPublicVenueWithImages(venueId: string): Promise<PublicV
     .select({ v: venues, brand: BRAND_COLUMNS })
     .from(venues)
     .innerJoin(tenants, eq(tenants.id, venues.tenantId))
-    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active')))
+    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active'), eq(tenants.hiddenFromCatalog, false)))
     .limit(1);
   if (!row) return null;
   const imagesByVenue = await imagesForVenues([row.v.id]);
@@ -179,7 +181,7 @@ export async function getPublicVenue(venueId: string): Promise<Venue | null> {
     .select({ v: venues })
     .from(venues)
     .innerJoin(tenants, eq(tenants.id, venues.tenantId))
-    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active')))
+    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active'), eq(tenants.hiddenFromCatalog, false)))
     .limit(1);
   return row?.v ?? null;
 }
@@ -481,6 +483,7 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
       and(
         eq(events.status, 'published'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
@@ -521,6 +524,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
         eq(events.id, id),
         eq(events.status, 'published'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
@@ -724,6 +728,7 @@ export async function listPublicMembershipsAcrossVenues(
   const conds: SQL[] = [
     eq(memberships.status, 'active'),
     eq(tenants.status, 'active'),
+    eq(tenants.hiddenFromCatalog, false),
     sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
   ];
   const rows = await db
@@ -753,6 +758,7 @@ export async function getPublicMembershipById(
         eq(memberships.id, id),
         eq(memberships.status, 'active'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
       ),
     )
@@ -881,11 +887,13 @@ export async function assertEventBookable(eventId: string): Promise<void> {
     await assertVenueVisible(ev.venueId);
   } else {
     const [t] = await db
-      .select({ status: tenants.status })
+      .select({ status: tenants.status, hidden: tenants.hiddenFromCatalog })
       .from(tenants)
       .where(eq(tenants.id, ev.tenantId))
       .limit(1);
-    if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
+    if (!t || t.status !== 'active' || t.hidden) {
+      throw new NotFound('Event not found', 'event_not_found');
+    }
   }
 }
 
@@ -897,8 +905,14 @@ export async function assertEventBookable(eventId: string): Promise<void> {
 export async function assertMembershipPurchasable(membershipId: string): Promise<void> {
   const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
   if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
-  const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
-  if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
+  const [t] = await db
+    .select({ status: tenants.status, hidden: tenants.hiddenFromCatalog })
+    .from(tenants)
+    .where(eq(tenants.id, m.tenantId))
+    .limit(1);
+  if (!t || t.status !== 'active' || t.hidden) {
+    throw new NotFound('Membership not found', 'membership_not_found');
+  }
   if (m.venueId != null) await assertVenueVisible(m.venueId);
 }
 
