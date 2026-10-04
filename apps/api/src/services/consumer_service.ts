@@ -18,7 +18,7 @@ import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
-import { memberships, type Membership } from '../db/schema/memberships.js';
+import { memberships, userMemberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
@@ -1429,9 +1429,17 @@ async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
       .from(bookings)
       .where(eq(bookings.tenantId, m.tenantId))
       .limit(1);
-    if (anyBooking) {
+    // Members added at the desk or on a free plan have no booking row, but
+    // they are customers of the org all the same.
+    const [anyMember] = await tx
+      .select({ id: userMemberships.id })
+      .from(userMemberships)
+      .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+      .where(eq(memberships.tenantId, m.tenantId))
+      .limit(1);
+    if (anyBooking || anyMember) {
       throw new Conflict(
-        'Your organisation has bookings on record. Email contact@gibbous.io and we will close it with you.',
+        'Your organisation has bookings or members on record. Email contact@gibbous.io and we will close it with you.',
         'last_owner_protected',
       );
     }

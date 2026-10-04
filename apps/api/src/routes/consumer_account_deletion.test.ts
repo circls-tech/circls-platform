@@ -53,6 +53,7 @@ const H = vi.hoisted(() => {
       coowner: { uid: `fbuid_coowner_ad_${RUN}`, email: `coowner_ad_${RUN}@x.com`, email_verified: true },
       staffer: { uid: `fbuid_staffer_ad_${RUN}`, email: `staffer_ad_${RUN}@x.com`, email_verified: true },
       fresh: { uid: `fbuid_fresh_ad_${RUN}`, email: `fresh_ad_${RUN}@x.com`, email_verified: true },
+      club: { uid: `fbuid_club_ad_${RUN}`, email: `club_ad_${RUN}@x.com`, email_verified: true },
     } as Record<string, Record<string, unknown>>,
     calls: [] as string[],
     deleted: new Set<string>(),
@@ -638,6 +639,32 @@ describe.skipIf(!runIntegration)('partner account deletion (DELETE /v1/me)', () 
       VALUES (${tenantId}::uuid, 'event', 'walkin', 'external', 'confirmed', 'Walk-in', 0, 0)
     `);
     const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('solo') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('last_owner_protected');
+    expect(fb.calls).toEqual([]);
+  });
+
+  it('refuses the only member of an org with club members but no bookings (hand-added at the desk)', async () => {
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('club'),
+      payload: { name: `AD Club ${RUN}`, slug: `ad-club-${RUN}`, country: 'India', acceptTerms: true },
+    });
+    expect(t.statusCode).toBe(200);
+    const clubTenant = (t.json() as { id: string }).id;
+    const plan = firstRow<{ id: string }>(
+      await db.execute<{ id: string }>(sql`
+        INSERT INTO memberships (tenant_id, name, duration_days)
+        VALUES (${clubTenant}::uuid, 'Monthly', 30) RETURNING id
+      `),
+    ).id;
+    await db.execute(sql`
+      INSERT INTO user_memberships (membership_id, starts_at, ends_at, external_name)
+      VALUES (${plan}::uuid, now(), now() + interval '30 days', 'Walk-in Member')
+    `);
+
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('club') });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('last_owner_protected');
     expect(fb.calls).toEqual([]);
