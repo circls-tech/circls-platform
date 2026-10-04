@@ -32,6 +32,7 @@ import { can, isSuspendedTenant } from '../lib/authz/can.js';
 import { ownBookingCondition } from './booking_ownership.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
+import { assertNotObjectionable } from '../lib/objectionable.js';
 import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
 import {
   applyAuthorStatusPatch,
@@ -436,6 +437,7 @@ export async function createThread(input: {
   body: string;
 }): Promise<QuestionThreadDetail> {
   const subject = await resolveVisibleSubject(input.subjectType, input.subjectId);
+  assertNotObjectionable(input.body);
   return insertThreadWithRoot(
     {
       tenantId: subject.tenantId,
@@ -1226,6 +1228,7 @@ export async function addConsumerMessage(input: {
     threadNotFound();
   }
   await assertMessageRateLimit(input.userId);
+  if (kind === 'consumer') assertNotObjectionable(input.body);
   return insertReply(t, input.userId, kind, input.body, { staff: false });
 }
 

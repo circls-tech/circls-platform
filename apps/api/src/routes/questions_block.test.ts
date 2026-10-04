@@ -168,4 +168,25 @@ describe.skipIf(!runIntegration)('question thread blocks', () => {
     const anon = await app.inject({ method: 'POST', url: `/v1/consumer/questions/${bobThread}/block` });
     expect(anon.statusCode).toBe(401);
   });
+
+  // Guideline 1.2's filter: objectionable text never gets posted.
+  it('refuses objectionable text in asks and replies', async () => {
+    const ask = await app.inject({
+      method: 'POST',
+      url: '/v1/consumer/questions',
+      headers: bearer('carol'),
+      payload: { subjectType: 'event', subjectId: eventId, visibility: 'public', body: 'what the fuck' },
+    });
+    expect(ask.statusCode).toBe(400);
+    expect((ask.json() as { error: { code: string } }).error.code).toBe('objectionable_content');
+
+    const reply = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${aliceThread}/messages`,
+      headers: bearer('carol'),
+      payload: { body: 'sh1t answer' },
+    });
+    expect(reply.statusCode).toBe(400);
+    expect((reply.json() as { error: { code: string } }).error.code).toBe('objectionable_content');
+  });
 });
