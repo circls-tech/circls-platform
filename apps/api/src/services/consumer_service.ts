@@ -18,7 +18,7 @@ import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
-import { memberships, type Membership } from '../db/schema/memberships.js';
+import { memberships, userMemberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
@@ -28,8 +28,10 @@ import { supportIssues } from '../db/schema/support_issues.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
+import { assertNotObjectionable } from '../lib/objectionable.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
+import { writeAudit } from '../lib/audit.js';
 import { ownBookingCondition } from './booking_ownership.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type {
@@ -1259,7 +1261,11 @@ export async function updateMyProfile(
   input: UpdateMyProfileInput,
 ): Promise<MyProfile> {
   const patch: Partial<typeof users.$inferInsert> = {};
-  if (input.displayName !== undefined) patch.displayName = input.displayName;
+  if (input.displayName !== undefined) {
+    // Shown as the author on public question threads (App Store 1.2).
+    assertNotObjectionable(input.displayName);
+    patch.displayName = input.displayName;
+  }
   if (input.email !== undefined) {
     // A self-reported email is contact info, not proof of ownership: mark it
     // unverified so it never acts as an identity key (adoptStaleIdentity).
@@ -1385,7 +1391,102 @@ const REDACTED = '[deleted account]';
  * way back. That is rejected with 409 `partner_account` rather than silently
  * performed — see the guard below.
  */
-export async function deleteMyAccount(firebaseUid: string): Promise<void> {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Partner half of `DELETE /v1/me`: drops every `tenant_members` row of the user.
+ *
+ * As the sole owner of an org (owner rows locked against a concurrent demotion):
+ *  - if they are its ONLY member and it has never taken a booking — a fresh
+ *    sign-up — the org is suspended in the same transaction, which takes it off
+ *    the consumer catalogue (every public query requires tenants.status =
+ *    'active'), and the account goes;
+ *  - otherwise 409 `last_owner_protected`: with teammates, promote one first;
+ *    with bookings on record, closing the org is a support job (financial
+ *    records and customers' upcoming bookings are involved).
+ */
+async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
+  const rows = await tx
+    .select({ tenantId: tenantMembers.tenantId, role: tenantMembers.role })
+    .from(tenantMembers)
+    .where(eq(tenantMembers.userId, userId));
+  const toClose: string[] = [];
+  for (const m of rows) {
+    if (m.role !== 'owner') continue;
+    const owners = await tx
+      .select({ id: tenantMembers.userId })
+      .from(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.role, 'owner')))
+      .for('update');
+    if (owners.length > 1) continue;
+    const [members] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(tenantMembers)
+      .where(eq(tenantMembers.tenantId, m.tenantId));
+    if ((members?.n ?? 0) > 1) {
+      throw new Conflict(
+        'You are the only owner of an organisation. Make another member an owner first.',
+        'last_owner_protected',
+      );
+    }
+    const [anyBooking] = await tx
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.tenantId, m.tenantId))
+      .limit(1);
+    // Members added at the desk or on a free plan have no booking row, but
+    // they are customers of the org all the same.
+    const [anyMember] = await tx
+      .select({ id: userMemberships.id })
+      .from(userMemberships)
+      .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+      .where(eq(memberships.tenantId, m.tenantId))
+      .limit(1);
+    if (anyBooking || anyMember) {
+      throw new Conflict(
+        'Your organisation has bookings or members on record. Email contact@gibbous.io and we will close it with you.',
+        'last_owner_protected',
+      );
+    }
+    toClose.push(m.tenantId);
+  }
+  for (const tenantId of toClose) {
+    await tx.update(tenants).set({ status: 'suspended' }).where(eq(tenants.id, tenantId));
+    await writeAudit(
+      tx,
+      { tenantId, actorUserId: userId },
+      'tenant.closed',
+      'tenant',
+      tenantId,
+      { status: 'active' },
+      { status: 'suspended', reason: 'sole_owner_account_deleted' },
+    );
+  }
+  for (const m of rows) {
+    await tx
+      .delete(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.userId, userId)));
+    await writeAudit(
+      tx,
+      { tenantId: m.tenantId, actorUserId: userId },
+      'tenant.member_removed',
+      'tenant_member',
+      userId,
+      { role: m.role },
+      { removedAt: new Date(), reason: 'account_deleted' },
+    );
+  }
+}
+
+/**
+ * `releasePartnerAccess` is set by `DELETE /v1/me` (the partners app): instead
+ * of refusing a partner with 409 `partner_account`, their memberships are
+ * dropped in the same transaction, unless they are an org's last owner.
+ */
+export async function deleteMyAccount(
+  firebaseUid: string,
+  opts: { releasePartnerAccess?: boolean } = {},
+): Promise<void> {
   // Live rows only: a tombstone keeps its firebase_uid, and finding one here
   // means the account is already deleted (a retry after a Firebase failure, or a
   // token that outlived the DB write). Skip straight to the Firebase teardown —
@@ -1403,7 +1504,7 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
       where: eq(tenantMembers.userId, row.id),
       columns: { tenantId: true },
     });
-    if (membership) {
+    if (membership && !opts.releasePartnerAccess) {
       throw new Conflict(
         'This account manages a partner organisation. Transfer or close your organisation first, or email contact@gibbous.io and we will help.',
         'partner_account',
@@ -1411,6 +1512,8 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
     }
 
     await db.transaction(async (tx) => {
+      if (membership) await releasePartnerAccess(tx, row.id);
+
       // Behavioural telemetry is pure personal data with no retention duty.
       await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
 
