@@ -26,6 +26,7 @@ import {
 import type { FlowAnswer } from '../db/schema/support_issues.js';
 import type { TenantRole } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
+import { userBlocks } from '../db/schema/user_blocks.js';
 import { users } from '../db/schema/users.js';
 import { can, isSuspendedTenant } from '../lib/authz/can.js';
 import { ownBookingCondition } from './booking_ownership.js';
@@ -676,6 +677,8 @@ export async function listPublicThreads(params: {
   subjectId: string;
   cursor?: string | undefined;
   limit?: number | undefined;
+  /** Signed-in viewer: threads by people they blocked are left out. */
+  viewerUserId?: string | null | undefined;
 }): Promise<QuestionThreadListPage> {
   const limit = clampLimit(params.limit);
   const cur = parseCursor(params.cursor);
@@ -704,6 +707,13 @@ export async function listPublicThreads(params: {
        and ${sql.raw(`t."${col}"`)} = ${params.subjectId}::uuid
        and t.archived_at is null
        and root.hidden_at is null
+       ${
+         params.viewerUserId
+           ? sql`and not exists (select 1 from user_blocks b
+                  where b.blocker_user_id = ${params.viewerUserId}::uuid
+                    and b.blocked_user_id = root.author_user_id)`
+           : sql``
+       }
        ${cur ? sql`and (t.last_message_at, t.id) < (${cur.ts}::timestamptz, ${cur.id}::uuid)` : sql``}
      order by t.last_message_at desc, t.id desc
      limit ${limit + 1}
@@ -994,6 +1004,7 @@ function serializeMessage(
 export async function getThreadDetailForViewer(
   threadId: string,
   viewer: ThreadViewer,
+  opts: { applyBlocks?: boolean } = {},
 ): Promise<QuestionThreadDetail> {
   const t = await loadThread(threadId);
   const isThreadAuthor = viewer.userId !== null && viewer.userId === t.authorUserId;
@@ -1005,6 +1016,9 @@ export async function getThreadDetailForViewer(
   // Root-hidden threads are delisted from the public feed; outsiders get a
   // 404 on the detail too (the author and staff-adjacent viewers still see it).
   if (extras.rootHidden && !isThreadAuthor && !privileged) threadNotFound();
+  // Someone the viewer blocked: their threads are gone, their replies too.
+  const blocked = opts.applyBlocks === false ? new Set<string>() : await blockedBy(viewer.userId);
+  if (blocked.has(t.authorUserId)) threadNotFound();
 
   const all = await loadMessages(threadId);
   const messages = all
@@ -1012,11 +1026,60 @@ export async function getThreadDetailForViewer(
       ({ m }) =>
         m.hiddenAt === null || privileged || (viewer.userId !== null && m.authorUserId === viewer.userId),
     )
+    .filter(({ m }) => !blocked.has(m.authorUserId))
     .map(({ m, displayName }) =>
       serializeMessage(m, displayName, extras.tenantName, { viewerUserId: viewer.userId }),
     );
 
   return { thread: serializeThread(t, extras, { viewerUserId: viewer.userId }), messages };
+}
+
+/** The users [userId] has blocked; empty for an anonymous viewer. */
+async function blockedBy(userId: string | null): Promise<Set<string>> {
+  if (userId === null) return new Set();
+  const rows = await db
+    .select({ id: userBlocks.blockedUserId })
+    .from(userBlocks)
+    .where(eq(userBlocks.blockerUserId, userId));
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * "Block this person" (App Store guideline 1.2): the author of [messageId]
+ * — or, without one, of the thread itself — stops being shown to the viewer.
+ * Only consumers can be blocked (an organiser or the Circls team answering is
+ * not what a block is for), never yourself, and only from a thread the viewer
+ * can see. Idempotent.
+ */
+export async function blockAuthor(input: {
+  threadId: string;
+  messageId?: string | undefined;
+  viewer: ThreadViewer & { userId: string };
+}): Promise<void> {
+  // The detail read's own visibility rules: 404 for what the viewer can't see
+  // (blocks aside, so blocking the same person twice is not a 404).
+  await getThreadDetailForViewer(input.threadId, input.viewer, { applyBlocks: false });
+  const [target] = await db
+    .select({ authorUserId: questionMessages.authorUserId, authorKind: questionMessages.authorKind })
+    .from(questionMessages)
+    .where(
+      input.messageId
+        ? and(eq(questionMessages.threadId, input.threadId), eq(questionMessages.id, input.messageId))
+        : eq(questionMessages.threadId, input.threadId),
+    )
+    .orderBy(asc(questionMessages.createdAt), asc(questionMessages.id))
+    .limit(1);
+  if (!target) throw new NotFound('Message not found', 'question_message_not_found');
+  if (target.authorKind !== 'consumer') {
+    throw new BadRequest('Organisers and the Circls team cannot be blocked', 'cannot_block_staff');
+  }
+  if (target.authorUserId === input.viewer.userId) {
+    throw new BadRequest('You cannot block yourself', 'cannot_block_self');
+  }
+  await db
+    .insert(userBlocks)
+    .values({ blockerUserId: input.viewer.userId, blockedUserId: target.authorUserId })
+    .onConflictDoNothing();
 }
 
 /** Partner/admin thread detail: hidden messages marked, never omitted. */

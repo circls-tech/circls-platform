@@ -22,6 +22,7 @@ import {
   createSupportThread,
   createThread,
   getThreadDetailForStaff,
+  blockAuthor,
   getThreadDetailForViewer,
   getThreadTenantId,
   listMyThreads,
@@ -156,6 +157,7 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       subjectId: q.subjectId,
       cursor: q.cursor,
       limit: q.limit,
+      viewerUserId: await maybeAuthedUserId(req),
     });
   });
 
@@ -230,6 +232,27 @@ export const questionRoutes: FastifyPluginAsync = async (app) => {
       const body = parseOrThrow(messageBody, req.body);
       const user = await currentUser(req);
       return addConsumerMessage({ threadId, userId: user.id, body: body.body });
+    },
+  );
+
+  // "Block this person" (App Store 1.2): the author of the thread — or of one
+  // of its messages — stops being shown to the caller. 204, idempotent.
+  app.post(
+    '/v1/consumer/questions/:threadId/block',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const { threadId } = parseOrThrow(
+        z.object({ threadId: z.string().uuid() }),
+        req.params,
+      );
+      const body = parseOrThrow(
+        z.object({ messageId: z.string().uuid().optional() }),
+        req.body ?? {},
+      );
+      const user = await currentUser(req);
+      const rel = await resolveViewerRelation(user.id, await getThreadTenantId(threadId));
+      await blockAuthor({ threadId, messageId: body.messageId, viewer: { userId: user.id, ...rel } });
+      return reply.status(204).send();
     },
   );
 
