@@ -1389,16 +1389,23 @@ const REDACTED = '[deleted account]';
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Partner half of `DELETE /v1/me`: drops every `tenant_members` row of the user,
- * refusing with 409 `last_owner_protected` if they are the sole owner of any org
- * (deleting them would strand it — the same invariant team_service enforces).
- * Owner rows are locked so a concurrent demotion can't race the count.
+ * Partner half of `DELETE /v1/me`: drops every `tenant_members` row of the user.
+ *
+ * As the sole owner of an org (owner rows locked against a concurrent demotion):
+ *  - if they are its ONLY member and it has never taken a booking — a fresh
+ *    sign-up — the org is suspended in the same transaction, which takes it off
+ *    the consumer catalogue (every public query requires tenants.status =
+ *    'active'), and the account goes;
+ *  - otherwise 409 `last_owner_protected`: with teammates, promote one first;
+ *    with bookings on record, closing the org is a support job (financial
+ *    records and customers' upcoming bookings are involved).
  */
 async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
   const rows = await tx
     .select({ tenantId: tenantMembers.tenantId, role: tenantMembers.role })
     .from(tenantMembers)
     .where(eq(tenantMembers.userId, userId));
+  const toClose: string[] = [];
   for (const m of rows) {
     if (m.role !== 'owner') continue;
     const owners = await tx
@@ -1406,12 +1413,41 @@ async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
       .from(tenantMembers)
       .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.role, 'owner')))
       .for('update');
-    if (owners.length <= 1) {
+    if (owners.length > 1) continue;
+    const [members] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(tenantMembers)
+      .where(eq(tenantMembers.tenantId, m.tenantId));
+    if ((members?.n ?? 0) > 1) {
       throw new Conflict(
-        'You are the only owner of an organisation. Make another member an owner first, or email contact@gibbous.io to close it.',
+        'You are the only owner of an organisation. Make another member an owner first.',
         'last_owner_protected',
       );
     }
+    const [anyBooking] = await tx
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.tenantId, m.tenantId))
+      .limit(1);
+    if (anyBooking) {
+      throw new Conflict(
+        'Your organisation has bookings on record. Email contact@gibbous.io and we will close it with you.',
+        'last_owner_protected',
+      );
+    }
+    toClose.push(m.tenantId);
+  }
+  for (const tenantId of toClose) {
+    await tx.update(tenants).set({ status: 'suspended' }).where(eq(tenants.id, tenantId));
+    await writeAudit(
+      tx,
+      { tenantId, actorUserId: userId },
+      'tenant.closed',
+      'tenant',
+      tenantId,
+      { status: 'active' },
+      { status: 'suspended', reason: 'sole_owner_account_deleted' },
+    );
   }
   for (const m of rows) {
     await tx

@@ -52,6 +52,7 @@ const H = vi.hoisted(() => {
       solo: { uid: `fbuid_solo_ad_${RUN}`, email: `solo_ad_${RUN}@x.com`, email_verified: true },
       coowner: { uid: `fbuid_coowner_ad_${RUN}`, email: `coowner_ad_${RUN}@x.com`, email_verified: true },
       staffer: { uid: `fbuid_staffer_ad_${RUN}`, email: `staffer_ad_${RUN}@x.com`, email_verified: true },
+      fresh: { uid: `fbuid_fresh_ad_${RUN}`, email: `fresh_ad_${RUN}@x.com`, email_verified: true },
     } as Record<string, Record<string, unknown>>,
     calls: [] as string[],
     deleted: new Set<string>(),
@@ -587,19 +588,20 @@ describe.skipIf(!runIntegration)('partner account deletion (DELETE /v1/me)', () 
     fb.failNext = false;
   });
 
-  it("refuses an org's sole owner with 409 last_owner_protected and touches nothing", async () => {
+  it("refuses an org's sole owner who has teammates, and touches nothing", async () => {
+    const staffId = await userId('staffer');
+    await db.execute(
+      sql`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES (${staffId}::uuid, ${tenantId}::uuid, 'staff')`,
+    );
     const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('solo') });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('last_owner_protected');
-    expect(await membersOf(tenantId)).toHaveLength(1);
+    expect(await membersOf(tenantId)).toHaveLength(2);
     expect(fb.calls).toEqual([]);
   });
 
   it('deletes a staff member: drops the membership, anonymises, tears down Firebase', async () => {
     const id = await userId('staffer');
-    await db.execute(
-      sql`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES (${id}::uuid, ${tenantId}::uuid, 'staff')`,
-    );
     const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('staffer') });
     expect(res.statusCode).toBe(204);
     expect((await membersOf(tenantId)).map((m) => m.user_id)).not.toContain(id);
@@ -627,5 +629,37 @@ describe.skipIf(!runIntegration)('partner account deletion (DELETE /v1/me)', () 
     expect(members).toHaveLength(1);
     expect(members[0]!.role).toBe('owner');
     expect(members[0]!.user_id).not.toBe(id);
+  });
+
+  it('refuses the only member of an org with bookings on record — closing it is support work', async () => {
+    await db.execute(sql`
+      INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status,
+                            customer_name, total_paise, base_paise)
+      VALUES (${tenantId}::uuid, 'event', 'walkin', 'external', 'confirmed', 'Walk-in', 0, 0)
+    `);
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('solo') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('last_owner_protected');
+    expect(fb.calls).toEqual([]);
+  });
+
+  it("a fresh sign-up's deletion closes their empty org: suspended, no members, account gone", async () => {
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('fresh'),
+      payload: { name: `AD Fresh ${RUN}`, slug: `ad-fresh-${RUN}`, country: 'India', acceptTerms: true },
+    });
+    expect(t.statusCode).toBe(200);
+    const freshTenant = (t.json() as { id: string }).id;
+
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('fresh') });
+    expect(res.statusCode).toBe(204);
+    expect(await membersOf(freshTenant)).toHaveLength(0);
+    const tenant = firstRow<{ status: string }>(
+      await db.execute(sql`SELECT status FROM tenants WHERE id = ${freshTenant}::uuid`),
+    );
+    expect(tenant.status).toBe('suspended');
+    expect(fb.calls).toEqual([`fbuid_fresh_ad_${RUN}`]);
   });
 });
