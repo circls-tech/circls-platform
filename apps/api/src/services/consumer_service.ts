@@ -30,6 +30,7 @@ import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
+import { writeAudit } from '../lib/audit.js';
 import { ownBookingCondition } from './booking_ownership.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type {
@@ -1385,7 +1386,58 @@ const REDACTED = '[deleted account]';
  * way back. That is rejected with 409 `partner_account` rather than silently
  * performed — see the guard below.
  */
-export async function deleteMyAccount(firebaseUid: string): Promise<void> {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Partner half of `DELETE /v1/me`: drops every `tenant_members` row of the user,
+ * refusing with 409 `last_owner_protected` if they are the sole owner of any org
+ * (deleting them would strand it — the same invariant team_service enforces).
+ * Owner rows are locked so a concurrent demotion can't race the count.
+ */
+async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
+  const rows = await tx
+    .select({ tenantId: tenantMembers.tenantId, role: tenantMembers.role })
+    .from(tenantMembers)
+    .where(eq(tenantMembers.userId, userId));
+  for (const m of rows) {
+    if (m.role !== 'owner') continue;
+    const owners = await tx
+      .select({ id: tenantMembers.userId })
+      .from(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.role, 'owner')))
+      .for('update');
+    if (owners.length <= 1) {
+      throw new Conflict(
+        'You are the only owner of an organisation. Make another member an owner first, or email contact@gibbous.io to close it.',
+        'last_owner_protected',
+      );
+    }
+  }
+  for (const m of rows) {
+    await tx
+      .delete(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.userId, userId)));
+    await writeAudit(
+      tx,
+      { tenantId: m.tenantId, actorUserId: userId },
+      'tenant.member_removed',
+      'tenant_member',
+      userId,
+      { role: m.role },
+      { removedAt: new Date(), reason: 'account_deleted' },
+    );
+  }
+}
+
+/**
+ * `releasePartnerAccess` is set by `DELETE /v1/me` (the partners app): instead
+ * of refusing a partner with 409 `partner_account`, their memberships are
+ * dropped in the same transaction, unless they are an org's last owner.
+ */
+export async function deleteMyAccount(
+  firebaseUid: string,
+  opts: { releasePartnerAccess?: boolean } = {},
+): Promise<void> {
   // Live rows only: a tombstone keeps its firebase_uid, and finding one here
   // means the account is already deleted (a retry after a Firebase failure, or a
   // token that outlived the DB write). Skip straight to the Firebase teardown —
@@ -1403,7 +1455,7 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
       where: eq(tenantMembers.userId, row.id),
       columns: { tenantId: true },
     });
-    if (membership) {
+    if (membership && !opts.releasePartnerAccess) {
       throw new Conflict(
         'This account manages a partner organisation. Transfer or close your organisation first, or email contact@gibbous.io and we will help.',
         'partner_account',
@@ -1411,6 +1463,8 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
     }
 
     await db.transaction(async (tx) => {
+      if (membership) await releasePartnerAccess(tx, row.id);
+
       // Behavioural telemetry is pure personal data with no retention duty.
       await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
 

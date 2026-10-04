@@ -48,6 +48,10 @@ const H = vi.hoisted(() => {
       owner: { uid: `fbuid_owner_ad_${RUN}`, email: `owner_ad_${RUN}@x.com`, email_verified: true },
       partner: { uid: `fbuid_partner_ad_${RUN}`, email: `partner_ad_${RUN}@x.com`, email_verified: true },
       invitee: { uid: `fbuid_invitee_ad_${RUN}`, email: `invitee_ad_${RUN}@x.com`, email_verified: true },
+      // DELETE /v1/me (partners app) personas.
+      solo: { uid: `fbuid_solo_ad_${RUN}`, email: `solo_ad_${RUN}@x.com`, email_verified: true },
+      coowner: { uid: `fbuid_coowner_ad_${RUN}`, email: `coowner_ad_${RUN}@x.com`, email_verified: true },
+      staffer: { uid: `fbuid_staffer_ad_${RUN}`, email: `staffer_ad_${RUN}@x.com`, email_verified: true },
     } as Record<string, Record<string, unknown>>,
     calls: [] as string[],
     deleted: new Set<string>(),
@@ -124,6 +128,11 @@ type BookingRow = {
   total_paise: string | number | null;
   status: string;
 };
+
+// One pool for both suites below; closing it per-suite would strand the second.
+afterAll(async () => {
+  if (runIntegration) await closeDb();
+});
 
 describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer/me)', () => {
   let app: FastifyInstance;
@@ -250,7 +259,6 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
 
   afterAll(async () => {
     await app.close();
-    await closeDb();
   });
 
   beforeEach(() => {
@@ -541,5 +549,83 @@ describe.skipIf(!runIntegration)('consumer account deletion (DELETE /v1/consumer
     const old = await loadUser(victimId);
     expect(old.deleted_at).not.toBeNull();
     expect(old.firebase_uid).toBe(VICTIM_UID);
+  });
+});
+
+describe.skipIf(!runIntegration)('partner account deletion (DELETE /v1/me)', () => {
+  let app: FastifyInstance;
+  let tenantId: string;
+  const userId = async (persona: string) => {
+    const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(persona) });
+    expect(me.statusCode).toBe(200);
+    return (me.json() as { id: string }).id;
+  };
+  const membersOf = async (tid: string) =>
+    (await db.execute<{ user_id: string; role: string }>(
+      sql`SELECT user_id, role FROM tenant_members WHERE tenant_id = ${tid}::uuid`,
+    )) as unknown as { user_id: string; role: string }[];
+
+  beforeAll(async () => {
+    app = await buildServer();
+    await app.ready();
+    const t = await app.inject({
+      method: 'POST',
+      url: '/v1/tenants',
+      headers: bearer('solo'),
+      payload: { name: `AD Solo ${RUN}`, slug: `ad-solo-${RUN}`, country: 'India', acceptTerms: true },
+    });
+    expect(t.statusCode).toBe(200);
+    tenantId = (t.json() as { id: string }).id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    fb.calls.length = 0;
+    fb.failNext = false;
+  });
+
+  it("refuses an org's sole owner with 409 last_owner_protected and touches nothing", async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('solo') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('last_owner_protected');
+    expect(await membersOf(tenantId)).toHaveLength(1);
+    expect(fb.calls).toEqual([]);
+  });
+
+  it('deletes a staff member: drops the membership, anonymises, tears down Firebase', async () => {
+    const id = await userId('staffer');
+    await db.execute(
+      sql`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES (${id}::uuid, ${tenantId}::uuid, 'staff')`,
+    );
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('staffer') });
+    expect(res.statusCode).toBe(204);
+    expect((await membersOf(tenantId)).map((m) => m.user_id)).not.toContain(id);
+    const row = firstRow<{ email: string | null; deleted_at: string | null }>(
+      await db.execute(sql`SELECT email, deleted_at FROM users WHERE id = ${id}::uuid`),
+    );
+    expect(row.email).toBeNull();
+    expect(row.deleted_at).not.toBeNull();
+    expect(fb.calls).toEqual([`fbuid_staffer_ad_${RUN}`]);
+    const audit = await db.execute<{ n: string }>(
+      sql`SELECT count(*)::text AS n FROM audit_log WHERE tenant_id = ${tenantId}::uuid
+          AND action = 'tenant.member_removed' AND entity_id = ${id}`,
+    );
+    expect(Number(firstRow<{ n: string }>(audit).n)).toBe(1);
+  });
+
+  it('lets one of two owners go, leaving the other owner in place', async () => {
+    const id = await userId('coowner');
+    await db.execute(
+      sql`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES (${id}::uuid, ${tenantId}::uuid, 'owner')`,
+    );
+    const res = await app.inject({ method: 'DELETE', url: '/v1/me', headers: bearer('coowner') });
+    expect(res.statusCode).toBe(204);
+    const members = await membersOf(tenantId);
+    expect(members).toHaveLength(1);
+    expect(members[0]!.role).toBe('owner');
+    expect(members[0]!.user_id).not.toBe(id);
   });
 });
