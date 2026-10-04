@@ -28,6 +28,7 @@ import { supportIssues } from '../db/schema/support_issues.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
+import { assertNotObjectionable } from '../lib/objectionable.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
 import { writeAudit } from '../lib/audit.js';
@@ -1260,7 +1261,11 @@ export async function updateMyProfile(
   input: UpdateMyProfileInput,
 ): Promise<MyProfile> {
   const patch: Partial<typeof users.$inferInsert> = {};
-  if (input.displayName !== undefined) patch.displayName = input.displayName;
+  if (input.displayName !== undefined) {
+    // Shown as the author on public question threads (App Store 1.2).
+    assertNotObjectionable(input.displayName);
+    patch.displayName = input.displayName;
+  }
   if (input.email !== undefined) {
     // A self-reported email is contact info, not proof of ownership: mark it
     // unverified so it never acts as an identity key (adoptStaleIdentity).

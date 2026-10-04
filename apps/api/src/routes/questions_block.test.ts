@@ -22,6 +22,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -39,6 +40,9 @@ describe.skipIf(!runIntegration)('question thread blocks', () => {
   let bobThread: string;
   let carolReply: string;
   let ownerReply: string;
+  // Support threads with no booking go to the Circls (platform) tenant.
+  const PLATFORM_SLUG = `circls-internal-qb-${RUN}`;
+  let prevSlug: string | undefined;
 
   const list = (who?: string) =>
     app.inject({
@@ -71,6 +75,13 @@ describe.skipIf(!runIntegration)('question thread blocks', () => {
   };
 
   beforeAll(async () => {
+    prevSlug = process.env['CIRCLS_INTERNAL_TENANT_SLUG'];
+    process.env['CIRCLS_INTERNAL_TENANT_SLUG'] = PLATFORM_SLUG;
+    __resetPlatformTenantCacheForTesting();
+    await db.execute(sql`
+      INSERT INTO tenants (name, slug, is_platform, status, subscription_status)
+      VALUES ('Circls', ${PLATFORM_SLUG}, TRUE, 'active', 'trial')
+    `);
     app = await buildServer();
     await app.ready();
     for (const who of ['alice', 'bob', 'carol']) {
@@ -115,6 +126,8 @@ describe.skipIf(!runIntegration)('question thread blocks', () => {
 
   afterAll(async () => {
     await app.close();
+    if (prevSlug === undefined) delete process.env['CIRCLS_INTERNAL_TENANT_SLUG'];
+    else process.env['CIRCLS_INTERNAL_TENANT_SLUG'] = prevSlug;
     await closeDb();
   });
 
@@ -188,5 +201,34 @@ describe.skipIf(!runIntegration)('question thread blocks', () => {
     });
     expect(reply.statusCode).toBe(400);
     expect((reply.json() as { error: { code: string } }).error.code).toBe('objectionable_content');
+  });
+
+  it('refuses an objectionable display name — it is shown on public threads', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/consumer/me',
+      headers: bearer('carol'),
+      payload: { displayName: 'Bsdk Carol' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: { code: string } }).error.code).toBe('objectionable_content');
+  });
+
+  it('lets a user quote abuse in their private support thread with Circls', async () => {
+    const support = await app.inject({
+      method: 'POST',
+      url: '/v1/consumer/questions',
+      headers: bearer('carol'),
+      payload: { origin: 'support', category: 'other', flowAnswers: [], body: 'Someone was rude to me' },
+    });
+    expect(support.statusCode, support.body).toBe(200);
+    const threadId = (support.json() as Detail).thread.id;
+    const quote = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/questions/${threadId}/messages`,
+      headers: bearer('carol'),
+      payload: { body: 'He called me a chutiya on the QB Cup thread' },
+    });
+    expect(quote.statusCode, quote.body).toBe(200);
   });
 });

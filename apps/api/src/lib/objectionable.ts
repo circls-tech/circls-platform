@@ -1,37 +1,46 @@
 import { BadRequest } from './errors.js';
 
 /**
- * A word-list check on what consumers post to question threads (App Store
- * guideline 1.2: "a method for filtering objectionable material from being
- * posted"). Deliberately small and whole-word: it stops obvious profanity and
- * slurs at the door; anything subtler is what Report, Block and staff
- * moderation (hide/archive) are for.
+ * A word-list check on what consumers post where other people read it —
+ * question threads and the display name shown on them (App Store guideline
+ * 1.2: "a method for filtering objectionable material from being posted").
+ * Deliberately small and whole-word: it stops obvious profanity and slurs at
+ * the door; anything subtler is what Report, Block and staff moderation
+ * (hide/archive) are for.
  *
- * Case-insensitive, sees through simple leetspeak and masking ("sh1t",
- * "f*ck"), and never fires inside a longer word ("Scunthorpe", "cocktail").
+ * Case-insensitive, NFKC-folded (fullwidth letters), sees through simple
+ * leetspeak and masking ("sh1t", "sh!t", "f*ck"), and only ever matches a
+ * whole token — never inside a longer word ("Scunthorpe", "cocktail") or an
+ * alphanumeric code ("F4G6"). Words that are also ordinary words or names in
+ * the places Circls runs (randi, lund, lauda, prick) are left out.
  */
 const WORDS = new Set([
   // English
   'fuck', 'fucks', 'fucked', 'fucker', 'fuckers', 'fucking', 'fuckin', 'fck', 'fuk', 'fking',
-  'motherfucker', 'shit', 'shits', 'shitty', 'bullshit', 'bitch', 'bitches', 'bastard',
-  'cunt', 'cunts', 'dickhead', 'asshole', 'assholes', 'slut', 'sluts', 'whore', 'whores',
-  'fag', 'fags', 'faggot', 'faggots', 'nigger', 'niggers', 'nigga', 'niggas', 'retard',
-  'retards', 'wanker', 'twat', 'prick', 'pussy',
+  'fuckoff', 'fuckyou', 'motherfucker', 'motherfucking', 'shit', 'shits', 'shitty', 'shithole',
+  'shithead', 'bullshit', 'bitch', 'bitches', 'bastard', 'cunt', 'cunts', 'dickhead', 'asshole',
+  'assholes', 'slut', 'sluts', 'whore', 'whores', 'fag', 'fags', 'faggot', 'faggots', 'nigger',
+  'niggers', 'nigga', 'niggas', 'retard', 'retards', 'wanker', 'twat', 'pussy',
   // Hindi / Hinglish
-  'madarchod', 'maderchod', 'behenchod', 'bhenchod', 'behanchod', 'bhosdike', 'bhosdi',
-  'bhosdiwale', 'chutiya', 'chutiye', 'chutia', 'gandu', 'randi', 'lund', 'lauda', 'laude',
-  'lavde', 'harami',
+  'madarchod', 'maderchod', 'behenchod', 'bhenchod', 'behanchod', 'bahenchod', 'benchod', 'bsdk',
+  'bhosdike', 'bhosadike', 'bhosdi', 'bhosdiwale', 'chutiya', 'chutiye', 'chutia', 'chootiya',
+  'gandu', 'gaand', 'lawda', 'loda', 'lodu', 'lavde', 'harami',
 ]);
 
-const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', $: 's' };
+const LEET: Record<string, string> = {
+  '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', $: 's', '!': 'i',
+};
 
 export function containsObjectionable(text: string): boolean {
-  const normalised = text
-    .toLowerCase()
-    .replace(/[013457@$]/g, (c) => LEET[c] ?? c)
-    // Masking inside a word ("f*ck", "f.u.c.k" stays split — that's fine).
-    .replace(/(?<=[a-z])[*_]+(?=[a-z])/g, '');
-  return (normalised.match(/[a-z]+/g) ?? []).some((w) => WORDS.has(w));
+  const tokens = text.normalize('NFKC').toLowerCase().match(/[a-z0-9@$!*_]+/g) ?? [];
+  return tokens.some((token) =>
+    WORDS.has(
+      token
+        .replace(/^[!*_]+|[!*_]+$/g, '') // "shit!!", "*fuck*"
+        .replace(/[013457@$!]/g, (c) => LEET[c] ?? c)
+        .replace(/[*_]/g, ''), // "f*ck"
+    ),
+  );
 }
 
 /** 400 `objectionable_content` for text [containsObjectionable] flags. */

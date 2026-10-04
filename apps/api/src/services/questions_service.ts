@@ -1228,7 +1228,9 @@ export async function addConsumerMessage(input: {
     threadNotFound();
   }
   await assertMessageRateLimit(input.userId);
-  if (kind === 'consumer') assertNotObjectionable(input.body);
+  // Not in a private support thread with Circls: a user quoting the abuse
+  // they are reporting must not be refused.
+  if (kind === 'consumer' && t.origin !== 'support') assertNotObjectionable(input.body);
   return insertReply(t, input.userId, kind, input.body, { staff: false });
 }
 
