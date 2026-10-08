@@ -1,10 +1,17 @@
 import { and, eq, getTableColumns, inArray, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { type Booking, bookings, slots, tenants } from '../db/schema/index.js';
+import { type Booking, bookings, slots, tenants, users } from '../db/schema/index.js';
 import { events } from '../db/schema/events.js';
 import { payments } from '../db/schema/payments.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import {
+  MAX_LINES_PER_EVENT_BOOKING,
+  MAX_PENDING_SLOTS_PER_USER,
+  MAX_SLOTS_PER_BOOKING,
+  MAX_TICKETS_PER_BOOKING,
+  MAX_TICKETS_PER_LINE,
+} from '../lib/booking_limits.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
 import { createPaymentOrder, resolvePaymentContext } from './payments_service.js';
@@ -211,6 +218,14 @@ export async function prepareOnlineBookingWithPayment(
   pricing?: CouponPricing | null,
 ): Promise<PrepareOnlineBookingResult> {
   if (input.slotIds.length === 0) throw new Conflict('No slots selected', 'no_slots');
+  // Backstop for the route schemas: every caller of this flow shares the cap.
+  if (input.slotIds.length > MAX_SLOTS_PER_BOOKING) {
+    throw new BadRequest(
+      `A booking can hold at most ${MAX_SLOTS_PER_BOOKING} slots`,
+      'too_many_slots',
+      { max: MAX_SLOTS_PER_BOOKING },
+    );
+  }
 
   // Gateway + currency follow the venue's country (Stripe/USD for US venues,
   // INR otherwise) — resolved up front so the gross-up, the booking row, and
@@ -246,6 +261,38 @@ export async function prepareOnlineBookingWithPayment(
     }
 
     const total = sel.reduce((s, r) => s + r.pricePaise, 0);
+
+    // Cap on the slots one customer may hold under bookings that are still
+    // unpaid: those slots are off sale until the abandoned-cart sweep frees
+    // them, so without a ceiling one account could lock a venue's whole open
+    // inventory by starting checkouts it never finishes. Counted on slots
+    // still attached to a `pending` booking (the sweep detaches them when it
+    // cancels), and serialised on the customer's users row so two concurrent
+    // checkouts can't both slip under the limit.
+    const limitUserId = input.customerUserId ?? ctx.actorUserId;
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, limitUserId)).for('update');
+    const [held] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(slots)
+      .innerJoin(bookings, eq(bookings.id, slots.bookingId))
+      .where(
+        and(
+          eq(bookings.status, 'pending'),
+          sql`${slots.deletedAt} is null`,
+          or(
+            eq(bookings.customerUserId, limitUserId),
+            and(sql`${bookings.customerUserId} is null`, eq(bookings.createdByUserId, limitUserId)),
+          ),
+        ),
+      );
+    const heldSlots = held?.n ?? 0;
+    if (heldSlots + input.slotIds.length > MAX_PENDING_SLOTS_PER_USER) {
+      throw new Conflict(
+        `You already have ${heldSlots} slot${heldSlots === 1 ? '' : 's'} in unpaid bookings. Finish paying for them, or wait for them to expire, before booking more.`,
+        'too_many_pending_slots',
+        { max: MAX_PENDING_SLOTS_PER_USER, held: heldSlots },
+      );
+    }
 
     // Money model: discount + consumer commission + gross-up, shaped by the
     // tenant's billing knobs. A 100%/over-base coupon makes the booking free
@@ -641,6 +688,22 @@ async function claimEventSeats(
   basePaise: number;
   lineValues: { tierId: string; quantity: number; unitPricePaise: number }[];
 }> {
+  // Hard ceilings on one booking, whoever submits it (the route schemas reject
+  // these earlier with a 400; this is the backstop every caller shares). They
+  // bound the seat counts summed below and the QR tickets minted per seat.
+  if (lines.length > MAX_LINES_PER_EVENT_BOOKING) {
+    throw new BadRequest('Too many ticket lines in one booking', 'too_many_tickets', {
+      maxLines: MAX_LINES_PER_EVENT_BOOKING,
+    });
+  }
+  const requestedTotal = lines.reduce((sum, l) => sum + l.quantity, 0);
+  if (lines.some((l) => l.quantity > MAX_TICKETS_PER_LINE) || requestedTotal > MAX_TICKETS_PER_BOOKING) {
+    throw new BadRequest(
+      `A booking can hold at most ${MAX_TICKETS_PER_BOOKING} tickets`,
+      'too_many_tickets',
+      { maxPerLine: MAX_TICKETS_PER_LINE, maxPerBooking: MAX_TICKETS_PER_BOOKING },
+    );
+  }
   const tierIds = lines.map((l) => l.tierId);
 
   // Per-customer event cap: the buyer's tickets for this event — summed

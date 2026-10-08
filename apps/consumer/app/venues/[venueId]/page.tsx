@@ -34,6 +34,7 @@ import { usePublicCoupons } from '@/lib/api/checkout';
 import { OffersStrip } from '@/components/OffersStrip';
 import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
 import type { CartSlot } from '@/lib/checkout/types';
+import { MAX_CART_SLOTS } from '@/lib/checkout/limits';
 import { Badge, Button, Card } from '@/lib/ui';
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
@@ -80,7 +81,9 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
     setCart((prev) => {
       const next = new Map(prev);
       if (next.has(slot.id)) next.delete(slot.id);
-      else next.set(slot.id, slot);
+      // The API refuses a bigger booking, so stop the cart here rather than
+      // letting the checkout fail late.
+      else if (next.size < MAX_CART_SLOTS) next.set(slot.id, slot);
       return next;
     });
   }
@@ -395,7 +398,11 @@ function ArenaCard({
           <p className="text-sm text-text-secondary">No open slots for this day.</p>
         ) : (
           <>
-            <p className="mb-2 text-xs text-text-secondary">Tap to add slots to your cart — mix courts and book them together.</p>
+            <p className="mb-2 text-xs text-text-secondary">
+              {cart.size >= MAX_CART_SLOTS
+                ? `Your cart is full — a booking can hold up to ${MAX_CART_SLOTS} slots.`
+                : `Tap to add slots to your cart — mix courts and book them together (up to ${MAX_CART_SLOTS} per booking).`}
+            </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {slots.map((slot) => {
                 const slotLabel = formatSlotRange(slot.startAt, slot.endAt);

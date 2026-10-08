@@ -8,6 +8,11 @@ import { type CheckoutBreakdown, computeCheckout } from '../services/checkout_pr
 import { resolveBillingConfig } from '../services/billing_config.js';
 import { resolvePaymentContext } from '../services/payments_service.js';
 import {
+  MAX_LINES_PER_EVENT_BOOKING,
+  MAX_SLOTS_PER_BOOKING,
+  MAX_TICKETS_PER_LINE,
+} from '../lib/booking_limits.js';
+import {
   listPublicCouponsForItem,
   priceItem,
   resolveCouponForCheckout,
@@ -17,14 +22,25 @@ const itemSchema = z.union([
   z.object({
     itemType: z.literal('event'),
     eventId: z.string().uuid(),
-    lines: z.array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) })).min(1),
+    lines: z
+      .array(
+        z.object({
+          tierId: z.string().uuid(),
+          quantity: z.number().int().min(1).max(MAX_TICKETS_PER_LINE),
+        }),
+      )
+      .min(1)
+      .max(MAX_LINES_PER_EVENT_BOOKING),
   }),
   z.object({
     itemType: z.literal('membership'),
     membershipId: z.string().uuid(),
     membershipTierId: z.string().uuid().optional(),
   }),
-  z.object({ itemType: z.literal('slot'), slotIds: z.array(z.string().uuid()).min(1) }),
+  z.object({
+    itemType: z.literal('slot'),
+    slotIds: z.array(z.string().uuid()).min(1).max(MAX_SLOTS_PER_BOOKING),
+  }),
 ]);
 const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().min(1).max(64).optional() }));
 
@@ -33,13 +49,12 @@ const quoteBody = z.intersection(itemSchema, z.object({ couponCode: z.string().m
  * comma-separated `slotIds=a,b` or repeated `slotIds=a&slotIds=b` (Fastify
  * hands the latter over as an array).
  *
- * Capped because this route, unlike the quote below, takes no auth: each id
- * widens two `in (…)` scans, and an uncapped array is a free fan-out for
- * anyone. The cap is far above any real cart, and the quote/booking path is
- * deliberately left uncapped — a cart past this size simply gets no offers
- * listed rather than being unable to book.
+ * Capped because this route takes no auth: each id widens two `in (…)` scans,
+ * and an uncapped array is a free fan-out for anyone. The cap is the one the
+ * quote and booking paths enforce, so any cart that can be booked gets its
+ * offers listed.
  */
-const MAX_LISTED_CART_SLOTS = 50;
+const MAX_LISTED_CART_SLOTS = MAX_SLOTS_PER_BOOKING;
 
 const slotIdsQuery = z
   .union([z.string(), z.array(z.string())])
