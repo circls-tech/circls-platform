@@ -18,8 +18,16 @@ import {
   bulkUpdateSlots,
   holdSlots,
   releaseHold,
+  releaseSpanDays,
 } from '../services/slot_service.js';
 import { withIdempotency } from '../lib/idempotency.js';
+import {
+  MAX_CELL_DURATION_MIN,
+  MAX_CELL_START_MIN,
+  MAX_QUANTIZATION_MIN,
+  MAX_RELEASE_CELLS,
+  MAX_RELEASE_SPAN_DAYS,
+} from '../lib/booking_limits.js';
 
 /**
  * Resolve an arena → its venue's tenant, assert the caller is a member.
@@ -50,24 +58,41 @@ const scheduleTemplateSchema = z.object({
     .max(48),
 });
 
-const releaseSlotsSchema = z.object({
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
-  quantizationMin: z.number().int().positive(),
-  // Business-day boundary (minute-of-day, 0..1439) to persist on the arena.
-  businessDayStartMin: z.number().int().min(0).max(1439).optional(),
-  // Last-used builder template to persist on the arena for prefill.
-  template: scheduleTemplateSchema.optional(),
-  cells: z.array(
-    z.object({
-      dayOfWeek: z.number().int().min(0).max(6),
-      startTimeMin: z.number().int().nonnegative(),
-      durationMin: z.number().int().positive(),
-      price: z.number().int().nonnegative().nullable().optional(),
-      blocked: z.boolean().optional(),
-    }),
-  ),
-});
+const releaseSlotsSchema = z
+  .object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Must be YYYY-MM-DD date or datetime'),
+    quantizationMin: z.number().int().positive().max(MAX_QUANTIZATION_MIN),
+    // Business-day boundary (minute-of-day, 0..1439) to persist on the arena.
+    businessDayStartMin: z.number().int().min(0).max(1439).optional(),
+    // Last-used builder template to persist on the arena for prefill.
+    template: scheduleTemplateSchema.optional(),
+    cells: z
+      .array(
+        z.object({
+          dayOfWeek: z.number().int().min(0).max(6),
+          startTimeMin: z.number().int().nonnegative().max(MAX_CELL_START_MIN),
+          durationMin: z.number().int().positive().max(MAX_CELL_DURATION_MIN),
+          price: z.number().int().nonnegative().nullable().optional(),
+          blocked: z.boolean().optional(),
+        }),
+      )
+      .max(MAX_RELEASE_CELLS),
+  })
+  // The window is walked day by day inside one transaction (see
+  // enumerateOccurrences), so it must be ordered and bounded.
+  .superRefine((v, ctx) => {
+    const span = releaseSpanDays(v.startDate, v.endDate);
+    if (Number.isNaN(span) || span < 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: 'endDate must be on or after startDate' });
+    } else if (span > MAX_RELEASE_SPAN_DAYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message: `A release can cover at most ${MAX_RELEASE_SPAN_DAYS} days`,
+      });
+    }
+  });
 
 const bulkUpdateSchema = z.object({
   slotIds: z.array(z.string().uuid()).min(1),

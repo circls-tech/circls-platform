@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MAX_RELEASE_CELLS } from '../lib/booking_limits.js';
 
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
@@ -98,6 +99,29 @@ describe.skipIf(!runIntegration)('slots + multi-slot bookings', () => {
 
   let bookingId: string;
   let bookedSlotIds: string[];
+
+  it('rejects a release window over a year, an inverted window, or too many cells with 400', async () => {
+    const cell = { dayOfWeek: 2, startTimeMin: 600, durationMin: 60, price: 5000 };
+    const attempts = [
+      { startDate: '2027-06-01', endDate: '2028-06-03', cells: [cell] },
+      { startDate: '2027-06-10', endDate: '2027-06-01', cells: [cell] },
+      {
+        startDate: '2027-06-01',
+        endDate: '2027-06-07',
+        cells: Array.from({ length: MAX_RELEASE_CELLS + 1 }, (_, i) => ({ ...cell, startTimeMin: i })),
+      },
+    ];
+    for (const [i, body] of attempts.entries()) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/arenas/${arenaId}/slots/release`,
+        headers: withKey('owner', `rel-bad-${i}-${Date.now()}`),
+        payload: { quantizationMin: 60, ...body },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('bad_request');
+    }
+  });
 
   it('books 2 slots — 201, totalPaise matches sum, slots become booked', async () => {
     bookedSlotIds = openSlotIds.slice(0, 2);

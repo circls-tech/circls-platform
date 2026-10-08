@@ -2,7 +2,8 @@ import { and, eq, getTableColumns, inArray, notInArray, sql } from 'drizzle-orm'
 import { db } from '../db/client.js';
 import { isExclusionViolation } from '../db/errors.js';
 import { arenas, type ScheduleTemplate, type Slot, slotReleases, slots } from '../db/schema/index.js';
-import { Conflict } from '../lib/errors.js';
+import { BadRequest, Conflict } from '../lib/errors.js';
+import { MAX_RELEASE_CELLS, MAX_RELEASE_SPAN_DAYS } from '../lib/booking_limits.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { resolvePricePaise } from './pricing_service.js';
 import { getArenaById } from './arena_service.js';
@@ -94,6 +95,35 @@ const WEEKDAY: Record<string, number> = {
   Sat: 6,
 };
 
+// Intl.DateTimeFormat construction is the expensive part of the day walk, so
+// one formatter per timezone is built and reused.
+const localClockFormatters = new Map<string, Intl.DateTimeFormat>();
+function localClockFormatter(tz: string): Intl.DateTimeFormat {
+  let f = localClockFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    localClockFormatters.set(tz, f);
+  }
+  return f;
+}
+const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
+function weekdayFormatter(tz: string): Intl.DateTimeFormat {
+  let f = weekdayFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' });
+    weekdayFormatters.set(tz, f);
+  }
+  return f;
+}
+
 /**
  * Given a local date string (YYYY-MM-DD) and a wall-clock offset in minutes from
  * local midnight, compute the UTC ISO instant at which the local clock reads
@@ -112,15 +142,7 @@ function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string)
   const approxUtcMs = dateUtcMidnight + localMinutes * 60_000;
 
   // Read back the local wall-clock time at this UTC moment.
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(approxUtcMs));
+  const parts = localClockFormatter(tz).formatToParts(new Date(approxUtcMs));
 
   const get = (type: string): string =>
     parts.find((p) => p.type === type)?.value ?? '0';
@@ -156,19 +178,27 @@ function weekdayInTz(dateStr: string, tz: string): number {
       12, // noon UTC
     ),
   );
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    weekday: 'short',
-  }).formatToParts(noonUtc);
+  const parts = weekdayFormatter(tz).formatToParts(noonUtc);
   const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun';
   return WEEKDAY[wd] ?? 0;
 }
 
-/** Advance a YYYY-MM-DD date string by one calendar day. */
-function nextDay(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00Z');
-  d.setUTCDate(d.getUTCDate() + 1);
+/** The YYYY-MM-DD date `days` calendar days after `dateStr`. */
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr.slice(0, 10) + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Whole calendar days from `startDate` to `endDate` (YYYY-MM-DD, a datetime
+ * suffix is ignored): 0 for the same day, negative when inverted, NaN when
+ * either does not parse. Shared with the release route's validation.
+ */
+export function releaseSpanDays(startDate: string, endDate: string): number {
+  const start = Date.parse(startDate.slice(0, 10) + 'T12:00:00Z');
+  const end = Date.parse(endDate.slice(0, 10) + 'T12:00:00Z');
+  return Math.round((end - start) / 86_400_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,9 +225,30 @@ export function enumerateOccurrences(
   nowIso: string,
 ): Occurrence[] {
   const occurrences: Occurrence[] = [];
-  let current = startDate;
 
-  while (current <= endDate) {
+  // Bounded, and walked by day COUNT rather than by comparing date strings:
+  // the window is capped so one release cannot pin the process or flood the
+  // table, and a date that overflows the 4-digit year can no longer stall the
+  // loop (it used to produce '+010000-…', which compares below any real date).
+  // The route schema rejects these first with a 400; this is the backstop for
+  // every caller.
+  const span = releaseSpanDays(startDate, endDate);
+  if (Number.isNaN(span)) throw new BadRequest('Invalid release window', 'bad_request');
+  if (span > MAX_RELEASE_SPAN_DAYS) {
+    throw new BadRequest(
+      `A release can cover at most ${MAX_RELEASE_SPAN_DAYS} days`,
+      'release_window_too_long',
+      { maxDays: MAX_RELEASE_SPAN_DAYS },
+    );
+  }
+  if (cells.length > MAX_RELEASE_CELLS) {
+    throw new BadRequest(`A release can carry at most ${MAX_RELEASE_CELLS} cells`, 'bad_request', {
+      max: MAX_RELEASE_CELLS,
+    });
+  }
+
+  for (let i = 0; i <= span; i++) {
+    const current = addDays(startDate, i);
     const dow = weekdayInTz(current, tz);
 
     for (const cell of cells) {
@@ -215,7 +266,6 @@ export function enumerateOccurrences(
       });
     }
 
-    current = nextDay(current);
   }
 
   return occurrences;
