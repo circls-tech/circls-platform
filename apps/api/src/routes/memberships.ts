@@ -5,6 +5,7 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { assertTermsAccepted } from '../middleware/require_terms.js';
+import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { benefitsSchema, coerceBenefits } from '../lib/membership_benefits.js';
 import {
@@ -390,7 +391,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.post('/v1/memberships/:id/purchase', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/memberships/:id/purchase', { preHandler: [requireAuth, perIdentityRateLimit(app)] }, async (req) => {
     const { id } = req.params as { id: string };
     const user = await currentUser(req);
     const parsed = purchaseSchema.safeParse(req.body ?? {});

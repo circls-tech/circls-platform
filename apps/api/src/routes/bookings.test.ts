@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MAX_TICKETS_PER_BOOKING, MAX_TICKETS_PER_LINE } from '../lib/booking_limits.js';
 
 vi.mock('../lib/firebase_admin.js', () => ({
   verifyIdToken: vi.fn(async (token: string) => {
@@ -366,6 +367,34 @@ describe.skipIf(!runIntegration)('event bookings (multi-tier)', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('tier_sold_out');
+  });
+
+  it('rejects a quantity above the per-tier cap with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${eventId}/book`,
+      headers: bearer('other'),
+      payload: { lines: [{ tierId: generalTierId, quantity: MAX_TICKETS_PER_LINE + 1 }] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('bad_request');
+  });
+
+  it('rejects more tickets than one booking may hold, summed across tiers', async () => {
+    const perLine = Math.ceil((MAX_TICKETS_PER_BOOKING + 1) / 2);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/consumer/events/${eventId}/book`,
+      headers: bearer('other'),
+      payload: {
+        lines: [
+          { tierId: generalTierId, quantity: perLine },
+          { tierId: vipTierId, quantity: perLine },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('too_many_tickets');
   });
 
   it('lets tenant staff cancel an event booking, freeing tier capacity', async () => {

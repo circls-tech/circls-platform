@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, type FormEvent, useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { safeRedirectPath } from '@/lib/nav/safe_redirect';
 import { Button, Card, Input } from '@/lib/ui';
 
 function friendlyError(err: unknown): string {
@@ -33,7 +34,9 @@ function LoginInner() {
   const { startPhoneSignIn, confirmOtp } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const redirect = params.get('redirect') ?? '/';
+  // Only a path on this site is ever followed after sign-in — never an
+  // off-site or javascript: URL smuggled into the link.
+  const redirect = safeRedirectPath(params.get('redirect'));
 
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');

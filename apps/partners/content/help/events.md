@@ -101,7 +101,7 @@ Note that tier renames also update how past registrations are displayed and expo
 
 ### What consumers see
 
-Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout. When the event limits tickets per customer, the page says so ("Limited to N tickets per person for this event") and the quantity selectors stop at the limit across all tiers combined; if a customer already holds tickets from an earlier booking, a new booking that would push them over the cap is rejected at checkout.
+Consumers see all tiers for an event and can buy multiple tickets across different tiers in a single checkout — up to 100 tickets per checkout, and at most 100 of any one tier (the same cap as your off-platform registration form). When the event limits tickets per customer, the page says so ("Limited to N tickets per person for this event") and the quantity selectors stop at the limit across all tiers combined; if a customer already holds tickets from an earlier booking, a new booking that would push them over the cap is rejected at checkout.
 
 ## Registration questions
 
