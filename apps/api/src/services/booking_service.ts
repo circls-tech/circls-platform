@@ -268,30 +268,32 @@ export async function prepareOnlineBookingWithPayment(
     // inventory by starting checkouts it never finishes. Counted on slots
     // still attached to a `pending` booking (the sweep detaches them when it
     // cancels), and serialised on the customer's users row so two concurrent
-    // checkouts can't both slip under the limit.
-    const limitUserId = input.customerUserId ?? ctx.actorUserId;
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, limitUserId)).for('update');
-    const [held] = await tx
-      .select({ n: sql<number>`count(*)::int` })
-      .from(slots)
-      .innerJoin(bookings, eq(bookings.id, slots.bookingId))
-      .where(
-        and(
-          eq(bookings.status, 'pending'),
-          sql`${slots.deletedAt} is null`,
-          or(
-            eq(bookings.customerUserId, limitUserId),
-            and(sql`${bookings.customerUserId} is null`, eq(bookings.createdByUserId, limitUserId)),
+    // checkouts can't both slip under the limit. Only bookings the customer
+    // makes for themselves carry a customer id; a desk booking staff take for
+    // someone else is already behind the tenant membership check and must not
+    // count against the staff member.
+    if (input.customerUserId) {
+      const customerId = input.customerUserId;
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, customerId)).for('update');
+      const [held] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(slots)
+        .innerJoin(bookings, eq(bookings.id, slots.bookingId))
+        .where(
+          and(
+            eq(bookings.status, 'pending'),
+            sql`${slots.deletedAt} is null`,
+            eq(bookings.customerUserId, customerId),
           ),
-        ),
-      );
-    const heldSlots = held?.n ?? 0;
-    if (heldSlots + input.slotIds.length > MAX_PENDING_SLOTS_PER_USER) {
-      throw new Conflict(
-        `You already have ${heldSlots} slot${heldSlots === 1 ? '' : 's'} in unpaid bookings. Finish paying for them, or wait for them to expire, before booking more.`,
-        'too_many_pending_slots',
-        { max: MAX_PENDING_SLOTS_PER_USER, held: heldSlots },
-      );
+        );
+      const heldSlots = held?.n ?? 0;
+      if (heldSlots + input.slotIds.length > MAX_PENDING_SLOTS_PER_USER) {
+        throw new Conflict(
+          `You already have ${heldSlots} slot${heldSlots === 1 ? '' : 's'} in unpaid bookings. Finish paying for them, or wait for them to expire, before booking more.`,
+          'too_many_pending_slots',
+          { max: MAX_PENDING_SLOTS_PER_USER, held: heldSlots },
+        );
+      }
     }
 
     // Money model: discount + consumer commission + gross-up, shaped by the
