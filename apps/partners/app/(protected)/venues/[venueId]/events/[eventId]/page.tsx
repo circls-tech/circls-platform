@@ -42,6 +42,7 @@ import {
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -130,6 +131,9 @@ export default function EventDetailPage() {
 
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The customer-site preview. 'submit' is the preview that stands between
+  // "Submit for review" and the submission itself, with the confirm inside it.
+  const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -160,7 +164,9 @@ export default function EventDetailPage() {
     setErrorMsg(null);
     try {
       await publish.mutateAsync(eventId);
+      setPreview('closed');
     } catch (e) {
+      setPreview('closed');
       setErrorMsg((e as Error).message);
     }
   }
@@ -242,8 +248,32 @@ export default function EventDetailPage() {
         <>
           <div className="flex items-center justify-between gap-3">
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{ev.name}</h1>
-            <StatusPill status={ev.status} />
+            <div className="flex items-center gap-2">
+              <StatusPill status={ev.status} />
+              {/* The event's page on the customer site, whatever its status —
+                  the only way to see a draft as customers will. */}
+              <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
+                Preview
+              </Button>
+            </div>
           </div>
+
+          <ListingPreviewModal
+            open={preview !== 'closed'}
+            onClose={() => setPreview('closed')}
+            tenantId={tenantId}
+            type="event"
+            id={ev.id}
+            {...(preview === 'submit'
+              ? {
+                  confirm: {
+                    label: 'Submit for review',
+                    onConfirm: handlePublish,
+                    loading: publish.isPending,
+                  },
+                }
+              : {})}
+          />
 
           {!editing && (
             <Card title="Details">
@@ -302,12 +332,14 @@ export default function EventDetailPage() {
                     <Button variant="secondary" size="sm" disabled={!authed} onClick={startEdit}>
                       Edit
                     </Button>
+                    {/* Opens the customer-site preview first; the submission
+                        is confirmed from inside it. */}
                     <Button
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
                       disabled={!authed}
-                      onClick={handlePublish}
+                      onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>

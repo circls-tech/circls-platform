@@ -129,6 +129,13 @@ export const envSchema = z
   // and where Cashfree sends a customer back after a redirect checkout).
   CONSUMER_BASE_URL: z.string().url().default('https://circls.app'),
 
+  // Signs the short-lived tokens that let a partner or a Circls reviewer open
+  // an unapproved listing on the consumer site as a customer would see it
+  // (see services/listing_preview_service.ts). Unset, a random per-process
+  // secret is used: tokens then stop working on restart and are not shared
+  // between instances — fine for the sandbox, not for a multi-instance deploy.
+  LISTING_PREVIEW_SECRET: z.string().min(16).optional(),
+
   // Outbound webhooks. Phase 17.
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),

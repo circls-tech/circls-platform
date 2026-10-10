@@ -40,6 +40,12 @@ You land on the new plan's page, where it starts in **pending review** until Cir
 | **inactive** | Taken off sale by you. Existing members keep their access until it expires. | Edit; **Activate** to put it back on sale; view buyers. |
 | **rejected** | Not approved. Read-only. | — |
 
+## Previewing as a customer
+
+A plan's page has a **Preview** button beside its status. It opens the plan's page on the customer site — the real page, with the artwork, tiers, prices, benefits and terms laid out exactly as customers will see them — whatever the plan's status, so you can check a plan that is still pending review. A banner marks it as a preview; switch between **Phone** and **Desktop**, or use **Open in new tab** for a full-size look. Buying is turned off in the preview. The Circls team sees this same customer page when they review your plan.
+
+Preview is available to every member of your organisation, including Staff and Read-only. Preview links expire after an hour — open the preview again for a fresh one.
+
 ## Editing a plan
 
 Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is **pending review** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate. Existing members keep the tier they bought even if you later change or remove it.

@@ -51,6 +51,7 @@ import {
 } from '@/components/PostBookingRedirectEditor';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -145,6 +146,9 @@ export default function OrgEventDetailPage() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The customer-site preview. 'submit' is the preview that stands between
+  // "Submit for review" and the submission itself, with the confirm inside it.
+  const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
 
   // Venue events price in their venue's currency; standalone events follow
   // their own address country (when present), else the tenant's currency.
@@ -246,7 +250,9 @@ export default function OrgEventDetailPage() {
     setErrorMsg(null);
     try {
       await publish.mutateAsync(eventId);
+      setPreview('closed');
     } catch (e) {
+      setPreview('closed');
       setErrorMsg((e as Error).message);
     }
   }
@@ -408,6 +414,11 @@ export default function OrgEventDetailPage() {
               )}
               <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
               <StatusPill status={ev.status} />
+              {/* The event's page on the customer site, whatever its status —
+                  the only way to see a draft as customers will. */}
+              <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
+                Preview
+              </Button>
               {/* Taking someone's details at the door is a front-desk job, so
                   it belongs beside the event's name — not below the whole
                   registrations table. Gated exactly as the desk itself is. */}
@@ -425,6 +436,23 @@ export default function OrgEventDetailPage() {
               )}
             </div>
           </div>
+
+          <ListingPreviewModal
+            open={preview !== 'closed'}
+            onClose={() => setPreview('closed')}
+            tenantId={tenantId}
+            type="event"
+            id={ev.id}
+            {...(preview === 'submit'
+              ? {
+                  confirm: {
+                    label: 'Submit for review',
+                    onConfirm: handlePublish,
+                    loading: publish.isPending,
+                  },
+                }
+              : {})}
+          />
 
           {!editing && (
             <Card title="Details">
@@ -523,12 +551,14 @@ export default function OrgEventDetailPage() {
                     <Button variant="secondary" size="sm" disabled={!authed} onClick={startEdit}>
                       Edit
                     </Button>
+                    {/* Opens the customer-site preview first; the submission
+                        is confirmed from inside it. */}
                     <Button
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
                       disabled={!authed}
-                      onClick={handlePublish}
+                      onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>

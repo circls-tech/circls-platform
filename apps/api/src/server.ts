@@ -39,6 +39,7 @@ import { adminRefundRoutes } from './routes/admin_refunds.js';
 import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminPayoutRoutes } from './routes/admin_payouts.js';
 import { adminListingRoutes } from './routes/admin_listings.js';
+import { listingPreviewRoutes } from './routes/listing_previews.js';
 import { adminChangeRequestRoutes } from './routes/admin_change_requests.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 import { adminUserRoutes } from './routes/admin_users.js';
@@ -295,6 +296,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminTenantRoutes);
   await app.register(adminPayoutRoutes);
   await app.register(adminListingRoutes);
+  // "See it as a customer" preview links for unapproved listings (partner + admin).
+  await app.register(listingPreviewRoutes);
   await app.register(adminChangeRequestRoutes);
   await app.register(adminAuditLogRoutes);
   await app.register(adminUserRoutes);

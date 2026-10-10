@@ -72,6 +72,8 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `GEOCODER_PROVIDER` | no | `stub` | `stub` resolves + searches venue addresses against a built-in India/USA city gazetteer (no external calls). Set `photon` in prod to geocode arbitrary addresses **and power the address autocomplete** via OpenStreetMap Photon (free/keyless; ODbL permits storing results; built for type-ahead). |
 | `GEOCODER_BASE_URL` | no | `https://photon.komoot.io` | Photon endpoint. Point at a self-hosted instance if you outgrow the public one's fair-use limits. |
 | `GEOCODER_USER_AGENT` | with photon | `circls-platform/1.0 (+https://circls.app)` | Identifies the app per OSM policy — app name + a contact URL. |
+| `LISTING_PREVIEW_SECRET` | **prod: recommended** | random per process | Signs the short-lived "preview as a customer" links partners and reviewers open for unapproved listings (`/v1/tenants/…/listings/:type/:id/preview`, `/v1/admin/listings/:type/:id/preview`). Any long random string (≥ 16 chars). Unset, links stop working on every restart and don't verify on other instances. |
+| `CONSUMER_BASE_URL` | no | `https://circls.app` | Where the consumer site lives. Preview links, question-notification emails and the Cashfree return URL are built from it. |
 
 ## Moving Indian payments to Cashfree
 

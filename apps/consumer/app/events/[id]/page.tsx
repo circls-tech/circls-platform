@@ -1,8 +1,9 @@
 'use client';
-import { use, useState } from 'react';
+import { Suspense, use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
+import { PreviewBanner } from '@/components/PreviewBanner';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { SportImage } from '@/components/SportImage';
@@ -13,13 +14,27 @@ import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { usePreviewToken } from '@/lib/preview';
 import { Badge, Button, Card } from '@/lib/ui';
 import { AddressLink } from '@/components/AddressLink';
 import { OffersStrip } from '@/components/OffersStrip';
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
+  // The preview token is read from the URL (useSearchParams), which the app
+  // router only allows under a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <EventPageInner params={params} />
+    </Suspense>
+  );
+}
+
+function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const eventQ = useEvent(id);
+  // Preview mode (lib/preview.ts): a partner or reviewer looking at an
+  // unapproved event as a customer will. Same page, booking turned off.
+  const preview = usePreviewToken();
+  const eventQ = useEvent(id, preview);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const ev = eventQ.data;
@@ -73,7 +88,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   });
 
   function book() {
-    if (!ev || totalSelected === 0) return;
+    if (!ev || totalSelected === 0 || preview) return;
     const prefill: { name?: string; contact?: string; couponCode?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
@@ -86,9 +101,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   return (
     <div className="min-h-screen">
-      <Header />
+      {preview ? <PreviewBanner noun="event" /> : <Header />}
       <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
-        <BackBar fallbackHref="/events" />
+        {!preview && <BackBar fallbackHref="/events" />}
         {eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
         ) : eventQ.isError ? (
@@ -121,26 +136,44 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       Pick a date · {ev.seriesOccurrences!.length} upcoming
                     </p>
                     <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
-                      {ev.seriesOccurrences!.map((occ) => (
-                        <Link
-                          key={occ.id}
-                          href={`/events/${occ.id}`}
-                          aria-current={occ.id === ev.id ? 'date' : undefined}
-                          className={[
-                            'shrink-0 rounded-[var(--radius)] border-[2px] border-ink px-3 py-1.5 text-xs font-semibold',
-                            occ.id === ev.id
-                              ? 'bg-ink text-white'
-                              : 'bg-white text-ink hover:bg-ink/5',
-                          ].join(' ')}
-                        >
-                          {formatDateTime(occ.startsAt)}
-                          {occ.locationName !== ev.locationName && (
-                            <span className="block text-[10px] font-normal opacity-75">
-                              {occ.locationName}
-                            </span>
-                          )}
-                        </Link>
-                      ))}
+                      {ev.seriesOccurrences!.map((occ) => {
+                        const chipClass = [
+                          'shrink-0 rounded-[var(--radius)] border-[2px] border-ink px-3 py-1.5 text-xs font-semibold',
+                          occ.id === ev.id ? 'bg-ink text-white' : 'bg-white text-ink',
+                          preview ? '' : 'hover:bg-ink/5',
+                        ].join(' ');
+                        const chipBody = (
+                          <>
+                            {formatDateTime(occ.startsAt)}
+                            {occ.locationName !== ev.locationName && (
+                              <span className="block text-[10px] font-normal opacity-75">
+                                {occ.locationName}
+                              </span>
+                            )}
+                          </>
+                        );
+                        // A preview token opens this one date only, so the
+                        // other chips show where the dates will sit but don't
+                        // navigate — they would land on a 404.
+                        return preview ? (
+                          <span
+                            key={occ.id}
+                            aria-current={occ.id === ev.id ? 'date' : undefined}
+                            className={chipClass}
+                          >
+                            {chipBody}
+                          </span>
+                        ) : (
+                          <Link
+                            key={occ.id}
+                            href={`/events/${occ.id}`}
+                            aria-current={occ.id === ev.id ? 'date' : undefined}
+                            className={chipClass}
+                          >
+                            {chipBody}
+                          </Link>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -249,9 +282,20 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </section>
             )}
 
-            {/* Q&A with the organiser (#106 questions threads). */}
+            {/* Q&A with the organiser (#106 questions threads). Not in a
+                preview: there is nothing to ask about yet, and the section's
+                reads are for public listings. */}
             <section className="mt-8">
-              <QuestionsSection subjectType="event" subjectId={ev.id} subjectName={ev.name} />
+              {preview ? (
+                <Card>
+                  <h2 className="font-display text-xl font-extrabold text-ink">Questions</h2>
+                  <p className="mt-1 text-sm text-text-secondary">
+                    Customers can ask you questions here once the event is live.
+                  </p>
+                </Card>
+              ) : (
+                <QuestionsSection subjectType="event" subjectId={ev.id} subjectName={ev.name} />
+              )}
             </section>
           </>
         )}
@@ -269,7 +313,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             </>
           }
           action={
-            <Button onClick={book}>
+            <Button
+              onClick={book}
+              disabled={Boolean(preview)}
+              title={preview ? 'Booking is turned off in preview' : undefined}
+            >
               {subtotalPaise === 0 ? 'Register' : `Book · ${formatPaiseExact(subtotalPaise, currency)}`}
             </Button>
           }

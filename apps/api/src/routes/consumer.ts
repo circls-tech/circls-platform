@@ -76,6 +76,18 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   const perUserLimit = perIdentityRateLimit(app);
 
   // ── Browse (public) ────────────────────────────────────────────────────────
+
+  // `?preview=<token>` on a single-listing read: a partner or Circls reviewer
+  // looking at an unapproved listing as a customer will (see
+  // services/listing_preview_service.ts). Threaded through to the service,
+  // which decides per read whether the token names what is being fetched.
+  // Never required, never an error when absent or wrong — a bad token simply
+  // reads with the public rules.
+  const previewQuery = z.object({ preview: z.string().max(1024).optional() });
+  function previewTokenOf(query: unknown): string | undefined {
+    const parsed = previewQuery.safeParse(query);
+    return parsed.success ? parsed.data.preview : undefined;
+  }
   const venuesQuery = z.object({
     search: z.string().min(1).max(120).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -115,7 +127,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/events/:id', { config: publicLimit }, async (req) => {
     const { id } = req.params as { id: string };
-    const ev = await getPublicEventById(id);
+    const ev = await getPublicEventById(id, { previewToken: previewTokenOf(req.query) });
     if (!ev) throw new NotFound('Event not found', 'event_not_found');
     return ev;
   });
@@ -129,7 +141,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/memberships/:membershipId', { config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
-    const m = await getPublicMembershipById(membershipId);
+    const m = await getPublicMembershipById(membershipId, { previewToken: previewTokenOf(req.query) });
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
     return m;
   });
@@ -151,20 +163,21 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    const venue = await getPublicVenueWithImages(venueId);
+    const opts = { previewToken: previewTokenOf(req.query) };
+    const venue = await getPublicVenueWithImages(venueId, opts);
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
-    const arenas = await listPublicArenas(venueId);
+    const arenas = await listPublicArenas(venueId, opts);
     return { venue, arenas };
   });
 
   app.get('/v1/consumer/venues/:venueId/events', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    return { rows: await listPublicEvents(venueId) };
+    return { rows: await listPublicEvents(venueId, { previewToken: previewTokenOf(req.query) }) };
   });
 
   app.get('/v1/consumer/venues/:venueId/memberships', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    return { rows: await listPublicMemberships(venueId) };
+    return { rows: await listPublicMemberships(venueId, { previewToken: previewTokenOf(req.query) }) };
   });
 
   const slotsQuery = z.object({
@@ -175,7 +188,11 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const { arenaId } = req.params as { arenaId: string };
     const parsed = slotsQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
-    return { rows: await listPublicArenaSlots(arenaId, parsed.data.from, parsed.data.to) };
+    return {
+      rows: await listPublicArenaSlots(arenaId, parsed.data.from, parsed.data.to, {
+        previewToken: previewTokenOf(req.query),
+      }),
+    };
   });
 
   // ── Book / purchase (authenticated consumer) ───────────────────────────────

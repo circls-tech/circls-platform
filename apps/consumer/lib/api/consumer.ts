@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
+import { withPreview } from '@/lib/preview';
 import type {
   CheckoutPaymentStatus,
   EventBookingResult,
@@ -56,28 +57,37 @@ export function useVenues(search: string, limit = 50) {
   });
 }
 
-export function useVenue(venueId: string) {
+/**
+ * The single-listing reads below take an optional `preview` token
+ * (lib/preview.ts): with one, the API reads the listing it names as it will
+ * be once approved. The token is part of the query key so a preview never
+ * serves from, or poisons, the cache of the public page.
+ */
+export function useVenue(venueId: string, preview: string | null = null) {
   return useQuery({
-    queryKey: ['venue', venueId],
-    queryFn: () => apiFetch<VenueDetail>(`/v1/consumer/venues/${venueId}`),
+    queryKey: ['venue', venueId, preview],
+    queryFn: () => apiFetch<VenueDetail>(withPreview(`/v1/consumer/venues/${venueId}`, preview)),
     enabled: Boolean(venueId),
   });
 }
 
-export function useVenueEvents(venueId: string) {
+export function useVenueEvents(venueId: string, preview: string | null = null) {
   return useQuery({
-    queryKey: ['venue-events', venueId],
-    queryFn: () => apiFetch<{ rows: PublicEvent[] }>(`/v1/consumer/venues/${venueId}/events`),
+    queryKey: ['venue-events', venueId, preview],
+    queryFn: () =>
+      apiFetch<{ rows: PublicEvent[] }>(withPreview(`/v1/consumer/venues/${venueId}/events`, preview)),
     enabled: Boolean(venueId),
     select: (data) => data.rows,
   });
 }
 
-export function useVenueMemberships(venueId: string) {
+export function useVenueMemberships(venueId: string, preview: string | null = null) {
   return useQuery({
-    queryKey: ['venue-memberships', venueId],
+    queryKey: ['venue-memberships', venueId, preview],
     queryFn: () =>
-      apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/venues/${venueId}/memberships`),
+      apiFetch<{ rows: PublicMembershipWithScope[] }>(
+        withPreview(`/v1/consumer/venues/${venueId}/memberships`, preview),
+      ),
     enabled: Boolean(venueId),
     select: (data) => data.rows,
   });
@@ -98,10 +108,11 @@ export function useUpcomingEvents(limit = 50) {
 }
 
 /** A single public event (venue or standalone) by id. */
-export function useEvent(eventId: string) {
+export function useEvent(eventId: string, preview: string | null = null) {
   return useQuery({
-    queryKey: ['event', eventId],
-    queryFn: () => apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`),
+    queryKey: ['event', eventId, preview],
+    queryFn: () =>
+      apiFetch<PublicEventWithVenue>(withPreview(`/v1/consumer/events/${eventId}`, preview)),
     enabled: Boolean(eventId),
   });
 }
@@ -121,11 +132,13 @@ export function useAllMemberships(limit = 50) {
 }
 
 /** A single public membership (venue-scoped or tenant-wide) by id. */
-export function useMembership(membershipId: string) {
+export function useMembership(membershipId: string, preview: string | null = null) {
   return useQuery({
-    queryKey: ['membership', membershipId],
+    queryKey: ['membership', membershipId, preview],
     queryFn: () =>
-      apiFetch<PublicMembershipWithScope>(`/v1/consumer/memberships/${membershipId}`),
+      apiFetch<PublicMembershipWithScope>(
+        withPreview(`/v1/consumer/memberships/${membershipId}`, preview),
+      ),
     enabled: Boolean(membershipId),
   });
 }
@@ -153,13 +166,19 @@ export async function reverseGeocode(
 
 /** Open slots for an arena in the [fromISO, toISO) window. `enabled` lets the
  * caller defer the query until a date is selected. */
-export function useArenaSlots(arenaId: string, fromISO: string, toISO: string, enabled = true) {
+export function useArenaSlots(
+  arenaId: string,
+  fromISO: string,
+  toISO: string,
+  enabled = true,
+  preview: string | null = null,
+) {
   return useQuery({
-    queryKey: ['arena-slots', arenaId, fromISO, toISO],
+    queryKey: ['arena-slots', arenaId, fromISO, toISO, preview],
     queryFn: () => {
       const qs = new URLSearchParams({ from: fromISO, to: toISO });
       return apiFetch<{ rows: PublicSlot[] }>(
-        `/v1/consumer/arenas/${arenaId}/slots?${qs.toString()}`,
+        withPreview(`/v1/consumer/arenas/${arenaId}/slots?${qs.toString()}`, preview),
       );
     },
     enabled: Boolean(arenaId) && enabled,

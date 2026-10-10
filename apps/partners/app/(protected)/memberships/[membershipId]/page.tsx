@@ -19,6 +19,7 @@ import { Button, Card, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
 import { ReceptionButton } from '@/components/ReceptionButton';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import {
   MembershipPlanFields,
   planDraftFrom,
@@ -70,6 +71,7 @@ export default function MembershipDetailPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<MembershipPlanDraft | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Seed the editor once the plan has loaded, and re-seed if it changes under
   // us (a save, or an admin decision landing while the page is open).
@@ -138,6 +140,18 @@ export default function MembershipDetailPage() {
             {membership.name}
           </h1>
           <StatusPill status={membership.status} />
+          {/* The plan's page on the customer site, whatever its status — the
+              only way to see a pending plan as customers will. */}
+          <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreviewOpen(true)}>
+            Preview
+          </Button>
+          <ListingPreviewModal
+            open={previewOpen}
+            onClose={() => setPreviewOpen(false)}
+            tenantId={tenantId}
+            type="membership"
+            id={membership.id}
+          />
           {/* Signing someone up at the counter is the thing staff come here to
               do most often, so it sits beside the name rather than below the
               members table. Offered on every plan — a partner can record an

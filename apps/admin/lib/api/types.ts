@@ -356,6 +356,16 @@ export interface AdminListingListResponse {
   rows: AdminListingRow[];
 }
 
+/** `POST /v1/admin/listings/:type/:id/preview` — a short-lived link to the
+ *  listing on the consumer site, readable there whatever its status. An arena
+ *  previews through its venue's page, so `type`/`id` may differ from the ask. */
+export interface AdminListingPreview {
+  url: string;
+  type: 'venue' | 'event' | 'membership';
+  id: string;
+  expiresAt: string;
+}
+
 export interface AdminListingDetail {
   type: AdminListingType;
   id: string;
