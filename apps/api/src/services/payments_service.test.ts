@@ -71,6 +71,9 @@ describe.skipIf(!runIntegration)('payments_service integration', () => {
       .values({
         name: 'Pay Co',
         slug: `payco-${Date.now()}`,
+        // The suite asserts customer-pays-all gross-up totals; pin it, since
+        // the product default (migration 0064) is 0 = fee waived.
+        customerFeeShareBps: 10_000,
       })
       .returning();
     tenantId = t!.id;
@@ -1435,7 +1438,7 @@ describe.skipIf(!runIntegration)('payments_service billing snapshots + advance r
     userId = u!.id;
     const [t] = await db
       .insert(tenants)
-      .values({ name: 'PaySnap Co', slug: `paysnap-${Date.now()}` })
+      .values({ name: 'PaySnap Co', slug: `paysnap-${Date.now()}`, customerFeeShareBps: 10_000 })
       .returning();
     tenantId = t!.id;
   });

@@ -442,6 +442,13 @@
       "when": 1784180000000,
       "tag": "0063_arena_schedule_rollover",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784260000000,
+      "tag": "0064_waive_gateway_fee_by_default",
+      "breakpoints": true
     }
   ]
 }

@@ -43,6 +43,9 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       payload: { name: 'ChkRoutes', slug: `chkroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
+    // This suite asserts customer-pays-all gross-up totals; pin the share,
+    // since the product default (migration 0064) is 0 = fee waived.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
 
     // Create a published event with a single General tier at 50000 paise
     const ev = await app.inject({
@@ -221,6 +224,9 @@ describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', (
       payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
+    // This suite asserts customer-pays-all gross-up totals; pin the share,
+    // since the product default (migration 0064) is 0 = fee waived.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
 
     // Create event with two tiers: VIP (50000) + GA (20000)
     const ev = await app.inject({
