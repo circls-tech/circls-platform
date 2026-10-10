@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LikeButton } from '@/components/LikeButton';
 import { SportImage } from '@/components/SportImage';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
@@ -38,9 +39,12 @@ export function MembershipCard({
   const scope = membershipScope(membership);
   const brand = membership.brand;
   return (
+    // The heart is a sibling of the link, not a child: a button inside an
+    // anchor is invalid HTML, and this keeps the whole card clickable.
+    <div className={`relative ${className}`}>
     <Link
       href={href}
-      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-lav text-ink shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className="block h-full overflow-hidden rounded-card border-[2px] border-ink bg-lav text-ink shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset"
     >
       {/* Always a header band, even with no artwork: SportImage falls back to
           the court-line motif. Rendering nothing left a plan without a photo
@@ -77,5 +81,7 @@ export function MembershipCard({
         </span>
       </div>
     </Link>
+      <LikeButton itemType="membership" itemId={membership.id} name={membership.name} className="absolute right-2.5 top-2.5 z-10" />
+    </div>
   );
 }

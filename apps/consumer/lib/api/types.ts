@@ -602,3 +602,23 @@ export interface MyProfile {
   displayName: string | null;
   interests: string[];
 }
+
+// ── Wishlist / likes ──────────────────────────────────────────────────────────
+
+/** What the heart can save: an event, a membership plan, or a venue. */
+export type WishlistItemType = 'event' | 'membership' | 'venue';
+
+/** Just the liked ids per type (GET /v1/consumer/me/wishlist/ids). */
+export interface WishlistIds {
+  events: string[];
+  memberships: string[];
+  venues: string[];
+}
+
+/** The hydrated wishlist (GET /v1/consumer/me/wishlist): only listings the
+ *  catalogue still shows, each section most-recently-liked first. */
+export interface Wishlist {
+  events: (PublicEventWithVenue & { likedAt: string })[];
+  memberships: (PublicMembershipWithScope & { likedAt: string })[];
+  venues: (PublicVenue & { likedAt: string })[];
+}

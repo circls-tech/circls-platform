@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
+import { LikeButton } from '@/components/LikeButton';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { OffersStrip } from '@/components/OffersStrip';
@@ -124,6 +125,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
                 <div className="flex items-center gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">{scope.label}</p>
                   {scope.brandWide && <Badge tone="neutral" label="Brand-wide" />}
+                  <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" className="ml-auto" />
                 </div>
                 <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
                 {m.description && <p className="mt-2 whitespace-pre-line text-sm text-ink-soft">{m.description}</p>}

@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { LikeButton } from '@/components/LikeButton';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -110,9 +111,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 }
               />
               <div className="bg-white p-5">
-                <div className="flex items-center gap-2">
-                  <h1 className="font-display text-4xl font-extrabold text-ink">{ev.name}</h1>
-                  {ev.isStandalone && <Badge tone="neutral" label="Event" />}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="font-display text-4xl font-extrabold text-ink">{ev.name}</h1>
+                    {ev.isStandalone && <Badge tone="neutral" label="Event" />}
+                  </div>
+                  <LikeButton itemType="event" itemId={ev.id} name={ev.name} variant="inline" className="mt-1" />
                 </div>
                 <p className="mt-1 text-sm text-text-secondary">{formatDateTime(ev.startsAt)}</p>
                 {(ev.seriesOccurrences?.length ?? 0) > 1 && (
