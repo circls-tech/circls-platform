@@ -463,7 +463,7 @@ function ChargesRows({ breakdown, cur }: { breakdown: QuoteResponse; cur: string
                 {formatPaiseExact(gatewayFee + waived, cur)}
               </s>
               {gatewayFee === 0 ? (
-                <span className="font-display text-xs font-extrabold uppercase tracking-wide text-petal-green">Free</span>
+                <span className="font-display text-sm font-extrabold uppercase tracking-wide text-petal-green">Free</span>
               ) : (
                 <span className="text-[var(--color-ink)]">{formatPaiseExact(gatewayFee, cur)}</span>
               )}
