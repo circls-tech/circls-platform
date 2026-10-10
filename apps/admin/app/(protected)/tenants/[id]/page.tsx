@@ -417,7 +417,12 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
 
         <Card title="Gateway fee split & advances">
           <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-1.5">
-            <dt className="text-xs text-slate-500">Customer pays</dt>
+            <dt className="text-xs text-slate-500">
+              Customer pays
+              <span className="block text-[11px] text-slate-400">
+                Below 100%, checkout shows the fee struck through (FREE at 0%)
+              </span>
+            </dt>
             <dd>
               <PctInput value={customerShare} onChange={setCustomerShare} label="Customer fee share %" />
             </dd>

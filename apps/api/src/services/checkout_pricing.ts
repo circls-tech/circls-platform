@@ -121,6 +121,12 @@ export interface CheckoutBreakdown {
   consumerCommissionPaise: number;
   /** The gateway-fee share the customer pays: total − discountedBase − K. */
   gatewayFeeCustomerPaise: number;
+  /** The part of the gateway fee the customer would have paid under the
+   *  default (customer-pays-all) gross-up but does not, because the tenant's
+   *  billing assigns it to the org or to Circls. Checkout renders the fee
+   *  line struck through with "FREE" when this covers the whole fee —
+   *  consumer-safe: it is a price the customer sees, not org-billing data. */
+  gatewayFeeWaivedPaise: number;
   /** total − discountedBase: the "Other charges (incl taxes)" line
    *  (= consumerCommission + the customer's gateway-fee share). */
   otherChargesPaise: number;
@@ -148,6 +154,10 @@ export function computeCheckout(
   );
   const chargeablePaise = discountedBasePaise + consumerCommissionPaise;
   const totalPaise = grossUpShared(chargeablePaise, provider, billing.customerShareBps);
+  const gatewayFeeCustomerPaise = totalPaise - chargeablePaise;
+  // What the fee line would read if the customer bore all of it (the legacy
+  // gross-up); the difference is what checkout shows as waived.
+  const gatewayFeeFullPaise = grossUp(chargeablePaise, provider) - chargeablePaise;
   const gatewayFeeEstimatePaise = estimateGatewayFeePaise(totalPaise, provider);
   const orgFeeSharePaise = Math.floor((gatewayFeeEstimatePaise * billing.orgShareBps) / 10_000);
   return {
@@ -155,7 +165,8 @@ export function computeCheckout(
     discountPaise,
     discountedBasePaise,
     consumerCommissionPaise,
-    gatewayFeeCustomerPaise: totalPaise - chargeablePaise,
+    gatewayFeeCustomerPaise,
+    gatewayFeeWaivedPaise: Math.max(0, gatewayFeeFullPaise - gatewayFeeCustomerPaise),
     otherChargesPaise: totalPaise - discountedBasePaise,
     totalPaise,
     gatewayFeeEstimatePaise,

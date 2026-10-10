@@ -1619,6 +1619,7 @@ paths:
                   - otherChargesPaise
                   - totalPaise
                   - gatewayFeePaise
+                  - gatewayFeeWaivedPaise
                   - platformFeePaise
                   - currency
                   - coupon
@@ -1641,6 +1642,13 @@ paths:
                   gatewayFeePaise:
                     type: integer
                     description: The customer's share of the payment-gateway charge.
+                  gatewayFeeWaivedPaise:
+                    type: integer
+                    description: >-
+                      The part of the payment-gateway charge the customer is NOT
+                      paying (the organisation or Circls bears it). Checkout shows
+                      gatewayFeePaise + gatewayFeeWaivedPaise struck through and, when
+                      gatewayFeePaise is 0, "FREE" — like a waived delivery fee.
                   platformFeePaise:
                     type: integer
                     description: Circls platform fee (consumer-side commission), if configured.
