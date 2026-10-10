@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import type { QrTicketConfig } from './qr_ticket_config.js';
 import { venues } from './venues.js';
@@ -13,6 +13,29 @@ export interface ScheduleTemplate {
   quantizationMin: number;
   defaultPriceRupees: number;
   bands: { startMin: number; endMin: number; priceRupees: number }[];
+}
+
+/**
+ * The weekly plan auto-rollover releases from: the exact cells the partner
+ * built (bands expanded, grid edits included), not just the band template, so
+ * generated days match what they saw on the grid. `cells[].startTimeMin` is
+ * minutes from the business day's local midnight and may exceed 1439
+ * (overnight). Prices are minor units of the venue currency.
+ */
+export interface RolloverPlan {
+  quantizationMin: number;
+  businessDayStartMin: number;
+  cells: {
+    dayOfWeek: number;
+    startTimeMin: number;
+    durationMin: number;
+    price?: number | null;
+    blocked?: boolean;
+  }[];
+  /** Team member who saved the plan — auto-releases are audited as them. */
+  savedByUserId: string;
+  /** ISO-8601 instant the plan was saved. */
+  savedAt: string;
 }
 
 /**
@@ -46,6 +69,17 @@ export const arenas = pgTable('arenas', {
   scheduleTemplate: jsonb('schedule_template').$type<ScheduleTemplate>(),
   /** QR entry-ticket rules for bookings on this arena (null = disabled). */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
+  // ── Auto-rollover (migration 0063). While enabled, the worker keeps the next
+  //    ROLLOVER_HORIZON_DAYS business days released from `rolloverPlan`, only
+  //    ever touching days that have no slots yet. See schedule_rollover_service.
+  autoRolloverEnabled: boolean('auto_rollover_enabled').notNull().default(false),
+  /** The saved weekly plan; kept when rollover is switched off so it can be
+   *  switched back on without rebuilding. Null until first saved. */
+  rolloverPlan: jsonb('rollover_plan').$type<RolloverPlan>(),
+  /** When the plan or the enabled flag last changed. */
+  rolloverUpdatedAt: timestamp('rollover_updated_at', { withTimezone: true }),
+  /** Last time the worker checked this arena (whether or not it released). */
+  rolloverLastRunAt: timestamp('rollover_last_run_at', { withTimezone: true }),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: arenaStatus('status').notNull().default('active'),
   /** What the arena was before its partner closed it (closed = `suspended`);

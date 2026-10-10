@@ -16,6 +16,7 @@ import type { Capability } from '../lib/authz/capabilities.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
 import { getWeeklySchedule, setWeeklySchedule } from '../services/schedule_service.js';
+import { setArenaRollover } from '../services/schedule_rollover_service.js';
 import { getVenueById } from '../services/venue_service.js';
 
 const createArenaSchema = z.object({
@@ -39,6 +40,28 @@ const scheduleSchema = z.object({
       slotDurationMin: z.number().int().min(5).max(1440).optional(),
     }),
   ),
+});
+
+/** Auto-rollover: the weekly plan the worker releases from (see schedule_rollover_service). */
+const rolloverPlanSchema = z.object({
+  quantizationMin: z.number().int().positive(),
+  businessDayStartMin: z.number().int().min(0).max(1439),
+  cells: z
+    .array(
+      z.object({
+        dayOfWeek: z.number().int().min(0).max(6),
+        startTimeMin: z.number().int().nonnegative(),
+        durationMin: z.number().int().positive(),
+        price: z.number().int().nonnegative().nullable().optional(),
+        blocked: z.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .max(7 * 48 * 2),
+});
+const rolloverSchema = z.object({
+  enabled: z.boolean(),
+  plan: rolloverPlanSchema.optional(),
 });
 
 /**
@@ -110,6 +133,44 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
       return action === 'close' ? closeArena(auditCtx, arenaId) : reopenArena(auditCtx, arenaId);
     });
   }
+
+  // ── Auto-rollover ──────────────────────────────────────────────────────────
+  // Switch the arena's rolling weekly plan on/off, or replace the plan without
+  // releasing anything now (the new plan applies to days generated from here
+  // on). Releasing with `autoRollover: true` does the same in one step.
+  app.put('/v1/arenas/:arenaId/rollover', { preHandler: requireAuth }, async (req) => {
+    const { arenaId } = req.params as { arenaId: string };
+    const parsed = rolloverSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid rollover payload', 'bad_request', { issues: parsed.error.issues });
+    }
+    const arena = await getArenaById(arenaId);
+    if (!arena) throw new NotFound('Arena not found', 'arena_not_found');
+    const venue = await getVenueById(arena.venueId);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'schedules.write');
+    const { enabled, plan } = parsed.data;
+    return setArenaRollover({ tenantId: venue.tenantId, actorUserId: user.id }, arenaId, {
+      enabled,
+      ...(plan !== undefined
+        ? {
+            plan: {
+              quantizationMin: plan.quantizationMin,
+              businessDayStartMin: plan.businessDayStartMin,
+              cells: plan.cells.map((c) => ({
+                dayOfWeek: c.dayOfWeek,
+                startTimeMin: c.startTimeMin,
+                durationMin: c.durationMin,
+                ...(c.price !== undefined ? { price: c.price } : {}),
+                ...(c.blocked !== undefined ? { blocked: c.blocked } : {}),
+              })),
+            },
+          }
+        : {}),
+    });
+  });
 
   app.get('/v1/venues/:venueId/arenas', { preHandler: requireAuth }, async (req) => {
     const { venueId } = req.params as { venueId: string };

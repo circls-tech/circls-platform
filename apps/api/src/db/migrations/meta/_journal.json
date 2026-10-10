@@ -435,6 +435,13 @@
       "when": 1784100000000,
       "tag": "0062_payout_items",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784180000000,
+      "tag": "0063_arena_schedule_rollover",
+      "breakpoints": true
     }
   ]
 }

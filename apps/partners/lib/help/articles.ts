@@ -51,7 +51,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up schedules and slot pricing',
     category: 'Scheduling',
     summary:
-      'Use the schedule builder to set pricing bands (including overnight and 24-hour windows), a business-day start, slot durations, and per-slot pricing on a visual grid.',
+      'Use the schedule builder to set pricing bands (including overnight and 24-hour windows), a business-day start, slot durations, and per-slot pricing on a visual grid — then switch on auto-rollover so the next 7 days are always released.',
     quickLink: true,
     order: 3,
   },

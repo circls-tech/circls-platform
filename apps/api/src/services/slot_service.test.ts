@@ -220,6 +220,38 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       });
     });
 
+    it('saves the released plan as the rolling plan when autoRollover is true', async () => {
+      const cells = [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60, price: 10000, blocked: false }];
+      await releaseSlots(ctx, arenaId, {
+        startDate: '2027-01-02',
+        endDate: '2027-01-02',
+        quantizationMin: 60,
+        cells,
+        businessDayStartMin: 180,
+        autoRollover: true,
+      });
+      const [on] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+      expect(on?.autoRolloverEnabled).toBe(true);
+      expect(on?.rolloverPlan).toMatchObject({
+        quantizationMin: 60,
+        businessDayStartMin: 180,
+        cells,
+        savedByUserId: actorUserId,
+      });
+
+      // false switches it off but keeps the plan; omitted leaves it alone.
+      await releaseSlots(ctx, arenaId, {
+        startDate: '2027-01-02',
+        endDate: '2027-01-02',
+        quantizationMin: 60,
+        cells,
+        autoRollover: false,
+      });
+      const [off] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+      expect(off?.autoRolloverEnabled).toBe(false);
+      expect(off?.rolloverPlan?.cells).toEqual(cells);
+    });
+
     it('leaves 2 matching slots unchanged on a second identical release', async () => {
       // Second release with same date range and cells → nothing to create,
       // nothing to change: the plan matches the existing schedule exactly.

@@ -180,6 +180,28 @@ export interface ScheduleTemplate {
   bands: { startMin: number; endMin: number; priceRupees: number }[];
 }
 
+/**
+ * The weekly plan auto-rollover releases from: the exact cells the partner
+ * built (grid edits included). `cells[].startTimeMin` is minutes from the
+ * business day's local midnight and may exceed 1439 (overnight); prices are
+ * minor units of the venue currency.
+ */
+export interface RolloverPlan {
+  quantizationMin: number;
+  businessDayStartMin: number;
+  cells: {
+    dayOfWeek: number;
+    startTimeMin: number;
+    durationMin: number;
+    price?: number | null;
+    blocked?: boolean;
+  }[];
+  /** Team member who saved the plan. */
+  savedByUserId: string;
+  /** ISO-8601. */
+  savedAt: string;
+}
+
 export interface Arena {
   id: string;
   venueId: string;
@@ -190,6 +212,14 @@ export interface Arena {
   businessDayStartMin: number;
   /** Last-used builder template, or null before the first release. */
   scheduleTemplate: ScheduleTemplate | null;
+  /** Auto-rollover: while on, the next 7 business days are kept released from `rolloverPlan`. */
+  autoRolloverEnabled: boolean;
+  /** The saved rolling plan; kept when rollover is switched off. Null until first saved. */
+  rolloverPlan: RolloverPlan | null;
+  /** ISO-8601 — when the plan or the on/off flag last changed. */
+  rolloverUpdatedAt: string | null;
+  /** ISO-8601 — the worker's last check of this arena, or null if never. */
+  rolloverLastRunAt: string | null;
   /** QR ticket rules for bookings on this arena; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   status: ListingStatus;
