@@ -13,6 +13,9 @@ describe('envSchema production refinement', () => {
       expect(paths).toContain('RAZORPAY_KEY_ID');
       expect(paths).toContain('RAZORPAY_KEY_SECRET');
       expect(paths).toContain('RAZORPAY_WEBHOOK_SECRET');
+      // Preview links must verify on every instance, so the signing secret
+      // is required in production too.
+      expect(paths).toContain('LISTING_PREVIEW_SECRET');
     }
   });
 
@@ -23,6 +26,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
     });
     expect(result.success).toBe(true);
   });
@@ -34,6 +38,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
       INR_PAYMENT_GATEWAY: 'cashfree',
     };
     const missing = envSchema.safeParse(base);
@@ -60,6 +65,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
       CASHFREE_CLIENT_ID: 'id',
       CASHFREE_CLIENT_SECRET: 'secret',
     };
@@ -89,6 +95,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.INR_PAYMENT_GATEWAY).toBe('razorpay');
@@ -101,6 +108,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
       CASHFREE_CLIENT_ID: 'id',
       CASHFREE_CLIENT_SECRET: 'secret',
       CASHFREE_ENV: 'production',
@@ -126,6 +134,7 @@ describe('envSchema production refinement', () => {
       RAZORPAY_KEY_ID: 'key',
       RAZORPAY_KEY_SECRET: 'secret',
       RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
       CASHFREE_CLIENT_ID: 'id',
       CASHFREE_CLIENT_SECRET: 'secret',
       CASHFREE_ENV: 'production',

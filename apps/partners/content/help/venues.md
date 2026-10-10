@@ -29,6 +29,12 @@ These fields appear on your public venue page, so keep them accurate — stale d
 
 Click **Save details** to apply. Editing these does not change your venue's approval status.
 
+## Previewing as a customer
+
+A venue's detail page has a **Preview** button beside its status. It opens the venue's page on the customer site — the real page, with photos, details, courts and turfs, events and memberships laid out exactly as customers will see them — whatever the venue's status, so you can check a venue that is still pending review. Arenas awaiting review appear on it too, with any slots you have released, since they go live with the venue; closed and rejected arenas don't. A banner marks it as a preview; switch between **Phone** and **Desktop**, or use **Open in new tab** for a full-size look. Booking is turned off in the preview. The Circls team sees this same customer page when they review your venue or an arena.
+
+Preview is available to every member of your organisation, including Staff and Read-only. Preview links expire after an hour — open the preview again for a fresh one.
+
 ## Adding and managing arenas
 
 Arenas are created and listed on the venue detail page.

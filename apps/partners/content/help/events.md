@@ -180,11 +180,19 @@ passes customers already hold are never changed.
 | **rejected** | Not approved. Read-only. |
 | **completed** | Ended by you. The event has stopped selling. Read-only, but reopenable while its end time is still ahead. |
 
+## Previewing as a customer
+
+Every event's detail page has a **Preview** button beside its status. It opens the event's page on the customer site — the real page, with your photos, tiers, prices and description laid out exactly as customers will see them — whatever the event's status, so you can check a draft before anyone else sees it. A banner at the top marks it as a preview; switch between **Phone** and **Desktop** to see it at either size, or use **Open in new tab** for a full-size look. Booking is turned off in the preview, and for a recurring event the other dates are shown but can't be opened from it.
+
+**Submit for review** opens the same preview first: look the page over, then confirm **Submit for review** from inside it (or **Back** to keep editing). The Circls team sees this same customer page when they review your event.
+
+Preview is available to every member of your organisation, including Staff and Read-only. Preview links expire after an hour — open the preview again for a fresh one.
+
 ## Editing and submitting
 
 Open an event to see its detail page. What you can do depends on its status:
 
-- **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review** to send it to circls, or **Cancel** to drop it.
+- **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review**: the customer-site preview opens so you can check the page, and you confirm the submission from there. **Cancel** drops the event.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
 - **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
 - **Cancelled**, **rejected** or **ended** — read-only.

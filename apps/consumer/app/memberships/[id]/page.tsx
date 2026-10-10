@@ -1,8 +1,9 @@
 'use client';
-import { use, useState } from 'react';
+import { Suspense, use, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
+import { PreviewBanner } from '@/components/PreviewBanner';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -13,6 +14,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { usePreviewToken } from '@/lib/preview';
 import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
@@ -40,8 +42,21 @@ function Benefits({ benefits }: { benefits: MembershipBenefits }) {
 }
 
 export default function MembershipPage({ params }: { params: Promise<{ id: string }> }) {
+  // The preview token is read from the URL (useSearchParams), which the app
+  // router only allows under a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <MembershipPageInner params={params} />
+    </Suspense>
+  );
+}
+
+function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const membershipQ = useMembership(id);
+  // Preview mode (lib/preview.ts): a partner or reviewer looking at an
+  // unapproved plan as a customer will. Same page, buying turned off.
+  const preview = usePreviewToken();
+  const membershipQ = useMembership(id, preview);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const m = membershipQ.data;
@@ -79,7 +94,7 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
   });
 
   function buy(tier: PublicMembershipTier | undefined) {
-    if (!m) return;
+    if (!m || preview) return;
     const prefill: { name?: string; contact?: string; couponCode?: string } = {};
     if (user?.displayName) prefill.name = user.displayName;
     if (user?.phoneNumber) prefill.contact = user.phoneNumber;
@@ -98,9 +113,9 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="min-h-screen">
-      <Header />
+      {preview ? <PreviewBanner noun="membership" /> : <Header />}
       <main className={`mx-auto max-w-3xl px-4 pt-8${selectedTier ? ' pb-28' : ' pb-8'}`}>
-        <BackBar fallbackHref="/memberships" />
+        {!preview && <BackBar fallbackHref="/memberships" />}
         {membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (
@@ -223,9 +238,20 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
               </section>
             )}
 
-            {/* Q&A with the organiser (#106 questions threads). */}
+            {/* Q&A with the organiser (#106 questions threads). Not in a
+                preview: there is nothing to ask about yet, and the section's
+                reads are for public listings. */}
             <section className="mt-8">
-              <QuestionsSection subjectType="membership" subjectId={m.id} subjectName={m.name} />
+              {preview ? (
+                <Card>
+                  <h2 className="font-display text-xl font-extrabold text-ink">Questions</h2>
+                  <p className="mt-1 text-sm text-text-secondary">
+                    Customers can ask you questions here once the plan is live.
+                  </p>
+                </Card>
+              ) : (
+                <QuestionsSection subjectType="membership" subjectId={m.id} subjectName={m.name} />
+              )}
             </section>
           </>
         )}
@@ -243,7 +269,11 @@ export default function MembershipPage({ params }: { params: Promise<{ id: strin
             </>
           }
           action={
-            <Button onClick={() => buy(selectedTier)}>
+            <Button
+              onClick={() => buy(selectedTier)}
+              disabled={Boolean(preview)}
+              title={preview ? 'Buying is turned off in preview' : undefined}
+            >
               {selectedTier.pricePaise === 0
                 ? 'Get membership'
                 : `Buy · ${formatPaise(selectedTier.pricePaise, currency)}`}
