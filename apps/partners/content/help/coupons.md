@@ -21,7 +21,9 @@ A new coupon is **active** immediately (subject to its validity window).
 
 ## How the discount is applied
 
-The discount reduces your **base price**. The customer then pays that reduced base plus the "Other charges" line (the payment-gateway charge and any configured platform fee). Only one coupon can be used per checkout. By default the customer covers the full gateway charge; your Partner Agreement may instead assign a share of it to your organisation, in which case that share is deducted from your settled revenue at payout time.
+The discount reduces your **base price**. The customer then pays that reduced base plus the "Other charges" line (the payment-gateway charge and any configured platform fee). Only one coupon can be used per checkout. By default Circls bears the gateway charge, so the customer sees it struck through as **FREE** and pays exactly the reduced base; your Partner Agreement may instead have the customer pay it, or assign a share of it to your organisation, in which case that share is deducted from your settled revenue at payout time.
+
+**Don't use a coupon to cancel out the gateway charge.** If your agreement has the customer paying none of the gateway charge, checkout already shows a "Payment processing fee" line with the usual charge struck through and **FREE** beside it — customers see what they are saving, and the total is exactly your base price. A "2.36% off" coupon would hide that, and would also count against the customer's one coupon per checkout.
 
 ## Statuses
 

@@ -69,6 +69,7 @@ interface QuoteMoneyFields {
   otherChargesPaise: number;
   totalPaise: number;
   gatewayFeePaise: number;
+  gatewayFeeWaivedPaise: number;
   platformFeePaise: number;
 }
 
@@ -77,7 +78,9 @@ interface QuoteMoneyFields {
  * spread: `orgFeeSharePaise` / `gatewayFeeEstimatePaise` are org-billing data
  * and must not leak to consumers. `otherChargesPaise` keeps its historical
  * meaning (total − discountedBase) and now equals gatewayFee + platformFee —
- * the two new fields feed the checkout tooltip's split.
+ * `gatewayFeePaise` / `platformFeePaise` feed the checkout tooltip's split,
+ * and `gatewayFeeWaivedPaise` is the part of the gateway fee the customer is
+ * not charged (rendered struck through / "FREE").
  */
 function quoteFields(b: CheckoutBreakdown): QuoteMoneyFields {
   return {
@@ -87,6 +90,7 @@ function quoteFields(b: CheckoutBreakdown): QuoteMoneyFields {
     otherChargesPaise: b.otherChargesPaise,
     totalPaise: b.totalPaise,
     gatewayFeePaise: b.gatewayFeeCustomerPaise,
+    gatewayFeeWaivedPaise: b.gatewayFeeWaivedPaise,
     platformFeePaise: b.consumerCommissionPaise,
   };
 }
