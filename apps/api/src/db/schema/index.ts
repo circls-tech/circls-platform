@@ -42,3 +42,5 @@ export * from './event_registration_answers.js';
 export * from './event_change_requests.js';
 // Platform-wide runtime settings (e.g. the INR payment gateway switch).
 export * from './platform_settings.js';
+// Consumer likes / wishlist (events, memberships, venues).
+export * from './wishlist_items.js';

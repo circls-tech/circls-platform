@@ -36,6 +36,13 @@ import {
   logConsumerActivity,
   updateMyProfile,
 } from '../services/consumer_service.js';
+import {
+  addToWishlist,
+  getWishlist,
+  listWishlistIds,
+  removeFromWishlist,
+  WISHLIST_ITEM_TYPES,
+} from '../services/wishlist_service.js';
 
 /** Behavioral telemetry batch (M6). event_type/item_type kept open (telemetry,
  *  not domain) so new client signals never need a server change. */
@@ -320,6 +327,57 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const accepted = await logConsumerActivity(user.id, parsed.data.events);
     return { accepted };
   });
+
+  // ── Wishlist / likes (authenticated consumer) ─────────────────────────────
+  // The heart on event, membership and venue cards. Private to the signed-in
+  // consumer; a like is only accepted for a listing the public catalogue shows
+  // right now, and the hydrated read re-applies that gate.
+
+  /** The wishlist in card shape, each section most-recently-liked first. */
+  app.get('/v1/consumer/me/wishlist', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    return getWishlist(user.id);
+  });
+
+  /** Just the liked ids per type — enough to paint hearts on any listing. */
+  app.get('/v1/consumer/me/wishlist/ids', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    return listWishlistIds(user.id);
+  });
+
+  const wishlistParams = z.object({
+    itemType: z.enum(WISHLIST_ITEM_TYPES),
+    itemId: z.string().uuid(),
+  });
+  const parseWishlistParams = (params: unknown) => {
+    const parsed = wishlistParams.safeParse(params);
+    if (!parsed.success) throw new BadRequest('Invalid wishlist item', 'bad_request', { issues: parsed.error.issues });
+    return parsed.data;
+  };
+
+  /** Like. Idempotent; 404 when the listing is missing or not public. */
+  app.put(
+    '/v1/consumer/me/wishlist/:itemType/:itemId',
+    { preHandler: [requireAuth, perUserLimit] },
+    async (req) => {
+      const { itemType, itemId } = parseWishlistParams(req.params);
+      const user = await currentUser(req);
+      await addToWishlist(user.id, itemType, itemId);
+      return { liked: true };
+    },
+  );
+
+  /** Unlike. Idempotent. */
+  app.delete(
+    '/v1/consumer/me/wishlist/:itemType/:itemId',
+    { preHandler: [requireAuth, perUserLimit] },
+    async (req) => {
+      const { itemType, itemId } = parseWishlistParams(req.params);
+      const user = await currentUser(req);
+      await removeFromWishlist(user.id, itemType, itemId);
+      return { liked: false };
+    },
+  );
 
   app.get('/v1/consumer/me/bookings/:id', { preHandler: requireAuth }, async (req) => {
     const params = z.object({ id: z.string().uuid() }).safeParse(req.params);

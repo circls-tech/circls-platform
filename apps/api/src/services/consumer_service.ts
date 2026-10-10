@@ -24,6 +24,7 @@ import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
+import { wishlistItems } from '../db/schema/wishlist_items.js';
 import { notifications } from '../db/schema/notifications.js';
 import { supportIssues } from '../db/schema/support_issues.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
@@ -173,6 +174,32 @@ export async function getPublicVenueWithImages(venueId: string): Promise<PublicV
   if (!row) return null;
   const imagesByVenue = await imagesForVenues([row.v.id]);
   return toPublicVenue(row.v, toBrandSummary(row.brand), imagesByVenue.get(row.v.id) ?? []);
+}
+
+/**
+ * The publicly visible venues among `ids`, in card shape (with images), in no
+ * particular order. Ids that don't exist or fail the visibility gate are
+ * simply absent. Same gate as {@link getPublicVenueWithImages} (the detail
+ * page), so a venue without a bookable arena still resolves.
+ */
+export async function listPublicVenuesByIds(ids: string[]): Promise<PublicVenue[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ v: venues, brand: BRAND_COLUMNS })
+    .from(venues)
+    .innerJoin(tenants, eq(tenants.id, venues.tenantId))
+    .where(
+      and(
+        inArray(venues.id, ids),
+        eq(venues.status, 'active'),
+        eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
+      ),
+    );
+  const imagesByVenue = await imagesForVenues(rows.map((r) => r.v.id));
+  return rows.map((r) =>
+    toPublicVenue(r.v, toBrandSummary(r.brand), imagesByVenue.get(r.v.id) ?? []),
+  );
 }
 
 /** A single approved + tenant-active venue, or null. */
@@ -583,6 +610,50 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
   };
 }
 
+/**
+ * The publicly visible events among `ids` as list rows (images, no tiers or
+ * questions), in no particular order. Same visibility gate as
+ * {@link getPublicEventById}: published, upcoming, visible tenant and venue.
+ * Ids that don't exist or fail the gate are simply absent. Recurring events are
+ * NOT collapsed to one card per series here — every id is a specific date.
+ */
+export async function listPublicEventsByIds(ids: string[]): Promise<PublicEventWithVenue[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select(PUBLIC_EVENT_COLUMNS)
+    .from(events)
+    .leftJoin(venues, eq(venues.id, events.venueId))
+    .innerJoin(tenants, eq(tenants.id, events.tenantId))
+    .where(
+      and(
+        inArray(events.id, ids),
+        eq(events.status, 'published'),
+        eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
+        sql`(${events.venueId} is null or ${venues.status} = 'active')`,
+        sql`${events.endsAt} >= now()`,
+      ),
+    );
+  const joinRows = rows as EventJoinRow[];
+  const imagesByEvent = await imagesForEvents(joinRows.map((r) => r.e.id));
+  const fallbackSeriesIds = [
+    ...new Set(
+      joinRows
+        .filter((r) => r.e.seriesId && (imagesByEvent.get(r.e.id) ?? []).length === 0)
+        .map((r) => r.e.seriesId!),
+    ),
+  ];
+  const imagesBySeries = await imagesForSeries(fallbackSeriesIds);
+  return joinRows.map((r) =>
+    toPublicEvent(
+      r,
+      imagesByEvent.get(r.e.id) ??
+        (r.e.seriesId ? imagesBySeries.get(r.e.seriesId) : undefined) ??
+        [],
+    ),
+  );
+}
+
 /** Active memberships (tenant-wide or venue-scoped) for a visible venue. */
 export async function listPublicMemberships(venueId: string): Promise<PublicMembershipWithScope[]> {
   const venue = await assertVenueVisible(venueId);
@@ -767,6 +838,32 @@ export async function getPublicMembershipById(
   if (!r) return null;
   const [withTiers] = await attachMembershipTiers([r]);
   return withTiers ?? null;
+}
+
+/**
+ * The publicly visible memberships among `ids`, enriched with scope and live
+ * tiers, in no particular order. Same gate as {@link getPublicMembershipById};
+ * ids that don't exist or fail it are simply absent.
+ */
+export async function listPublicMembershipsByIds(
+  ids: string[],
+): Promise<PublicMembershipWithScope[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select(PUBLIC_MEMBERSHIP_COLUMNS)
+    .from(memberships)
+    .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+    .leftJoin(venues, eq(venues.id, memberships.venueId))
+    .where(
+      and(
+        inArray(memberships.id, ids),
+        eq(memberships.status, 'active'),
+        eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
+        sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
+      ),
+    );
+  return attachMembershipTiers(rows as MembershipJoinRow[]);
 }
 
 // ── Book / purchase ────────────────────────────────────────────────────────
@@ -1530,6 +1627,9 @@ export async function deleteMyAccount(
 
       // Behavioural telemetry is pure personal data with no retention duty.
       await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
+      // So is the wishlist: the users row is kept as a tombstone, so the FK
+      // cascade never fires for a self-service deletion.
+      await tx.delete(wishlistItems).where(eq(wishlistItems.userId, row.id));
 
       // Support tickets stay (the org's record of the issue) but lose the
       // free text, which routinely carries phone numbers/addresses the user
