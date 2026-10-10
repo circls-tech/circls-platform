@@ -9,6 +9,8 @@ import { PayoutBreakdown } from '@/components/PayoutBreakdown';
 
 const STATUS_TONE: Record<AdminPayoutRow['status'], string> = {
   pending: 'bg-amber-100 text-amber-800',
+  // Some item lines settled, others still outstanding.
+  partially_paid: 'bg-sky-100 text-sky-800',
   paid: 'bg-emerald-100 text-emerald-800',
 };
 

@@ -15,11 +15,15 @@
  */
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { payments, payouts, tenants } from '../db/schema/index.js';
+import { payments, payoutItems, payouts, tenants } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 import { creditableCharge } from './settlement_credit.js';
+import {
+  allocatePayoutLines,
+  type RawItemAggregate,
+} from './payout_allocation.js';
 
 /**
  * The shared "this refund's charge was going to reach the partner" rule, bound
@@ -260,37 +264,155 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
     return 0;
   }
 
-  const inserted = await db
-    .insert(payouts)
-    .values(
-      toInsert.map((p) => ({
-        tenantId: p.tenantId,
-        provider: 'external' as const,
-        periodStart: start,
-        periodEnd: end,
-        grossPaise: p.gross,
-        refundsPaise: p.refunds,
-        commissionPaise: p.commission,
-        advancesPaise: p.advances,
-        advanceRecoupedPaise: p.advanceRecouped,
-        amountPaise: p.net,
-        currency: p.currency,
-        status: 'pending',
-        reconciledAt: new Date(),
-        metadata: {},
-      })),
-    )
-    .onConflictDoNothing({
-      target: [payouts.tenantId, payouts.periodStart, payouts.periodEnd],
-    })
-    .returning({ id: payouts.id });
+  // Each payout and its item lines are written in ONE transaction. The lines
+  // are what an admin marks paid, so a payout that exists without them would
+  // be money nobody can settle — and a partial write would leave lines that do
+  // not sum to their payout, breaking the invariant everything downstream
+  // (paid-out figures, the rollup status) depends on.
+  const insertedIds: string[] = [];
+  for (const p of toInsert) {
+    const items = await rawItemAggregates(p.tenantId, p.currency, start, end);
 
-  logger.info({ count: inserted.length, start, end }, 'weekly_payout_reconciled');
-  return inserted.length;
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(payouts)
+        .values({
+          tenantId: p.tenantId,
+          provider: 'external' as const,
+          periodStart: start,
+          periodEnd: end,
+          grossPaise: p.gross,
+          refundsPaise: p.refunds,
+          commissionPaise: p.commission,
+          advancesPaise: p.advances,
+          advanceRecoupedPaise: p.advanceRecouped,
+          amountPaise: p.net,
+          currency: p.currency,
+          status: 'pending',
+          reconciledAt: new Date(),
+          metadata: {},
+        })
+        .onConflictDoNothing({
+          target: [payouts.tenantId, payouts.periodStart, payouts.periodEnd],
+        })
+        .returning({ id: payouts.id });
+
+      // Already reconciled by a concurrent run: leave its lines alone.
+      if (!row) return;
+
+      const lines = allocatePayoutLines(items, {
+        gross: p.gross,
+        refunds: p.refunds,
+        commission: p.commission,
+        advances: p.advances,
+        advanceRecouped: p.advanceRecouped,
+        amount: p.net,
+      });
+
+      await tx.insert(payoutItems).values(
+        lines.map((l) => ({
+          payoutId: row.id,
+          tenantId: p.tenantId,
+          itemType: l.itemType,
+          itemId: l.itemId,
+          currency: p.currency,
+          grossPaise: l.grossPaise,
+          refundsPaise: l.refundsPaise,
+          commissionPaise: l.commissionPaise,
+          amountPaise: l.amountPaise,
+          status: 'pending' as const,
+        })),
+      );
+
+      insertedIds.push(row.id);
+    });
+  }
+
+  logger.info({ count: insertedIds.length, start, end }, 'weekly_payout_reconciled');
+  return insertedIds.length;
+}
+
+/**
+ * Per-item aggregates for one tenant's payout window.
+ *
+ * Mirrors the charge and refund halves of `reconcileWeeklyPayouts` — charges
+ * RELEASED in the window, refunds RAISED in it and creditable — but grouped by
+ * what was sold instead of by tenant. Advances are deliberately absent: they
+ * are tenant-level financing with no item behind them, and
+ * `allocatePayoutLines` gives them their own line.
+ *
+ * The item key is the same expression the partner-facing earnings read uses,
+ * so a line here names the same thing the partner sees on their own page.
+ */
+async function rawItemAggregates(
+  tenantId: string,
+  currency: string,
+  start: Date,
+  end: Date,
+): Promise<RawItemAggregate[]> {
+  const rows = (await db.execute<Record<string, unknown>>(sql`
+    with contrib as (
+      select b.item_type::text as item_type,
+             case b.item_type
+               when 'event'      then nullif(b.item_data->>'eventId', '')::uuid
+               when 'membership' then nullif(b.item_data->>'membershipId', '')::uuid
+               else b.venue_id
+             end                                                   as item_id,
+             coalesce(p.settle_base_paise, p.amount_paise)          as gross,
+             coalesce(p.partner_commission_paise,
+                      (coalesce(p.settle_base_paise, p.amount_paise) * t.commission_bps) / 10000)
+                                                                    as commission,
+             0::bigint                                              as refunds
+        from payments p
+        join bookings b on b.id = p.booking_id
+        join tenants  t on t.id = p.tenant_id
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency  = ${currency}
+         and p.kind = 'charge'
+         and p.status in ('captured', 'refunded', 'partially_refunded')
+         and p.settlement_released_at >= ${start.toISOString()}::timestamptz
+         and p.settlement_released_at <  ${end.toISOString()}::timestamptz
+      union all
+      select b.item_type::text,
+             case b.item_type
+               when 'event'      then nullif(b.item_data->>'eventId', '')::uuid
+               when 'membership' then nullif(b.item_data->>'membershipId', '')::uuid
+               else b.venue_id
+             end,
+             0::bigint,
+             0::bigint,
+             -coalesce(p.settle_base_paise, p.amount_paise)
+        from payments p
+        join bookings b on b.id = p.booking_id
+       where p.tenant_id = ${tenantId}::uuid
+         and p.currency  = ${currency}
+         and p.kind = 'refund'
+         and p.status <> 'failed'
+         and p.created_at >= ${start.toISOString()}::timestamptz
+         and p.created_at <  ${end.toISOString()}::timestamptz
+         and ${CREDITABLE_CHARGE}
+    )
+    select item_type,
+           item_id,
+           sum(gross)::bigint      as gross,
+           sum(commission)::bigint as commission,
+           sum(refunds)::bigint    as refunds
+      from contrib
+     group by item_type, item_id
+     order by item_type, item_id
+  `)) as unknown as Record<string, unknown>[];
+
+  return rows.map((r) => ({
+    itemType: r['item_type'] as RawItemAggregate['itemType'],
+    itemId: (r['item_id'] as string | null) ?? null,
+    gross: Number(r['gross'] ?? 0),
+    commission: Number(r['commission'] ?? 0),
+    refunds: Number(r['refunds'] ?? 0),
+  }));
 }
 
 export interface ListPayoutsInput {
-  status?: 'pending' | 'paid';
+  status?: 'pending' | 'partially_paid' | 'paid';
   cursor?: string | undefined;
   limit?: number | undefined;
 }
@@ -976,6 +1098,158 @@ export interface ExecutePayoutInput {
  * out-of-band. Only `pending` payouts can be executed — re-executing a `paid`
  * one is a 409 so a double-click never double-records.
  */
+/**
+ * Recompute a payout's status from its lines, inside the caller's transaction.
+ *
+ * With independently payable lines the payout's own status is no longer a flag
+ * somebody sets — it is a rollup, and the ONLY place it is derived. A payout
+ * reconciled before payout_items existed has no lines; it keeps whatever
+ * status it has, since there is nothing to roll up and guessing would rewrite
+ * history.
+ */
+type PayoutTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function refreshPayoutStatus(tx: PayoutTx, payoutId: string): Promise<string | null> {
+  const [counts] = (await tx.execute<Record<string, unknown>>(sql`
+    select count(*)::int                                        as total,
+           count(*) filter (where status = 'paid')::int          as paid
+      from payout_items where payout_id = ${payoutId}::uuid
+  `)) as unknown as Record<string, unknown>[];
+
+  const total = Number(counts?.['total'] ?? 0);
+  const paid = Number(counts?.['paid'] ?? 0);
+  if (total === 0) return null; // legacy payout, no lines to roll up
+
+  const status = paid === 0 ? 'pending' : paid === total ? 'paid' : 'partially_paid';
+  // paid_at marks when the LAST line was settled, so a fully paid payout still
+  // reports a settlement date; a partially paid one has none yet.
+  await tx.execute(sql`
+    update payouts
+       set status  = ${status},
+           paid_at = case when ${status} = 'paid' then coalesce(paid_at, now()) else null end
+     where id = ${payoutId}::uuid
+  `);
+  return status;
+}
+
+export interface TenantPayoutItemRow {
+  id: string;
+  payoutId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  itemType: string;
+  itemId: string | null;
+  currency: string;
+  amountPaise: number;
+  status: string;
+  paidAt: string | null;
+  paidReference: string | null;
+}
+
+/**
+ * One organisation's payout lines, newest period first.
+ *
+ * ADMIN-ONLY, and deliberately not folded into `getTenantEarnings`: that
+ * service is what the partner's own page reads, and payout line ids are an
+ * internal settlement handle a partner has no business holding. The admin
+ * console joins these to its earnings rows by (item_type, item_id).
+ */
+export async function listTenantPayoutItems(
+  tenantId: string,
+  status?: 'pending' | 'paid',
+): Promise<TenantPayoutItemRow[]> {
+  const statusClause = status ? sql` and pi.status = ${status}` : sql``;
+  const rows = (await db.execute<Record<string, unknown>>(sql`
+    select pi.id, pi.payout_id, po.period_start, po.period_end,
+           pi.item_type, pi.item_id, pi.currency, pi.amount_paise,
+           pi.status, pi.paid_at, pi.paid_reference
+      from payout_items pi
+      join payouts po on po.id = pi.payout_id
+     where pi.tenant_id = ${tenantId}::uuid${statusClause}
+     order by po.period_start desc nulls last, pi.item_type, pi.amount_paise desc
+  `)) as unknown as Record<string, unknown>[];
+
+  return rows.map((r) => ({
+    id: r['id'] as string,
+    payoutId: r['payout_id'] as string,
+    periodStart: r['period_start'] ? new Date(r['period_start'] as string).toISOString() : null,
+    periodEnd: r['period_end'] ? new Date(r['period_end'] as string).toISOString() : null,
+    itemType: r['item_type'] as string,
+    itemId: (r['item_id'] as string | null) ?? null,
+    currency: r['currency'] as string,
+    amountPaise: Number(r['amount_paise'] ?? 0),
+    status: r['status'] as string,
+    paidAt: r['paid_at'] ? new Date(r['paid_at'] as string).toISOString() : null,
+    paidReference: (r['paid_reference'] as string | null) ?? null,
+  }));
+}
+
+export interface ExecutePayoutItemInput {
+  payoutItemId: string;
+  reference: string;
+  actorUserId: string;
+  note?: string | undefined;
+}
+
+/**
+ * Mark ONE payout line paid — settling a single event, plan or venue without
+ * settling the rest of the week.
+ *
+ * The line's own status is the record of the transfer; the payout's status is
+ * refreshed from its lines afterwards. Guarded on `status = 'pending'` in the
+ * UPDATE itself so two admins clicking at once cannot both record a payment.
+ */
+export async function executePayoutItem(
+  input: ExecutePayoutItemInput,
+): Promise<{ id: string; payoutId: string; payoutStatus: string | null }> {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(payoutItems)
+      .where(eq(payoutItems.id, input.payoutItemId))
+      .limit(1);
+    if (!item) throw new NotFound('Payout line not found', 'payout_item_not_found');
+    if (item.status !== 'pending') {
+      throw new Conflict(`Payout line is already ${item.status}`, 'payout_item_not_pending', {
+        status: item.status,
+      });
+    }
+
+    const [updated] = await tx
+      .update(payoutItems)
+      .set({
+        status: 'paid',
+        paidAt: new Date(),
+        paidReference: input.reference,
+        paidByUserId: input.actorUserId,
+      })
+      .where(and(eq(payoutItems.id, input.payoutItemId), eq(payoutItems.status, 'pending')))
+      .returning({ id: payoutItems.id });
+    if (!updated) throw new Conflict('Payout line is already paid', 'payout_item_not_pending');
+
+    const payoutStatus = await refreshPayoutStatus(tx, item.payoutId);
+
+    await writeAudit(
+      tx,
+      { tenantId: item.tenantId, actorUserId: input.actorUserId },
+      'payout_item.executed',
+      'payout_item',
+      item.id,
+      { status: 'pending' },
+      {
+        status: 'paid',
+        amountPaise: item.amountPaise,
+        itemType: item.itemType,
+        itemId: item.itemId,
+        reference: input.reference,
+        ...(input.note ? { note: input.note } : {}),
+      },
+    );
+
+    return { id: updated.id, payoutId: item.payoutId, payoutStatus };
+  });
+}
+
 export async function executePayout(input: ExecutePayoutInput): Promise<{ id: string; status: string }> {
   return db.transaction(async (tx) => {
     const [payout] = await tx.select().from(payouts).where(eq(payouts.id, input.payoutId)).limit(1);
@@ -987,6 +1261,19 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
     }
 
     const paidAt = new Date();
+    // Paying the whole payout settles every line it still has outstanding —
+    // otherwise the payout would read 'paid' while its own lines still read
+    // 'pending', and the two would disagree about the same money.
+    await tx
+      .update(payoutItems)
+      .set({
+        status: 'paid',
+        paidAt,
+        paidReference: input.reference,
+        paidByUserId: input.actorUserId,
+      })
+      .where(and(eq(payoutItems.payoutId, input.payoutId), eq(payoutItems.status, 'pending')));
+
     const [updated] = await tx
       .update(payouts)
       .set({

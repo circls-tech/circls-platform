@@ -25,6 +25,7 @@ import type {
   PlatformRevenue,
   RevenueGrouping,
   TenantEarnings,
+  TenantPayoutItem,
   TenantItemRevenue,
   AdminSupportIssue,
   AdminSupportIssueFilters,
@@ -349,6 +350,36 @@ export function useAdminPayouts(status?: 'pending' | 'paid') {
         `/v1/admin/payouts${qs({ limit: 50, cursor: pageParam, status })}`,
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+/** One organisation's payout lines — what each payout paid for, per item. */
+export function useAdminTenantPayoutItems(tenantId: string | null, status?: 'pending' | 'paid') {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'payouts', 'items', tenantId, status ?? ''],
+    enabled: Boolean(user && tenantId),
+    queryFn: () =>
+      apiFetch<{ rows: TenantPayoutItem[] }>(
+        `/v1/admin/tenants/${tenantId}/payout-items${qs({ status })}`,
+      ),
+  });
+}
+
+/** Settle ONE payout line, leaving the rest of its week outstanding. */
+export function useExecutePayoutItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; reference: string; note?: string }) =>
+      apiFetch<unknown>(`/v1/admin/payout-items/${args.id}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ reference: args.reference, note: args.note }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+      // The Paid out column is derived from paid lines, so it has to refetch.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant'] });
+    },
   });
 }
 

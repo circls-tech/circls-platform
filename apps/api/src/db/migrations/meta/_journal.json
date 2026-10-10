@@ -414,6 +414,13 @@
       "when": 1783930000000,
       "tag": "0059_platform_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784100000000,
+      "tag": "0062_payout_items",
+      "breakpoints": true
     }
   ]
 }
