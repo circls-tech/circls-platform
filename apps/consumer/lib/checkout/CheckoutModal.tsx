@@ -374,10 +374,19 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {item.kind === 'event' && item.lines.map((l) => (
-            <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity, cur)} muted />
-          ))}
-          <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise, cur) : '—'} />
+          {/* What's being bought, one row per line. No separate "Base price"
+              subtotal: the lines already add up to it, and for a single line
+              the two rows just repeated the same number. */}
+          {item.kind === 'event' ? (
+            item.lines.map((l) => (
+              <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity, cur)} />
+            ))
+          ) : (
+            <Row
+              label={item.kind === 'slot' ? `${item.slotIds.length} ${item.slotIds.length === 1 ? 'slot' : 'slots'}` : 'Membership'}
+              value={breakdown ? formatPaiseExact(breakdown.basePaise, cur) : '—'}
+            />
+          )}
           {breakdown && breakdown.discountPaise > 0 && (
             <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise, cur)}`} accent />
           )}
