@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
@@ -36,6 +36,7 @@ import {
   logConsumerActivity,
   updateMyProfile,
 } from '../services/consumer_service.js';
+import { PREVIEW_HEADER } from '../services/listing_preview_service.js';
 
 /** Behavioral telemetry batch (M6). event_type/item_type kept open (telemetry,
  *  not domain) so new client signals never need a server change. */
@@ -77,16 +78,18 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Browse (public) ────────────────────────────────────────────────────────
 
-  // `?preview=<token>` on a single-listing read: a partner or Circls reviewer
-  // looking at an unapproved listing as a customer will (see
-  // services/listing_preview_service.ts). Threaded through to the service,
-  // which decides per read whether the token names what is being fetched.
-  // Never required, never an error when absent or wrong — a bad token simply
-  // reads with the public rules.
-  const previewQuery = z.object({ preview: z.string().max(1024).optional() });
-  function previewTokenOf(query: unknown): string | undefined {
-    const parsed = previewQuery.safeParse(query);
-    return parsed.success ? parsed.data.preview : undefined;
+  // An `X-Circls-Preview: <token>` header on a single-listing read: a partner
+  // or Circls reviewer looking at an unapproved listing as a customer will
+  // (see services/listing_preview_service.ts). A header rather than a query
+  // string so the token stays out of the request log's URL; the header itself
+  // is redacted in server.ts. Threaded through to the service, which decides
+  // per read whether the token names what is being fetched. Never required,
+  // never an error when absent or wrong — a bad token simply reads with the
+  // public rules.
+  function previewTokenOf(req: FastifyRequest): string | undefined {
+    const raw = req.headers[PREVIEW_HEADER];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return typeof value === 'string' && value.length > 0 && value.length <= 1024 ? value : undefined;
   }
   const venuesQuery = z.object({
     search: z.string().min(1).max(120).optional(),
@@ -127,7 +130,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/events/:id', { config: publicLimit }, async (req) => {
     const { id } = req.params as { id: string };
-    const ev = await getPublicEventById(id, { previewToken: previewTokenOf(req.query) });
+    const ev = await getPublicEventById(id, { previewToken: previewTokenOf(req) });
     if (!ev) throw new NotFound('Event not found', 'event_not_found');
     return ev;
   });
@@ -141,7 +144,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/memberships/:membershipId', { config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
-    const m = await getPublicMembershipById(membershipId, { previewToken: previewTokenOf(req.query) });
+    const m = await getPublicMembershipById(membershipId, { previewToken: previewTokenOf(req) });
     if (!m) throw new NotFound('Membership not found', 'membership_not_found');
     return m;
   });
@@ -163,7 +166,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/venues/:venueId', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    const opts = { previewToken: previewTokenOf(req.query) };
+    const opts = { previewToken: previewTokenOf(req) };
     const venue = await getPublicVenueWithImages(venueId, opts);
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const arenas = await listPublicArenas(venueId, opts);
@@ -172,12 +175,12 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/consumer/venues/:venueId/events', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    return { rows: await listPublicEvents(venueId, { previewToken: previewTokenOf(req.query) }) };
+    return { rows: await listPublicEvents(venueId, { previewToken: previewTokenOf(req) }) };
   });
 
   app.get('/v1/consumer/venues/:venueId/memberships', { config: publicLimit }, async (req) => {
     const { venueId } = req.params as { venueId: string };
-    return { rows: await listPublicMemberships(venueId, { previewToken: previewTokenOf(req.query) }) };
+    return { rows: await listPublicMemberships(venueId, { previewToken: previewTokenOf(req) }) };
   });
 
   const slotsQuery = z.object({
@@ -190,7 +193,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
     return {
       rows: await listPublicArenaSlots(arenaId, parsed.data.from, parsed.data.to, {
-        previewToken: previewTokenOf(req.query),
+        previewToken: previewTokenOf(req),
       }),
     };
   });

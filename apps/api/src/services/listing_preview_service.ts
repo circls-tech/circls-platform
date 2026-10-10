@@ -5,11 +5,13 @@
  *
  * The consumer app's own detail pages do the rendering (one source of truth
  * for "what customers see"); this module only decides who may look. A preview
- * is a short-lived HMAC-signed token naming ONE listing. The public consumer
- * reads accept it as `?preview=<token>` and, when it names the listing being
- * fetched, skip the approval / tenant-active visibility gate for that read.
- * Nothing else changes: booking stays refused server-side (a draft event is
- * not `published`), and the token opens no other listing.
+ * is a short-lived HMAC-signed token naming ONE listing. The consumer page is
+ * opened with it as `?preview=<token>` and sends it to the API in the
+ * `X-Circls-Preview` header (PREVIEW_HEADER) — a header, not a query string,
+ * so the token never lands in the API's request logs. When it names the
+ * listing being fetched, that read skips the approval / tenant-active
+ * visibility gate. Nothing else changes: booking stays refused server-side (a
+ * draft event is not `published`), and the token opens no other listing.
  *
  * Tokens are stateless so there is nothing to store or sweep; they expire
  * on their own, and the portals mint a fresh one each time a preview opens.
@@ -19,7 +21,6 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arenas, events, memberships, venues } from '../db/schema/index.js';
 import { env } from '../config/env.js';
-import { logger } from '../lib/logger.js';
 
 /** The listings that have a consumer detail page of their own. An arena is
  *  previewed through its venue's page, where customers find it. */
@@ -31,19 +32,16 @@ export type PreviewType = (typeof PREVIEW_TYPES)[number];
  *  link is not a lasting back door to an unapproved listing. */
 export const PREVIEW_TTL_SEC = 60 * 60;
 
+/** The request header the consumer site sends a preview token in. Redacted
+ *  from request logs in server.ts. */
+export const PREVIEW_HEADER = 'x-circls-preview';
+
 const TOKEN_VERSION = 1;
 
-/** Resolved once per process. Without a configured secret, previews work only
- *  against this instance and only until it restarts (see env.ts). */
-const SECRET: string = (() => {
-  if (env.LISTING_PREVIEW_SECRET) return env.LISTING_PREVIEW_SECRET;
-  if (env.NODE_ENV === 'production') {
-    logger.warn(
-      'LISTING_PREVIEW_SECRET is not set: listing preview links will stop working on restart and will not verify on other instances',
-    );
-  }
-  return crypto.randomBytes(32).toString('hex');
-})();
+/** Resolved once per process. Production requires the configured secret
+ *  (env.ts refuses to boot without it); dev and test fall back to a random
+ *  one, so previews there work only against this instance until it restarts. */
+const SECRET: string = env.LISTING_PREVIEW_SECRET ?? crypto.randomBytes(32).toString('hex');
 
 export interface PreviewClaims {
   type: PreviewType;
@@ -105,7 +103,7 @@ export function verifyPreviewToken(token: string, now: Date = new Date()): Previ
 }
 
 /**
- * Whether `token` (a `?preview=` query value, possibly absent) is a valid
+ * Whether `token` (the PREVIEW_HEADER value, possibly absent) is a valid
  * preview of exactly this listing. The consumer routes call this per read:
  * a token for one listing never unlocks another.
  */

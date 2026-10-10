@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
-import { withPreview } from '@/lib/preview';
+import { previewInit } from '@/lib/preview';
 import type {
   CheckoutPaymentStatus,
   EventBookingResult,
@@ -66,7 +66,7 @@ export function useVenues(search: string, limit = 50) {
 export function useVenue(venueId: string, preview: string | null = null) {
   return useQuery({
     queryKey: ['venue', venueId, preview],
-    queryFn: () => apiFetch<VenueDetail>(withPreview(`/v1/consumer/venues/${venueId}`, preview)),
+    queryFn: () => apiFetch<VenueDetail>(`/v1/consumer/venues/${venueId}`, previewInit(preview)),
     enabled: Boolean(venueId),
   });
 }
@@ -75,7 +75,10 @@ export function useVenueEvents(venueId: string, preview: string | null = null) {
   return useQuery({
     queryKey: ['venue-events', venueId, preview],
     queryFn: () =>
-      apiFetch<{ rows: PublicEvent[] }>(withPreview(`/v1/consumer/venues/${venueId}/events`, preview)),
+      apiFetch<{ rows: PublicEvent[] }>(
+        `/v1/consumer/venues/${venueId}/events`,
+        previewInit(preview),
+      ),
     enabled: Boolean(venueId),
     select: (data) => data.rows,
   });
@@ -86,7 +89,7 @@ export function useVenueMemberships(venueId: string, preview: string | null = nu
     queryKey: ['venue-memberships', venueId, preview],
     queryFn: () =>
       apiFetch<{ rows: PublicMembershipWithScope[] }>(
-        withPreview(`/v1/consumer/venues/${venueId}/memberships`, preview),
+        `/v1/consumer/venues/${venueId}/memberships`, previewInit(preview),
       ),
     enabled: Boolean(venueId),
     select: (data) => data.rows,
@@ -112,7 +115,7 @@ export function useEvent(eventId: string, preview: string | null = null) {
   return useQuery({
     queryKey: ['event', eventId, preview],
     queryFn: () =>
-      apiFetch<PublicEventWithVenue>(withPreview(`/v1/consumer/events/${eventId}`, preview)),
+      apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`, previewInit(preview)),
     enabled: Boolean(eventId),
   });
 }
@@ -137,7 +140,7 @@ export function useMembership(membershipId: string, preview: string | null = nul
     queryKey: ['membership', membershipId, preview],
     queryFn: () =>
       apiFetch<PublicMembershipWithScope>(
-        withPreview(`/v1/consumer/memberships/${membershipId}`, preview),
+        `/v1/consumer/memberships/${membershipId}`, previewInit(preview),
       ),
     enabled: Boolean(membershipId),
   });
@@ -178,7 +181,7 @@ export function useArenaSlots(
     queryFn: () => {
       const qs = new URLSearchParams({ from: fromISO, to: toISO });
       return apiFetch<{ rows: PublicSlot[] }>(
-        withPreview(`/v1/consumer/arenas/${arenaId}/slots?${qs.toString()}`, preview),
+        `/v1/consumer/arenas/${arenaId}/slots?${qs.toString()}`, previewInit(preview),
       );
     },
     enabled: Boolean(arenaId) && enabled,

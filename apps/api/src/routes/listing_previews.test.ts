@@ -156,15 +156,25 @@ describe.skipIf(!runIntegration)('listing preview routes', () => {
 
     const open = await app.inject({
       method: 'GET',
-      url: `/v1/consumer/events/${draftEventId}?preview=${encodeURIComponent(token)}`,
+      url: `/v1/consumer/events/${draftEventId}`,
+      headers: { 'x-circls-preview': token },
     });
     expect(open.statusCode).toBe(200);
     expect((open.json() as { name: string }).name).toBe('Draft Event');
 
+    // The token travels in a header only: on the query string it is ignored,
+    // so it never has to appear in a logged request URL.
+    const viaQuery = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/events/${draftEventId}?preview=${encodeURIComponent(token)}`,
+    });
+    expect(viaQuery.statusCode).toBe(404);
+
     // The token is for that event alone.
     const other = await app.inject({
       method: 'GET',
-      url: `/v1/consumer/memberships/${pendingMembershipId}?preview=${encodeURIComponent(token)}`,
+      url: `/v1/consumer/memberships/${pendingMembershipId}`,
+      headers: { 'x-circls-preview': token },
     });
     expect(other.statusCode).toBe(404);
   });
@@ -220,7 +230,8 @@ describe.skipIf(!runIntegration)('listing preview routes', () => {
     // The venue page opens, with its pending arena listed.
     const venue = await app.inject({
       method: 'GET',
-      url: `/v1/consumer/venues/${pendingVenueId}?preview=${encodeURIComponent(token)}`,
+      url: `/v1/consumer/venues/${pendingVenueId}`,
+      headers: { 'x-circls-preview': token },
     });
     expect(venue.statusCode).toBe(200);
     const body = venue.json() as { venue: { id: string }; arenas: { id: string }[] };
