@@ -290,7 +290,11 @@ export interface AdminPayoutRow {
   advanceRecoupedPaise: number;
   amountPaise: number;
   currency: string;
-  status: 'pending' | 'paid';
+  /**
+   * 'partially_paid' appears once some of a payout's item lines are settled
+   * and others are not — see payout_items.
+   */
+  status: 'pending' | 'partially_paid' | 'paid';
   paidAt: string | null;
   paidReference: string | null;
   createdAt: string;
@@ -909,4 +913,20 @@ export interface TenantEarnings {
   items: EarningsItem[];
   /** Not included in any total above. */
   desk: DeskTakings[];
+}
+
+/** One line of a payout: what it paid for, and whether that line is settled. */
+export interface TenantPayoutItem {
+  id: string;
+  payoutId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  /** 'slot' | 'event' | 'membership' | 'advance' | 'unattributed'. */
+  itemType: string;
+  itemId: string | null;
+  currency: string;
+  amountPaise: number;
+  status: 'pending' | 'paid';
+  paidAt: string | null;
+  paidReference: string | null;
 }

@@ -1,8 +1,18 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useAdminTenantEarnings } from '@/lib/api/queries';
-import type { EarningsItem, EarningsStream, TenantEarnings } from '@/lib/api/types';
+import {
+  useAdminTenantEarnings,
+  useAdminTenantPayoutItems,
+  useExecutePayoutItem,
+} from '@/lib/api/queries';
+import { ApiError } from '@/lib/api/client';
+import type {
+  EarningsItem,
+  EarningsStream,
+  TenantEarnings,
+  TenantPayoutItem,
+} from '@/lib/api/types';
 import { type CurrencyCode, formatTotal } from '@/lib/money';
 import {
   addCalendarDays,
@@ -186,14 +196,21 @@ export function EarningsTab({ tenantId, tz }: { tenantId: string; tz: string }) 
         </p>
       )}
 
-      {complete && data && <EarningsBody data={data} />}
+      {complete && data && <EarningsBody data={data} tenantId={tenantId} />}
 
     </div>
   );
 }
 
-function EarningsBody({ data }: { data: TenantEarnings }) {
+function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: string }) {
   const currencies = currenciesOf(data);
+  // PENDING ONLY, deliberately. Paid lines accumulate forever, so fetching
+  // every line meant the bounded query could drop outstanding ones once a
+  // tenant had enough history — and a row would then understate what it still
+  // owes, or offer no button at all. Nothing here needs the settled lines:
+  // whether a row is square is answered by comparing paid against net.
+  const { data: itemData } = useAdminTenantPayoutItems(tenantId, 'pending');
+  const payoutItems = itemData?.rows ?? [];
 
   if (currencies.length === 0) {
     return <p className="py-2 text-sm text-slate-500">No sales in this period.</p>;
@@ -223,10 +240,20 @@ function EarningsBody({ data }: { data: TenantEarnings }) {
                 sub={countLabel(total?.bookings ?? 0, 'sales')}
                 emphasis
               />
+              {/* Paid can exceed net when a refund was raised after these
+                  sales were paid out; reconciliation takes the difference off
+                  a future payout. Named rather than clamped, so an admin
+                  reading it against the partner's page sees the same thing. */}
               <SummaryCard
                 label="Paid out so far"
                 value={money(total?.paidPaise ?? 0, currency)}
-                sub="already transferred"
+                sub={
+                  total && total.paidPaise > total.netPaise
+                    ? `${money(total.paidPaise - total.netPaise, currency)} more than this period now nets — refunded after payout`
+                    : total && total.paidPaise < total.netPaise
+                      ? `${money(total.netPaise - total.paidPaise, currency)} still to go out`
+                      : 'already transferred'
+                }
               />
               {STREAMS.map((s) => {
                 const row = data.byStream.find(
@@ -258,7 +285,8 @@ function EarningsBody({ data }: { data: TenantEarnings }) {
               </p>
             )}
 
-            <ItemTable items={items} />
+            <ItemTable items={items} payoutItems={payoutItems} />
+            <NonItemLines lines={nonItemLines(payoutItems, currency)} currency={currency} />
           </div>
         );
       })}
@@ -292,56 +320,279 @@ function SummaryCard({
   );
 }
 
-function ItemTable({ items }: { items: EarningsItem[] }) {
+/** The OUTSTANDING payout lines belonging to one earnings row. */
+function linesFor(item: EarningsItem, all: TenantPayoutItem[]): TenantPayoutItem[] {
+  // 'venue' is the partner-facing name for what the ledger calls a slot sale.
+  const ledgerType = item.stream === 'venue' ? 'slot' : item.stream;
+  // Currency is part of the match, not an afterthought: an earnings row is per
+  // (item, currency), and an organisation that has billed in two currencies has
+  // lines of both against the same venue id. Without this the row would add
+  // rupees to cents for its button total and settle the foreign-currency lines
+  // as part of the wrong transfer.
+  return all.filter(
+    (l) => l.itemType === ledgerType && l.itemId === item.id && l.currency === item.currency,
+  );
+}
+
+/**
+ * Pending lines that belong to no item row — `advance` tranches and the
+ * `unattributed` residual.
+ *
+ * They carry real money but have no event, plan or venue behind them, so no
+ * per-item control can reach them. Surfaced on their own rather than hidden:
+ * an admin settling rows one by one would otherwise leave a payout permanently
+ * short with nothing on screen explaining why.
+ */
+function nonItemLines(all: TenantPayoutItem[], currency: string): TenantPayoutItem[] {
+  return all.filter(
+    (l) =>
+      l.currency === currency &&
+      l.status === 'pending' &&
+      (l.itemType === 'advance' || l.itemType === 'unattributed'),
+  );
+}
+
+const NON_ITEM_LABEL: Record<string, string> = {
+  advance: 'Advance tranche',
+  unattributed: 'Unattributed',
+};
+
+function ItemTable({
+  items,
+  payoutItems,
+}: {
+  items: EarningsItem[];
+  payoutItems: TenantPayoutItem[];
+}) {
+  const execute = useExecutePayoutItem();
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Keyed by the row, not by item.id: two rows can both carry a null id (an
+  // unattributable event and an unattributable venue), and two more can share
+  // an id across currencies. Keying on the id alone put them all on one flag,
+  // so marking one paid showed the others as working.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
   if (items.length === 0) {
     return <p className="py-2 text-sm text-slate-500">Nothing in this period.</p>;
   }
+
+  /**
+   * Settle every outstanding line for one item.
+   *
+   * An earnings row is a period the admin chose; the lines under it belong to
+   * whole payout weeks. One row can therefore span several weeks, so the
+   * confirm names how many and for how much before anything is recorded —
+   * clicking "Mark paid" on a row must never settle more than the admin
+   * realised it would.
+   */
+  function onMarkPaid(item: EarningsItem, pending: TenantPayoutItem[], rowKey: string) {
+    const total = pending.reduce((sum, l) => sum + l.amountPaise, 0);
+    const weeks = pending.map(fmtPeriod).join(', ');
+    const ok = window.confirm(
+      `Mark ${money(total, item.currency)} paid to this organisation for ` +
+        `"${item.name ?? 'Unattributed'}"?\n\n` +
+        `${pending.length} payout line${pending.length === 1 ? '' : 's'}: ${weeks}\n\n` +
+        'This records that the transfer was made. It does not move money.',
+    );
+    if (!ok) return;
+
+    const reference = window.prompt('Payment reference for this transfer:');
+    if (reference == null) return;
+    const trimmed = reference.trim();
+    if (trimmed === '') {
+      setActionError('A reference is required to mark a line as paid.');
+      return;
+    }
+
+    setActionError(null);
+    setBusyKey(rowKey);
+    // Lines are settled one at a time; each is its own record of a transfer.
+    void Promise.allSettled(
+      pending.map((l) => execute.mutateAsync({ id: l.id, reference: trimmed })),
+    )
+      .then((results) => {
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        if (failed > 0) {
+          setActionError(
+            `${failed} of ${results.length} lines could not be marked paid — they may ` +
+              'already be settled. The rest were recorded.',
+          );
+        }
+      })
+      .finally(() => setBusyKey(null));
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="px-2 py-2 font-semibold">Name</th>
-            <th className="px-2 py-2 font-semibold">Type</th>
-            <th className="px-2 py-2 text-right font-semibold">Sales</th>
-            <th className="px-2 py-2 text-right font-semibold">Net payout</th>
-            <th className="px-2 py-2 text-right font-semibold">Paid out</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((i) => (
-            <tr
-              key={`${i.stream}-${i.id ?? 'none'}-${i.currency}`}
-              className="border-b border-slate-100"
-            >
-              <td className="px-2 py-2">
-                <span className="font-medium text-slate-800">
-                  {i.name ?? <span className="italic text-slate-500">Unattributed</span>}
-                </span>
-                {i.venueName && <span className="block text-xs text-slate-500">{i.venueName}</span>}
-              </td>
-              <td className="px-2 py-2 text-slate-600">{STREAM_LABEL[i.stream]}</td>
-              <td className="px-2 py-2 text-right text-slate-600">{i.bookings}</td>
-              <td
-                className={`px-2 py-2 text-right font-medium ${
-                  i.netPaise < 0 ? 'text-amber-700' : 'text-slate-800'
-                }`}
-              >
-                {money(i.netPaise, i.currency)}
-              </td>
-              {/* Nothing sent yet is the normal state for a recent window, so it
-                  reads as a dash rather than a zero that looks like a shortfall. */}
-              <td className="px-2 py-2 text-right text-slate-600">
-                {i.paidPaise === 0 ? (
-                  <span className="text-slate-400">—</span>
-                ) : (
-                  money(i.paidPaise, i.currency)
-                )}
-              </td>
+    <div className="space-y-2">
+      {actionError && <p className="text-sm text-red-700">{actionError}</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th className="px-2 py-2 font-semibold">Name</th>
+              <th className="px-2 py-2 font-semibold">Type</th>
+              <th className="px-2 py-2 text-right font-semibold">Sales</th>
+              <th className="px-2 py-2 text-right font-semibold">Net payout</th>
+              <th className="px-2 py-2 text-right font-semibold">Paid out</th>
+              <th className="px-2 py-2" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((i) => {
+              const pending = linesFor(i, payoutItems);
+              const pendingPaise = pending.reduce((sum, l) => sum + l.amountPaise, 0);
+              const rowKey = `${i.stream}-${i.id ?? 'none'}-${i.currency}`;
+              const busy = busyKey === rowKey;
+
+              return (
+                <tr key={rowKey} className="border-b border-slate-100">
+                  <td className="px-2 py-2">
+                    <span className="font-medium text-slate-800">
+                      {i.name ?? <span className="italic text-slate-500">Unattributed</span>}
+                    </span>
+                    {i.venueName && (
+                      <span className="block text-xs text-slate-500">{i.venueName}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-slate-600">{STREAM_LABEL[i.stream]}</td>
+                  <td className="px-2 py-2 text-right text-slate-600">{i.bookings}</td>
+                  <td
+                    className={`px-2 py-2 text-right font-medium ${
+                      i.netPaise < 0 ? 'text-amber-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {money(i.netPaise, i.currency)}
+                  </td>
+                  {/* Nothing sent yet is the normal state for a recent window, so
+                      it reads as a dash rather than a zero that looks like a
+                      shortfall. */}
+                  <td className="px-2 py-2 text-right text-slate-600">
+                    {i.paidPaise === 0 ? (
+                      <span className="text-slate-400">—</span>
+                    ) : (
+                      money(i.paidPaise, i.currency)
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    {pending.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onMarkPaid(i, pending, rowKey)}
+                        disabled={busy}
+                        title={`${money(pendingPaise, i.currency)} across ${pending.length} payout line${
+                          pending.length === 1 ? '' : 's'
+                        }`}
+                        className="rounded-md border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {busy ? 'Working…' : `Mark paid · ${money(pendingPaise, i.currency)}`}
+                      </button>
+                    ) : i.paidPaise >= i.netPaise ? (
+                      // Every rupee of this row has been sent. Say so, rather
+                      // than leaving a blank cell that reads like a missing
+                      // action.
+                      <span className="text-xs text-slate-400">settled</span>
+                    ) : (
+                      // Nothing left to mark paid, yet the row is not fully
+                      // covered: the rest of its sales fall in weeks no payout
+                      // exists for. Naming the shortfall matters — calling this
+                      // "settled" would claim money had been sent that has not
+                      // even been reconciled, and a row spanning the current
+                      // week is in this state almost always.
+                      <span className="text-xs text-slate-400">
+                        {money(i.netPaise - i.paidPaise, i.currency)} awaiting reconciliation
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** "19 Sep \u2192 26 Sep 2026" for a payout line's week. */
+function fmtPeriod(item: TenantPayoutItem): string {
+  if (!item.periodStart || !item.periodEnd) return 'unknown period';
+  const f = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+  });
+  return `${f.format(new Date(item.periodStart))} \u2192 ${f.format(new Date(item.periodEnd))}`;
+}
+
+/**
+ * The payout lines with no item behind them, each individually settleable.
+ *
+ * Without this they were unreachable: `linesFor` matches only slot, event and
+ * membership, so an advance tranche could never be marked paid from this tab,
+ * and a payout holding one sat at partially_paid with no way to finish it here.
+ */
+function NonItemLines({ lines, currency }: { lines: TenantPayoutItem[]; currency: string }) {
+  const execute = useExecutePayoutItem();
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  if (lines.length === 0) return null;
+
+  function onMarkPaid(line: TenantPayoutItem) {
+    const ok = window.confirm(
+      `Mark ${money(line.amountPaise, currency)} paid to this organisation for ` +
+        `${NON_ITEM_LABEL[line.itemType] ?? line.itemType} (${fmtPeriod(line)})?\n\n` +
+        'This records that the transfer was made. It does not move money.',
+    );
+    if (!ok) return;
+    const reference = window.prompt('Payment reference for this transfer:');
+    if (reference == null) return;
+    const trimmed = reference.trim();
+    if (trimmed === '') {
+      setError('A reference is required to mark a line as paid.');
+      return;
+    }
+    setError(null);
+    setBusyId(line.id);
+    execute.mutate(
+      { id: line.id, reference: trimmed },
+      {
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : 'Could not mark this line paid.'),
+        onSettled: () => setBusyId(null),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-1 rounded-lg border border-slate-200 p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Not tied to an item
+      </h4>
+      <p className="text-xs text-slate-500">
+        Money in this organisation&apos;s payouts with no event, plan or venue behind it. It is in
+        no figure above, and nothing else on this page can settle it.
+      </p>
+      {error && <p className="text-sm text-red-700">{error}</p>}
+      <ul className="divide-y divide-slate-100">
+        {lines.map((l) => (
+          <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <span className="text-slate-700">
+              {NON_ITEM_LABEL[l.itemType] ?? l.itemType}
+              <span className="block text-xs text-slate-500">{fmtPeriod(l)}</span>
+            </span>
+            <span className="font-medium text-slate-900">{money(l.amountPaise, currency)}</span>
+            <button
+              type="button"
+              onClick={() => onMarkPaid(l)}
+              disabled={busyId === l.id}
+              className="rounded-md border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {busyId === l.id ? 'Working…' : 'Mark paid'}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

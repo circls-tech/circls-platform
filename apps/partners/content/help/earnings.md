@@ -34,7 +34,9 @@ Then **every event, plan and venue** listed individually with its own net figure
 
 **Paid out** — next to each net figure, how much of it has already been transferred to you. A dash means nothing has been sent for that row yet.
 
-This will usually be lower than the net payout beside it, and for a recent period it will often be a dash. That is expected, not a shortfall: a sale counts on this page the day your customer paid, but the money itself moves on the weekly payout cycle. The gap between the two columns is simply what is still on its way to you. Once a week's payout has been made, the rows it covered fill in.
+This will usually be lower than the net payout beside it, and for a recent period it will often be a dash. That is expected, not a shortfall: a sale counts on this page the day your customer paid, but the money itself moves on the weekly payout cycle. The gap between the two columns is simply what is still on its way to you.
+
+**Rows fill in one at a time, not all together.** A payout is sent as separate amounts for each event, plan and venue it covers, and they are not always sent at once. So you may see one event's row fill in while another from the same week is still showing a dash — that does not mean anything is wrong with the second one, only that it has not been sent yet. A row stops short of its net payout until every part of it has gone out.
 
 **Paid out can be higher than net payout, and that is not a mistake.** If you refund a customer after the payout covering their booking has already gone out, the refund lowers what the period is worth without taking back money that has already reached you. So Paid out stays where it is while Net payout drops. The difference is settled against a later payout, and the page says by how much.
 
@@ -48,9 +50,11 @@ That money never passed through circls, so circls has nothing to pay you for it 
 
 ## When the money actually arrives
 
-The **Paid out** column tells you how much has already reached you; the rest is still to come. For the precise schedule: Payouts run on the weekly cycle set out in your [Partner Terms](/terms): circls transfers your collections for the week, net of refunds and commission, and timing can shift for holidays, bank delays or a risk review.
+The **Paid out** column tells you how much has already reached you; the rest is still to come.
 
-So a sale you see on this page today is money owed to you now, and paid on the next cycle.
+Payouts run on the weekly cycle set out in your [Partner Terms](/terms): circls transfers your collections for the week, net of refunds and commission. Timing can shift for holidays, bank delays or a risk review, and the parts of one week's payout can go out separately — which is why the rows on this page fill in individually rather than all at once.
+
+So a sale you see on this page today is money owed to you now, and paid on the next cycle. If a row has been sitting on a dash far longer than that, or the two columns disagree with what reached your account, [report it from the Help Centre](/help) — the figures here are built from the same records your payouts are.
 
 ## Why a figure can be negative
 

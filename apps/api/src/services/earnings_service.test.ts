@@ -90,20 +90,41 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     `);
   }
 
-  /** A payout covering [start, end) for one tenant, paid or still pending. */
+  /**
+   * A payout covering [start, end) for one tenant, with the item lines that
+   * carry its money.
+   *
+   * Lines are what paid-ness now lives on, so a payout without them settles
+   * nothing — which is exactly how a pre-payout_items row behaves. `items`
+   * names what the payout paid for; each line takes the payout's status.
+   */
   async function insertPayout(opts: {
     tenant: string;
     start: string;
     end: string;
     status: 'paid' | 'pending';
     currency?: string;
+    items?: { itemType: 'slot' | 'event' | 'membership' | 'advance'; itemId: string | null }[];
   }): Promise<void> {
-    await db.execute(sql`
+    const [po] = (await db.execute<Record<string, unknown>>(sql`
       insert into payouts (tenant_id, provider, amount_paise, currency, status,
                            period_start, period_end)
       values (${opts.tenant}::uuid, 'stub', 0, ${opts.currency ?? 'INR'},
               ${opts.status}, ${opts.start}::timestamptz, ${opts.end}::timestamptz)
-    `);
+      returning id
+    `)) as unknown as Record<string, unknown>[];
+    const payoutId = po!['id'] as string;
+
+    for (const it of opts.items ?? []) {
+      await db.execute(sql`
+        insert into payout_items (payout_id, tenant_id, item_type, item_id, currency,
+                                  amount_paise, status, paid_at, paid_reference)
+        values (${payoutId}::uuid, ${opts.tenant}::uuid, ${it.itemType},
+                ${it.itemId}::uuid, ${opts.currency ?? 'INR'}, 0, ${opts.status},
+                ${opts.status === 'paid' ? opts.end : null}::timestamptz,
+                ${opts.status === 'paid' ? 'TEST-REF' : null})
+      `);
+    }
   }
 
   beforeAll(async () => {
@@ -337,7 +358,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
         commission: 10000, releasedAt: AT(33), at: AT(30),
       });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       // Paid matches net exactly: the whole sale has been transferred.
@@ -353,7 +377,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
         commission: 10000, releasedAt: AT(33), at: AT(30),
       });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'pending' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'pending',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       // Money promised is not money sent.
@@ -374,7 +401,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         commission: 10000, releasedAt: AT(40), at: AT(36),
       });
       // Only the first week has been paid.
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       // Both sales are owed; one has landed. The gap is the point of the column.
@@ -391,7 +421,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
       });
       // A refund is picked up by the week it was RAISED, not released.
       await insertPayment({ booking: b, tenant: tid, kind: 'refund', amount: -110000, base: -100000, at: AT(33) });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       // Commission is never reversed, so a fully refunded sale leaves it
@@ -410,12 +443,54 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         base: 50000, commission: 5000, held: false, at: AT(33),
       });
       await insertPayment({ booking: b, tenant: tid, kind: 'refund', amount: -60000, base: -50000, at: AT(33) });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       expect(e.total).toHaveLength(0);
       expect(e.items).toHaveLength(0);
     });
+    it('still credits a payout reconciled before per-item lines existed', async () => {
+      // The migration regression this guards: a historical payout has no
+      // payout_items rows, and matching on lines alone would make its money
+      // stop counting as paid the moment per-item settlement shipped.
+      const [tid, vid] = await freshTenant('LegacyCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      // No `items`: a payout row with nothing under it, exactly as every
+      // pre-migration payout looks.
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      expect(e.total[0]?.paidPaise).toBe(90000);
+    });
+
+    it('lets lines govern once a payout has them, rather than its own status', async () => {
+      // The other half: a payout WITH lines must be read through them, so a
+      // week whose lines are still pending cannot read as fully paid just
+      // because the payout row says so.
+      const [tid, vid] = await freshTenant('GovernCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'event', itemId: null }],   // a line, but not this sale's
+      });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      // The venue sale has no paid line of its own, and the payout is no
+      // longer eligible for the legacy whole-payout reading.
+      expect(e.total[0]?.paidPaise).toBe(0);
+    });
+
     /**
      * Advances change WHEN a partner is paid, not how much. Reconciliation
      * pays one in the week it is released and deducts it from the week the
@@ -433,7 +508,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
       });
       // Only the advance's week has been paid; the settlement week has not.
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'advance', itemId: null }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       expect(e.total[0]?.netPaise).toBe(90000);
@@ -448,10 +526,16 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         commission: 10000, releasedAt: AT(40),
         advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
       });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'advance', itemId: null }],
+      });
       // Now the settlement week is paid too. The partner has had the whole
       // net — \u20b9300 early and \u20b9600 on settlement — not \u20b9900 plus the advance again.
-      await insertPayout({ tenant: tid, start: AT(39), end: AT(41), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(39), end: AT(41), status: 'paid',
+        items: [{ itemType: 'slot', itemId: vid }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       expect(e.total[0]?.paidPaise).toBe(90000);
@@ -466,7 +550,10 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
         booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
         commission: 10000, releasedAt: AT(40), at: AT(30),
       });
-      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      await insertPayout({
+        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
+        items: [{ itemType: 'advance', itemId: null }],
+      });
 
       const e = await getTenantEarnings(tid, FROM, TO);
       expect(e.total[0]?.paidPaise).toBe(0);

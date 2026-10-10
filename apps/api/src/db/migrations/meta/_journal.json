@@ -428,6 +428,13 @@
       "when": 1784090000000,
       "tag": "0061_tenant_hidden_from_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784100000000,
+      "tag": "0062_payout_items",
+      "breakpoints": true
     }
   ]
 }

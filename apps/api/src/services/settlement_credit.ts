@@ -17,6 +17,7 @@
  * before that was stamped fall back to any charge on the same booking.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import { itemKeySql } from './item_key.js';
 
 /**
  * True when a CHARGE row is on its way to the partner: it has a settlement
@@ -59,7 +60,7 @@ export function creditableCharge(refundAlias = 'p'): SQL {
 
 /**
  * True when a payment's money has ALREADY been transferred to the partner —
- * it falls inside a payout this tenant has been marked paid for.
+ * the payout LINE covering it has been marked paid.
  *
  * The counterpart to the two predicates above: they answer "will this money
  * reach the partner?", this one answers "has it?". Attribution mirrors
@@ -69,7 +70,13 @@ export function creditableCharge(refundAlias = 'p'): SQL {
  * `created_at`. Get that wrong and this reports money as paid that a payout
  * never carried.
  *
- * Only `status = 'paid'` counts. A reconciled-but-pending payout is money
+ * Payout lines are settled independently (see executePayoutItem), so this
+ * matches on the LINE for this payment's item, not on the payout as a whole:
+ * one event can be paid while the rest of the same week is still outstanding.
+ * The line's item key must be derived exactly as rawItemAggregates derives it,
+ * which is why the CASE below is a copy of that one rather than a near-miss.
+ *
+ * Only `status = 'paid'` counts. A reconciled-but-pending line is money
  * promised, not money sent, and a partner reading "paid out" would reasonably
  * expect it to be in their bank.
  *
@@ -84,20 +91,47 @@ export function creditableCharge(refundAlias = 'p'): SQL {
  */
 export function paidOutPayment(alias = 'p'): SQL {
   const p = sql.raw(alias);
-  return sql`exists (
+  // The payment's subject, in the same terms payout_items filed it under.
+  const itemId = itemKeySql('bk');
+  // When this payment's SETTLEMENT money entered a payout: a charge by the
+  // date its hold was released, a refund by the date it was raised.
+  const when = sql`(case when ${p}.kind = 'charge'
+                         then ${p}.settlement_released_at
+                         else ${p}.created_at end)`;
+
+  // A payout reconciled BEFORE payout_items existed has no lines. Matching on
+  // lines alone would make its money stop counting as paid the moment this
+  // ships — every historical payout would silently un-pay itself. Such a
+  // payout is therefore still read the old way, as one indivisible unit, and
+  // only when it genuinely has no lines: a payout WITH lines is governed by
+  // them, so a half-settled week can't be read as fully paid.
+  const legacyWindow = sql`exists (
     select 1 from payouts po
      where po.tenant_id = ${p}.tenant_id
        and po.currency  = ${p}.currency
        and po.status    = 'paid'
        and po.period_start is not null
        and po.period_end   is not null
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) >= po.period_start
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) <  po.period_end
+       and not exists (select 1 from payout_items pil where pil.payout_id = po.id)
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
   )`;
+
+  return sql`(${legacyWindow} or exists (
+    select 1
+      from payout_items pi
+      join payouts po on po.id = pi.payout_id
+      join bookings bk on bk.id = ${p}.booking_id
+     where pi.status    = 'paid'
+       and pi.tenant_id = ${p}.tenant_id
+       and pi.currency  = ${p}.currency
+       and pi.item_type = bk.item_type::text
+       and pi.item_id is not distinct from ${itemId}
+       and po.period_start is not null
+       and po.period_end   is not null
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
+  ))`;
 }
 
 /**
@@ -117,18 +151,41 @@ export function paidOutPayment(alias = 'p'): SQL {
  * `created_at` — and a figure claiming to mirror it has to account for all
  * three.
  *
+ * Attribution differs from {@link paidOutPayment} in one important way:
+ * advances have no item behind them, so `allocatePayoutLines` files them under
+ * a single `advance` line per payout rather than against an event or venue.
+ * This therefore looks for THAT line, not the charge's own.
+ *
  * @param alias The payment row's table alias in the enclosing statement.
  */
 export function advancePaidOut(alias = 'p'): SQL {
   const p = sql.raw(alias);
-  return sql`(${p}.advance_released_at is not null and exists (
+  const when = sql`${p}.advance_released_at`;
+
+  // Same legacy carve-out as above: a payout with no lines is read whole.
+  const legacyWindow = sql`exists (
     select 1 from payouts po
      where po.tenant_id = ${p}.tenant_id
        and po.currency  = ${p}.currency
        and po.status    = 'paid'
        and po.period_start is not null
        and po.period_end   is not null
-       and ${p}.advance_released_at >= po.period_start
-       and ${p}.advance_released_at <  po.period_end
-  ))`;
+       and not exists (select 1 from payout_items pil where pil.payout_id = po.id)
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
+  )`;
+
+  return sql`(${p}.advance_released_at is not null and (${legacyWindow} or exists (
+    select 1
+      from payout_items pi
+      join payouts po on po.id = pi.payout_id
+     where pi.status    = 'paid'
+       and pi.item_type = 'advance'
+       and pi.tenant_id = ${p}.tenant_id
+       and pi.currency  = ${p}.currency
+       and po.period_start is not null
+       and po.period_end   is not null
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
+  )))`;
 }
