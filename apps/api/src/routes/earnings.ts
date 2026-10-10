@@ -5,6 +5,7 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
+import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { getTenantEarnings } from '../services/earnings_service.js';
 
 /**
@@ -57,5 +58,38 @@ export const earningsRoutes: FastifyPluginAsync = async (app) => {
       });
     }
     return getTenantEarnings(tenantId, parsed.data.from, parsed.data.to);
+  });
+};
+
+/**
+ * The same figures, for a platform admin looking at one organisation.
+ *
+ * Deliberately the SAME service call, not a second read model: an admin
+ * answering "they say their payout looks wrong" has to be looking at the
+ * numbers the partner is looking at, down to the paise. A separate query here
+ * would eventually disagree with the partner's page and nobody would know
+ * which was right.
+ *
+ * Gated on `admin.payouts.read` — this is partner payout money, the same thing
+ * the Payouts console shows — and resolved against the PLATFORM tenant, so
+ * membership of the organisation being inspected is neither required nor
+ * consulted. No `financials.read` check applies: that governs what a partner's
+ * own team may see, and has no bearing on Circls staff.
+ */
+export const adminEarningsRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/v1/admin/tenants/:id/earnings', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.payouts.read');
+
+    const parsed = windowSchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid earnings window', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    return getTenantEarnings(id, parsed.data.from, parsed.data.to);
   });
 };

@@ -18,6 +18,8 @@ import type {
 } from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
 import { EventsTab, MembershipsTab, ShelfTabs, VenuesTab } from './listings_tabs';
+import { EarningsTab } from './earnings_tab';
+import { useAdminTenantVenues } from '@/lib/api/queries';
 
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -33,16 +35,45 @@ function fmtIST(iso: string | null | undefined): string {
   return IST_FMT.format(new Date(iso));
 }
 
-type Tab = 'overview' | 'members' | 'venues' | 'events' | 'memberships' | 'billing' | 'audit';
+type Tab =
+  | 'overview'
+  | 'members'
+  | 'venues'
+  | 'events'
+  | 'memberships'
+  | 'earnings'
+  | 'billing'
+  | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'members', label: 'Members' },
   { id: 'venues', label: 'Venues' },
   { id: 'events', label: 'Events' },
   { id: 'memberships', label: 'Memberships' },
+  // Net — what the partner is owed. Sits before Billing, which is the gross
+  // and commission side of the same money.
+  { id: 'earnings', label: 'Earnings' },
   { id: 'billing', label: 'Billing' },
   { id: 'audit', label: 'Audit timeline' },
 ];
+
+/**
+ * Which zone to cut this organisation's days in.
+ *
+ * Taken from the organisation's own venues, which carry a real IANA
+ * `tz_name` — the first one, since this is an org-wide figure and an
+ * organisation running venues in several zones has no single right answer.
+ * Mapping from the registered country instead would need a new special case
+ * per market, and would silently cut days in the wrong zone for any market
+ * not yet listed.
+ *
+ * The partner's own page resolves this to the VIEWER's chosen zone instead, so
+ * the two can still disagree by a day on a late-evening sale. Both state the
+ * zone they used.
+ */
+function tenantTz(venueTz: string | null | undefined): string {
+  return venueTz ?? 'Asia/Kolkata';
+}
 
 function StatusPill({ status }: { status: string }) {
   const tone =
@@ -162,6 +193,7 @@ export default function TenantDetailPage() {
       {tab === 'venues' && <VenuesTab tenantId={t.id} />}
       {tab === 'events' && <EventsTab tenantId={t.id} />}
       {tab === 'memberships' && <MembershipsTab tenantId={t.id} />}
+      {tab === 'earnings' && <EarningsTabForTenant tenantId={t.id} />}
       {tab === 'billing' && <BillingTab data={data} />}
       {tab === 'audit' && <AuditLog tenantId={t.id} />}
     </div>
@@ -641,3 +673,16 @@ function Field({
   );
 }
 
+/**
+ * Earnings for one organisation, in a zone drawn from its own venues.
+ *
+ * Split out because the zone needs the venues list, and fetching it is only
+ * worth doing when this tab is actually open — the other tabs have no use for
+ * it. While it loads the tab renders in the fallback zone rather than waiting,
+ * since the figures are the point and the zone only shifts day boundaries.
+ */
+function EarningsTabForTenant({ tenantId }: { tenantId: string }) {
+  const { data: venues } = useAdminTenantVenues(tenantId, 'active');
+  const venueTz = venues?.[0]?.tzName ?? null;
+  return <EarningsTab tenantId={tenantId} tz={tenantTz(venueTz)} />;
+}

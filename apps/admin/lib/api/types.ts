@@ -861,3 +861,50 @@ export interface TenantItemRevenue {
    */
   unattributed: RevenueSlice[];
 }
+
+// ── Tenant earnings (admin view of the partner's own Earnings page) ───────────
+// Mirrors apps/partners/lib/api/types.ts. The admin console reads the SAME
+// endpoint shape from the same service, so an admin and a partner looking at
+// one week see one set of numbers.
+
+/** What was sold. 'venue' covers court/arena slot bookings. */
+export type EarningsStream = 'event' | 'membership' | 'venue';
+
+/** A net total in one currency. Currencies are never summed together. */
+export interface EarningsTotal {
+  currency: string;
+  /** Net payable to the partner, in minor units. Negative if refunds won. */
+  netPaise: number;
+  /** The slice of `netPaise` already transferred on a completed payout. */
+  paidPaise: number;
+  bookings: number;
+}
+
+export interface EarningsStreamTotal extends EarningsTotal {
+  stream: EarningsStream;
+}
+
+/** Net for one individual event, membership plan, or venue. */
+export interface EarningsItem extends EarningsStreamTotal {
+  /** Null when the booking carried nothing to attribute the money to. */
+  id: string | null;
+  name: string | null;
+  venueName: string | null;
+}
+
+/** Cash taken at the partner's own desk. Never part of a Circls payout. */
+export interface DeskTakings {
+  currency: string;
+  amountMinor: number;
+  bookings: number;
+}
+
+export interface TenantEarnings {
+  from: string;
+  to: string;
+  total: EarningsTotal[];
+  byStream: EarningsStreamTotal[];
+  items: EarningsItem[];
+  /** Not included in any total above. */
+  desk: DeskTakings[];
+}

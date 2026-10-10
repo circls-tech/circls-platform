@@ -24,6 +24,7 @@ import type {
   AdminStats,
   PlatformRevenue,
   RevenueGrouping,
+  TenantEarnings,
   TenantItemRevenue,
   AdminSupportIssue,
   AdminSupportIssueFilters,
@@ -101,6 +102,30 @@ export function useAdminTenantRevenue(tenantId: string | null, groupBy: RevenueG
     enabled: Boolean(user && tenantId),
     queryFn: () =>
       apiFetch<TenantItemRevenue>(`/v1/admin/tenants/${tenantId}/revenue?groupBy=${groupBy}`),
+  });
+}
+
+/**
+ * One organisation's earnings for a window — the admin-side read of the
+ * partner's own Earnings page, from the same service.
+ *
+ * `enabled` is caller-controlled so the tab only fetches once its period
+ * resolves to real bounds; an incomplete custom range must not fire a request.
+ */
+export function useAdminTenantEarnings(
+  tenantId: string | null,
+  bounds: { from: string; to: string } | null,
+  enabled: boolean,
+) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'earnings', bounds?.from, bounds?.to],
+    enabled: Boolean(user && tenantId && bounds) && enabled,
+    queryFn: () =>
+      apiFetch<TenantEarnings>(
+        `/v1/admin/tenants/${tenantId}/earnings` +
+          `?from=${encodeURIComponent(bounds!.from)}&to=${encodeURIComponent(bounds!.to)}`,
+      ),
   });
 }
 
@@ -337,6 +362,10 @@ export function useExecutePayout() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+      // Paying a payout moves the Earnings tab's "Paid out" column, which is
+      // derived from the paid payouts — refetch it or the tab keeps showing
+      // the figure from before the transfer.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant'] });
     },
   });
 }
