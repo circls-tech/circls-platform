@@ -28,6 +28,12 @@ export interface ReleaseInput {
   businessDayStartMin?: number;
   /** Last-used builder template, persisted on the arena for prefill next time. */
   template?: ScheduleTemplate;
+  /**
+   * `true` saves this release's weekly plan (cells + quantization + day start)
+   * as the arena's rolling plan and switches auto-rollover on; `false`
+   * switches it off (the saved plan is kept). Omitted = leave as is.
+   */
+  autoRollover?: boolean;
 }
 
 export interface Occurrence {
@@ -103,7 +109,7 @@ const WEEKDAY: Record<string, number> = {
  * in the target tz to discover the actual local wall-clock reading at that UTC
  * moment, derive the tz offset from the difference, then correct.
  */
-function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string): string {
+export function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string): string {
   const dateUtcMidnight = Date.UTC(
     parseInt(dateStr.slice(0, 4), 10),
     parseInt(dateStr.slice(5, 7), 10) - 1,
@@ -248,8 +254,37 @@ export async function releaseSlots(
     if (input.businessDayStartMin !== undefined)
       arenaPatch.businessDayStartMin = input.businessDayStartMin;
     if (input.template !== undefined) arenaPatch.scheduleTemplate = input.template;
+    if (input.autoRollover !== undefined) {
+      arenaPatch.autoRolloverEnabled = input.autoRollover;
+      arenaPatch.rolloverUpdatedAt = new Date();
+      // The saved plan is exactly what is being released now — grid edits
+      // included — so auto-generated days match this one.
+      if (input.autoRollover) {
+        arenaPatch.rolloverPlan = {
+          quantizationMin: input.quantizationMin,
+          businessDayStartMin: dayStartMin,
+          cells: input.cells,
+          savedByUserId: ctx.actorUserId,
+          savedAt: new Date().toISOString(),
+        };
+      }
+    }
     if (Object.keys(arenaPatch).length > 0) {
       await tx.update(arenas).set(arenaPatch).where(eq(arenas.id, arenaId));
+    }
+    if (input.autoRollover !== undefined) {
+      await writeAudit(
+        tx,
+        ctx,
+        'arena.rollover',
+        'arena',
+        arenaId,
+        { autoRolloverEnabled: arena.autoRolloverEnabled, planCells: arena.rolloverPlan?.cells.length ?? null },
+        {
+          autoRolloverEnabled: input.autoRollover,
+          planCells: input.autoRollover ? input.cells.length : (arena.rolloverPlan?.cells.length ?? null),
+        },
+      );
     }
 
     const [rel] = await tx

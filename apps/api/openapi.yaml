@@ -317,6 +317,17 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/arenas/{arenaId}/rollover:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/arenas/{arenaId}/schedule:
     put:
       parameters:

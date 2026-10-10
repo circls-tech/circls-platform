@@ -61,6 +61,35 @@ Releasing the same range twice with the same plan changes nothing ("already matc
 
 After a successful release, follow **Go to reception view →** to see and manage your live slots.
 
+## 4. Auto-rollover — keep the schedule going by itself
+
+Normally a schedule only covers the dates you released, so if you forget to extend it, customers suddenly can't book. **Auto-rollover** fixes that: you save the weekly plan you built, and Circls keeps the **next 7 days** released from it automatically. When Saturday ends, next Saturday is built overnight — unless it already was.
+
+### Switching it on
+
+1. Build and shape your week as usual, then in the **Release schedule** card tick **Keep this schedule rolling automatically**.
+2. Read the notice that appears: the plan is saved **exactly as it is on the grid** — bands, slot length, business-day start, every per-cell price and block — and that is what future days will use, at those prices, until you change the plan or switch rollover off.
+3. Either **Release schedule** (releases your dates *and* saves the plan) or **Save the rolling plan only** (saves the plan without touching the dates above).
+
+The builder then shows an **Auto-rollover** card with the status, when the plan was last saved, how many slots a week it makes, and when it was last checked.
+
+### How days are generated
+
+- Every hour, Circls looks at your current business day plus the 7 days after it, and releases **any of those days that has no slots at all** — the same release as if you'd done it yourself, so booked slots and the audit trail behave exactly the same way.
+- **A day that already has slots is never touched**, whether you released it by hand or rollover did earlier. Reprice a day, block a morning, close a day with blocks — all of that survives.
+- Because of that, to **close a day** for good, **block** its slots rather than removing them. A day with no slots looks unbuilt to rollover and gets filled again.
+- Rollover **pauses** while the arena or its venue is closed, and resumes when you reopen it.
+
+### Changing the plan
+
+Edits in the builder change nothing on their own. To change what future days look like:
+
+1. In the **Auto-rollover** card click **Edit the rolling plan** — it loads the saved plan into the grid.
+2. Make your changes (bands, prices, blocks).
+3. Either **Save the rolling plan only** — the new plan applies to days generated from now on; days that already have slots keep them — or **Release schedule** with the box ticked to also apply the new plan to the dates you selected right away.
+
+**Switch off** from the same card. The saved plan is kept, so you can switch rollover back on later without rebuilding. Releasing a schedule with the box unticked leaves rollover exactly as it was.
+
 ## Reception view — managing live slots
 
 The reception view (`/arenas/{arenaId}`) shows the actual released slots week by week. Reach it from the **Reception** button on the arena's card on its venue page — the same button appears on events and membership plans, where it opens the walk-in form instead. Like the builder grid, its slot times and day columns follow the **timezone selector in the top bar** — leave it on **Auto** to read the schedule in the venue's own zone, or pick a zone to view the same slots in your local time. This is display-only; it never changes when a slot actually is.
@@ -86,5 +115,5 @@ From here you can:
 ## Tips
 
 - Confirm the venue's **timezone** before releasing — all slot times are interpreted in it.
-- Release a manageable window (a month or a quarter) and extend it as you go, rather than years at once.
+- Release a manageable window (a month or a quarter) and extend it as you go, rather than years at once — or switch on **auto-rollover** and let the next week take care of itself.
 - Use **blocking** for one-off closures and reserved events; use **suspending the arena** for longer outages.

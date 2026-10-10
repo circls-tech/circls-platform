@@ -58,6 +58,9 @@ const releaseSlotsSchema = z.object({
   businessDayStartMin: z.number().int().min(0).max(1439).optional(),
   // Last-used builder template to persist on the arena for prefill.
   template: scheduleTemplateSchema.optional(),
+  // true = save this plan as the arena's rolling weekly plan and switch
+  // auto-rollover on; false = switch it off; omitted = leave as is.
+  autoRollover: z.boolean().optional(),
   cells: z.array(
     z.object({
       dayOfWeek: z.number().int().min(0).max(6),
@@ -111,6 +114,7 @@ export const slotRoutes: FastifyPluginAsync = async (app) => {
             ? { businessDayStartMin: input.businessDayStartMin }
             : {}),
           ...(input.template !== undefined ? { template: input.template } : {}),
+          ...(input.autoRollover !== undefined ? { autoRollover: input.autoRollover } : {}),
           cells: input.cells.map((c) => ({
             dayOfWeek: c.dayOfWeek,
             startTimeMin: c.startTimeMin,
