@@ -416,6 +416,20 @@
       "breakpoints": true
     },
     {
+      "idx": 60,
+      "version": "7",
+      "when": 1784010000000,
+      "tag": "0060_user_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784090000000,
+      "tag": "0061_tenant_hidden_from_catalog",
+      "breakpoints": true
+    },
+    {
       "idx": 62,
       "version": "7",
       "when": 1784100000000,

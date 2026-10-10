@@ -401,6 +401,53 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  // ── PATCH /v1/admin/tenants/:id/catalog — hide from consumers ──────────────
+  // Takes an org off everything consumers see while it keeps working for its
+  // members: App Review demo and internal test orgs. Same cap as suspend.
+  app.patch(
+    '/v1/admin/tenants/:id/catalog',
+    { preHandler: requireAuth },
+    async (req) => {
+      const user = await currentUser(req);
+      const platformTenantId = await getPlatformTenantId();
+      const ctx = await requireTenantMembership(user.id, platformTenantId);
+      assertCap(ctx, 'admin.tenants.suspend');
+
+      const params = tenantIdParamSchema.safeParse(req.params);
+      if (!params.success) {
+        throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+      }
+      const body = z.object({ hiddenFromCatalog: z.boolean() }).safeParse(req.body);
+      if (!body.success) {
+        throw new BadRequest('Invalid catalog patch', 'bad_request', { issues: body.error.issues });
+      }
+      const { id } = params.data;
+
+      return db.transaction(async (tx) => {
+        const before = await tx.query.tenants.findFirst({ where: eq(tenants.id, id) });
+        if (!before) throw new NotFound('Tenant not found', 'tenant_not_found');
+
+        const [after] = await tx
+          .update(tenants)
+          .set({ hiddenFromCatalog: body.data.hiddenFromCatalog })
+          .where(eq(tenants.id, id))
+          .returning();
+        if (!after) throw new NotFound('Tenant not found', 'tenant_not_found');
+
+        await writeAudit(
+          tx,
+          { tenantId: id, actorUserId: user.id },
+          'tenant.catalog_visibility_changed',
+          'tenant',
+          id,
+          { hiddenFromCatalog: before.hiddenFromCatalog },
+          { hiddenFromCatalog: after.hiddenFromCatalog },
+        );
+        return after;
+      });
+    },
+  );
+
   // ── PATCH /v1/admin/tenants/:id/billing — edit the billing knobs ───────────
   app.patch(
     '/v1/admin/tenants/:id/billing',

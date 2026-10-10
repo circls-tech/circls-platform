@@ -86,6 +86,14 @@ export const tenants = pgTable('tenants', {
   advancePayoutBps: integer('advance_payout_bps').notNull().default(0),
   subscriptionStatus: subscriptionStatus('subscription_status').notNull().default('trial'),
   status: tenantStatus('status').notNull().default('active'),
+  /**
+   * Kept off everything consumers see — the organisers directory, the org's
+   * profile, its venues, events and memberships, questions and checkout —
+   * while the org works normally for its own members. For App Review demo and
+   * internal test orgs; set by a platform admin
+   * (PATCH /v1/admin/tenants/:id/catalog).
+   */
+  hiddenFromCatalog: boolean('hidden_from_catalog').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
