@@ -6,6 +6,12 @@ import { checkoutGatewaysOf } from '../lib/gateway.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
+import {
+  MAX_LINES_PER_EVENT_BOOKING,
+  MAX_SLOTS_PER_BOOKING,
+  MAX_TICKETS_PER_LINE,
+} from '../lib/booking_limits.js';
+import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { registrationAnswersField } from '../lib/registration_answers_schema.js';
 import {
   consumerBookEvent,
@@ -63,6 +69,11 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   const publicLimit = {
     rateLimit: { max: env.RATE_LIMIT_PUBLIC_MAX, timeWindow: '1 minute' },
   } as const;
+
+  // Second ceiling for signed-in callers, keyed on the VERIFIED uid (so it
+  // sits after requireAuth): the global limiter is per IP, which a caller
+  // rotating addresses can spread across.
+  const perUserLimit = perIdentityRateLimit(app);
 
   // ── Browse (public) ────────────────────────────────────────────────────────
   const venuesQuery = z.object({
@@ -169,13 +180,13 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
 
   // ── Book / purchase (authenticated consumer) ───────────────────────────────
   const bookSlotsBody = z.object({
-    slotIds: z.array(z.string().uuid()).min(1),
+    slotIds: z.array(z.string().uuid()).min(1).max(MAX_SLOTS_PER_BOOKING),
     customerName: z.string().min(1).max(200),
     customerContact: z.string().min(1).max(200),
     note: z.string().max(500).optional(),
     couponCode: z.string().min(1).max(64).optional(),
   });
-  app.post('/v1/consumer/bookings', { preHandler: requireAuth, config: publicLimit }, async (req) => {
+  app.post('/v1/consumer/bookings', { preHandler: [requireAuth, perUserLimit], config: publicLimit }, async (req) => {
     const user = await currentUser(req);
     const parsed = bookSlotsBody.safeParse(req.body);
     if (!parsed.success) throw new BadRequest('Invalid booking payload', 'bad_request', { issues: parsed.error.issues });
@@ -195,14 +206,20 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     contact: z.string().max(200).optional(),
     couponCode: z.string().min(1).max(64).optional(),
     lines: z
-      .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
-      .min(1),
+      .array(
+        z.object({
+          tierId: z.string().uuid(),
+          quantity: z.number().int().min(1).max(MAX_TICKETS_PER_LINE),
+        }),
+      )
+      .min(1)
+      .max(MAX_LINES_PER_EVENT_BOOKING),
     // Answers to the event's registration questions (validated in the service
     // against the live question set — required questions must be answered).
     answers: registrationAnswersField
       .optional(),
   });
-  app.post('/v1/consumer/events/:eventId/book', { preHandler: requireAuth, config: publicLimit }, async (req) => {
+  app.post('/v1/consumer/events/:eventId/book', { preHandler: [requireAuth, perUserLimit], config: publicLimit }, async (req) => {
     const { eventId } = req.params as { eventId: string };
     const user = await currentUser(req);
     const parsed = bookEventBody.safeParse(req.body ?? {});
@@ -225,7 +242,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     couponCode: z.string().min(1).max(64).optional(),
     membershipTierId: z.string().uuid().optional(),
   });
-  app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: requireAuth, config: publicLimit }, async (req) => {
+  app.post('/v1/consumer/memberships/:membershipId/purchase', { preHandler: [requireAuth, perUserLimit], config: publicLimit }, async (req) => {
     const { membershipId } = req.params as { membershipId: string };
     const user = await currentUser(req);
     const parsed = purchaseMembershipBody.safeParse(req.body ?? {});

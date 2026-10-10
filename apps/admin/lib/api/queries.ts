@@ -175,6 +175,22 @@ export function useSuspendTenant() {
   });
 }
 
+/** PATCH /v1/admin/tenants/:id/catalog — hide an org from consumers (demo / test orgs). */
+export function useSetTenantCatalogHidden() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, hidden }: { id: string; hidden: boolean }) =>
+      apiFetch<unknown>(`/v1/admin/tenants/${id}/catalog`, {
+        method: 'PATCH',
+        body: JSON.stringify({ hiddenFromCatalog: hidden }),
+      }),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenants'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+    },
+  });
+}
+
 export function useReactivateTenant() {
   const qc = useQueryClient();
   return useMutation({

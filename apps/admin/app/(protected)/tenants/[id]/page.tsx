@@ -8,6 +8,7 @@ import {
   useAdminTenantDetail,
   useAdminTenantEvents,
   useReactivateTenant,
+  useSetTenantCatalogHidden,
   useSuspendTenant,
   useUpdateEventBilling,
   useUpdateTenantBilling,
@@ -97,6 +98,7 @@ export default function TenantDetailPage() {
   const { data, isLoading, isError, error } = useAdminTenantDetail(tenantId);
   const suspend = useSuspendTenant();
   const reactivate = useReactivateTenant();
+  const catalog = useSetTenantCatalogHidden();
 
   if (isLoading) {
     return (
@@ -130,6 +132,11 @@ export default function TenantDetailPage() {
           <h1 className="text-2xl font-semibold text-slate-900">{t.name}</h1>
           <span className="font-mono text-xs text-slate-500">{t.slug}</span>
           <StatusPill status={t.status} />
+          {t.hiddenFromCatalog ? (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              Hidden from consumers
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -159,6 +166,25 @@ export default function TenantDetailPage() {
             {reactivate.isPending ? 'Reactivating…' : 'Reactivate tenant'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            const hide = !t.hiddenFromCatalog;
+            const question = hide
+              ? `Hide "${t.name}" from consumers? Its venues, events, memberships and profile disappear from circls.app and the app; the org keeps working for its members.`
+              : `Show "${t.name}" to consumers again?`;
+            if (!confirm(question)) return;
+            catalog.mutate({ id: t.id, hidden: hide });
+          }}
+          disabled={catalog.isPending}
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {catalog.isPending
+            ? 'Saving…'
+            : t.hiddenFromCatalog
+              ? 'Show to consumers'
+              : 'Hide from consumers'}
+        </button>
         <Link
           href={`/tenants/${t.id}/audit`}
           className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"

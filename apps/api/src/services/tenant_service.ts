@@ -331,7 +331,11 @@ export interface PublicOrgSummary {
 /** All active, non-platform orgs A→Z — the public organisers directory. */
 export async function listPublicOrgs(): Promise<PublicOrgSummary[]> {
   const rows = await db.query.tenants.findMany({
-    where: and(eq(tenants.status, 'active'), eq(tenants.isPlatform, false)),
+    where: and(
+      eq(tenants.status, 'active'),
+      eq(tenants.isPlatform, false),
+      eq(tenants.hiddenFromCatalog, false),
+    ),
     orderBy: asc(tenants.name),
   });
   return rows.map((row) => ({
@@ -348,7 +352,7 @@ export async function listPublicOrgs(): Promise<PublicOrgSummary[]> {
 /** A single active org by slug, or null (inactive/missing → caller 404s). */
 export async function getPublicOrgBySlug(slug: string): Promise<PublicOrg | null> {
   const row = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
-  if (!row || row.status !== 'active' || row.isPlatform) return null;
+  if (!row || row.status !== 'active' || row.isPlatform || row.hiddenFromCatalog) return null;
   return {
     id: row.id,
     slug: row.slug,

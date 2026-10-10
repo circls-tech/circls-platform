@@ -3,9 +3,10 @@
  * circls.app portal.
  *
  * Visibility rule (subproject B, decision 4): a listing is public iff it is in
- * its approved state AND the owning tenant is not suspended. Every read here
- * enforces that — the consumer portal must never surface a pending_review,
- * rejected, or suspended-tenant listing.
+ * its approved state AND the owning tenant is active and not hidden from the
+ * catalogue (`hidden_from_catalog`: App Review demo and test orgs). Every read
+ * here enforces that — the consumer portal must never surface a
+ * pending_review, rejected, suspended-tenant or hidden-tenant listing.
  *
  * Booking/purchase reuse the existing services (prepareOnlineBookingWithPayment,
  * bookEvent, purchaseMembership) but first re-check public visibility so a
@@ -18,7 +19,7 @@ import { arenas } from '../db/schema/arenas.js';
 import { bookings } from '../db/schema/bookings.js';
 import { events, type Event } from '../db/schema/events.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
-import { memberships, type Membership } from '../db/schema/memberships.js';
+import { memberships, userMemberships, type Membership } from '../db/schema/memberships.js';
 import { slots } from '../db/schema/slots.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
@@ -28,8 +29,10 @@ import { supportIssues } from '../db/schema/support_issues.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { venues, type Venue } from '../db/schema/venues.js';
 import { BadRequest, Conflict, NotFound, Unauthorized, Upstream } from '../lib/errors.js';
+import { assertNotObjectionable } from '../lib/objectionable.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
+import { writeAudit } from '../lib/audit.js';
 import { ownBookingCondition } from './booking_ownership.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type {
@@ -136,6 +139,7 @@ export async function listPublicVenues(opts: { search?: string; limit?: number }
   const conds = [
     eq(venues.status, 'active'),
     eq(tenants.status, 'active'),
+    eq(tenants.hiddenFromCatalog, false),
     // Only surface venues a consumer can actually book at (§12.1).
     sql`exists (select 1 from ${arenas} a where a.venue_id = ${venues.id} and a.status = 'active')`,
   ];
@@ -164,7 +168,7 @@ export async function getPublicVenueWithImages(venueId: string): Promise<PublicV
     .select({ v: venues, brand: BRAND_COLUMNS })
     .from(venues)
     .innerJoin(tenants, eq(tenants.id, venues.tenantId))
-    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active')))
+    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active'), eq(tenants.hiddenFromCatalog, false)))
     .limit(1);
   if (!row) return null;
   const imagesByVenue = await imagesForVenues([row.v.id]);
@@ -177,7 +181,7 @@ export async function getPublicVenue(venueId: string): Promise<Venue | null> {
     .select({ v: venues })
     .from(venues)
     .innerJoin(tenants, eq(tenants.id, venues.tenantId))
-    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active')))
+    .where(and(eq(venues.id, venueId), eq(venues.status, 'active'), eq(tenants.status, 'active'), eq(tenants.hiddenFromCatalog, false)))
     .limit(1);
   return row?.v ?? null;
 }
@@ -479,6 +483,7 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
       and(
         eq(events.status, 'published'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
@@ -519,6 +524,7 @@ export async function getPublicEventById(id: string): Promise<PublicEventWithVen
         eq(events.id, id),
         eq(events.status, 'published'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${events.venueId} is null or ${venues.status} = 'active')`,
         sql`${events.endsAt} >= now()`,
       ),
@@ -722,6 +728,7 @@ export async function listPublicMembershipsAcrossVenues(
   const conds: SQL[] = [
     eq(memberships.status, 'active'),
     eq(tenants.status, 'active'),
+    eq(tenants.hiddenFromCatalog, false),
     sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
   ];
   const rows = await db
@@ -751,6 +758,7 @@ export async function getPublicMembershipById(
         eq(memberships.id, id),
         eq(memberships.status, 'active'),
         eq(tenants.status, 'active'),
+        eq(tenants.hiddenFromCatalog, false),
         sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
       ),
     )
@@ -879,11 +887,13 @@ export async function assertEventBookable(eventId: string): Promise<void> {
     await assertVenueVisible(ev.venueId);
   } else {
     const [t] = await db
-      .select({ status: tenants.status })
+      .select({ status: tenants.status, hidden: tenants.hiddenFromCatalog })
       .from(tenants)
       .where(eq(tenants.id, ev.tenantId))
       .limit(1);
-    if (!t || t.status !== 'active') throw new NotFound('Event not found', 'event_not_found');
+    if (!t || t.status !== 'active' || t.hidden) {
+      throw new NotFound('Event not found', 'event_not_found');
+    }
   }
 }
 
@@ -895,8 +905,14 @@ export async function assertEventBookable(eventId: string): Promise<void> {
 export async function assertMembershipPurchasable(membershipId: string): Promise<void> {
   const [m] = await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1);
   if (!m || m.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
-  const [t] = await db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, m.tenantId)).limit(1);
-  if (!t || t.status !== 'active') throw new NotFound('Membership not found', 'membership_not_found');
+  const [t] = await db
+    .select({ status: tenants.status, hidden: tenants.hiddenFromCatalog })
+    .from(tenants)
+    .where(eq(tenants.id, m.tenantId))
+    .limit(1);
+  if (!t || t.status !== 'active' || t.hidden) {
+    throw new NotFound('Membership not found', 'membership_not_found');
+  }
   if (m.venueId != null) await assertVenueVisible(m.venueId);
 }
 
@@ -1259,7 +1275,11 @@ export async function updateMyProfile(
   input: UpdateMyProfileInput,
 ): Promise<MyProfile> {
   const patch: Partial<typeof users.$inferInsert> = {};
-  if (input.displayName !== undefined) patch.displayName = input.displayName;
+  if (input.displayName !== undefined) {
+    // Shown as the author on public question threads (App Store 1.2).
+    assertNotObjectionable(input.displayName);
+    patch.displayName = input.displayName;
+  }
   if (input.email !== undefined) {
     // A self-reported email is contact info, not proof of ownership: mark it
     // unverified so it never acts as an identity key (adoptStaleIdentity).
@@ -1385,7 +1405,102 @@ const REDACTED = '[deleted account]';
  * way back. That is rejected with 409 `partner_account` rather than silently
  * performed — see the guard below.
  */
-export async function deleteMyAccount(firebaseUid: string): Promise<void> {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Partner half of `DELETE /v1/me`: drops every `tenant_members` row of the user.
+ *
+ * As the sole owner of an org (owner rows locked against a concurrent demotion):
+ *  - if they are its ONLY member and it has never taken a booking — a fresh
+ *    sign-up — the org is suspended in the same transaction, which takes it off
+ *    the consumer catalogue (every public query requires tenants.status =
+ *    'active'), and the account goes;
+ *  - otherwise 409 `last_owner_protected`: with teammates, promote one first;
+ *    with bookings on record, closing the org is a support job (financial
+ *    records and customers' upcoming bookings are involved).
+ */
+async function releasePartnerAccess(tx: Tx, userId: string): Promise<void> {
+  const rows = await tx
+    .select({ tenantId: tenantMembers.tenantId, role: tenantMembers.role })
+    .from(tenantMembers)
+    .where(eq(tenantMembers.userId, userId));
+  const toClose: string[] = [];
+  for (const m of rows) {
+    if (m.role !== 'owner') continue;
+    const owners = await tx
+      .select({ id: tenantMembers.userId })
+      .from(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.role, 'owner')))
+      .for('update');
+    if (owners.length > 1) continue;
+    const [members] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(tenantMembers)
+      .where(eq(tenantMembers.tenantId, m.tenantId));
+    if ((members?.n ?? 0) > 1) {
+      throw new Conflict(
+        'You are the only owner of an organisation. Make another member an owner first.',
+        'last_owner_protected',
+      );
+    }
+    const [anyBooking] = await tx
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.tenantId, m.tenantId))
+      .limit(1);
+    // Members added at the desk or on a free plan have no booking row, but
+    // they are customers of the org all the same.
+    const [anyMember] = await tx
+      .select({ id: userMemberships.id })
+      .from(userMemberships)
+      .innerJoin(memberships, eq(memberships.id, userMemberships.membershipId))
+      .where(eq(memberships.tenantId, m.tenantId))
+      .limit(1);
+    if (anyBooking || anyMember) {
+      throw new Conflict(
+        'Your organisation has bookings or members on record. Email contact@gibbous.io and we will close it with you.',
+        'last_owner_protected',
+      );
+    }
+    toClose.push(m.tenantId);
+  }
+  for (const tenantId of toClose) {
+    await tx.update(tenants).set({ status: 'suspended' }).where(eq(tenants.id, tenantId));
+    await writeAudit(
+      tx,
+      { tenantId, actorUserId: userId },
+      'tenant.closed',
+      'tenant',
+      tenantId,
+      { status: 'active' },
+      { status: 'suspended', reason: 'sole_owner_account_deleted' },
+    );
+  }
+  for (const m of rows) {
+    await tx
+      .delete(tenantMembers)
+      .where(and(eq(tenantMembers.tenantId, m.tenantId), eq(tenantMembers.userId, userId)));
+    await writeAudit(
+      tx,
+      { tenantId: m.tenantId, actorUserId: userId },
+      'tenant.member_removed',
+      'tenant_member',
+      userId,
+      { role: m.role },
+      { removedAt: new Date(), reason: 'account_deleted' },
+    );
+  }
+}
+
+/**
+ * `releasePartnerAccess` is set by `DELETE /v1/me` (the partners app): instead
+ * of refusing a partner with 409 `partner_account`, their memberships are
+ * dropped in the same transaction, unless they are an org's last owner.
+ */
+export async function deleteMyAccount(
+  firebaseUid: string,
+  opts: { releasePartnerAccess?: boolean } = {},
+): Promise<void> {
   // Live rows only: a tombstone keeps its firebase_uid, and finding one here
   // means the account is already deleted (a retry after a Firebase failure, or a
   // token that outlived the DB write). Skip straight to the Firebase teardown —
@@ -1403,7 +1518,7 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
       where: eq(tenantMembers.userId, row.id),
       columns: { tenantId: true },
     });
-    if (membership) {
+    if (membership && !opts.releasePartnerAccess) {
       throw new Conflict(
         'This account manages a partner organisation. Transfer or close your organisation first, or email contact@gibbous.io and we will help.',
         'partner_account',
@@ -1411,6 +1526,8 @@ export async function deleteMyAccount(firebaseUid: string): Promise<void> {
     }
 
     await db.transaction(async (tx) => {
+      if (membership) await releasePartnerAccess(tx, row.id);
+
       // Behavioural telemetry is pure personal data with no retention duty.
       await tx.delete(consumerActivity).where(eq(consumerActivity.userId, row.id));
 
