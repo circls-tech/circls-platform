@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { auditLog, arenas, slots, tenants, users, venues } from '../db/schema/index.js';
 import { createPricingRule } from './pricing_service.js';
+import { MAX_RELEASE_SPAN_DAYS } from '../lib/booking_limits.js';
 import { bookSlots } from './booking_service.js';
 import {
   bulkUpdateSlots,
@@ -35,6 +36,41 @@ describe('enumerateOccurrences (pure)', () => {
     expect(result).toHaveLength(2);
     expect(result[0]?.startIso).toBe('2026-07-04T12:30:00.000Z');
     expect(result[1]?.startIso).toBe('2026-07-11T12:30:00.000Z');
+  });
+
+  it('walks a year-long window by day count and terminates', () => {
+    // 2026-01-01 is a Thursday; 52 Saturdays fall in [2026-01-01, 2027-01-01].
+    const result = enumerateOccurrences(
+      '2026-01-01',
+      '2027-01-01',
+      [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60 }],
+      'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
+    );
+    expect(result).toHaveLength(52);
+  });
+
+  it('refuses a window longer than MAX_RELEASE_SPAN_DAYS', () => {
+    expect(() =>
+      enumerateOccurrences(
+        '2026-01-01',
+        '2027-01-03',
+        [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60 }],
+        'Asia/Kolkata',
+        NOW_BEFORE_WINDOW,
+      ),
+    ).toThrow(new RegExp(`at most ${MAX_RELEASE_SPAN_DAYS} days`));
+  });
+
+  it('returns nothing for an inverted window instead of looping', () => {
+    const result = enumerateOccurrences(
+      '2026-07-14',
+      '2026-07-01',
+      [{ dayOfWeek: 6, startTimeMin: 600, durationMin: 60 }],
+      'Asia/Kolkata',
+      NOW_BEFORE_WINDOW,
+    );
+    expect(result).toEqual([]);
   });
 
   it('returns no occurrences when no cells match the date range weekdays', () => {

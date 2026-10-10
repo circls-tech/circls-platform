@@ -28,3 +28,22 @@ export const MAX_TICKETS_PER_LINE = 100;
 
 /** Most tickets, across every tier, in one booking. */
 export const MAX_TICKETS_PER_BOOKING = 100;
+
+// ── Schedule release ───────────────────────────────────────────────────────
+// A release walks every calendar day of its window synchronously, inside one
+// transaction, and inserts a slot per matching cell. These ceilings keep one
+// request's work bounded; the Help Centre already advises releasing a month
+// or a quarter at a time.
+
+/** Most calendar days one release may cover (inclusive of both ends). */
+export const MAX_RELEASE_SPAN_DAYS = 366;
+
+/** Most grid cells in one release: 7 days of 5-minute cells. */
+export const MAX_RELEASE_CELLS = 7 * 288;
+
+/** Latest minute-of-day a cell may start: an overnight cell may run into the next calendar day. */
+export const MAX_CELL_START_MIN = 2 * 1440 - 1;
+
+/** Longest cell, and coarsest quantization: one day. */
+export const MAX_CELL_DURATION_MIN = 1440;
+export const MAX_QUANTIZATION_MIN = 1440;
