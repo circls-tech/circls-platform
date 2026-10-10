@@ -219,7 +219,15 @@ export default function ScheduleBuilderPage() {
   // rolling plan") rather than cells generated from the bands above.
   const [cellsFromPlan, setCellsFromPlan] = useState(false);
   const setRollover = useSetArenaRollover(arenaId);
-  const [rolloverMsg, setRolloverMsg] = useState<string | null>(null);
+  // Outcome of the last rollover action, shown only in the card whose button
+  // was pressed (the status card at the top, or the Release card).
+  type RolloverWhere = 'status' | 'release';
+  const [rolloverMsg, setRolloverMsgState] = useState<{ where: RolloverWhere; text: string } | null>(null);
+  const [rolloverActionWhere, setRolloverActionWhere] = useState<RolloverWhere>('status');
+  const setRolloverMsg = (text: string | null, where: RolloverWhere = 'status') =>
+    setRolloverMsgState(text ? { where, text } : null);
+  const rolloverError = (where: RolloverWhere) =>
+    setRollover.error && rolloverActionWhere === where ? (setRollover.error as Error).message : null;
   const rolloverPlan = arena?.rolloverPlan ?? null;
   const rolloverOn = arena?.autoRolloverEnabled ?? false;
 
@@ -434,7 +442,7 @@ export default function ScheduleBuilderPage() {
         ...(rolloverChecked ? { autoRollover: true } : {}),
       });
       setReleaseResult(result);
-      if (rolloverChecked) setRolloverMsg('Auto-rollover is on and this plan is saved as the rolling plan.');
+      if (rolloverChecked) setRolloverMsg('Auto-rollover is on and this plan is saved as the rolling plan.', 'release');
     } catch {
       // error surfaced via releaseSlots.error
     }
@@ -445,6 +453,7 @@ export default function ScheduleBuilderPage() {
   async function handleSavePlanOnly() {
     if (!cells || cells.length === 0) return;
     setRolloverMsg(null);
+    setRolloverActionWhere('release');
     try {
       await setRollover.mutateAsync({
         enabled: true,
@@ -452,6 +461,7 @@ export default function ScheduleBuilderPage() {
       });
       setRolloverMsg(
         'Rolling plan saved. Days generated from now on use it; days that already have slots are unchanged.',
+        'release',
       );
     } catch {
       // error surfaced via setRollover.error
@@ -460,6 +470,7 @@ export default function ScheduleBuilderPage() {
 
   async function handleRolloverToggle(enabled: boolean) {
     setRolloverMsg(null);
+    setRolloverActionWhere('status');
     try {
       await setRollover.mutateAsync({ enabled });
       setRolloverMsg(enabled ? 'Auto-rollover is back on.' : 'Auto-rollover is off. The saved plan is kept.');
@@ -534,10 +545,10 @@ export default function ScheduleBuilderPage() {
               </p>
             )}
 
-            {setRollover.error && (
-              <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{(setRollover.error as Error).message}</p>
+            {rolloverError('status') && (
+              <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{rolloverError('status')}</p>
             )}
-            {rolloverMsg && <p className="text-sm text-green-700">{rolloverMsg}</p>}
+            {rolloverMsg?.where === 'status' && <p className="text-sm text-green-700">{rolloverMsg.text}</p>}
 
             {rolloverPlan && (
               <div className="flex flex-wrap gap-2">
@@ -753,15 +764,18 @@ export default function ScheduleBuilderPage() {
               {releaseSlots.error && (
                 <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{(releaseSlots.error as Error).message}</p>
               )}
-              {setRollover.error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{(setRollover.error as Error).message}</p>
+              {rolloverError('release') && (
+                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{rolloverError('release')}</p>
               )}
-              {rolloverMsg && !releaseResult && <p className="text-sm text-green-700">{rolloverMsg}</p>}
+              {rolloverMsg?.where === 'release' && !releaseResult && (
+                <p className="text-sm text-green-700">{rolloverMsg.text}</p>
+              )}
 
               {releaseResult && (
                 <div className="rounded bg-green-50 px-4 py-3 text-sm text-green-800">
                   <p className="font-semibold">Schedule released.</p>
                   <ChangeSummary s={releaseResult} currency={currency} />
+                  {rolloverMsg?.where === 'release' && <p className="mt-1">{rolloverMsg.text}</p>}
                   <Link
                     href={`/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
                     className="mt-2 inline-block font-medium text-green-700 hover:underline"

@@ -202,9 +202,19 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
     expect(audit?.entityId).toBe(arenaId);
   });
 
+  /** The arena's current plan + boundary, as the worker would read them. */
+  async function current() {
+    const a = (await db.query.arenas.findFirst({ where: sql`id = ${arenaId}` }))!;
+    return { dayStartMin: a.businessDayStartMin, plan: a.rolloverPlan! };
+  }
+  /** Run this arena's rollover as of `nowIso` and return exact counts. */
+  async function runMine(nowIso: string) {
+    const { dayStartMin, plan: p } = await current();
+    return rolloverArena(arenaId, tenantId, IST, dayStartMin, p, nowIso);
+  }
+
   it('releases every day in the horizon that has no slots', async () => {
-    const saved = (await db.query.arenas.findFirst({ where: sql`id = ${arenaId}` }))!;
-    const r = await rolloverArena(arenaId, tenantId, IST, saved.businessDayStartMin, saved.rolloverPlan!, NOW);
+    const r = await runMine(NOW);
     expect(r.daysReleased).toBe(8); // today (2nd) … next Saturday (9th)
     expect(r.slotsCreated).toBe(24); // 3 slots × 8 days, all in the future
 
@@ -214,30 +224,35 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
     expect(starts[0]).toBe('2033-07-02T12:30:00.000Z');
     // Last slot: 01:00 IST on the 10th (spill of the 9th) = 19:30Z on the 9th.
     expect(starts[starts.length - 1]).toBe('2033-07-09T19:30:00.000Z');
-
-    const [a] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
-    expect(a?.rolloverLastRunAt?.toISOString()).toBe(NOW);
   });
 
   it('is idempotent: a second run at the same time creates nothing', async () => {
-    const r = await runScheduleRollover(NOW);
-    expect(r.arenas).toBeGreaterThanOrEqual(1);
-    expect(r.failed).toBe(0);
+    const mine = await runMine(NOW);
+    expect(mine).toEqual({ daysReleased: 0, slotsCreated: 0 });
+
+    // The worker entry point scans every enabled arena in the database, so
+    // only assert what is true of this arena: nothing new, no failures, and
+    // the last-run stamp written without touching updated_at.
+    const [before] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+    const all = await runScheduleRollover(NOW);
+    expect(all.failed).toBe(0);
     expect(await liveSlotStarts()).toHaveLength(24);
+    const [after] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+    expect(after?.rolloverLastRunAt?.toISOString()).toBe(NOW);
+    expect(after?.updatedAt.toISOString()).toBe(before?.updatedAt.toISOString());
   });
 
   it('builds only the newly-entered day once the business day rolls over', async () => {
     // 03:00 IST on the 3rd (= 21:30Z on the 2nd): today is now the 3rd, so the
     // 10th enters the horizon. Only that day is built; the 2nd's slots stay.
-    const r = await runScheduleRollover('2033-07-02T21:30:00.000Z');
-    expect(r.daysReleased).toBe(1);
-    expect(r.slotsCreated).toBe(3);
+    const r = await runMine('2033-07-02T21:30:00.000Z');
+    expect(r).toEqual({ daysReleased: 1, slotsCreated: 3 });
     expect(await liveSlotStarts()).toHaveLength(27);
   });
 
-  it('leaves a day the partner released by hand exactly as they made it', async () => {
+  it('leaves a hand-released day alone and never writes the boundary back', async () => {
     // Partner hand-releases the 11th with one differently-priced slot and a
-    // different business-day boundary …
+    // different (06:00) business-day boundary …
     await releaseSlots(ctx, arenaId, {
       startDate: '2033-07-11',
       endDate: '2033-07-11',
@@ -245,21 +260,19 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
       cells: [{ dayOfWeek: 1, startTimeMin: 600, durationMin: 60, price: 99900 }],
       businessDayStartMin: 360,
     });
-    // … then the 11th enters the horizon (now = 03:00 IST on the 4th — which,
-    // on the arena's new 06:00 boundary, is still the 3rd, so nothing new
-    // enters; the 11th is built already either way).
-    const r = await runScheduleRollover('2033-07-03T21:30:00.000Z');
-    expect(r.daysReleased).toBe(0);
-    // The auto-release never writes the boundary back.
-    const [after] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
-    expect(after?.businessDayStartMin).toBe(360);
-    const starts = await liveSlotStarts();
-    expect(starts).toHaveLength(28);
+    // … then, at 06:00 IST on the 5th (= 00:30Z), the 12th enters the horizon
+    // (on the arena's 06:00 boundary today is the 5th). The 11th is built, so
+    // only the 12th is released — and the boundary stays at 06:00.
+    const r = await runMine('2033-07-05T00:30:00.000Z');
+    expect(r).toEqual({ daysReleased: 1, slotsCreated: 3 });
+    expect(await liveSlotStarts()).toHaveLength(31);
     const [hand] = await db
       .select()
       .from(slots)
       .where(sql`arena_id = ${arenaId} and deleted_at is null and lower(time_range) = ${'2033-07-11T04:30:00.000Z'}::timestamptz`);
     expect(hand?.pricePaise).toBe(99900);
+    const [after] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+    expect(after?.businessDayStartMin).toBe(360);
   });
 
   it('a replaced plan applies to days generated from then on only', async () => {
@@ -267,15 +280,15 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
       ...plan,
       cells: plan.cells.map((c) => ({ ...c, price: 10000 })),
     };
-    await setArenaRollover(ctx, arenaId, { enabled: true, plan: cheaper });
-    // Saving the plan restored the 03:00 boundary; now = 03:00 IST on the 5th
-    // → the 12th enters the horizon.
-    const r = await runScheduleRollover('2033-07-04T21:30:00.000Z');
-    expect(r.daysReleased).toBe(1);
+    const a = await setArenaRollover(ctx, arenaId, { enabled: true, plan: cheaper });
+    expect(a.businessDayStartMin).toBe(DAY_START); // saving a plan restores its boundary
+    // now = 03:00 IST on the 6th → the 13th enters the horizon.
+    const r = await runMine('2033-07-05T21:30:00.000Z');
+    expect(r).toEqual({ daysReleased: 1, slotsCreated: 3 });
     const [newSlot] = await db
       .select()
       .from(slots)
-      .where(sql`arena_id = ${arenaId} and deleted_at is null and lower(time_range) = ${'2033-07-12T12:30:00.000Z'}::timestamptz`);
+      .where(sql`arena_id = ${arenaId} and deleted_at is null and lower(time_range) = ${'2033-07-13T12:30:00.000Z'}::timestamptz`);
     expect(newSlot?.pricePaise).toBe(10000);
     const [oldSlot] = await db
       .select()
@@ -285,15 +298,25 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
   });
 
   it('pauses while the arena is closed and stops when switched off', async () => {
+    // now = 03:00 IST on the 7th → the 14th would enter the horizon.
+    const LATER = '2033-07-06T21:30:00.000Z';
+    const countBefore = (await liveSlotStarts()).length;
+
     await db.update(arenas).set({ status: 'suspended' }).where(sql`id = ${arenaId}`);
-    const paused = await runScheduleRollover('2033-07-05T21:30:00.000Z');
-    expect(paused.daysReleased).toBe(0);
+    const paused = await runScheduleRollover(LATER);
+    expect(paused.failed).toBe(0);
+    expect((await liveSlotStarts()).length).toBe(countBefore); // filtered out by the worker's query
     await db.update(arenas).set({ status: 'active' }).where(sql`id = ${arenaId}`);
 
     const a = await setArenaRollover(ctx, arenaId, { enabled: false });
     expect(a.autoRolloverEnabled).toBe(false);
     expect(a.rolloverPlan).not.toBeNull(); // kept for switching back on
-    const off = await runScheduleRollover('2033-07-05T21:30:00.000Z');
-    expect(off.daysReleased).toBe(0);
+    const off = await runScheduleRollover(LATER);
+    expect(off.failed).toBe(0);
+    expect((await liveSlotStarts()).length).toBe(countBefore);
+
+    // Sanity: with rollover on and the arena open, the same instant does build the 14th.
+    await setArenaRollover(ctx, arenaId, { enabled: true });
+    expect(await runMine(LATER)).toEqual({ daysReleased: 1, slotsCreated: 3 });
   });
 });

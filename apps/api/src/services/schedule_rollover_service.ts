@@ -177,6 +177,7 @@ export async function runScheduleRollover(
       ),
     );
 
+  const checked: string[] = [];
   for (const t of targets) {
     const plan = t.plan as RolloverPlan | null;
     if (!plan || plan.cells.length === 0) continue;
@@ -185,10 +186,24 @@ export async function runScheduleRollover(
       const r = await rolloverArena(t.arenaId, t.tenantId, t.tz, t.dayStartMin, plan, nowIso);
       summary.daysReleased += r.daysReleased;
       summary.slotsCreated += r.slotsCreated;
+      checked.push(t.arenaId);
     } catch (err) {
       summary.failed++;
       logger.error({ err, arenaId: t.arenaId }, 'schedule_rollover_arena_failed');
     }
+  }
+
+  // One statement for every arena checked, and raw SQL on purpose: the ORM
+  // would also bump `updated_at` on each row, turning "the partner changed
+  // this arena" into hourly noise for every arena on rollover.
+  if (checked.length > 0) {
+    // One array literal as a single bound parameter (the sql template would
+    // otherwise spread a JS array into N parameters).
+    const ids = `{${checked.join(',')}}`;
+    await db.execute(sql`
+      update arenas set rollover_last_run_at = ${nowIso}::timestamptz
+      where id = any(${ids}::uuid[])
+    `);
   }
 
   return summary;
@@ -245,11 +260,6 @@ export async function rolloverArena(
     out.daysReleased++;
     out.slotsCreated += result.created;
   }
-
-  await db
-    .update(arenas)
-    .set({ rolloverLastRunAt: new Date(nowIso) })
-    .where(eq(arenas.id, arenaId));
 
   if (out.daysReleased > 0) {
     logger.info({ arenaId, days: todo, created: out.slotsCreated }, 'schedule_rollover_released');
