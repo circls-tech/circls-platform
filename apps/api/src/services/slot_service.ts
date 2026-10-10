@@ -4,6 +4,7 @@ import { isExclusionViolation } from '../db/errors.js';
 import { arenas, type ScheduleTemplate, type Slot, slotReleases, slots } from '../db/schema/index.js';
 import { Conflict } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
+import { applyRolloverChange } from '../lib/rollover_plan.js';
 import { resolvePricePaise } from './pricing_service.js';
 import { getArenaById } from './arena_service.js';
 import { getVenueById } from './venue_service.js';
@@ -254,37 +255,25 @@ export async function releaseSlots(
     if (input.businessDayStartMin !== undefined)
       arenaPatch.businessDayStartMin = input.businessDayStartMin;
     if (input.template !== undefined) arenaPatch.scheduleTemplate = input.template;
-    if (input.autoRollover !== undefined) {
-      arenaPatch.autoRolloverEnabled = input.autoRollover;
-      arenaPatch.rolloverUpdatedAt = new Date();
-      // The saved plan is exactly what is being released now — grid edits
-      // included — so auto-generated days match this one.
-      if (input.autoRollover) {
-        arenaPatch.rolloverPlan = {
-          quantizationMin: input.quantizationMin,
-          businessDayStartMin: dayStartMin,
-          cells: input.cells,
-          savedByUserId: ctx.actorUserId,
-          savedAt: new Date().toISOString(),
-        };
-      }
-    }
     if (Object.keys(arenaPatch).length > 0) {
       await tx.update(arenas).set(arenaPatch).where(eq(arenas.id, arenaId));
     }
+    // Rollover changes go through the one shared helper so this path and
+    // PUT /rollover validate, store and audit identically. The saved plan is
+    // exactly what is being released now — grid edits included.
     if (input.autoRollover !== undefined) {
-      await writeAudit(
-        tx,
-        ctx,
-        'arena.rollover',
-        'arena',
-        arenaId,
-        { autoRolloverEnabled: arena.autoRolloverEnabled, planCells: arena.rolloverPlan?.cells.length ?? null },
-        {
-          autoRolloverEnabled: input.autoRollover,
-          planCells: input.autoRollover ? input.cells.length : (arena.rolloverPlan?.cells.length ?? null),
-        },
-      );
+      await applyRolloverChange(tx, ctx, arena, {
+        enabled: input.autoRollover,
+        ...(input.autoRollover
+          ? {
+              plan: {
+                quantizationMin: input.quantizationMin,
+                businessDayStartMin: dayStartMin,
+                cells: input.cells,
+              },
+            }
+          : {}),
+      });
     }
 
     const [rel] = await tx

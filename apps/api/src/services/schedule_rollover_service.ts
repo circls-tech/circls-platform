@@ -1,10 +1,11 @@
 import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Arena, arenas, type RolloverPlan, tenants, venues } from '../db/schema/index.js';
-import { type AuditCtx, writeAudit } from '../lib/audit.js';
-import { BadRequest, NotFound } from '../lib/errors.js';
+import type { AuditCtx } from '../lib/audit.js';
+import { NotFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
-import { localMinutesToUtcIso, type ReleaseCell, releaseSlots } from './slot_service.js';
+import { applyRolloverChange, type RolloverChange } from '../lib/rollover_plan.js';
+import { localMinutesToUtcIso, releaseSlots } from './slot_service.js';
 
 /**
  * Auto-rollover for arena schedules.
@@ -28,6 +29,12 @@ import { localMinutesToUtcIso, type ReleaseCell, releaseSlots } from './slot_ser
  *
  * Auto-releases are audited as the team member who saved the plan — they are
  * the person who asked for the automation.
+ *
+ * The arena's *current* business-day boundary decides which day a slot belongs
+ * to and which day is "today" — the same boundary the reception grid uses.
+ * Saving a plan moves that boundary to the plan's (like a release does), but an
+ * auto-release never writes it back, so a later one-off release with a
+ * different boundary is respected rather than undone an hour later.
  */
 
 /** How many business days ahead the worker keeps released (today + N). */
@@ -97,17 +104,7 @@ export function unbuiltDates(
 // Partner-facing: switch rollover on/off, save the plan
 // ---------------------------------------------------------------------------
 
-export interface RolloverPlanInput {
-  quantizationMin: number;
-  businessDayStartMin: number;
-  cells: ReleaseCell[];
-}
-
-export interface SetRolloverInput {
-  enabled: boolean;
-  /** Required the first time rollover is switched on; optional afterwards. */
-  plan?: RolloverPlanInput;
-}
+export type SetRolloverInput = RolloverChange;
 
 /**
  * Switch auto-rollover on or off for an arena and/or replace its rolling plan.
@@ -126,43 +123,7 @@ export async function setArenaRollover(
       .limit(1)
       .for('update');
     if (!existing) throw new NotFound('Arena not found', 'arena_not_found');
-
-    if (input.plan && input.plan.cells.length === 0) {
-      throw new BadRequest('The rolling plan needs at least one slot', 'rollover_plan_empty');
-    }
-    if (input.enabled && !input.plan && !existing.rolloverPlan) {
-      throw new BadRequest(
-        'Build and save a weekly schedule before switching auto-rollover on',
-        'rollover_plan_required',
-      );
-    }
-
-    const now = new Date();
-    const patch: Partial<typeof arenas.$inferInsert> = {
-      autoRolloverEnabled: input.enabled,
-      rolloverUpdatedAt: now,
-    };
-    if (input.plan) {
-      patch.rolloverPlan = {
-        quantizationMin: input.plan.quantizationMin,
-        businessDayStartMin: input.plan.businessDayStartMin,
-        cells: input.plan.cells,
-        savedByUserId: ctx.actorUserId,
-        savedAt: now.toISOString(),
-      };
-    }
-
-    const [updated] = await tx.update(arenas).set(patch).where(eq(arenas.id, arenaId)).returning();
-    await writeAudit(
-      tx,
-      ctx,
-      'arena.rollover',
-      'arena',
-      arenaId,
-      { autoRolloverEnabled: existing.autoRolloverEnabled, planCells: existing.rolloverPlan?.cells.length ?? null },
-      { autoRolloverEnabled: input.enabled, planCells: updated!.rolloverPlan?.cells.length ?? null },
-    );
-    return updated!;
+    return applyRolloverChange(tx, ctx, existing, input);
   });
 }
 
@@ -199,6 +160,7 @@ export async function runScheduleRollover(
     .select({
       arenaId: arenas.id,
       plan: arenas.rolloverPlan,
+      dayStartMin: arenas.businessDayStartMin,
       tenantId: venues.tenantId,
       tz: venues.tzName,
     })
@@ -220,7 +182,7 @@ export async function runScheduleRollover(
     if (!plan || plan.cells.length === 0) continue;
     summary.arenas++;
     try {
-      const r = await rolloverArena(t.arenaId, t.tenantId, t.tz, plan, nowIso);
+      const r = await rolloverArena(t.arenaId, t.tenantId, t.tz, t.dayStartMin, plan, nowIso);
       summary.daysReleased += r.daysReleased;
       summary.slotsCreated += r.slotsCreated;
     } catch (err) {
@@ -232,15 +194,18 @@ export async function runScheduleRollover(
   return summary;
 }
 
-/** One arena's rollover: find the unbuilt days in the horizon and release them. */
+/**
+ * One arena's rollover: find the unbuilt days in the horizon and release them.
+ * `dayStartMin` is the arena's current business-day boundary.
+ */
 export async function rolloverArena(
   arenaId: string,
   tenantId: string,
   tz: string,
+  dayStartMin: number,
   plan: RolloverPlan,
   nowIso: string,
 ): Promise<{ daysReleased: number; slotsCreated: number }> {
-  const dayStartMin = plan.businessDayStartMin;
   const dates = rolloverHorizonDates(nowIso, tz, dayStartMin);
   const first = dates[0]!;
   const last = dates[dates.length - 1]!;
@@ -268,13 +233,14 @@ export async function rolloverArena(
 
   for (const date of todo) {
     // One release per day keeps each day's reconciliation window to itself and
-    // means a failure part-way leaves whole days either built or not.
+    // means a failure part-way leaves whole days either built or not. No
+    // businessDayStartMin / template: an auto-release must not rewrite the
+    // arena's settings — releaseSlots reconciles on the arena's own boundary.
     const result = await releaseSlots(ctx, arenaId, {
       startDate: date,
       endDate: date,
       quantizationMin: plan.quantizationMin,
       cells: plan.cells,
-      businessDayStartMin: dayStartMin,
     });
     out.daysReleased++;
     out.slotsCreated += result.created;

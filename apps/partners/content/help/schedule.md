@@ -84,9 +84,11 @@ The builder then shows an **Auto-rollover** card with the status, when the plan 
 
 Edits in the builder change nothing on their own. To change what future days look like:
 
-1. In the **Auto-rollover** card click **Edit the rolling plan** — it loads the saved plan into the grid.
-2. Make your changes (bands, prices, blocks).
-3. Either **Save the rolling plan only** — the new plan applies to days generated from now on; days that already have slots keep them — or **Release schedule** with the box ticked to also apply the new plan to the dates you selected right away.
+1. In the **Auto-rollover** card click **Edit the rolling plan** — it loads the saved plan into the grid, and the grid shows an *Editing the saved rolling plan* banner.
+2. Change prices and blocks on the grid, then click **Save the rolling plan**. The new plan applies to days generated from now on; days that already have slots keep them.
+3. Want to start again from the pricing bands instead? **Rebuild grid from bands** replaces the loaded plan with a fresh grid from the bands (the plan's per-cell prices and blocks are dropped), after which you save it the usual way — tick the box and release, or **Save the rolling plan only**.
+
+Saving a plan also sets the arena's **business-day start** to the plan's, so the reception view matches it straight away. A later one-off release with a different start is respected — auto-generated days never change the setting back.
 
 **Switch off** from the same card. The saved plan is kept, so you can switch rollover back on later without rebuilding. Releasing a schedule with the box unticked leaves rollover exactly as it was.
 

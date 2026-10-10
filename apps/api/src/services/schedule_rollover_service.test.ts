@@ -165,16 +165,33 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
     await closeDb();
   });
 
-  it('refuses to switch on without a plan', async () => {
+  it('refuses to switch on without a plan, or with an empty one', async () => {
     await expect(setArenaRollover(ctx, arenaId, { enabled: true })).rejects.toMatchObject({
       code: 'rollover_plan_required',
     });
+    await expect(
+      setArenaRollover(ctx, arenaId, { enabled: true, plan: { ...plan, cells: [] } }),
+    ).rejects.toMatchObject({ code: 'rollover_plan_empty' });
+    // Same rule on the release path.
+    await expect(
+      releaseSlots(ctx, arenaId, {
+        startDate: '2033-07-02',
+        endDate: '2033-07-02',
+        quantizationMin: 60,
+        cells: [],
+        autoRollover: true,
+      }),
+    ).rejects.toMatchObject({ code: 'rollover_plan_empty' });
+    const [a] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+    expect(a?.autoRolloverEnabled).toBe(false);
   });
 
   it('saves the plan, switches on, and audits it', async () => {
     const a = await setArenaRollover(ctx, arenaId, { enabled: true, plan });
     expect(a.autoRolloverEnabled).toBe(true);
     expect(a.rolloverPlan?.cells).toHaveLength(21);
+    // Saving a plan moves the arena's boundary to the plan's, like a release does.
+    expect(a.businessDayStartMin).toBe(DAY_START);
     expect(a.rolloverPlan?.savedByUserId).toBe(actorUserId);
     expect(a.rolloverUpdatedAt).not.toBeNull();
 
@@ -186,9 +203,8 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
   });
 
   it('releases every day in the horizon that has no slots', async () => {
-    const r = await rolloverArena(arenaId, tenantId, IST, (await db.query.arenas.findFirst({
-      where: sql`id = ${arenaId}`,
-    }))!.rolloverPlan!, NOW);
+    const saved = (await db.query.arenas.findFirst({ where: sql`id = ${arenaId}` }))!;
+    const r = await rolloverArena(arenaId, tenantId, IST, saved.businessDayStartMin, saved.rolloverPlan!, NOW);
     expect(r.daysReleased).toBe(8); // today (2nd) … next Saturday (9th)
     expect(r.slotsCreated).toBe(24); // 3 slots × 8 days, all in the future
 
@@ -220,17 +236,23 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
   });
 
   it('leaves a day the partner released by hand exactly as they made it', async () => {
-    // Partner hand-releases the 11th with one differently-priced slot …
+    // Partner hand-releases the 11th with one differently-priced slot and a
+    // different business-day boundary …
     await releaseSlots(ctx, arenaId, {
       startDate: '2033-07-11',
       endDate: '2033-07-11',
       quantizationMin: 60,
       cells: [{ dayOfWeek: 1, startTimeMin: 600, durationMin: 60, price: 99900 }],
-      businessDayStartMin: DAY_START,
+      businessDayStartMin: 360,
     });
-    // … then the 11th enters the horizon (now = 03:00 IST on the 4th).
+    // … then the 11th enters the horizon (now = 03:00 IST on the 4th — which,
+    // on the arena's new 06:00 boundary, is still the 3rd, so nothing new
+    // enters; the 11th is built already either way).
     const r = await runScheduleRollover('2033-07-03T21:30:00.000Z');
     expect(r.daysReleased).toBe(0);
+    // The auto-release never writes the boundary back.
+    const [after] = await db.select().from(arenas).where(sql`id = ${arenaId}`);
+    expect(after?.businessDayStartMin).toBe(360);
     const starts = await liveSlotStarts();
     expect(starts).toHaveLength(28);
     const [hand] = await db
@@ -246,7 +268,8 @@ describe.skipIf(!runIntegration)('schedule_rollover_service integration', () => 
       cells: plan.cells.map((c) => ({ ...c, price: 10000 })),
     };
     await setArenaRollover(ctx, arenaId, { enabled: true, plan: cheaper });
-    // now = 03:00 IST on the 5th → the 12th enters the horizon.
+    // Saving the plan restored the 03:00 boundary; now = 03:00 IST on the 5th
+    // → the 12th enters the horizon.
     const r = await runScheduleRollover('2033-07-04T21:30:00.000Z');
     expect(r.daysReleased).toBe(1);
     const [newSlot] = await db

@@ -215,6 +215,9 @@ export default function ScheduleBuilderPage() {
   // silently switches rollover off or replaces the saved plan — switching off
   // is its own button in the status card.
   const [rolloverChecked, setRolloverChecked] = useState(false);
+  // True while the grid shows the saved rolling plan (loaded via "Edit the
+  // rolling plan") rather than cells generated from the bands above.
+  const [cellsFromPlan, setCellsFromPlan] = useState(false);
   const setRollover = useSetArenaRollover(arenaId);
   const [rolloverMsg, setRolloverMsg] = useState<string | null>(null);
   const rolloverPlan = arena?.rolloverPlan ?? null;
@@ -243,6 +246,7 @@ export default function ScheduleBuilderPage() {
   // ── Band-editor helpers ──
   function clearDerived() {
     setCells(null);
+    setCellsFromPlan(false);
     setReleaseResult(null);
     setValidationError(null);
     setRolloverMsg(null);
@@ -294,6 +298,7 @@ export default function ScheduleBuilderPage() {
 
     setWeekStart(sundayOnOrBefore(startDate));
     setCells(expandBandsToCells({ bands: bandModel, dayStartMin, quantizationMin }));
+    setCellsFromPlan(false);
   }
 
   // ── Existing schedule for the selected range ──
@@ -463,7 +468,11 @@ export default function ScheduleBuilderPage() {
     }
   }
 
-  /** Load the saved rolling plan into the grid so it can be edited and re-saved. */
+  /**
+   * Load the saved rolling plan into the grid so it can be edited and re-saved.
+   * Deliberately does NOT tick the release opt-in: editing the plan should end
+   * in "Save the rolling plan", not in a release of today's dates.
+   */
   function handleEditRollingPlan() {
     if (!rolloverPlan) return;
     setValidationError(null);
@@ -473,7 +482,7 @@ export default function ScheduleBuilderPage() {
     setDayStartTime(minToTime(rolloverPlan.businessDayStartMin));
     setWeekStart(sundayOnOrBefore(startDate));
     setCells(rolloverPlan.cells.map((c) => ({ ...c })));
-    setRolloverChecked(true);
+    setCellsFromPlan(true);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -622,10 +631,16 @@ export default function ScheduleBuilderPage() {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button onClick={handleBuildPreview} variant="secondary">
-              Generate preview
+              {cellsFromPlan ? 'Rebuild grid from bands' : 'Generate preview'}
             </Button>
+            {cellsFromPlan && (
+              <span className="text-xs text-amber-700">
+                The grid below is the saved rolling plan. Rebuilding replaces it with these bands and drops the
+                plan's per-cell prices and blocks.
+              </span>
+            )}
           </div>
 
           {validationError && <p className="mt-3 text-sm text-red-600">{validationError}</p>}
@@ -639,6 +654,13 @@ export default function ScheduleBuilderPage() {
             title="Preview grid"
             subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel. Slots that are already booked show dimmed and can't be edited — a release never changes them."
           >
+            {cellsFromPlan && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <span className="font-semibold">Editing the saved rolling plan.</span> Change cells here, then use{' '}
+                <span className="font-medium">Save the rolling plan</span> below. The pricing bands above are not part of
+                this plan — <span className="font-medium">Rebuild grid from bands</span> would replace it.
+              </div>
+            )}
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
               <span className="font-medium">Times shown in</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
@@ -751,25 +773,27 @@ export default function ScheduleBuilderPage() {
 
               {!releaseResult && (
                 <div className="flex flex-wrap items-center gap-3">
+                  {/* When the grid is the loaded plan, saving it is the main action
+                      and releasing dates is the secondary one. */}
+                  {(rolloverChecked || cellsFromPlan) && (
+                    <Button
+                      variant={cellsFromPlan ? 'primary' : 'secondary'}
+                      loading={setRollover.isPending}
+                      disabled={releaseSlots.isPending || setRollover.isPending}
+                      onClick={() => void handleSavePlanOnly()}
+                      title="Doesn't release the dates above. The plan applies to days generated from now on."
+                    >
+                      {cellsFromPlan ? 'Save the rolling plan' : 'Save the rolling plan only'}
+                    </Button>
+                  )}
                   <Button
-                    variant="primary"
+                    variant={cellsFromPlan ? 'secondary' : 'primary'}
                     loading={releaseSlots.isPending}
                     disabled={releaseSlots.isPending || setRollover.isPending}
                     onClick={() => void handleRelease()}
                   >
                     {releaseSlots.isPending ? 'Releasing…' : rolloverChecked ? 'Release schedule & save rolling plan' : 'Release schedule'}
                   </Button>
-                  {rolloverChecked && (
-                    <Button
-                      variant="secondary"
-                      loading={setRollover.isPending}
-                      disabled={releaseSlots.isPending || setRollover.isPending}
-                      onClick={() => void handleSavePlanOnly()}
-                      title="Doesn't release the dates above. The plan applies to days generated from now on."
-                    >
-                      Save the rolling plan only
-                    </Button>
-                  )}
                 </div>
               )}
             </div>
