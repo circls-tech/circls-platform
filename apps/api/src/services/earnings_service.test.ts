@@ -488,74 +488,9 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
       const e = await getTenantEarnings(tid, FROM, TO);
       // The venue sale has no paid line of its own, and the payout is no
       // longer eligible for the legacy whole-payout reading.
-
-    /**
-     * Advances change WHEN a partner is paid, not how much. Reconciliation
-     * pays one in the week it is released and deducts it from the week the
-     * charge settles, so "how much has reached me" has to count the two
-     * tranches separately — a filter that treats a charge as all-or-nothing
-     * reports an advanced sale as entirely unpaid while its money is already
-     * in the partner's account.
-     */
-    it('counts an advance that has gone out while the settlement has not', async () => {
-      const [tid, vid] = await freshTenant('AdvCo');
-      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
-      await insertPayment({
-        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
-        commission: 10000, releasedAt: AT(40),
-        advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
-      });
-      // Only the advance's week has been paid; the settlement week has not.
-      await insertPayout({
-        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
-        items: [{ itemType: 'advance', itemId: null }],
-      });
-
-      const e = await getTenantEarnings(tid, FROM, TO);
-      expect(e.total[0]?.netPaise).toBe(90000);
-      expect(e.total[0]?.paidPaise).toBe(30000);
-    });
-
-    it('adds the settlement remainder without double-counting the advance', async () => {
-      const [tid, vid] = await freshTenant('AdvTwo');
-      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
-      await insertPayment({
-        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
-        commission: 10000, releasedAt: AT(40),
-        advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
-      });
-      await insertPayout({
-        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
-        items: [{ itemType: 'advance', itemId: null }],
-      });
-      // Now the settlement week is paid too. The partner has had the whole
-      // net — \u20b9300 early and \u20b9600 on settlement — not \u20b9900 plus the advance again.
-      await insertPayout({
-        tenant: tid, start: AT(39), end: AT(41), status: 'paid',
-        items: [{ itemType: 'slot', itemId: vid }],
-      });
-
-      const e = await getTenantEarnings(tid, FROM, TO);
-      expect(e.total[0]?.paidPaise).toBe(90000);
-      expect(e.total[0]?.paidPaise).toBe(e.total[0]?.netPaise);
-    });
-
-    it('ignores an advance that has not been released', async () => {
-      const [tid, vid] = await freshTenant('AdvThree');
-      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
-      // advance_paise set but never released: nothing has been fronted.
-      await insertPayment({
-        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
-        commission: 10000, releasedAt: AT(40), at: AT(30),
-      });
-      await insertPayout({
-        tenant: tid, start: AT(32), end: AT(34), status: 'paid',
-        items: [{ itemType: 'advance', itemId: null }],
-      });
-
-      const e = await getTenantEarnings(tid, FROM, TO);
       expect(e.total[0]?.paidPaise).toBe(0);
     });
+
     /**
      * Advances change WHEN a partner is paid, not how much. Reconciliation
      * pays one in the week it is released and deducts it from the week the

@@ -320,61 +320,59 @@ async function reconcileOneTenant(
   end: Date,
   insertedIds: string[],
 ): Promise<void> {
-  {
-    await db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(payouts)
-        .values({
-          tenantId: p.tenantId,
-          provider: 'external' as const,
-          periodStart: start,
-          periodEnd: end,
-          grossPaise: p.gross,
-          refundsPaise: p.refunds,
-          commissionPaise: p.commission,
-          advancesPaise: p.advances,
-          advanceRecoupedPaise: p.advanceRecouped,
-          amountPaise: p.net,
-          currency: p.currency,
-          status: 'pending',
-          reconciledAt: new Date(),
-          metadata: {},
-        })
-        .onConflictDoNothing({
-          target: [payouts.tenantId, payouts.periodStart, payouts.periodEnd],
-        })
-        .returning({ id: payouts.id });
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(payouts)
+      .values({
+        tenantId: p.tenantId,
+        provider: 'external' as const,
+        periodStart: start,
+        periodEnd: end,
+        grossPaise: p.gross,
+        refundsPaise: p.refunds,
+        commissionPaise: p.commission,
+        advancesPaise: p.advances,
+        advanceRecoupedPaise: p.advanceRecouped,
+        amountPaise: p.net,
+        currency: p.currency,
+        status: 'pending',
+        reconciledAt: new Date(),
+        metadata: {},
+      })
+      .onConflictDoNothing({
+        target: [payouts.tenantId, payouts.periodStart, payouts.periodEnd],
+      })
+      .returning({ id: payouts.id });
 
-      // Already reconciled by a concurrent run: leave its lines alone.
-      if (!row) return;
+    // Already reconciled by a concurrent run: leave its lines alone.
+    if (!row) return;
 
-      const lines = allocatePayoutLines(items, {
-        gross: p.gross,
-        refunds: p.refunds,
-        commission: p.commission,
-        advances: p.advances,
-        advanceRecouped: p.advanceRecouped,
-        amount: p.net,
-      });
-
-      await tx.insert(payoutItems).values(
-        lines.map((l) => ({
-          payoutId: row.id,
-          tenantId: p.tenantId,
-          itemType: l.itemType,
-          itemId: l.itemId,
-          currency: p.currency,
-          grossPaise: l.grossPaise,
-          refundsPaise: l.refundsPaise,
-          commissionPaise: l.commissionPaise,
-          amountPaise: l.amountPaise,
-          status: 'pending' as const,
-        })),
-      );
-
-      insertedIds.push(row.id);
+    const lines = allocatePayoutLines(items, {
+      gross: p.gross,
+      refunds: p.refunds,
+      commission: p.commission,
+      advances: p.advances,
+      advanceRecouped: p.advanceRecouped,
+      amount: p.net,
     });
-  }
+
+    await tx.insert(payoutItems).values(
+      lines.map((l) => ({
+        payoutId: row.id,
+        tenantId: p.tenantId,
+        itemType: l.itemType,
+        itemId: l.itemId,
+        currency: p.currency,
+        grossPaise: l.grossPaise,
+        refundsPaise: l.refundsPaise,
+        commissionPaise: l.commissionPaise,
+        amountPaise: l.amountPaise,
+        status: 'pending' as const,
+      })),
+    );
+
+    insertedIds.push(row.id);
+  });
 }
 
 /**

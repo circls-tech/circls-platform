@@ -204,9 +204,12 @@ export function EarningsTab({ tenantId, tz }: { tenantId: string; tz: string }) 
 
 function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: string }) {
   const currencies = currenciesOf(data);
-  // Every line, not just pending ones: a settled row should be able to say
-  // what reference paid it, not just go quiet.
-  const { data: itemData } = useAdminTenantPayoutItems(tenantId);
+  // PENDING ONLY, deliberately. Paid lines accumulate forever, so fetching
+  // every line meant the bounded query could drop outstanding ones once a
+  // tenant had enough history — and a row would then understate what it still
+  // owes, or offer no button at all. Nothing here needs the settled lines:
+  // whether a row is square is answered by comparing paid against net.
+  const { data: itemData } = useAdminTenantPayoutItems(tenantId, 'pending');
   const payoutItems = itemData?.rows ?? [];
 
   if (currencies.length === 0) {
@@ -317,7 +320,7 @@ function SummaryCard({
   );
 }
 
-/** The payout lines belonging to one earnings row, newest week first. */
+/** The OUTSTANDING payout lines belonging to one earnings row. */
 function linesFor(item: EarningsItem, all: TenantPayoutItem[]): TenantPayoutItem[] {
   // 'venue' is the partner-facing name for what the ledger calls a slot sale.
   const ledgerType = item.stream === 'venue' ? 'slot' : item.stream;
@@ -436,8 +439,7 @@ function ItemTable({
           </thead>
           <tbody>
             {items.map((i) => {
-              const lines = linesFor(i, payoutItems);
-              const pending = lines.filter((l) => l.status === 'pending');
+              const pending = linesFor(i, payoutItems);
               const pendingPaise = pending.reduce((sum, l) => sum + l.amountPaise, 0);
               const rowKey = `${i.stream}-${i.id ?? 'none'}-${i.currency}`;
               const busy = busyKey === rowKey;
@@ -484,7 +486,7 @@ function ItemTable({
                       >
                         {busy ? 'Working…' : `Mark paid · ${money(pendingPaise, i.currency)}`}
                       </button>
-                    ) : i.paidPaise >= i.netPaise && lines.length > 0 ? (
+                    ) : i.paidPaise >= i.netPaise ? (
                       // Every rupee of this row has been sent. Say so, rather
                       // than leaving a blank cell that reads like a missing
                       // action.
