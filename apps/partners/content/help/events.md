@@ -246,6 +246,8 @@ Two things worth knowing:
 The event detail page shows registrations in two separate tables:
 
 - **Registered** — everyone with an active registration (pending, confirmed, completed or no-show), with their name, email, phone number, the tickets they hold (tier and quantity, e.g. "General ×2, VIP ×1"), their answers to your **registration questions** (when the event asks any), status, amount paid (in the event's currency) and when they registered. Sold counts are shown **per tier** (e.g. "VIP — 12 sold / 50"), so you can track take-up across ticket categories at a glance.
+
+  **The amount column is what the attendee paid, not your payout** — it carries the gateway's processing charge and any circls fee. For what you actually earn from an event, see [Earnings](/help/earnings), which reports it net and per event.
 - **Cancelled** — everyone whose registration was cancelled, with the same name, email and phone details.
 
 Each table has its own **Download CSV** button, so you can export either list — for example to email attendees, run check-in from a spreadsheet, or follow up with people who cancelled. When the event has registration questions, the CSV gets **one extra column per question**, so answers line up ready for a spreadsheet. Email and phone come from the customer's circls account; for registrations without a linked account, whatever contact was captured at booking time is shown.

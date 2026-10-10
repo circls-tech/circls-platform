@@ -19,22 +19,17 @@ import { payments, payouts, tenants } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
+import { creditableCharge } from './settlement_credit.js';
 
 /**
- * True when a refund row `p` is against a charge that was ever going to reach
- * the partner: one with a settlement hold, or one already released. The same
- * rule as the reconciler's refund filter, as raw SQL over alias `p`, so the
- * breakdown can never classify a refund differently from the payout it
- * explains.
+ * The shared "this refund's charge was going to reach the partner" rule, bound
+ * to the aliases the two queries below use: `p` for the raw breakdown SQL, and
+ * the unaliased table name for the Drizzle reconciler. Same predicate either
+ * way, so the breakdown can never classify a refund differently from the
+ * payout it explains.
  */
-const CREDITABLE_CHARGE = sql`exists (
-  select 1 from payments ch
-   where ch.kind = 'charge'
-     and ch.booking_id = p.booking_id
-     and (p.metadata->>'chargePaymentId' is null
-          or ch.id::text = p.metadata->>'chargePaymentId')
-     and (ch.settlement_hold_until is not null or ch.settlement_released_at is not null)
-)`;
+const CREDITABLE_CHARGE = creditableCharge('p');
+const CREDITABLE_CHARGE_DRIZZLE = creditableCharge('payments');
 
 /**
  * Clamp a settlement period's raw commission so net (= gross − refunds −
@@ -178,14 +173,7 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
         sql`${payments.status} <> 'failed'`,
         gte(payments.createdAt, start),
         lt(payments.createdAt, end),
-        sql`exists (
-          select 1 from payments ch
-           where ch.kind = 'charge'
-             and ch.booking_id = ${payments.bookingId}
-             and (${payments.metadata}->>'chargePaymentId' is null
-                  or ch.id::text = ${payments.metadata}->>'chargePaymentId')
-             and (ch.settlement_hold_until is not null or ch.settlement_released_at is not null)
-        )`,
+        CREDITABLE_CHARGE_DRIZZLE,
       ),
     )
     .groupBy(payments.tenantId, payments.currency);
