@@ -441,14 +441,21 @@ function ItemTable({
                       >
                         {busy ? 'Working…' : `Mark paid · ${money(pendingPaise, i.currency)}`}
                       </button>
-                    ) : lines.length > 0 ? (
-                      // Fully settled: say so, rather than leaving a blank cell
-                      // that reads like the action is missing.
+                    ) : i.paidPaise >= i.netPaise && lines.length > 0 ? (
+                      // Every rupee of this row has been sent. Say so, rather
+                      // than leaving a blank cell that reads like a missing
+                      // action.
                       <span className="text-xs text-slate-400">settled</span>
                     ) : (
-                      // Sales exist but no payout covers them yet — reconciliation
-                      // has not run for their week.
-                      <span className="text-xs text-slate-400">not yet reconciled</span>
+                      // Nothing left to mark paid, yet the row is not fully
+                      // covered: the rest of its sales fall in weeks no payout
+                      // exists for. Naming the shortfall matters — calling this
+                      // "settled" would claim money had been sent that has not
+                      // even been reconciled, and a row spanning the current
+                      // week is in this state almost always.
+                      <span className="text-xs text-slate-400">
+                        {money(i.netPaise - i.paidPaise, i.currency)} awaiting reconciliation
+                      </span>
                     )}
                   </td>
                 </tr>
