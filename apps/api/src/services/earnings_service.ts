@@ -69,6 +69,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { logger } from '../lib/logger.js';
+import { itemKeySql } from './item_key.js';
 import { moneyRows } from './revenue_service.js';
 
 /** A net total in one currency. Currencies are never summed together. */
@@ -172,11 +173,7 @@ export async function getTenantEarnings(
     with money as (${moneyRows(from, to, { tenantId })}),
     agg as (
       select m.item_type                                              as item_type,
-             case m.item_type
-               when 'event'      then nullif(m.item_data->>'eventId', '')::uuid
-               when 'membership' then nullif(m.item_data->>'membershipId', '')::uuid
-               else m.venue_id
-             end                                                      as item_id,
+             ${itemKeySql('m')}                                        as item_id,
              m.currency                                               as currency,
              (coalesce(sum(m.base) filter (where m.payout_basis), 0)
               - coalesce(sum(m.commission) filter (where m.payout_basis), 0))::bigint as net,

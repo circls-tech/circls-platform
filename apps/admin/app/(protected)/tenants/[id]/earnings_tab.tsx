@@ -237,10 +237,20 @@ function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: stri
                 sub={countLabel(total?.bookings ?? 0, 'sales')}
                 emphasis
               />
+              {/* Paid can exceed net when a refund was raised after these
+                  sales were paid out; reconciliation takes the difference off
+                  a future payout. Named rather than clamped, so an admin
+                  reading it against the partner's page sees the same thing. */}
               <SummaryCard
                 label="Paid out so far"
                 value={money(total?.paidPaise ?? 0, currency)}
-                sub="already transferred"
+                sub={
+                  total && total.paidPaise > total.netPaise
+                    ? `${money(total.paidPaise - total.netPaise, currency)} more than this period now nets — refunded after payout`
+                    : total && total.paidPaise < total.netPaise
+                      ? `${money(total.netPaise - total.paidPaise, currency)} still to go out`
+                      : 'already transferred'
+                }
               />
               {STREAMS.map((s) => {
                 const row = data.byStream.find(
@@ -353,7 +363,11 @@ function ItemTable({
 }) {
   const execute = useExecutePayoutItem();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Keyed by the row, not by item.id: two rows can both carry a null id (an
+  // unattributable event and an unattributable venue), and two more can share
+  // an id across currencies. Keying on the id alone put them all on one flag,
+  // so marking one paid showed the others as working.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
 
   if (items.length === 0) {
     return <p className="py-2 text-sm text-slate-500">Nothing in this period.</p>;
@@ -368,7 +382,7 @@ function ItemTable({
    * clicking "Mark paid" on a row must never settle more than the admin
    * realised it would.
    */
-  function onMarkPaid(item: EarningsItem, pending: TenantPayoutItem[]) {
+  function onMarkPaid(item: EarningsItem, pending: TenantPayoutItem[], rowKey: string) {
     const total = pending.reduce((sum, l) => sum + l.amountPaise, 0);
     const weeks = pending.map(fmtPeriod).join(', ');
     const ok = window.confirm(
@@ -388,7 +402,7 @@ function ItemTable({
     }
 
     setActionError(null);
-    setBusyId(item.id ?? 'none');
+    setBusyKey(rowKey);
     // Lines are settled one at a time; each is its own record of a transfer.
     void Promise.allSettled(
       pending.map((l) => execute.mutateAsync({ id: l.id, reference: trimmed })),
@@ -402,7 +416,7 @@ function ItemTable({
           );
         }
       })
-      .finally(() => setBusyId(null));
+      .finally(() => setBusyKey(null));
   }
 
   return (
@@ -425,13 +439,11 @@ function ItemTable({
               const lines = linesFor(i, payoutItems);
               const pending = lines.filter((l) => l.status === 'pending');
               const pendingPaise = pending.reduce((sum, l) => sum + l.amountPaise, 0);
-              const busy = busyId === (i.id ?? 'none');
+              const rowKey = `${i.stream}-${i.id ?? 'none'}-${i.currency}`;
+              const busy = busyKey === rowKey;
 
               return (
-                <tr
-                  key={`${i.stream}-${i.id ?? 'none'}-${i.currency}`}
-                  className="border-b border-slate-100"
-                >
+                <tr key={rowKey} className="border-b border-slate-100">
                   <td className="px-2 py-2">
                     <span className="font-medium text-slate-800">
                       {i.name ?? <span className="italic text-slate-500">Unattributed</span>}
@@ -463,7 +475,7 @@ function ItemTable({
                     {pending.length > 0 ? (
                       <button
                         type="button"
-                        onClick={() => onMarkPaid(i, pending)}
+                        onClick={() => onMarkPaid(i, pending, rowKey)}
                         disabled={busy}
                         title={`${money(pendingPaise, i.currency)} across ${pending.length} payout line${
                           pending.length === 1 ? '' : 's'

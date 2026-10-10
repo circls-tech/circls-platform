@@ -20,6 +20,7 @@ import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 import { creditableCharge } from './settlement_credit.js';
+import { itemKeySql } from './item_key.js';
 import {
   allocatePayoutLines,
   type RawItemAggregate,
@@ -270,13 +271,26 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   // not sum to their payout, breaking the invariant everything downstream
   // (paid-out figures, the rollup status) depends on.
   const insertedIds: string[] = [];
+  // One pass over the window for every tenant being reconciled, rather than a
+  // round-trip each.
+  const aggregates = await rawItemAggregates(
+    toInsert.map((p) => p.tenantId),
+    start,
+    end,
+  );
   for (const p of toInsert) {
     // Per tenant, so one organisation's bad week cannot cost every organisation
     // after it their payout. This mirrors how a mixed-currency tenant is
     // already handled: skip loudly, let the rest of the run finish, and leave
     // the skipped tenant for ops rather than silently dropping it.
     try {
-      await reconcileOneTenant(p, start, end, insertedIds);
+      await reconcileOneTenant(
+        p,
+        aggregates.get(`${p.tenantId}|${p.currency}`) ?? [],
+        start,
+        end,
+        insertedIds,
+      );
     } catch (err) {
       logger.error(
         { err, tenantId: p.tenantId, currency: p.currency, start, end },
@@ -301,13 +315,12 @@ async function reconcileOneTenant(
     advanceRecouped: number;
     net: number;
   },
+  items: RawItemAggregate[],
   start: Date,
   end: Date,
   insertedIds: string[],
 ): Promise<void> {
   {
-    const items = await rawItemAggregates(p.tenantId, p.currency, start, end);
-
     await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(payouts)
@@ -377,19 +390,24 @@ async function reconcileOneTenant(
  * so a line here names the same thing the partner sees on their own page.
  */
 async function rawItemAggregates(
-  tenantId: string,
-  currency: string,
+  tenantIds: string[],
   start: Date,
   end: Date,
-): Promise<RawItemAggregate[]> {
+): Promise<Map<string, RawItemAggregate[]>> {
+  if (tenantIds.length === 0) return new Map();
+  // Drizzle expands a JS array into separate placeholders, which Postgres then
+  // reads as a malformed array literal — so the id list is built explicitly as
+  // parameterised chunks rather than interpolated whole.
+  const idList = sql.join(
+    tenantIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
   const rows = (await db.execute<Record<string, unknown>>(sql`
     with contrib as (
-      select b.item_type::text as item_type,
-             case b.item_type
-               when 'event'      then nullif(b.item_data->>'eventId', '')::uuid
-               when 'membership' then nullif(b.item_data->>'membershipId', '')::uuid
-               else b.venue_id
-             end                                                   as item_id,
+      select p.tenant_id                                           as tenant_id,
+             p.currency                                            as currency,
+             b.item_type::text as item_type,
+             ${itemKeySql('b')}                                     as item_id,
              coalesce(p.settle_base_paise, p.amount_paise)          as gross,
              coalesce(p.partner_commission_paise,
                       (coalesce(p.settle_base_paise, p.amount_paise) * t.commission_bps) / 10000)
@@ -398,49 +416,57 @@ async function rawItemAggregates(
         from payments p
         join bookings b on b.id = p.booking_id
         join tenants  t on t.id = p.tenant_id
-       where p.tenant_id = ${tenantId}::uuid
-         and p.currency  = ${currency}
+       where p.tenant_id in (${idList})
          and p.kind = 'charge'
          and p.status in ('captured', 'refunded', 'partially_refunded')
          and p.settlement_released_at >= ${start.toISOString()}::timestamptz
          and p.settlement_released_at <  ${end.toISOString()}::timestamptz
       union all
-      select b.item_type::text,
-             case b.item_type
-               when 'event'      then nullif(b.item_data->>'eventId', '')::uuid
-               when 'membership' then nullif(b.item_data->>'membershipId', '')::uuid
-               else b.venue_id
-             end,
+      select p.tenant_id,
+             p.currency,
+             b.item_type::text,
+             ${itemKeySql('b')},
              0::bigint,
              0::bigint,
              -coalesce(p.settle_base_paise, p.amount_paise)
         from payments p
         join bookings b on b.id = p.booking_id
-       where p.tenant_id = ${tenantId}::uuid
-         and p.currency  = ${currency}
+       where p.tenant_id in (${idList})
          and p.kind = 'refund'
          and p.status <> 'failed'
          and p.created_at >= ${start.toISOString()}::timestamptz
          and p.created_at <  ${end.toISOString()}::timestamptz
          and ${CREDITABLE_CHARGE}
     )
-    select item_type,
+    select tenant_id,
+           currency,
+           item_type,
            item_id,
            sum(gross)::bigint      as gross,
            sum(commission)::bigint as commission,
            sum(refunds)::bigint    as refunds
       from contrib
-     group by item_type, item_id
-     order by item_type, item_id
+     group by tenant_id, currency, item_type, item_id
+     order by tenant_id, item_type, item_id
   `)) as unknown as Record<string, unknown>[];
 
-  return rows.map((r) => ({
-    itemType: r['item_type'] as RawItemAggregate['itemType'],
-    itemId: (r['item_id'] as string | null) ?? null,
-    gross: Number(r['gross'] ?? 0),
-    commission: Number(r['commission'] ?? 0),
-    refunds: Number(r['refunds'] ?? 0),
-  }));
+  // Keyed per (tenant, currency) so the caller can look up its own slice; the
+  // weekly job asked this question once per tenant before, which made the run
+  // cost a round-trip per organisation.
+  const byKey = new Map<string, RawItemAggregate[]>();
+  for (const r of rows) {
+    const key = `${r['tenant_id'] as string}|${r['currency'] as string}`;
+    const list = byKey.get(key) ?? [];
+    list.push({
+      itemType: r['item_type'] as RawItemAggregate['itemType'],
+      itemId: (r['item_id'] as string | null) ?? null,
+      gross: Number(r['gross'] ?? 0),
+      commission: Number(r['commission'] ?? 0),
+      refunds: Number(r['refunds'] ?? 0),
+    });
+    byKey.set(key, list);
+  }
+  return byKey;
 }
 
 export interface ListPayoutsInput {
@@ -1189,8 +1215,13 @@ export interface TenantPayoutItemRow {
 export async function listTenantPayoutItems(
   tenantId: string,
   status?: 'pending' | 'paid',
+  limit = 500,
 ): Promise<TenantPayoutItemRow[]> {
   const statusClause = status ? sql` and pi.status = ${status}` : sql``;
+  // Bounded: a tenant reconciled weekly for years accumulates thousands of
+  // lines, and the caller only ever renders the ones matching what is on
+  // screen. Newest first, so the cut falls on the oldest, least useful weeks.
+  const capped = Math.min(Math.max(limit, 1), 2000);
   const rows = (await db.execute<Record<string, unknown>>(sql`
     select pi.id, pi.payout_id, po.period_start, po.period_end,
            pi.item_type, pi.item_id, pi.currency, pi.amount_paise,
@@ -1199,6 +1230,7 @@ export async function listTenantPayoutItems(
       join payouts po on po.id = pi.payout_id
      where pi.tenant_id = ${tenantId}::uuid${statusClause}
      order by po.period_start desc nulls last, pi.item_type, pi.amount_paise desc
+     limit ${capped}
   `)) as unknown as Record<string, unknown>[];
 
   return rows.map((r) => ({

@@ -76,9 +76,13 @@ export const earningsRoutes: FastifyPluginAsync = async (app) => {
  * consulted. No `financials.read` check applies: that governs what a partner's
  * own team may see, and has no bearing on Circls staff.
  */
+const tenantIdParamSchema = z.object({ id: z.string().uuid() });
+
 export const adminEarningsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/admin/tenants/:id/earnings', { preHandler: requireAuth }, async (req) => {
-    const { id } = req.params as { id: string };
+    // Parsed, not cast: an unparsed id reached `${id}::uuid` in SQL and came
+    // back as a 500 on what is really a malformed request.
+    const { id } = tenantIdParamSchema.parse(req.params);
     const user = await currentUser(req);
     const platformTenantId = await getPlatformTenantId();
     const ctx = await requireTenantMembership(user.id, platformTenantId);

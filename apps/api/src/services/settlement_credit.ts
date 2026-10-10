@@ -17,6 +17,7 @@
  * before that was stamped fall back to any charge on the same booking.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import { itemKeySql } from './item_key.js';
 
 /**
  * True when a CHARGE row is on its way to the partner: it has a settlement
@@ -90,15 +91,14 @@ export function creditableCharge(refundAlias = 'p'): SQL {
  */
 export function paidOutPayment(alias = 'p'): SQL {
   const p = sql.raw(alias);
-  // The payment's subject, in the same terms payout_items records it: a venue
-  // for a slot sale, the event or plan otherwise. Must match rawItemAggregates
-  // exactly, or a payment will look for a line that was filed under a
-  // different key and silently read as unpaid.
-  const itemId = sql`(case bk.item_type
-                        when 'event'      then nullif(bk.item_data->>'eventId', '')::uuid
-                        when 'membership' then nullif(bk.item_data->>'membershipId', '')::uuid
-                        else bk.venue_id
-                      end)`;
+  // The payment's subject, in the same terms payout_items filed it under.
+  const itemId = itemKeySql('bk');
+  // When this payment's SETTLEMENT money entered a payout: a charge by the
+  // date its hold was released, a refund by the date it was raised.
+  const when = sql`(case when ${p}.kind = 'charge'
+                         then ${p}.settlement_released_at
+                         else ${p}.created_at end)`;
+
   // A payout reconciled BEFORE payout_items existed has no lines. Matching on
   // lines alone would make its money stop counting as paid the moment this
   // ships — every historical payout would silently un-pay itself. Such a
@@ -113,12 +113,8 @@ export function paidOutPayment(alias = 'p'): SQL {
        and po.period_start is not null
        and po.period_end   is not null
        and not exists (select 1 from payout_items pil where pil.payout_id = po.id)
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) >= po.period_start
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) <  po.period_end
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
   )`;
 
   return sql`(${legacyWindow} or exists (
@@ -133,12 +129,8 @@ export function paidOutPayment(alias = 'p'): SQL {
        and pi.item_id is not distinct from ${itemId}
        and po.period_start is not null
        and po.period_end   is not null
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) >= po.period_start
-       and (case when ${p}.kind = 'charge'
-                 then ${p}.settlement_released_at
-                 else ${p}.created_at end) <  po.period_end
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
   ))`;
 }
 
@@ -159,18 +151,41 @@ export function paidOutPayment(alias = 'p'): SQL {
  * `created_at` — and a figure claiming to mirror it has to account for all
  * three.
  *
+ * Attribution differs from {@link paidOutPayment} in one important way:
+ * advances have no item behind them, so `allocatePayoutLines` files them under
+ * a single `advance` line per payout rather than against an event or venue.
+ * This therefore looks for THAT line, not the charge's own.
+ *
  * @param alias The payment row's table alias in the enclosing statement.
  */
 export function advancePaidOut(alias = 'p'): SQL {
   const p = sql.raw(alias);
-  return sql`(${p}.advance_released_at is not null and exists (
+  const when = sql`${p}.advance_released_at`;
+
+  // Same legacy carve-out as above: a payout with no lines is read whole.
+  const legacyWindow = sql`exists (
     select 1 from payouts po
      where po.tenant_id = ${p}.tenant_id
        and po.currency  = ${p}.currency
        and po.status    = 'paid'
        and po.period_start is not null
        and po.period_end   is not null
-       and ${p}.advance_released_at >= po.period_start
-       and ${p}.advance_released_at <  po.period_end
-  ))`;
+       and not exists (select 1 from payout_items pil where pil.payout_id = po.id)
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
+  )`;
+
+  return sql`(${p}.advance_released_at is not null and (${legacyWindow} or exists (
+    select 1
+      from payout_items pi
+      join payouts po on po.id = pi.payout_id
+     where pi.status    = 'paid'
+       and pi.item_type = 'advance'
+       and pi.tenant_id = ${p}.tenant_id
+       and pi.currency  = ${p}.currency
+       and po.period_start is not null
+       and po.period_end   is not null
+       and ${when} >= po.period_start
+       and ${when} <  po.period_end
+  )))`;
 }
