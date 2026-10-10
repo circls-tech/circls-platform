@@ -64,17 +64,45 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
      * shape this service must NOT deduct.
      */
     held?: boolean;
+    /**
+     * When the hold was released, which is the date a payout window picks a
+     * charge up by. Omit to leave the charge under hold — money on its way but
+     * not yet in any payout.
+     */
+    releasedAt?: string;
+    /** An advance fronted against this charge, and when it was released. */
+    advance?: { paise: number; releasedAt: string };
     at: string;
   }): Promise<void> {
     const held = opts.kind === 'charge' && (opts.held ?? true);
     await db.execute(sql`
       insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
                             partner_commission_paise, currency, status, kind,
-                            settlement_hold_until, created_at)
+                            settlement_hold_until, settlement_released_at,
+                            advance_paise, advance_released_at, created_at)
       values (${opts.booking}::uuid, ${opts.tenant ?? tenantId}::uuid, 'stub',
               ${opts.amount}, ${opts.base ?? null}, ${opts.commission ?? null},
               ${opts.currency ?? 'INR'}, ${opts.status ?? 'captured'}, ${opts.kind},
-              ${held ? opts.at : null}::timestamptz, ${opts.at}::timestamptz)
+              ${held ? opts.at : null}::timestamptz,
+              ${opts.releasedAt ?? null}::timestamptz,
+              ${opts.advance?.paise ?? null}, ${opts.advance?.releasedAt ?? null}::timestamptz,
+              ${opts.at}::timestamptz)
+    `);
+  }
+
+  /** A payout covering [start, end) for one tenant, paid or still pending. */
+  async function insertPayout(opts: {
+    tenant: string;
+    start: string;
+    end: string;
+    status: 'paid' | 'pending';
+    currency?: string;
+  }): Promise<void> {
+    await db.execute(sql`
+      insert into payouts (tenant_id, provider, amount_paise, currency, status,
+                           period_start, period_end)
+      values (${opts.tenant}::uuid, 'stub', 0, ${opts.currency ?? 'INR'},
+              ${opts.status}, ${opts.start}::timestamptz, ${opts.end}::timestamptz)
     `);
   }
 
@@ -261,5 +289,187 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     // confusing zero or negative line.
     expect(e.items).toHaveLength(1);
     expect(e.items[0]?.bookings).toBe(1);
+  });
+  /**
+   * `paidPaise` answers "how much of this has actually reached me?". A payout
+   * stores no per-payment breakdown, so the figure is re-derived from the
+   * payout windows — which makes it worth pinning down hard.
+   */
+  describe('paid out', () => {
+    let payTenant: string;
+    let payVenue: string;
+
+    /** A fresh tenant per case: payouts are tenant-wide and would cross-talk. */
+    async function freshTenant(label: string): Promise<[string, string]> {
+      const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+      const [t] = (await db.execute<Record<string, unknown>>(sql`
+        insert into tenants (name, slug, commission_bps)
+        values (${`${label} ${stamp}`}, ${`${label.toLowerCase()}-${stamp}`}, 1000) returning id
+      `)) as unknown as Record<string, unknown>[];
+      const tid = t!['id'] as string;
+      const [v] = (await db.execute<Record<string, unknown>>(sql`
+        insert into venues (tenant_id, name) values (${tid}::uuid, 'Paid Venue') returning id
+      `)) as unknown as Record<string, unknown>[];
+      return [tid, v!['id'] as string];
+    }
+
+    beforeAll(async () => {
+      [payTenant, payVenue] = await freshTenant('PaidCo');
+    });
+
+    it('reports nothing paid while the money is still under hold', async () => {
+      const b = await insertBooking({ tenant: payTenant, itemType: 'slot', venue: payVenue, at: AT(30) });
+      // Held but never released: on its way, in no payout yet.
+      await insertPayment({
+        booking: b, tenant: payTenant, kind: 'charge',
+        amount: 110000, base: 100000, commission: 10000, at: AT(30),
+      });
+
+      const e = await getTenantEarnings(payTenant, FROM, TO);
+      expect(e.total[0]?.netPaise).toBe(90000);
+      expect(e.total[0]?.paidPaise).toBe(0);
+    });
+
+    it('counts a charge released inside a payout marked paid', async () => {
+      const [tid, vid] = await freshTenant('PaidTwo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      // Paid matches net exactly: the whole sale has been transferred.
+      expect(e.total[0]?.netPaise).toBe(90000);
+      expect(e.total[0]?.paidPaise).toBe(90000);
+      expect(e.items[0]?.paidPaise).toBe(90000);
+    });
+
+    it('does not count a payout that is only reconciled, not yet paid', async () => {
+      const [tid, vid] = await freshTenant('PendCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'pending' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      // Money promised is not money sent.
+      expect(e.total[0]?.netPaise).toBe(90000);
+      expect(e.total[0]?.paidPaise).toBe(0);
+    });
+
+    it('pays out only the sales whose release fell inside the paid window', async () => {
+      const [tid, vid] = await freshTenant('SplitCo');
+      const early = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: early, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      const later = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(36) });
+      await insertPayment({
+        booking: later, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(40), at: AT(36),
+      });
+      // Only the first week has been paid.
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      // Both sales are owed; one has landed. The gap is the point of the column.
+      expect(e.total[0]?.netPaise).toBe(180000);
+      expect(e.total[0]?.paidPaise).toBe(90000);
+    });
+
+    it('nets a refund off the paid figure when the payout carried it', async () => {
+      const [tid, vid] = await freshTenant('RefCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', status: 'refunded', amount: 110000,
+        base: 100000, commission: 10000, releasedAt: AT(33), at: AT(30),
+      });
+      // A refund is picked up by the week it was RAISED, not released.
+      await insertPayment({ booking: b, tenant: tid, kind: 'refund', amount: -110000, base: -100000, at: AT(33) });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      // Commission is never reversed, so a fully refunded sale leaves it
+      // behind in both figures — they agree rather than drifting apart.
+      expect(e.total[0]?.netPaise).toBe(-10000);
+      expect(e.total[0]?.paidPaise).toBe(-10000);
+    });
+
+    it('never counts a charge that will never settle, even inside a paid window', async () => {
+      const [tid, vid] = await freshTenant('NeverCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', status: 'cancelled', venue: vid, at: AT(30) });
+      // Late success on a cancelled booking: never held, so never in a payout —
+      // a paid window covering its dates must not sweep it in.
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', status: 'refunded', amount: 60000,
+        base: 50000, commission: 5000, held: false, at: AT(33),
+      });
+      await insertPayment({ booking: b, tenant: tid, kind: 'refund', amount: -60000, base: -50000, at: AT(33) });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      expect(e.total).toHaveLength(0);
+      expect(e.items).toHaveLength(0);
+    });
+    /**
+     * Advances change WHEN a partner is paid, not how much. Reconciliation
+     * pays one in the week it is released and deducts it from the week the
+     * charge settles, so "how much has reached me" has to count the two
+     * tranches separately — a filter that treats a charge as all-or-nothing
+     * reports an advanced sale as entirely unpaid while its money is already
+     * in the partner's account.
+     */
+    it('counts an advance that has gone out while the settlement has not', async () => {
+      const [tid, vid] = await freshTenant('AdvCo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(40),
+        advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
+      });
+      // Only the advance's week has been paid; the settlement week has not.
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      expect(e.total[0]?.netPaise).toBe(90000);
+      expect(e.total[0]?.paidPaise).toBe(30000);
+    });
+
+    it('adds the settlement remainder without double-counting the advance', async () => {
+      const [tid, vid] = await freshTenant('AdvTwo');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(40),
+        advance: { paise: 30000, releasedAt: AT(33) }, at: AT(30),
+      });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+      // Now the settlement week is paid too. The partner has had the whole
+      // net — \u20b9300 early and \u20b9600 on settlement — not \u20b9900 plus the advance again.
+      await insertPayout({ tenant: tid, start: AT(39), end: AT(41), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      expect(e.total[0]?.paidPaise).toBe(90000);
+      expect(e.total[0]?.paidPaise).toBe(e.total[0]?.netPaise);
+    });
+
+    it('ignores an advance that has not been released', async () => {
+      const [tid, vid] = await freshTenant('AdvThree');
+      const b = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(30) });
+      // advance_paise set but never released: nothing has been fronted.
+      await insertPayment({
+        booking: b, tenant: tid, kind: 'charge', amount: 110000, base: 100000,
+        commission: 10000, releasedAt: AT(40), at: AT(30),
+      });
+      await insertPayout({ tenant: tid, start: AT(32), end: AT(34), status: 'paid' });
+
+      const e = await getTenantEarnings(tid, FROM, TO);
+      expect(e.total[0]?.paidPaise).toBe(0);
+    });
   });
 });

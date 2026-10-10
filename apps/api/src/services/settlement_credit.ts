@@ -56,3 +56,79 @@ export function creditableCharge(refundAlias = 'p'): SQL {
        and (ch.settlement_hold_until is not null or ch.settlement_released_at is not null)
   )`;
 }
+
+/**
+ * True when a payment's money has ALREADY been transferred to the partner —
+ * it falls inside a payout this tenant has been marked paid for.
+ *
+ * The counterpart to the two predicates above: they answer "will this money
+ * reach the partner?", this one answers "has it?". Attribution mirrors
+ * `reconcileWeeklyPayouts` exactly, because a payout's contents are not stored
+ * per payment and can only be re-derived: a CHARGE belongs to the week
+ * containing its `settlement_released_at`, a REFUND to the week containing its
+ * `created_at`. Get that wrong and this reports money as paid that a payout
+ * never carried.
+ *
+ * Only `status = 'paid'` counts. A reconciled-but-pending payout is money
+ * promised, not money sent, and a partner reading "paid out" would reasonably
+ * expect it to be in their bank.
+ *
+ * Covers the SETTLEMENT tranche only; {@link advancePaidOut} covers the other
+ * one. The two are separate because a charge can have had one and not the
+ * other.
+ *
+ * A charge still under hold has a NULL `settlement_released_at` and so matches
+ * nothing — correct, since no payout can have carried it yet.
+ *
+ * @param alias The payment row's table alias in the enclosing statement.
+ */
+export function paidOutPayment(alias = 'p'): SQL {
+  const p = sql.raw(alias);
+  return sql`exists (
+    select 1 from payouts po
+     where po.tenant_id = ${p}.tenant_id
+       and po.currency  = ${p}.currency
+       and po.status    = 'paid'
+       and po.period_start is not null
+       and po.period_end   is not null
+       and (case when ${p}.kind = 'charge'
+                 then ${p}.settlement_released_at
+                 else ${p}.created_at end) >= po.period_start
+       and (case when ${p}.kind = 'charge'
+                 then ${p}.settlement_released_at
+                 else ${p}.created_at end) <  po.period_end
+  )`;
+}
+
+/**
+ * True when this charge's ADVANCE tranche has already been transferred.
+ *
+ * An advance is money Circls fronts against a sale before its settlement hold
+ * expires. `reconcileWeeklyPayouts` adds it to the payout for the week
+ * containing `advance_released_at`, then deducts it again from the week the
+ * charge actually settles — so across both weeks it nets out, and it changes
+ * only WHEN the partner is paid, not how much.
+ *
+ * That timing is exactly what a "how much has reached me?" figure has to
+ * respect. Without it, a charge reads as entirely unpaid right up until its
+ * settlement week is paid, even though part of its money has already gone out.
+ * Reconciliation builds a payout from three tranches — charges by
+ * `settlement_released_at`, advances by `advance_released_at`, refunds by
+ * `created_at` — and a figure claiming to mirror it has to account for all
+ * three.
+ *
+ * @param alias The payment row's table alias in the enclosing statement.
+ */
+export function advancePaidOut(alias = 'p'): SQL {
+  const p = sql.raw(alias);
+  return sql`(${p}.advance_released_at is not null and exists (
+    select 1 from payouts po
+     where po.tenant_id = ${p}.tenant_id
+       and po.currency  = ${p}.currency
+       and po.status    = 'paid'
+       and po.period_start is not null
+       and po.period_end   is not null
+       and ${p}.advance_released_at >= po.period_start
+       and ${p}.advance_released_at <  po.period_end
+  ))`;
+}

@@ -172,9 +172,13 @@ export default function EarningsPage() {
       i.bookings,
       i.currency,
       (i.netPaise / 100).toFixed(2),
+      (i.paidPaise / 100).toFixed(2),
     ]);
     downloadCsv(
-      toCsv(['Type', 'Name', 'Venue', 'Bookings', 'Currency', 'Net payout'], rows),
+      toCsv(
+        ['Type', 'Name', 'Venue', 'Bookings', 'Currency', 'Net payout', 'Paid out'],
+        rows,
+      ),
       `earnings-${dates.from}-to-${dates.to}.csv`,
     );
   }
@@ -396,6 +400,32 @@ function CurrencyBlock({ currency, data }: { currency: string; data: TenantEarni
             against a later payout.
           </p>
         )}
+        {total && (
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-slate-200 pt-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Paid out
+            </span>
+            <span className="text-lg font-semibold text-slate-800">
+              {money(total.paidPaise, currency)}
+            </span>
+            {/* Paid can sit ABOVE net, and it is not an error: a refund raised
+                after the payout for these sales went out lowers what the
+                period nets without taking back what was already sent. The
+                difference comes off a future payout. Saying so is better than
+                clamping the figure, which would hide money the partner has
+                been given and will have deducted later. */}
+            {total.paidPaise > total.netPaise ? (
+              <span className="text-sm text-amber-700">
+                — {money(total.paidPaise - total.netPaise, currency)} more than this period now
+                nets, because of refunds raised after it was paid. It comes off a future payout.
+              </span>
+            ) : total.paidPaise < total.netPaise ? (
+              <span className="text-sm text-slate-500">
+                — {money(total.netPaise - total.paidPaise, currency)} still on its way
+              </span>
+            ) : null}
+          </div>
+        )}
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -455,6 +485,7 @@ function ItemTable({ items }: { items: EarningsItem[] }) {
             <th className="px-2 py-2 font-semibold">Type</th>
             <th className="px-2 py-2 text-right font-semibold">Sales</th>
             <th className="px-2 py-2 text-right font-semibold">Net payout</th>
+            <th className="px-2 py-2 text-right font-semibold">Paid out</th>
           </tr>
         </thead>
         <tbody>
@@ -474,6 +505,16 @@ function ItemTable({ items }: { items: EarningsItem[] }) {
                 }`}
               >
                 {money(i.netPaise, i.currency)}
+              </td>
+              {/* Nothing paid yet is the normal state for a recent window, so it
+                  reads as a quiet dash rather than a ₹0.00 that looks like a
+                  shortfall. Anything transferred is shown in full. */}
+              <td className="px-2 py-2 text-right text-slate-600">
+                {i.paidPaise === 0 ? (
+                  <span className="text-slate-400">—</span>
+                ) : (
+                  money(i.paidPaise, i.currency)
+                )}
               </td>
             </tr>
           ))}
