@@ -1,6 +1,11 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { creditableCharge, settleableCharge } from './settlement_credit.js';
+import {
+  advancePaidOut,
+  creditableCharge,
+  paidOutPayment,
+  settleableCharge,
+} from './settlement_credit.js';
 
 /**
  * Revenue read models for the admin console.
@@ -122,7 +127,25 @@ export function moneyRows(from: string, to: string, opts: MoneyRowsOptions = {})
            -- one. Both halves move together (settlement_credit). MARKED, not
            -- filtered, so gross can still count every payment made.
            case when p.kind = 'charge' then ${settleableCharge('p')}
-                else ${creditableCharge('p')} end                 as payout_basis
+                else ${creditableCharge('p')} end                 as payout_basis,
+           -- Already transferred: money that was going to settle AND sits in a
+           -- payout the tenant has been marked paid for. The payout_basis half
+           -- is repeated rather than assumed: a caller that reads paid_basis
+           -- without also filtering on payout_basis would otherwise deduct a
+           -- refund whose charge never settled, the exact asymmetry
+           -- settlement_credit exists to prevent.
+           (case when p.kind = 'charge' then ${settleableCharge('p')}
+                 else ${creditableCharge('p')} end
+            and ${paidOutPayment('p')})                           as paid_basis,
+           -- The advance tranche on this charge, and whether it has already
+           -- gone out. An advance is paid in one week and deducted from the
+           -- week the charge settles, so a figure for "how much has reached
+           -- the partner" has to count it separately from the settlement —
+           -- it is money in their account while the charge itself is still
+           -- unpaid. Zero for refunds and for charges never advanced.
+           case when p.kind = 'charge' and p.advance_released_at is not null
+                then coalesce(p.advance_paise, 0) else 0 end       as advance_amount,
+           ${advancePaidOut('p')}                                  as advance_paid
       from payments p
       join bookings b on b.id = p.booking_id
       join tenants t  on t.id = p.tenant_id

@@ -43,6 +43,23 @@
  *   - Commission is snapshotted at charge time and never reversed by a refund,
  *     exactly as reconciliation treats it.
  *
+ * HOW MUCH HAS ACTUALLY ARRIVED. Alongside each net figure sits `paidPaise`:
+ * the slice of it already transferred, re-derived from the payouts marked paid
+ * (see paidOutPayment). A payout stores no per-payment breakdown, so this is
+ * the only way to answer it, and it uses reconciliation's own windowing to do
+ * so. It leaks nothing extra: a slice of a net figure is still net.
+ *
+ * It is an AMOUNT, not a filter over net, because a payout can reach the
+ * partner in two instalments — an advance in the week it was released, the
+ * rest when the hold expires. A charge that has had only its advance is partly
+ * paid, and a row-level boolean cannot say that.
+ *
+ * Expect net and paid to disagree mid-cycle. The page is dated by when the
+ * customer paid and a payout by when the money was released, so this week's
+ * sales normally show net with nothing paid against them. That gap is the lead
+ * this page exists to give; a partner reading it sees what is owed and what has
+ * landed, which is the pair they actually want.
+ *
  * DESK TAKINGS ARE SEPARATE. Bookings the partner took at their own desk
  * (`payment_method = 'external'`) never passed through Circls, so they can
  * never appear in a payout and are not in any net figure here. They are
@@ -60,6 +77,26 @@ export interface EarningsTotal {
   currency: string;
   /** Net payable to the partner, in minor units. Negative if refunds won. */
   netPaise: number;
+  /**
+   * How much of {@link netPaise} has already been transferred, in minor units.
+   *
+   * A payout's contents are not stored per payment, so this re-derives them the
+   * way reconciliation windows: a charge counts once it was released inside a
+   * payout marked paid, a refund once it was raised inside one. Only `paid`
+   * payouts count — reconciled-but-pending is money promised, not money sent.
+   *
+   * USUALLY below `netPaise`, but it CAN exceed it, and that is not an error
+   * to clamp away. A refund raised after the payout for those sales went out
+   * lowers what the period nets without taking back what was already sent, so
+   * paid stays high while net drops; reconciliation recovers the difference
+   * from a future payout. Clamping would hide money the partner has been given
+   * and will later have deducted.
+   *
+   * It also lags net mid-cycle for the ordinary reason: the page is dated by
+   * when the customer paid, a payout by when the money was released, so this
+   * week's sales read as net with nothing paid against them yet.
+   */
+  paidPaise: number;
   /** Distinct bookings that took money in the window. */
   bookings: number;
 }
@@ -143,6 +180,19 @@ export async function getTenantEarnings(
              m.currency                                               as currency,
              (coalesce(sum(m.base) filter (where m.payout_basis), 0)
               - coalesce(sum(m.commission) filter (where m.payout_basis), 0))::bigint as net,
+             -- The already-transferred slice of that same net.
+             --
+             -- Two tranches, because a payout can reach the partner in two
+             -- instalments: the advance, sent in the week it was released, and
+             -- the settlement, sent in the week the hold expired — less the
+             -- advance already fronted, exactly as reconciliation deducts it.
+             -- A plain filter over paid_basis cannot express this: an
+             -- advanced charge is PARTLY paid, and a row-level boolean only
+             -- says all or nothing.
+             (coalesce(sum(case when m.advance_paid then m.advance_amount else 0 end), 0)
+              + coalesce(sum(case when m.paid_basis
+                                  then m.base - m.commission - m.advance_amount
+                                  else 0 end), 0))::bigint          as paid,
              count(distinct m.booking_id)
                filter (where m.kind = 'charge' and m.payout_basis)                    as bookings
         from money m
@@ -153,6 +203,7 @@ export async function getTenantEarnings(
            a.item_id,
            a.currency,
            a.net,
+           a.paid,
            a.bookings,
            coalesce(ev.name, mem.name, v.name)                        as item_name,
            coalesce(evv.name, memv.name)                              as venue_name
@@ -189,6 +240,7 @@ export async function getTenantEarnings(
       venueName: (r['venue_name'] as string | null) ?? null,
       currency: r['currency'] as string,
       netPaise: Number(r['net'] ?? 0),
+      paidPaise: Number(r['paid'] ?? 0),
       bookings: Number(r['bookings'] ?? 0),
     });
   }
@@ -238,10 +290,11 @@ function totalsByCurrency(items: EarningsItem[]): EarningsTotal[] {
   for (const item of items) {
     let row = byCurrency.get(item.currency);
     if (!row) {
-      row = { currency: item.currency, netPaise: 0, bookings: 0 };
+      row = { currency: item.currency, netPaise: 0, paidPaise: 0, bookings: 0 };
       byCurrency.set(item.currency, row);
     }
     row.netPaise += item.netPaise;
+    row.paidPaise += item.paidPaise;
     row.bookings += item.bookings;
   }
   return [...byCurrency.values()].sort((a, b) => a.currency.localeCompare(b.currency));
@@ -253,10 +306,11 @@ function totalsByStream(items: EarningsItem[]): EarningsStreamTotal[] {
     const key = `${item.stream}|${item.currency}`;
     let row = byKey.get(key);
     if (!row) {
-      row = { stream: item.stream, currency: item.currency, netPaise: 0, bookings: 0 };
+      row = { stream: item.stream, currency: item.currency, netPaise: 0, paidPaise: 0, bookings: 0 };
       byKey.set(key, row);
     }
     row.netPaise += item.netPaise;
+    row.paidPaise += item.paidPaise;
     row.bookings += item.bookings;
   }
   return [...byKey.values()].sort(

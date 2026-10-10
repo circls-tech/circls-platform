@@ -378,6 +378,16 @@ export interface EarningsTotal {
   currency: string;
   /** Net payable, in minor units. Negative when refunds outran sales. */
   netPaise: number;
+  /**
+   * How much has already been transferred, in minor units.
+   *
+   * Normally below `netPaise`, because sales count on the day the customer
+   * paid while the money moves on the weekly payout cycle. It can also exceed
+   * it: a refund raised after those sales were paid out lowers the period's
+   * net without reclaiming what was already sent, and the difference comes off
+   * a future payout.
+   */
+  paidPaise: number;
   bookings: number;
 }
 
