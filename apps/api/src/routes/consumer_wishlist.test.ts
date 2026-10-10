@@ -19,7 +19,8 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { eq, sql } = await import('drizzle-orm');
 const { closeDb, db } = await import('../db/client.js');
-const { events, memberships, tenants, venues } = await import('../db/schema/index.js');
+const { events, memberships, tenants, venues, wishlistItems } = await import('../db/schema/index.js');
+const { MAX_WISHLIST_ITEMS } = await import('../services/wishlist_service.js');
 const { buildServer } = await import('../server.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -32,6 +33,7 @@ describe.skipIf(!runIntegration)('consumer wishlist', () => {
   let eventId: string;
   let membershipId: string;
   let draftEventId: string;
+  let secondEventId: string;
 
   const dropUsers = () =>
     db.execute(sql`delete from users where firebase_uid in ('fbuid_wishlist_a', 'fbuid_wishlist_b')`);
@@ -77,6 +79,19 @@ describe.skipIf(!runIntegration)('consumer wishlist', () => {
       })
       .returning();
     draftEventId = d!.id;
+    const [e2] = await db
+      .insert(events)
+      .values({
+        tenantId,
+        venueId,
+        name: 'Wishlist Second Event',
+        startsAt: new Date('2031-01-03T10:00:00Z'),
+        endsAt: new Date('2031-01-03T12:00:00Z'),
+        pricePaise: 0,
+        status: 'published',
+      })
+      .returning();
+    secondEventId = e2!.id;
     const [m] = await db
       .insert(memberships)
       .values({ tenantId, venueId: null, name: 'Wishlist Pass', durationDays: 30, pricePaise: 1000, status: 'active' })
@@ -164,11 +179,75 @@ describe.skipIf(!runIntegration)('consumer wishlist', () => {
     expect(missing.json().error.code).toBe('venue_not_found');
   });
 
-  it('rejects an unknown item type or a malformed id with 400', async () => {
+  it('rejects an unknown item type with 400 and a malformed id with 404 (like /me/bookings/:id)', async () => {
     const type = await app.inject({ method: 'PUT', url: `/v1/consumer/me/wishlist/arena/${eventId}`, headers: bearer('wisher') });
     expect(type.statusCode).toBe(400);
     const id = await app.inject({ method: 'PUT', url: '/v1/consumer/me/wishlist/event/not-a-uuid', headers: bearer('wisher') });
-    expect(id.statusCode).toBe(400);
+    expect(id.statusCode).toBe(404);
+    expect(id.json().error.code).toBe('event_not_found');
+  });
+
+  it('lists each section most-recently-liked first', async () => {
+    // The first event was liked earlier in the suite; like a second one now.
+    await db.execute(sql`update wishlist_items set created_at = created_at - interval '1 minute'
+      where user_id = (select id from users where firebase_uid = 'fbuid_wishlist_a')`);
+    const res = await app.inject({ method: 'PUT', url: `/v1/consumer/me/wishlist/event/${secondEventId}`, headers: bearer('wisher') });
+    expect(res.statusCode).toBe(200);
+    const full = await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist', headers: bearer('wisher') });
+    expect(full.json().events.map((e: { id: string }) => e.id)).toEqual([secondEventId, eventId]);
+    const ids = await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist/ids', headers: bearer('wisher') });
+    expect(ids.json().events).toEqual([secondEventId, eventId]);
+    await app.inject({ method: 'DELETE', url: `/v1/consumer/me/wishlist/event/${secondEventId}`, headers: bearer('wisher') });
+  });
+
+  it('rolls a like on a past date of a recurring event forward to the next date', async () => {
+    const seriesId = crypto.randomUUID();
+    const mk = (name: string, startsAt: string, endsAt: string) =>
+      db
+        .insert(events)
+        .values({ tenantId, venueId, seriesId, name, startsAt: new Date(startsAt), endsAt: new Date(endsAt), pricePaise: 0, status: 'published' })
+        .returning()
+        .then((r) => r[0]!.id);
+    // Liked while upcoming, then it "passes" (endsAt moved into the past).
+    const past = await mk('Weekly Futsal (week 1)', '2031-02-01T10:00:00Z', '2031-02-01T12:00:00Z');
+    const next = await mk('Weekly Futsal (week 2)', '2031-02-08T10:00:00Z', '2031-02-08T12:00:00Z');
+    const later = await mk('Weekly Futsal (week 3)', '2031-02-15T10:00:00Z', '2031-02-15T12:00:00Z');
+    const like = await app.inject({ method: 'PUT', url: `/v1/consumer/me/wishlist/event/${past}`, headers: bearer('wisher') });
+    expect(like.statusCode).toBe(200);
+    const likedAtBefore = (await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist', headers: bearer('wisher') }))
+      .json().events.find((e: { id: string }) => e.id === past).likedAt;
+    await db.update(events).set({ startsAt: new Date('2020-01-01T10:00:00Z'), endsAt: new Date('2020-01-01T12:00:00Z') }).where(eq(events.id, past));
+
+    const full = await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist', headers: bearer('wisher') });
+    const rolled = full.json().events.find((e: { id: string }) => e.id === next);
+    expect(rolled).toBeDefined();
+    expect(rolled.likedAt).toBe(likedAtBefore);
+    expect(full.json().events.map((e: { id: string }) => e.id)).not.toContain(later);
+    // The like row itself moved, so the heart on the next date's card is filled.
+    const ids = await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist/ids', headers: bearer('wisher') });
+    expect(ids.json().events).toContain(next);
+    expect(ids.json().events).not.toContain(past);
+    await app.inject({ method: 'DELETE', url: `/v1/consumer/me/wishlist/event/${next}`, headers: bearer('wisher') });
+  });
+
+  it('caps the wishlist per user with 409 wishlist_full', async () => {
+    // Fill the other user's wishlist straight in the DB (ids need not resolve).
+    const me = await app.inject({ method: 'GET', url: '/v1/consumer/me', headers: bearer('other') });
+    expect(me.statusCode).toBe(200);
+    const [u] = (await db.execute(sql`select id from users where firebase_uid = 'fbuid_wishlist_b'`)) as unknown as [{ id: string }];
+    await db.insert(wishlistItems).values(
+      Array.from({ length: MAX_WISHLIST_ITEMS }, () => ({ userId: u.id, itemType: 'venue' as const, itemId: crypto.randomUUID() })),
+    );
+    const full = await app.inject({ method: 'PUT', url: `/v1/consumer/me/wishlist/event/${eventId}`, headers: bearer('other') });
+    expect(full.statusCode).toBe(409);
+    expect(full.json().error.code).toBe('wishlist_full');
+    // Re-liking something already there is still fine at the cap.
+    await db.insert(wishlistItems).values({ userId: u.id, itemType: 'venue', itemId: venueId }).onConflictDoNothing();
+    const again = await app.inject({ method: 'PUT', url: `/v1/consumer/me/wishlist/venue/${venueId}`, headers: bearer('other') });
+    expect(again.statusCode).toBe(200);
+    // The reads stay bounded at the cap even with an over-cap row behind them.
+    const ids = await app.inject({ method: 'GET', url: '/v1/consumer/me/wishlist/ids', headers: bearer('other') });
+    expect(ids.json().venues).toHaveLength(MAX_WISHLIST_ITEMS);
   });
 
   it('drops a liked listing from the hydrated read once it is no longer public', async () => {

@@ -60,7 +60,9 @@ export function LikeButton({
     e.preventDefault();
     e.stopPropagation();
     if (!user) {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      // Keep the query string and hash so a filtered list comes back as left.
+      const here = `${pathname}${window.location.search}${window.location.hash}`;
+      router.push(`/login?redirect=${encodeURIComponent(here)}`);
       return;
     }
     toggle.mutate({ itemType, itemId, liked: !liked });
@@ -68,9 +70,13 @@ export function LikeButton({
 
   const label = liked ? `Remove ${name} from your wishlist` : `Save ${name} to your wishlist`;
   const colour = liked ? 'text-petal-red' : 'text-ink';
+  // A failed toggle has already rolled the heart back; say why (the wishlist
+  // cap, a listing that just went away) rather than flipping silently.
+  const error = toggle.isError && toggle.error instanceof Error ? toggle.error.message : null;
 
   if (variant === 'inline') {
     return (
+      <span className={`inline-flex flex-col items-end gap-1 ${className}`}>
       <button
         type="button"
         onClick={onClick}
@@ -83,12 +89,17 @@ export function LikeButton({
           'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
           'active:translate-x-0 active:translate-y-0 active:shadow-none',
           colour,
-          className,
         ].join(' ')}
       >
         <Heart filled={liked} className="h-4 w-4" />
         <span className="text-ink">{liked ? 'Saved' : 'Save'}</span>
       </button>
+      {error && (
+        <span role="alert" className="max-w-[14rem] text-right text-xs font-semibold text-petal-red">
+          {error}
+        </span>
+      )}
+      </span>
     );
   }
 
@@ -98,6 +109,7 @@ export function LikeButton({
       onClick={onClick}
       aria-pressed={liked}
       aria-label={label}
+      title={error ?? undefined}
       className={[
         'flex h-8 w-8 items-center justify-center rounded-full! border-[2px] border-ink bg-white shadow-offset-sm',
         'transition-transform duration-100 hover:scale-110 active:scale-95',

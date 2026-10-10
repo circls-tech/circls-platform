@@ -42,6 +42,7 @@ import {
   listWishlistIds,
   removeFromWishlist,
   WISHLIST_ITEM_TYPES,
+  wishlistNotFound,
 } from '../services/wishlist_service.js';
 
 /** Behavioral telemetry batch (M6). event_type/item_type kept open (telemetry,
@@ -345,17 +346,18 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return listWishlistIds(user.id);
   });
 
-  const wishlistParams = z.object({
-    itemType: z.enum(WISHLIST_ITEM_TYPES),
-    itemId: z.string().uuid(),
-  });
+  // An unknown item type is a malformed request (400); a malformed id is
+  // "no such listing" (404), as `/me/bookings/:id` answers a non-UUID.
+  const wishlistParams = z.object({ itemType: z.enum(WISHLIST_ITEM_TYPES), itemId: z.string() });
   const parseWishlistParams = (params: unknown) => {
     const parsed = wishlistParams.safeParse(params);
     if (!parsed.success) throw new BadRequest('Invalid wishlist item', 'bad_request', { issues: parsed.error.issues });
+    if (!z.string().uuid().safeParse(parsed.data.itemId).success) throw wishlistNotFound(parsed.data.itemType);
     return parsed.data;
   };
 
-  /** Like. Idempotent; 404 when the listing is missing or not public. */
+  /** Like. Idempotent; 404 when the listing is missing or not public, 409
+   *  `wishlist_full` at the per-user cap. */
   app.put(
     '/v1/consumer/me/wishlist/:itemType/:itemId',
     { preHandler: [requireAuth, perUserLimit] },

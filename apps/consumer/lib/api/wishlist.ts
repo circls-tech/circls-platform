@@ -67,7 +67,11 @@ export function useToggleLike() {
       return { previous };
     },
     onError: (_err, _input, ctx) => {
-      if (ctx) qc.setQueryData(key, ctx.previous);
+      // setQueryData ignores `undefined`, so when nothing had loaded yet the
+      // optimistic entry must be dropped outright; the invalidation below then
+      // refetches the truth.
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+      else qc.removeQueries({ queryKey: key, exact: true });
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: key });
