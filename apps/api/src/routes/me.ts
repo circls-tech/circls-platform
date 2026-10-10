@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { findOrCreateByFirebaseUid } from '../services/user_service.js';
 import { LOGIN_SOURCES, recordLogin } from '../services/login_service.js';
+import { deleteMyAccount } from '../services/consumer_service.js';
 
 const loginBodySchema = z.object({
   source: z.enum(LOGIN_SOURCES).optional(),
@@ -28,6 +29,17 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
     const source = parsed.success ? (parsed.data.source ?? null) : null;
     const user = await currentUser(req);
     await recordLogin(user.id, source);
+    return reply.status(204).send();
+  });
+
+  /**
+   * Account deletion from the partners app (App Store 5.1.1(v)). Same teardown
+   * as `DELETE /v1/consumer/me`, but a partner's org memberships are released
+   * rather than refused; 409 `last_owner_protected` if they are an org's sole
+   * owner. 204 on success, and retryable after a 502 the same way.
+   */
+  app.delete('/v1/me', { preHandler: requireAuth }, async (req, reply) => {
+    await deleteMyAccount(req.authUser!.firebaseUid, { releasePartnerAccess: true });
     return reply.status(204).send();
   });
 };

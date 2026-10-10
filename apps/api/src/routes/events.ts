@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currentUser } from '../middleware/current_user.js';
 import { addExternalEventRegistration } from '../services/booking_service.js';
+import { MAX_LINES_PER_EVENT_BOOKING, MAX_TICKETS_PER_LINE } from '../lib/booking_limits.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { assertTermsAccepted } from '../middleware/require_terms.js';
@@ -291,10 +292,11 @@ const externalRegistrationSchema = z.object({
     .array(
       z.object({
         tierId: z.string().uuid(),
-        quantity: z.number().int().positive().max(100),
+        quantity: z.number().int().positive().max(MAX_TICKETS_PER_LINE),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(MAX_LINES_PER_EVENT_BOOKING),
   answers: registrationAnswersField.optional(),
 });
 

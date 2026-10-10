@@ -6,6 +6,12 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
+import {
+  MAX_LINES_PER_EVENT_BOOKING,
+  MAX_SLOTS_PER_BOOKING,
+  MAX_TICKETS_PER_LINE,
+} from '../lib/booking_limits.js';
+import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
 import { getBookingById } from '../services/inventory_service.js';
@@ -21,7 +27,7 @@ import { db } from '../db/client.js';
 import { slots } from '../db/schema/index.js';
 
 const bookSlotsSchema = z.object({
-  slotIds: z.array(z.string().uuid()).min(1),
+  slotIds: z.array(z.string().uuid()).min(1).max(MAX_SLOTS_PER_BOOKING),
   customer: z.object({
     name: z.string().min(1),
     contact: z.string().min(1),
@@ -42,8 +48,14 @@ const bookEventSchema = z.object({
     })
     .optional(),
   lines: z
-    .array(z.object({ tierId: z.string().uuid(), quantity: z.number().int().min(1) }))
-    .min(1),
+    .array(
+      z.object({
+        tierId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(MAX_TICKETS_PER_LINE),
+      }),
+    )
+    .min(1)
+    .max(MAX_LINES_PER_EVENT_BOOKING),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -161,7 +173,7 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
   // tenant scope comes from the event row, not the caller — on the same on-sale
   // rules as /v1/consumer/events/:eventId/book. (The Flutter partner app records
   // door registrations through here.)
-  app.post('/v1/events/:eventId/book', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/events/:eventId/book', { preHandler: [requireAuth, perIdentityRateLimit(app)] }, async (req) => {
     const { eventId } = req.params as { eventId: string };
     const user = await currentUser(req);
     const parsed = bookEventSchema.safeParse(req.body ?? {});

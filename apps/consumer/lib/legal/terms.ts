@@ -3,7 +3,7 @@ import type { LegalDoc } from './types';
 export const TERMS: LegalDoc = {
   slug: 'terms',
   title: 'Terms & Conditions',
-  updated: '12 May 2026',
+  updated: '4 October 2026',
   intro:
     'By using circls.app, booking events, or creating an account, you acknowledge that you have read, understood, and agreed to these Terms & Conditions. These terms are governed by the laws of India and apply to all users of the Circls platform operated by Gibbous Technologies Private Limited, Nagpur, Maharashtra.',
   sections: [
@@ -54,6 +54,7 @@ export const TERMS: LegalDoc = {
       title: 'User Conduct',
       paragraphs: [
         'Users agree to behave responsibly and respectfully at events and on the platform. Any misconduct, harassment, or violation of applicable laws may result in immediate removal from events and suspension of account access without refund.',
+        'Circls has zero tolerance for objectionable content and abusive users. Questions, replies and anything else you post must not be offensive, abusive, hateful or sexually explicit. Such content is removed, and accounts that post it are suspended.',
       ],
     },
     {
