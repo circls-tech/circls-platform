@@ -273,6 +273,7 @@ function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: stri
             )}
 
             <ItemTable items={items} payoutItems={payoutItems} />
+            <NonItemLines lines={nonItemLines(payoutItems, currency)} currency={currency} />
           </div>
         );
       })}
@@ -310,8 +311,38 @@ function SummaryCard({
 function linesFor(item: EarningsItem, all: TenantPayoutItem[]): TenantPayoutItem[] {
   // 'venue' is the partner-facing name for what the ledger calls a slot sale.
   const ledgerType = item.stream === 'venue' ? 'slot' : item.stream;
-  return all.filter((l) => l.itemType === ledgerType && l.itemId === item.id);
+  // Currency is part of the match, not an afterthought: an earnings row is per
+  // (item, currency), and an organisation that has billed in two currencies has
+  // lines of both against the same venue id. Without this the row would add
+  // rupees to cents for its button total and settle the foreign-currency lines
+  // as part of the wrong transfer.
+  return all.filter(
+    (l) => l.itemType === ledgerType && l.itemId === item.id && l.currency === item.currency,
+  );
 }
+
+/**
+ * Pending lines that belong to no item row — `advance` tranches and the
+ * `unattributed` residual.
+ *
+ * They carry real money but have no event, plan or venue behind them, so no
+ * per-item control can reach them. Surfaced on their own rather than hidden:
+ * an admin settling rows one by one would otherwise leave a payout permanently
+ * short with nothing on screen explaining why.
+ */
+function nonItemLines(all: TenantPayoutItem[], currency: string): TenantPayoutItem[] {
+  return all.filter(
+    (l) =>
+      l.currency === currency &&
+      l.status === 'pending' &&
+      (l.itemType === 'advance' || l.itemType === 'unattributed'),
+  );
+}
+
+const NON_ITEM_LABEL: Record<string, string> = {
+  advance: 'Advance tranche',
+  unattributed: 'Unattributed',
+};
 
 function ItemTable({
   items,
@@ -477,4 +508,77 @@ function fmtPeriod(item: TenantPayoutItem): string {
     month: 'short',
   });
   return `${f.format(new Date(item.periodStart))} \u2192 ${f.format(new Date(item.periodEnd))}`;
+}
+
+/**
+ * The payout lines with no item behind them, each individually settleable.
+ *
+ * Without this they were unreachable: `linesFor` matches only slot, event and
+ * membership, so an advance tranche could never be marked paid from this tab,
+ * and a payout holding one sat at partially_paid with no way to finish it here.
+ */
+function NonItemLines({ lines, currency }: { lines: TenantPayoutItem[]; currency: string }) {
+  const execute = useExecutePayoutItem();
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  if (lines.length === 0) return null;
+
+  function onMarkPaid(line: TenantPayoutItem) {
+    const ok = window.confirm(
+      `Mark ${money(line.amountPaise, currency)} paid to this organisation for ` +
+        `${NON_ITEM_LABEL[line.itemType] ?? line.itemType} (${fmtPeriod(line)})?\n\n` +
+        'This records that the transfer was made. It does not move money.',
+    );
+    if (!ok) return;
+    const reference = window.prompt('Payment reference for this transfer:');
+    if (reference == null) return;
+    const trimmed = reference.trim();
+    if (trimmed === '') {
+      setError('A reference is required to mark a line as paid.');
+      return;
+    }
+    setError(null);
+    setBusyId(line.id);
+    execute.mutate(
+      { id: line.id, reference: trimmed },
+      {
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : 'Could not mark this line paid.'),
+        onSettled: () => setBusyId(null),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-1 rounded-lg border border-slate-200 p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Not tied to an item
+      </h4>
+      <p className="text-xs text-slate-500">
+        Money in this organisation&apos;s payouts with no event, plan or venue behind it. It is in
+        no figure above, and nothing else on this page can settle it.
+      </p>
+      {error && <p className="text-sm text-red-700">{error}</p>}
+      <ul className="divide-y divide-slate-100">
+        {lines.map((l) => (
+          <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <span className="text-slate-700">
+              {NON_ITEM_LABEL[l.itemType] ?? l.itemType}
+              <span className="block text-xs text-slate-500">{fmtPeriod(l)}</span>
+            </span>
+            <span className="font-medium text-slate-900">{money(l.amountPaise, currency)}</span>
+            <button
+              type="button"
+              onClick={() => onMarkPaid(l)}
+              disabled={busyId === l.id}
+              className="rounded-md border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {busyId === l.id ? 'Working…' : 'Mark paid'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }

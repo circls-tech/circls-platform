@@ -100,7 +100,7 @@ export default function PayoutsPage() {
         onError: (err) => {
           if (err instanceof ApiError) {
             if (err.status === 409 || err.code === 'payout_not_pending') {
-              setActionError('This payout is no longer pending and cannot be marked paid.');
+              setActionError('This payout has already been paid in full.');
               return;
             }
             setActionError(err.message);
@@ -247,14 +247,22 @@ export default function PayoutsPage() {
                   <Pill tone={STATUS_TONE[r.status] ?? 'bg-slate-100 text-slate-600'} label={r.status} />
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  {r.status === 'pending' ? (
+                  {/* A partially paid payout still has outstanding lines, and
+                      some of them — advance tranches, the unattributed
+                      residual — can only be settled here. Offering the action
+                      only on 'pending' stranded those payouts. */}
+                  {r.status !== 'paid' ? (
                     <button
                       type="button"
                       onClick={() => onMarkPaid(r)}
                       disabled={execute.isPending}
                       className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
                     >
-                      {execute.isPending ? 'Working…' : 'Mark paid'}
+                      {execute.isPending
+                        ? 'Working…'
+                        : r.status === 'partially_paid'
+                          ? 'Mark rest paid'
+                          : 'Mark paid'}
                     </button>
                   ) : (
                     <span className="text-xs text-slate-400">

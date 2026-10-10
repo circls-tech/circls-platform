@@ -271,6 +271,41 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
   // (paid-out figures, the rollup status) depends on.
   const insertedIds: string[] = [];
   for (const p of toInsert) {
+    // Per tenant, so one organisation's bad week cannot cost every organisation
+    // after it their payout. This mirrors how a mixed-currency tenant is
+    // already handled: skip loudly, let the rest of the run finish, and leave
+    // the skipped tenant for ops rather than silently dropping it.
+    try {
+      await reconcileOneTenant(p, start, end, insertedIds);
+    } catch (err) {
+      logger.error(
+        { err, tenantId: p.tenantId, currency: p.currency, start, end },
+        'weekly_payout_tenant_failed',
+      );
+    }
+  }
+
+  logger.info({ count: insertedIds.length, start, end }, 'weekly_payout_reconciled');
+  return insertedIds.length;
+}
+
+/** One tenant's payout row plus its item lines, written atomically. */
+async function reconcileOneTenant(
+  p: {
+    tenantId: string;
+    currency: string;
+    gross: number;
+    refunds: number;
+    commission: number;
+    advances: number;
+    advanceRecouped: number;
+    net: number;
+  },
+  start: Date,
+  end: Date,
+  insertedIds: string[],
+): Promise<void> {
+  {
     const items = await rawItemAggregates(p.tenantId, p.currency, start, end);
 
     await db.transaction(async (tx) => {
@@ -327,9 +362,6 @@ export async function reconcileWeeklyPayouts(now = new Date()): Promise<number> 
       insertedIds.push(row.id);
     });
   }
-
-  logger.info({ count: insertedIds.length, start, end }, 'weekly_payout_reconciled');
-  return insertedIds.length;
 }
 
 /**
@@ -1254,8 +1286,12 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
   return db.transaction(async (tx) => {
     const [payout] = await tx.select().from(payouts).where(eq(payouts.id, input.payoutId)).limit(1);
     if (!payout) throw new NotFound('Payout not found', 'payout_not_found');
-    if (payout.status !== 'pending') {
-      throw new Conflict(`Payout is already ${payout.status}`, 'payout_not_pending', {
+    // Only a fully paid payout is off limits. A PARTIALLY paid one still has
+    // outstanding lines — including `advance` and `unattributed` lines, which
+    // no per-item control can reach — so this has to remain the way to finish
+    // it. Rejecting it here stranded such a payout at partially_paid forever.
+    if (payout.status === 'paid') {
+      throw new Conflict('Payout is already paid', 'payout_not_pending', {
         status: payout.status,
       });
     }
@@ -1283,7 +1319,7 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
         paidByUserId: input.actorUserId,
         metadata: { ...payout.metadata, ...(input.note ? { note: input.note } : {}) },
       })
-      .where(and(eq(payouts.id, input.payoutId), eq(payouts.status, 'pending')))
+      .where(and(eq(payouts.id, input.payoutId), sql`${payouts.status} <> 'paid'`))
       .returning({ id: payouts.id, status: payouts.status });
     if (!updated) throw new Conflict('Payout is already paid', 'payout_not_pending');
 
