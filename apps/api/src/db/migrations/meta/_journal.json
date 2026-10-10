@@ -449,6 +449,13 @@
       "when": 1784260000000,
       "tag": "0064_waive_gateway_fee_by_default",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784340000000,
+      "tag": "0065_wishlist_items",
+      "breakpoints": true
     }
   ]
 }

@@ -1469,6 +1469,47 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/me/wishlist:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/me/wishlist/ids:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/me/wishlist/{itemType}/{itemId}:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: itemType
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: itemId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: itemType
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: itemId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/consumer/payments/{orderId}/status:
     get:
       parameters:
