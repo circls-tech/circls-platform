@@ -6,6 +6,7 @@ import { OrgCard } from '@/components/cards/OrgCard';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
+import { SearchBar } from '@/components/SearchBar';
 import { useVenues, useUpcomingEvents, useAllMemberships, usePublicOrgs } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { eventInRange, membershipInArea, venuesForArea } from '@/lib/location/geo';
@@ -87,7 +88,8 @@ export default function LandingPage() {
           <p className="mt-4 max-w-lg text-base text-text-secondary">
             Because &ldquo;we should do this sometime&rdquo; deserves an actual time.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <SearchBar className="mt-6 max-w-lg" />
+          <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/venues"><Button variant="primary">Browse venues</Button></Link>
             <Link href="/events"><Button variant="secondary">See what&apos;s on →</Button></Link>
           </div>

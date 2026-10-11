@@ -34,6 +34,8 @@ import {
   listPublicUpcomingEvents,
   listPublicVenues,
   logConsumerActivity,
+  searchPublicCatalogue,
+  SEARCH_TYPES,
   updateMyProfile,
 } from '../services/consumer_service.js';
 import {
@@ -109,16 +111,43 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     return { place };
   });
 
-  // Cross-venue browse: all upcoming events / all memberships (landing rows + /events).
+  // Cross-venue browse: all upcoming events / all memberships (landing rows +
+  // /events), with the same optional name search as venues.
   const limitQuery = z.object({
+    search: z.string().min(1).max(120).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   });
 
   app.get('/v1/consumer/events', { config: publicLimit }, async (req) => {
     const parsed = limitQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
-    const rows = await listPublicUpcomingEvents({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
+    const rows = await listPublicUpcomingEvents({
+      ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+    });
     return { rows };
+  });
+
+  // The search bar: one term across events, memberships and venues, matched
+  // on the listing's name and the venue / organiser it belongs to. `types`
+  // is a comma list limiting the sections; `limit` caps each section.
+  const searchQuery = z.object({
+    q: z.string().trim().min(1).max(120),
+    types: z
+      .string()
+      .transform((v) => v.split(',').map((t) => t.trim()).filter(Boolean))
+      .pipe(z.array(z.enum(SEARCH_TYPES)).min(1))
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+  });
+  app.get('/v1/consumer/search', { config: publicLimit }, async (req) => {
+    const parsed = searchQuery.safeParse(req.query);
+    if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
+    return searchPublicCatalogue({
+      q: parsed.data.q,
+      ...(parsed.data.types ? { types: parsed.data.types } : {}),
+      ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+    });
   });
 
   app.get('/v1/consumer/events/:id', { config: publicLimit }, async (req) => {
@@ -131,7 +160,10 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/consumer/memberships', { config: publicLimit }, async (req) => {
     const parsed = limitQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
-    const rows = await listPublicMembershipsAcrossVenues({ ...(parsed.data.limit ? { limit: parsed.data.limit } : {}) });
+    const rows = await listPublicMembershipsAcrossVenues({
+      ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+    });
     return { rows };
   });
 

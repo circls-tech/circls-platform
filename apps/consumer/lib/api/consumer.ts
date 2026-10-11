@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch, CHECKOUT_GATEWAYS_HEADER } from './client';
+import { normaliseQuery, type SearchScope } from '@/lib/search';
 import type {
   CheckoutPaymentStatus,
   EventBookingResult,
@@ -17,6 +18,7 @@ import type {
   PublicSlot,
   PublicVenue,
   PurchaseMembershipInput,
+  SearchResults,
   SlotBookingResult,
   SwitchGatewayResult,
   VenueDetail,
@@ -117,6 +119,26 @@ export function useAllMemberships(limit = 50) {
     queryFn: () =>
       apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/memberships?limit=${limit}`),
     select: (data) => data.rows,
+  });
+}
+
+/**
+ * The search bar: `q` matched by name across upcoming events, bookable venues
+ * and active memberships (and the venue / organiser each belongs to). `scope`
+ * narrows to one section. Idle while the term is empty; the previous result
+ * stays on screen while a new term loads so the list doesn't flash.
+ */
+export function useSearch(q: string, scope: SearchScope = 'all', limit = 30) {
+  const term = normaliseQuery(q);
+  return useQuery({
+    queryKey: ['search', term, scope, limit],
+    queryFn: () => {
+      const qs = new URLSearchParams({ q: term, limit: String(limit) });
+      if (scope !== 'all') qs.set('types', scope);
+      return apiFetch<SearchResults>(`/v1/consumer/search?${qs.toString()}`);
+    },
+    enabled: term.length > 0,
+    placeholderData: (prev) => prev,
   });
 }
 
