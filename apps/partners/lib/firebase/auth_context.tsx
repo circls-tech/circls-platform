@@ -12,6 +12,21 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { auth } from './client';
 
+/**
+ * Sends the Firebase verification email with a continue URL, so the "email
+ * verified" page links back to the portal. Each send invalidates the previous
+ * link. If this origin isn't an authorised continue domain, fall back to a
+ * plain send rather than sending nothing.
+ */
+export async function sendVerificationEmail(user: User): Promise<void> {
+  try {
+    await sendEmailVerification(user, { url: window.location.origin });
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'auth/unauthorized-continue-uri') throw e;
+    await sendEmailVerification(user);
+  }
+}
+
 /** Best-effort login audit — must never block or fail the sign-in flow. */
 function recordLogin(): void {
   void apiFetch('/v1/me/login', {
@@ -56,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Best-effort: signup works unverified, but the API only trusts (and
         // stores) the email once Firebase verifies it — the layout banner
         // offers a re-send until then.
-        void sendEmailVerification(cred.user).catch(() => {});
+        void sendVerificationEmail(cred.user).catch(() => {});
         recordLogin();
         return cred.user;
       },
