@@ -11,6 +11,7 @@ import type {
   AdminCouponStats,
   AdminListingDetail,
   AdminListingListResponse,
+  AdminListingPreview,
   AdminListingType,
   AdminPartnerUsersPage,
   AdminPayoutListPage,
@@ -501,6 +502,20 @@ export function useApproveListing() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'listings'] });
     },
+  });
+}
+
+/**
+ * A "see it as a customer" link for a listing in the queue: the consumer
+ * site's own page for it, readable there before approval. Minted fresh each
+ * time a preview opens — the link expires on its own.
+ */
+export function useCreateListingPreview() {
+  return useMutation({
+    mutationFn: (args: { type: AdminListingType; id: string }) =>
+      apiFetch<AdminListingPreview>(`/v1/admin/listings/${args.type}/${args.id}/preview`, {
+        method: 'POST',
+      }),
   });
 }
 

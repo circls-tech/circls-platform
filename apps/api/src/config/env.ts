@@ -129,6 +129,14 @@ export const envSchema = z
   // and where Cashfree sends a customer back after a redirect checkout).
   CONSUMER_BASE_URL: z.string().url().default('https://circls.app'),
 
+  // Signs the short-lived tokens that let a partner or a Circls reviewer open
+  // an unapproved listing on the consumer site as a customer would see it
+  // (see services/listing_preview_service.ts). Required in production (see
+  // superRefine below): every instance must verify what any instance minted.
+  // Unset in dev/test, a random per-process secret is used — tokens then stop
+  // working on restart, which is fine for the sandbox.
+  LISTING_PREVIEW_SECRET: z.string().min(16).optional(),
+
   // Outbound webhooks. Phase 17.
   WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WEBHOOK_DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
@@ -158,6 +166,10 @@ export const envSchema = z
         'RAZORPAY_KEY_ID',
         'RAZORPAY_KEY_SECRET',
         'RAZORPAY_WEBHOOK_SECRET',
+        // Listing previews must verify on every API instance, not just the
+        // one that minted them — a per-process fallback would make them fail
+        // at random behind a load balancer.
+        'LISTING_PREVIEW_SECRET',
       ] as const) {
         if (!val[key] || val[key].length === 0) {
           ctx.addIssue({
