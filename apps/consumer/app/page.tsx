@@ -28,7 +28,6 @@ export default function LandingPage() {
   // Country is the market boundary; a selected city HARD-filters venues, and
   // shared coords without a city restrict geolocated venues to the nearby
   // radius. The rail simply hides when nothing survives.
-  const nearYou = Boolean(coords) && !city;
   // Organisers carry only a city/country (no coords): city HARD-filters like
   // venues; otherwise the country is the boundary. Unlike the venues rail there
   // is no radius cut in coords-only mode — every in-country org qualifies, and
@@ -42,11 +41,7 @@ export default function LandingPage() {
     .slice(0, 10);
   const orgsTitle = city ? `Organisers in ${city}` : country ? `Organisers in ${country}` : 'Organisers';
   const nearbyVenues = venuesForArea(venues.data ?? [], { city, country, coords }).slice(0, 10);
-  const venuesTitle = city
-    ? `Venues in ${city}`
-    : nearYou || !country
-      ? 'Venues near you'
-      : `Venues in ${country}`;
+  const venuesTitle = 'Venues around you';
   // Shared location → only events within NEARBY_RADIUS_KM; manual city pick or
   // no selection → country-wide, as before.
   const nearbyEvents = (events.data ?? [])
@@ -111,7 +106,7 @@ export default function LandingPage() {
         )}
         {nearbyEvents.length > 0 && (
           <HScroll
-            title={coords ? "What's on near you" : country ? `What's on in ${country}` : 'Upcoming events'}
+            title="Events around you"
             viewAllHref="/events"
           >
             {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
@@ -126,15 +121,7 @@ export default function LandingPage() {
 
         {nearbyMemberships.length > 0 && (
           <HScroll
-            title={
-              city
-                ? `Memberships in ${city}`
-                : nearYou
-                  ? 'Memberships near you'
-                  : country
-                    ? `Memberships in ${country}`
-                    : 'Memberships'
-            }
+            title="Memberships around you"
             viewAllHref="/memberships"
           >
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
