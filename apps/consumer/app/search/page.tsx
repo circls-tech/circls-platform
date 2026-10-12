@@ -44,8 +44,13 @@ function SearchInner() {
 
   const [draft, setDraft] = useState(q);
   const [everywhere, setEverywhere] = useState(false);
-  // The URL changed under us (header search, back/forward): follow it.
-  useEffect(() => setDraft(q), [q]);
+  // The URL changed under us (header search, back/forward): follow it. When
+  // the change is our own debounced replace, the draft already normalises
+  // to `q`; leave it alone so a trailing space the user is mid-way through
+  // typing ('turf ' → 'turf park') isn't trimmed out from under them.
+  useEffect(() => {
+    setDraft((d) => (normaliseQuery(d) === q ? d : q));
+  }, [q]);
   // Debounced the other way: the draft settles → the URL follows.
   useEffect(() => {
     const next = normaliseQuery(draft);
