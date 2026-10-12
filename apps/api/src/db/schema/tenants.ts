@@ -75,8 +75,10 @@ export const tenants = pgTable('tenants', {
    *  part of the org's settle base. Events may override. */
   consumerCommissionBps: integer('consumer_commission_bps').notNull().default(0),
   /** Share of the gateway fee the customer pays via the checkout gross-up,
-   *  in bps. 10000 = customer pays all (legacy). */
-  customerFeeShareBps: integer('customer_fee_share_bps').notNull().default(10000),
+   *  in bps. 0 (default since migration 0064) = Circls bears it and checkout
+   *  shows the fee struck through as FREE; 10000 = customer pays all (the
+   *  pre-go-live behaviour, still settable per tenant from admin). */
+  customerFeeShareBps: integer('customer_fee_share_bps').notNull().default(0),
   /** Share of the gateway fee the org bears, deducted from the charge's
    *  settle base. customer + org ≤ 10000; Circls absorbs the remainder. */
   orgFeeShareBps: integer('org_fee_share_bps').notNull().default(0),

@@ -39,6 +39,7 @@ import { adminRefundRoutes } from './routes/admin_refunds.js';
 import { adminTenantRoutes } from './routes/admin_tenants.js';
 import { adminPayoutRoutes } from './routes/admin_payouts.js';
 import { adminListingRoutes } from './routes/admin_listings.js';
+import { listingPreviewRoutes } from './routes/listing_previews.js';
 import { adminChangeRequestRoutes } from './routes/admin_change_requests.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 import { adminUserRoutes } from './routes/admin_users.js';
@@ -59,6 +60,7 @@ import { adminPaymentSettingsRoutes } from './routes/admin_payment_settings.js';
 // QR ticket door check-in (validate/consume scanned codes).
 import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
+import { adminEarningsRoutes, earningsRoutes } from './routes/earnings.js';
 import { questionRoutes } from './routes/questions.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -71,6 +73,7 @@ export async function buildServer(): Promise<FastifyInstance> {
           'req.headers.authorization',
           'req.headers["x-razorpay-signature"]',
           'req.headers["x-webhook-signature"]',
+          'req.headers["x-circls-preview"]',
           'req.headers.cookie',
           '*.keySecret',
           '*.key_secret',
@@ -294,6 +297,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminTenantRoutes);
   await app.register(adminPayoutRoutes);
   await app.register(adminListingRoutes);
+  // "See it as a customer" preview links for unapproved listings (partner + admin).
+  await app.register(listingPreviewRoutes);
   await app.register(adminChangeRequestRoutes);
   await app.register(adminAuditLogRoutes);
   await app.register(adminUserRoutes);
@@ -313,6 +318,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(qrTicketRoutes);
   // Partner portal Activity page: unified tenant activity feed + calendar counts.
   await app.register(activityRoutes);
+  // Partner portal Earnings page: net payable per window (financials.read).
+  await app.register(earningsRoutes);
+  // Same earnings figures, for a platform admin inspecting one organisation.
+  await app.register(adminEarningsRoutes);
   // Questions threads on events / arenas / memberships (consumer + org + admin).
   await app.register(questionRoutes);
 

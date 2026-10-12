@@ -23,6 +23,7 @@ import {
   type CityOption,
   type Coords,
 } from './geo';
+import { isPreviewDocument } from '@/lib/preview';
 
 // v4 adds `placeLabel` (the reverse-geocoded name of the user's actual place,
 // shown when they're outside every served city). The key bump abandons v3
@@ -196,9 +197,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, [cities, persist]);
 
   // Auto-ask exactly once: after hydration, when nothing is stored and the city
-  // list is ready. Triggers the native geolocation permission prompt.
+  // list is ready. Triggers the native geolocation permission prompt — except
+  // on a listing opened in preview mode (lib/preview.ts): that page is framed
+  // inside the partner or admin portal, where the prompt is refused and the
+  // city picker it falls back to would cover the very page being previewed.
   useEffect(() => {
     if (!hydrated || autoAsked.current) return;
+    if (isPreviewDocument()) return;
     if (sel.city || sel.country || sel.coords) return; // user already has a saved choice
     if (cities.length === 0) return; // wait for venues/events to load
     autoAsked.current = true;

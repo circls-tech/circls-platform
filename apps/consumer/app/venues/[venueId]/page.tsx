@@ -1,10 +1,12 @@
 'use client';
-import { use, useEffect, useRef, useState } from 'react';
+import { Suspense, use, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
+import { PreviewBanner } from '@/components/PreviewBanner';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { AddressLink } from '@/components/AddressLink';
+import { LikeButton } from '@/components/LikeButton';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -35,13 +37,27 @@ import { OffersStrip } from '@/components/OffersStrip';
 import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
 import type { CartSlot } from '@/lib/checkout/types';
 import { MAX_CART_SLOTS } from '@/lib/checkout/limits';
+import { usePreviewToken } from '@/lib/preview';
 import { Badge, Button, Card } from '@/lib/ui';
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
+  // The preview token is read from the URL (useSearchParams), which the app
+  // router only allows under a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <VenuePageInner params={params} />
+    </Suspense>
+  );
+}
+
+function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
   const { venueId } = use(params);
-  const venueQ = useVenue(venueId);
-  const eventsQ = useVenueEvents(venueId);
-  const membershipsQ = useVenueMemberships(venueId);
+  // Preview mode (lib/preview.ts): a partner or reviewer looking at an
+  // unapproved venue as a customer will. Same page, booking turned off.
+  const preview = usePreviewToken();
+  const venueQ = useVenue(venueId, preview);
+  const eventsQ = useVenueEvents(venueId, preview);
+  const membershipsQ = useVenueMemberships(venueId, preview);
   // Owning-org profile, enriches the "Hosted by" byline. Degrades to the
   // compact brand summary when still loading or the org is unavailable.
   const orgQ = usePublicOrg(venueQ.data?.venue.brand?.slug ?? '');
@@ -107,12 +123,12 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
 
   return (
     <div className="min-h-screen">
-      <Header />
+      {preview ? <PreviewBanner noun="venue" /> : <Header />}
       {/* No bottom reserve for the cart bar here: it is fixed, its height
           varies with the offers strip, and the footer below is the layout's,
           outside this page. CartBar measures itself onto the body instead. */}
       <main className="mx-auto max-w-5xl px-4 pb-8 pt-8">
-        <BackBar fallbackHref="/venues" />
+        {!preview && <BackBar fallbackHref="/venues" />}
         {venueQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading venue…</p>
         ) : venueQ.isError ? (
@@ -140,7 +156,10 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 }
               />
               <div className="bg-white p-5">
-                <h1 className="font-display text-4xl font-extrabold text-ink">{venueQ.data.venue.name}</h1>
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className="font-display text-4xl font-extrabold text-ink">{venueQ.data.venue.name}</h1>
+                  <LikeButton itemType="venue" itemId={venueQ.data.venue.id} name={venueQ.data.venue.name} variant="inline" className="mt-1" />
+                </div>
                 {venueQ.data.venue.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {venueQ.data.venue.tags.map((tag) => (
@@ -203,6 +222,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                       currency={currency}
                       cart={cart}
                       onToggleSlot={toggleCartSlot}
+                      preview={preview}
                     />
                   ))}
                 </div>
@@ -248,6 +268,7 @@ export default function VenuePage({ params }: { params: Promise<{ venueId: strin
                 currency={currency}
                 onRemove={removeFromCart}
                 onClear={clearCart}
+                preview={Boolean(preview)}
               />
             )}
           </>
@@ -324,16 +345,19 @@ function ArenaCard({
   currency,
   cart,
   onToggleSlot,
+  preview,
 }: {
   arena: PublicArena;
   currency: CurrencyCode;
   cart: Map<string, CartSlot>;
   onToggleSlot: (slot: CartSlot) => void;
+  /** The page's preview token, so a pending court's slots open with it. */
+  preview: string | null;
 }) {
   const [date, setDate] = useState(todayLocal());
   const [questionsOpen, setQuestionsOpen] = useState(false);
   const { from, to } = dayBounds(date);
-  const slotsQ = useArenaSlots(arena.id, from, to);
+  const slotsQ = useArenaSlots(arena.id, from, to, true, preview);
   const slots = slotsQ.data ?? [];
 
   return (
@@ -344,15 +368,20 @@ function ArenaCard({
           <p className="mt-0.5 text-sm text-text-secondary">
             {arena.sport ?? 'General'}
             {arena.capacity != null ? ` · up to ${arena.capacity}` : ''}
-            {' · '}
-            {/* Q&A on this court (#106); threads load lazily when the panel opens. */}
-            <button
-              type="button"
-              onClick={() => setQuestionsOpen(true)}
-              className="font-semibold text-coral-deep underline"
-            >
-              Questions
-            </button>
+            {/* Q&A on this court (#106); threads load lazily when the panel
+                opens. Not offered in a preview — nothing to ask about yet. */}
+            {!preview && (
+              <>
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => setQuestionsOpen(true)}
+                  className="font-semibold text-coral-deep underline"
+                >
+                  Questions
+                </button>
+              </>
+            )}
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-text-secondary">
@@ -454,12 +483,15 @@ function CartBar({
   currency,
   onRemove,
   onClear,
+  preview,
 }: {
   cart: Map<string, CartSlot>;
   venueName: string;
   currency: CurrencyCode;
   onRemove: (id: string) => void;
   onClear: () => void;
+  /** Preview mode: the cart fills as usual, but cannot be booked. */
+  preview: boolean;
 }) {
   const { openCheckout } = useCheckoutModal();
   const [expanded, setExpanded] = useState(false);
@@ -518,6 +550,7 @@ function CartBar({
   const appliedCode = offers.some((o) => o.code === offerCode) ? offerCode : null;
 
   function book() {
+    if (preview) return;
     openCheckout(
       {
         kind: 'slot',
@@ -590,7 +623,13 @@ function CartBar({
             </span>
             <span className="text-xs text-text-secondary underline">{expanded ? 'Hide cart' : 'View cart'}</span>
           </button>
-          <Button onClick={book}>Book {n} slot{n > 1 ? 's' : ''}</Button>
+          <Button
+            onClick={book}
+            disabled={preview}
+            title={preview ? 'Booking is turned off in preview' : undefined}
+          >
+            Book {n} slot{n > 1 ? 's' : ''}
+          </Button>
         </div>
       </div>
     </div>
@@ -601,7 +640,10 @@ function EventCard({ event, currency }: { event: PublicEvent; currency: Currency
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
-      <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
+        <LikeButton itemType="event" itemId={event.id} name={event.name} />
+      </div>
       <p className="mt-0.5 text-sm text-text-secondary">
         {formatDateTime(event.startsAt)}
         {(event.seriesCount ?? 1) > 1 && (

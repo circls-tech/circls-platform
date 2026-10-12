@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ImageCarousel } from '@/components/ImageCarousel';
+import { LikeButton } from '@/components/LikeButton';
 import { SportImage } from '@/components/SportImage';
 import { Badge } from '@/lib/ui';
 import { matchSport } from '@/lib/sportImages';
@@ -10,9 +11,12 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
   const sport = matchSport(venue.tags);
   const city = cityOf(venue.addressJson);
   return (
+    // The heart is a sibling of the link, not a child: a button inside an
+    // anchor is invalid HTML, and this keeps the whole card clickable.
+    <div className={`relative ${className}`}>
     <Link
       href={`/venues/${venue.id}`}
-      className={`block overflow-hidden rounded-card border-[2px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset ${className}`}
+      className="block h-full overflow-hidden rounded-card border-[2px] border-ink bg-white shadow-offset-sm transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset"
     >
       <ImageCarousel
         images={venue.images}
@@ -40,5 +44,7 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
         )}
       </div>
     </Link>
+      <LikeButton itemType="venue" itemId={venue.id} name={venue.name} className="absolute right-2.5 top-2.5 z-10" />
+    </div>
   );
 }

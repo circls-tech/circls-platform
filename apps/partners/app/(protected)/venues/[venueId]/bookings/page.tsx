@@ -17,6 +17,7 @@ import { downloadCsv, toCsv } from '@/lib/csv';
 import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
+import { dayBoundsInTz, isCalendarDate, rangeBoundsInTz } from '@/lib/time';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Timezone-aware helpers
@@ -48,63 +49,6 @@ function fmtTimeInTz(iso: string, tz: string): string {
   }).format(new Date(iso));
 }
 
-/**
- * Returns start/end of a calendar day in `tz` as UTC ISO strings.
- *
- * Uses `Intl.DateTimeFormat('en-CA', {timeZone: tz})` to determine the
- * calendar date, then samples the tz offset via a probe formatter to derive
- * that day's midnight-in-tz as an absolute UTC instant — no hardcoded offsets.
- *
- * @param date - A `Date` object or the string `'today'` (uses `new Date()`).
- * @param tz   - IANA timezone name, e.g. `'Asia/Kolkata'`.
- */
-function dayBoundsInTz(date: Date | 'today', tz: string): { from: string; to: string } {
-  const d = date === 'today' ? new Date() : date;
-
-  // Step 1: determine the calendar date in `tz`.
-  const calStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d); // 'YYYY-MM-DD'
-
-  // Step 2: derive midnight-in-tz for that calendar date via offset sampling.
-  // We construct a UTC instant for that date at 00:00 UTC, then measure the
-  // difference between what that instant reads in `tz` versus UTC midnight,
-  // and subtract to land on the true local midnight.
-  const [y, m, day] = calStr.split('-').map(Number) as [number, number, number];
-
-  // Probe: UTC instant for 'YYYY-MM-DDT00:00:00Z'
-  const probeUtcMs = Date.UTC(y, m - 1, day);
-  // What does that UTC instant read in `tz`?
-  const probeParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(probeUtcMs));
-  const get = (type: string) => Number(probeParts.find((p) => p.type === type)?.value ?? '0');
-  // Hours/minutes in tz at probeUtcMs — these represent how far past midnight we are in tz.
-  const tzHour = get('hour');
-  const tzMin = get('minute');
-  const tzSec = get('second');
-  const tzOffsetMs = (tzHour * 3600 + tzMin * 60 + tzSec) * 1000;
-
-  // Midnight in tz = probeUtcMs − tzOffsetMs (could be previous calendar day in UTC).
-  const midnightMs = probeUtcMs - tzOffsetMs;
-  const nextMidnightMs = midnightMs + 24 * 60 * 60 * 1000;
-
-  return {
-    from: new Date(midnightMs).toISOString(),
-    to: new Date(nextMidnightMs).toISOString(),
-  };
-}
-
 type DateFilter = 'today' | 'upcoming' | 'past' | 'custom';
 
 function computeDateBounds(
@@ -127,11 +71,12 @@ function computeDateBounds(
     }
     case 'custom': {
       // customFrom/customTo are 'YYYY-MM-DD' calendar dates in the venue tz.
-      // Use noon UTC so that tz offsets ±12h don't shift the calendar date.
-      if (!customFrom || !customTo) return dayBoundsInTz('today', tz);
-      const fromBounds = dayBoundsInTz(new Date(`${customFrom}T12:00:00Z`), tz);
-      const toBounds = dayBoundsInTz(new Date(`${customTo}T12:00:00Z`), tz);
-      return { from: fromBounds.from, to: toBounds.to };
+      // A cleared date field leaves ''; rangeBoundsInTz rejects it, and this
+      // runs during render, so fall back rather than throw.
+      if (!isCalendarDate(customFrom) || !isCalendarDate(customTo)) {
+        return dayBoundsInTz('today', tz);
+      }
+      return rangeBoundsInTz(customFrom, customTo, tz);
     }
   }
 }

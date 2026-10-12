@@ -84,7 +84,9 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
 
     const [t] = await db
       .insert(tenants)
-      .values({ name: 'Payout Co', slug: `payoutco-${Date.now()}`, commissionBps: 0 })
+      // customerFeeShareBps pinned throughout: these suites assert the
+      // customer-pays-all gross-up, and the product default (0064) is 0.
+      .values({ name: 'Payout Co', slug: `payoutco-${Date.now()}`, commissionBps: 0, customerFeeShareBps: 10_000 })
       .returning();
     tenantId = t!.id;
 
@@ -132,7 +134,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
   async function seedTenantWithRefund(refundSettlePaise: number | null): Promise<string> {
     const [t] = await db
       .insert(tenants)
-      .values({ name: 'Payout Refund Co', slug: `payoutrfnd-${Date.now()}-${extraTenantIds.length}`, commissionBps: 0 })
+      .values({ name: 'Payout Refund Co', slug: `payoutrfnd-${Date.now()}-${extraTenantIds.length}`, commissionBps: 0, customerFeeShareBps: 10_000 })
       .returning();
     extraTenantIds.push(t!.id);
 
@@ -221,6 +223,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         name,
         slug: `payoutadv-${Date.now()}-${extraTenantIds.length}`,
         commissionBps,
+        customerFeeShareBps: 10_000,
       })
       .returning();
     extraTenantIds.push(t!.id);
@@ -360,6 +363,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         name: 'Payout Breakdown Co',
         slug: `payoutbd-${Date.now()}-${extraTenantIds.length}`,
         commissionBps: 0,
+        customerFeeShareBps: 10_000,
       })
       .returning();
     extraTenantIds.push(t!.id);
@@ -431,7 +435,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
     const stamp = `${Date.now()}-${extraTenantIds.length}`;
     const [t] = await db
       .insert(tenants)
-      .values({ name: 'Saur Grapes', slug: `saurgrapes-${stamp}`, commissionBps: 0 })
+      .values({ name: 'Saur Grapes', slug: `saurgrapes-${stamp}`, commissionBps: 0, customerFeeShareBps: 10_000 })
       .returning();
     const tid = t!.id;
     const [v] = await db

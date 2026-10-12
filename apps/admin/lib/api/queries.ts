@@ -11,6 +11,7 @@ import type {
   AdminCouponStats,
   AdminListingDetail,
   AdminListingListResponse,
+  AdminListingPreview,
   AdminListingType,
   AdminPartnerUsersPage,
   AdminPayoutListPage,
@@ -24,6 +25,8 @@ import type {
   AdminStats,
   PlatformRevenue,
   RevenueGrouping,
+  TenantEarnings,
+  TenantPayoutItem,
   TenantItemRevenue,
   AdminSupportIssue,
   AdminSupportIssueFilters,
@@ -101,6 +104,30 @@ export function useAdminTenantRevenue(tenantId: string | null, groupBy: RevenueG
     enabled: Boolean(user && tenantId),
     queryFn: () =>
       apiFetch<TenantItemRevenue>(`/v1/admin/tenants/${tenantId}/revenue?groupBy=${groupBy}`),
+  });
+}
+
+/**
+ * One organisation's earnings for a window — the admin-side read of the
+ * partner's own Earnings page, from the same service.
+ *
+ * `enabled` is caller-controlled so the tab only fetches once its period
+ * resolves to real bounds; an incomplete custom range must not fire a request.
+ */
+export function useAdminTenantEarnings(
+  tenantId: string | null,
+  bounds: { from: string; to: string } | null,
+  enabled: boolean,
+) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'earnings', bounds?.from, bounds?.to],
+    enabled: Boolean(user && tenantId && bounds) && enabled,
+    queryFn: () =>
+      apiFetch<TenantEarnings>(
+        `/v1/admin/tenants/${tenantId}/earnings` +
+          `?from=${encodeURIComponent(bounds!.from)}&to=${encodeURIComponent(bounds!.to)}`,
+      ),
   });
 }
 
@@ -343,6 +370,36 @@ export function useAdminPayouts(status?: 'pending' | 'paid') {
   });
 }
 
+/** One organisation's payout lines — what each payout paid for, per item. */
+export function useAdminTenantPayoutItems(tenantId: string | null, status?: 'pending' | 'paid') {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'payouts', 'items', tenantId, status ?? ''],
+    enabled: Boolean(user && tenantId),
+    queryFn: () =>
+      apiFetch<{ rows: TenantPayoutItem[] }>(
+        `/v1/admin/tenants/${tenantId}/payout-items${qs({ status })}`,
+      ),
+  });
+}
+
+/** Settle ONE payout line, leaving the rest of its week outstanding. */
+export function useExecutePayoutItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; reference: string; note?: string }) =>
+      apiFetch<unknown>(`/v1/admin/payout-items/${args.id}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ reference: args.reference, note: args.note }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+      // The Paid out column is derived from paid lines, so it has to refetch.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant'] });
+    },
+  });
+}
+
 export function useExecutePayout() {
   const qc = useQueryClient();
   return useMutation({
@@ -353,6 +410,10 @@ export function useExecutePayout() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'payouts'] });
+      // Paying a payout moves the Earnings tab's "Paid out" column, which is
+      // derived from the paid payouts — refetch it or the tab keeps showing
+      // the figure from before the transfer.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant'] });
     },
   });
 }
@@ -441,6 +502,20 @@ export function useApproveListing() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'listings'] });
     },
+  });
+}
+
+/**
+ * A "see it as a customer" link for a listing in the queue: the consumer
+ * site's own page for it, readable there before approval. Minted fresh each
+ * time a preview opens — the link expires on its own.
+ */
+export function useCreateListingPreview() {
+  return useMutation({
+    mutationFn: (args: { type: AdminListingType; id: string }) =>
+      apiFetch<AdminListingPreview>(`/v1/admin/listings/${args.type}/${args.id}/preview`, {
+        method: 'POST',
+      }),
   });
 }
 

@@ -1,5 +1,11 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import {
+  advancePaidOut,
+  creditableCharge,
+  paidOutPayment,
+  settleableCharge,
+} from './settlement_credit.js';
 
 /**
  * Revenue read models for the admin console.
@@ -13,12 +19,25 @@ import { db } from '../db/client.js';
  *
  *   gross — what customers actually paid, less what was refunded. The same
  *           money the partner dashboard calls "Revenue", so the two agree.
+ *           Every payment counts, settling or not: the customer really paid.
  *   net   — what the partner is owed once Circls' commission comes out: the
- *           settleable base less partner commission. This is the money that
- *           later shows up in a payout.
+ *           settleable base less partner commission, over the money that will
+ *           actually settle. This is the money that later shows up in a payout.
  *
  * The gap between them is Circls' commission plus the gateway gross-up, which
  * is why `commissionPaise` is returned alongside rather than left implicit.
+ *
+ * The two measures count different row sets ON PURPOSE, which is why
+ * `moneyRows` MARKS each row with `payout_basis` rather than filtering: gross
+ * has to keep agreeing with the partner dashboard, and net has to keep agreeing
+ * with the payout. Filtering would have forced one of those to break.
+ *
+ * NOT a deliberate difference, and now fixed: net used to count every charge
+ * and deduct every refund. A payment that succeeds after its booking was
+ * already cancelled is auto-refunded and never settles — charge and refund
+ * cancel out, but the commission snapshotted on that charge did not, so net
+ * came out short by Circls' cut of a sale that never happened. An admin
+ * reading it would think a partner had been over-paid when they had not.
  *
  * DELIBERATE CHOICES, each of which makes these differ from a payout:
  *
@@ -54,17 +73,36 @@ export interface RevenueSlice {
   commissionPaise: number;
   /** Refunded customer money in the window, as a positive number. */
   refundsPaise: number;
-  /** Distinct bookings that took money in the window. */
+  /**
+   * Distinct bookings that made a sale in the window — charges that will
+   * settle to the partner, the same set `net` is computed over.
+   *
+   * A payment that succeeded after its booking was already cancelled is not a
+   * sale: it is auto-refunded and never settles. Its money still shows in
+   * `gross` (taken and given back, netting to nothing) because the customer
+   * really was charged, but counting it here would report sales a tenant
+   * never made, and leave a positive count sitting beside a `net` of zero
+   * with nothing to explain the gap.
+   */
   bookings: number;
+}
+
+/** How {@link moneyRows} should be narrowed. */
+export interface MoneyRowsOptions {
+  /** Narrow to one tenant; omitted, it is the whole platform. */
+  tenantId?: string | undefined;
 }
 
 /**
  * Every payment that moved money, with what it was for and what it is worth
  * under each of the two measures. One row per payment; callers group it.
  *
- * `scope` narrows to a tenant; omitted, it is the whole platform.
+ * Exported so the partner-facing earnings figures work from the SAME base and
+ * commission expressions as the admin console, rather than a second copy that
+ * can drift.
  */
-function moneyRows(from: string, to: string, tenantId?: string) {
+export function moneyRows(from: string, to: string, opts: MoneyRowsOptions = {}): SQL {
+  const { tenantId } = opts;
   const tenantClause = tenantId ? sql`and p.tenant_id = ${tenantId}::uuid` : sql``;
   return sql`
     select b.item_type::text                                     as item_type,
@@ -83,7 +121,31 @@ function moneyRows(from: string, to: string, tenantId?: string) {
                 then coalesce(p.partner_commission_paise,
                               (coalesce(p.settle_base_paise, p.amount_paise)
                                * t.commission_bps) / 10000)
-                else 0 end                                       as commission
+                else 0 end                                       as commission,
+           -- Money that will actually reach the partner: a charge needs a
+           -- settlement hold or release, a refund needs its charge to have had
+           -- one. Both halves move together (settlement_credit). MARKED, not
+           -- filtered, so gross can still count every payment made.
+           case when p.kind = 'charge' then ${settleableCharge('p')}
+                else ${creditableCharge('p')} end                 as payout_basis,
+           -- Already transferred: money that was going to settle AND sits in a
+           -- payout the tenant has been marked paid for. The payout_basis half
+           -- is repeated rather than assumed: a caller that reads paid_basis
+           -- without also filtering on payout_basis would otherwise deduct a
+           -- refund whose charge never settled, the exact asymmetry
+           -- settlement_credit exists to prevent.
+           (case when p.kind = 'charge' then ${settleableCharge('p')}
+                 else ${creditableCharge('p')} end
+            and ${paidOutPayment('p')})                           as paid_basis,
+           -- The advance tranche on this charge, and whether it has already
+           -- gone out. An advance is paid in one week and deducted from the
+           -- week the charge settles, so a figure for "how much has reached
+           -- the partner" has to count it separately from the settlement —
+           -- it is money in their account while the charge itself is still
+           -- unpaid. Zero for refunds and for charges never advanced.
+           case when p.kind = 'charge' and p.advance_released_at is not null
+                then coalesce(p.advance_paise, 0) else 0 end       as advance_amount,
+           ${advancePaidOut('p')}                                  as advance_paid
       from payments p
       join bookings b on b.id = p.booking_id
       join tenants t  on t.id = p.tenant_id
@@ -123,10 +185,12 @@ export async function getPlatformRevenue(from: string, to: string): Promise<Reve
     select item_type,
            currency,
            coalesce(sum(gross), 0)                                          as gross,
-           coalesce(sum(base) - sum(commission), 0)                         as net,
-           coalesce(sum(commission), 0)                                     as commission,
+           coalesce(sum(base) filter (where payout_basis), 0)
+             - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
+           coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
            coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id) filter (where kind = 'charge')        as bookings
+           count(distinct booking_id)
+             filter (where kind = 'charge' and payout_basis)                 as bookings
       from money
      group by item_type, currency
      order by item_type, currency
@@ -183,15 +247,17 @@ export async function getTenantItemRevenue(
   // Grouped including the unattributable, which come back with a null id
   // rather than being filtered away.
   const raw = await db.execute<Record<string, unknown>>(sql`
-    with money as (${moneyRows(from, to, tenantId)})
+    with money as (${moneyRows(from, to, { tenantId })})
     select ${key}                                                           as item_id,
            item_type,
            currency,
            coalesce(sum(gross), 0)                                          as gross,
-           coalesce(sum(base) - sum(commission), 0)                         as net,
-           coalesce(sum(commission), 0)                                     as commission,
+           coalesce(sum(base) filter (where payout_basis), 0)
+             - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
+           coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
            coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id) filter (where kind = 'charge')        as bookings
+           count(distinct booking_id)
+             filter (where kind = 'charge' and payout_basis)                 as bookings
       from money
      where item_type = ${wanted}
      group by 1, 2, 3

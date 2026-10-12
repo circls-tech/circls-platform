@@ -180,6 +180,28 @@ export interface ScheduleTemplate {
   bands: { startMin: number; endMin: number; priceRupees: number }[];
 }
 
+/**
+ * The weekly plan auto-rollover releases from: the exact cells the partner
+ * built (grid edits included). `cells[].startTimeMin` is minutes from the
+ * business day's local midnight and may exceed 1439 (overnight); prices are
+ * minor units of the venue currency.
+ */
+export interface RolloverPlan {
+  quantizationMin: number;
+  businessDayStartMin: number;
+  cells: {
+    dayOfWeek: number;
+    startTimeMin: number;
+    durationMin: number;
+    price?: number | null;
+    blocked?: boolean;
+  }[];
+  /** Team member who saved the plan. */
+  savedByUserId: string;
+  /** ISO-8601. */
+  savedAt: string;
+}
+
 export interface Arena {
   id: string;
   venueId: string;
@@ -190,6 +212,14 @@ export interface Arena {
   businessDayStartMin: number;
   /** Last-used builder template, or null before the first release. */
   scheduleTemplate: ScheduleTemplate | null;
+  /** Auto-rollover: while on, the next 7 business days are kept released from `rolloverPlan`. */
+  autoRolloverEnabled: boolean;
+  /** The saved rolling plan; kept when rollover is switched off. Null until first saved. */
+  rolloverPlan: RolloverPlan | null;
+  /** ISO-8601 — when the plan or the on/off flag last changed. */
+  rolloverUpdatedAt: string | null;
+  /** ISO-8601 — the worker's last check of this arena, or null if never. */
+  rolloverLastRunAt: string | null;
   /** QR ticket rules for bookings on this arena; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   status: ListingStatus;
@@ -362,6 +392,62 @@ export interface Analytics {
   occupancy7dPct: number;
   /** One series per currency with money taken in the window; [] when none. */
   trend7d: AnalyticsTrendSeries[];
+}
+
+// ── Earnings ──────────────────────────────────────────────────────────────────
+// Net payable for a chosen window. Mirrors apps/api/src/services/earnings_service.ts,
+// which returns net ONLY — there is deliberately no gross, commission or fee
+// field to render, so the portal cannot show a partner a figure that isn't
+// theirs to keep.
+
+/** What was sold. 'venue' covers court/arena slot bookings. */
+export type EarningsStream = 'event' | 'membership' | 'venue';
+
+/** A net total in one currency. Currencies are never summed together. */
+export interface EarningsTotal {
+  currency: string;
+  /** Net payable, in minor units. Negative when refunds outran sales. */
+  netPaise: number;
+  /**
+   * How much has already been transferred, in minor units.
+   *
+   * Normally below `netPaise`, because sales count on the day the customer
+   * paid while the money moves on the weekly payout cycle. It can also exceed
+   * it: a refund raised after those sales were paid out lowers the period's
+   * net without reclaiming what was already sent, and the difference comes off
+   * a future payout.
+   */
+  paidPaise: number;
+  bookings: number;
+}
+
+export interface EarningsStreamTotal extends EarningsTotal {
+  stream: EarningsStream;
+}
+
+/** Net for one individual event, membership plan, or venue. */
+export interface EarningsItem extends EarningsStreamTotal {
+  /** Null when the booking carried nothing to attribute the money to. */
+  id: string | null;
+  name: string | null;
+  venueName: string | null;
+}
+
+/** Cash taken at the partner's own desk. Never part of a Circls payout. */
+export interface DeskTakings {
+  currency: string;
+  amountMinor: number;
+  bookings: number;
+}
+
+export interface TenantEarnings {
+  from: string;
+  to: string;
+  total: EarningsTotal[];
+  byStream: EarningsStreamTotal[];
+  items: EarningsItem[];
+  /** Not included in any total above. */
+  desk: DeskTakings[];
 }
 
 export interface AuditLogItem {

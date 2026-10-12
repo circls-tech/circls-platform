@@ -374,35 +374,23 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {item.kind === 'event' && item.lines.map((l) => (
-            <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity, cur)} muted />
-          ))}
-          <Row label="Base price" value={breakdown ? formatPaiseExact(breakdown.basePaise, cur) : '—'} />
+          {/* What's being bought, one row per line. No separate "Base price"
+              subtotal: the lines already add up to it, and for a single line
+              the two rows just repeated the same number. */}
+          {item.kind === 'event' ? (
+            item.lines.map((l) => (
+              <Row key={l.tierId} label={`${l.tierName} × ${l.quantity}`} value={formatPaiseExact(l.unitPricePaise * l.quantity, cur)} />
+            ))
+          ) : (
+            <Row
+              label={item.kind === 'slot' ? `${item.slotIds.length} ${item.slotIds.length === 1 ? 'slot' : 'slots'}` : 'Membership'}
+              value={breakdown ? formatPaiseExact(breakdown.basePaise, cur) : '—'}
+            />
+          )}
           {breakdown && breakdown.discountPaise > 0 && (
             <Row label={`Discount${appliedCode ? ` (${appliedCode})` : ''}`} value={`−${formatPaiseExact(breakdown.discountPaise, cur)}`} accent />
           )}
-          {breakdown && (
-            <Row
-              label={
-                (breakdown.platformFeePaise ?? 0) > 0 ? (
-                  <span className="inline-flex items-center gap-1">
-                    Other charges (incl taxes)
-                    <InfoTooltip
-                      label="What's included in other charges"
-                      lines={[
-                        `Payment processing: ${formatPaiseExact(breakdown.gatewayFeePaise ?? 0, cur)}`,
-                        `Platform fee: ${formatPaiseExact(breakdown.platformFeePaise ?? 0, cur)}`,
-                      ]}
-                    />
-                  </span>
-                ) : (
-                  'Other charges (incl taxes)'
-                )
-              }
-              value={formatPaiseExact(breakdown.otherChargesPaise, cur)}
-              muted
-            />
-          )}
+          {breakdown && <ChargesRows breakdown={breakdown} cur={cur} />}
           <div className="my-1 border-t-[1.5px] border-dashed border-ink/25" />
           <Row label="Total" value={breakdown ? formatPaiseExact(breakdown.totalPaise, cur) : '—'} bold />
 
@@ -459,7 +447,69 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   );
 }
 
-function Row({ label, value, muted, accent, bold }: { label: React.ReactNode; value: string; muted?: boolean; accent?: boolean; bold?: boolean }) {
+/**
+ * The lines between the (discounted) base and the total.
+ *
+ * When the venue or Circls bears the payment-gateway charge for the customer,
+ * the charge is still shown — struck through, with FREE beside it (or the
+ * reduced amount, when only part of it is waived) — the way a delivery app
+ * shows a waived delivery fee. Otherwise the legacy single "Other charges
+ * (incl taxes)" line, with a tooltip splitting it when a platform fee is in it.
+ */
+function ChargesRows({ breakdown, cur }: { breakdown: QuoteResponse; cur: string }) {
+  const gatewayFee = breakdown.gatewayFeePaise ?? 0;
+  const waived = breakdown.gatewayFeeWaivedPaise ?? 0;
+  const platformFee = breakdown.platformFeePaise ?? 0;
+
+  if (waived > 0) {
+    return (
+      <>
+        <Row
+          label="Payment processing fee"
+          value={
+            <span className="inline-flex items-baseline gap-1.5">
+              <s className="text-[var(--color-text-secondary)]" aria-label={`Usually ${formatPaiseExact(gatewayFee + waived, cur)}`}>
+                {formatPaiseExact(gatewayFee + waived, cur)}
+              </s>
+              {gatewayFee === 0 ? (
+                <span className="font-display text-sm font-extrabold uppercase tracking-wide text-petal-green">Free</span>
+              ) : (
+                <span className="text-[var(--color-ink)]">{formatPaiseExact(gatewayFee, cur)}</span>
+              )}
+            </span>
+          }
+          muted
+        />
+        {platformFee > 0 && <Row label="Platform fee (incl taxes)" value={formatPaiseExact(platformFee, cur)} muted />}
+      </>
+    );
+  }
+
+  return (
+    <Row
+      label={
+        platformFee > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            Other charges (incl taxes)
+            <InfoTooltip
+              label="What's included in other charges"
+              lines={[
+                `Payment processing: ${formatPaiseExact(gatewayFee, cur)}`,
+                `Platform fee: ${formatPaiseExact(platformFee, cur)}`,
+              ]}
+            />
+          </span>
+        ) : (
+          'Other charges (incl taxes)'
+        )
+      }
+      value={formatPaiseExact(breakdown.otherChargesPaise, cur)}
+      muted
+    />
+  );
+}
+
+function Row({ label, value, muted, accent, bold }: { label: React.ReactNode; value: React.ReactNode; muted?: boolean; accent?: boolean; bold?: boolean }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className={muted ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-ink)]'}>{label}</span>

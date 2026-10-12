@@ -52,6 +52,9 @@ const DESK = ['bookings.create', 'bookings.cancel'] as const;
 const ALL = [
   ...DESK,
   'questions.write',
+  // The Earnings page. Read-only holds it too — it is the accountant's role —
+  // which is why it can't just live in the Owner/Manager block below.
+  'financials.read',
   'events.write',
   'memberships.write',
   'venues.write',
@@ -79,7 +82,8 @@ const PARTNER_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
   owner: ALL,
   manager: ALL,
   staff: [...DESK, 'questions.write'],
-  readonly: [],
+  // View-only, financial reports included — see ROLE_INFO.readonly.
+  readonly: ['financials.read'],
 };
 /** Managing the Circls team itself stays with platform Owners. */
 const CIRCLS_TEAM_MANAGEMENT: readonly PortalCapability[] = [

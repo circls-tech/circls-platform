@@ -284,7 +284,9 @@ describe.skipIf(!runIntegration)('refund_service integration', () => {
 
     const [t] = await db
       .insert(tenants)
-      .values({ name: 'RefundSvc', slug: `refundsvc-${Date.now()}` })
+      // Pinned: the suite asserts customer-pays-all gross-up amounts, and
+      // the product default (migration 0064) is 0 = fee waived.
+      .values({ name: 'RefundSvc', slug: `refundsvc-${Date.now()}`, customerFeeShareBps: 10_000 })
       .returning();
     tenantId = t!.id;
 

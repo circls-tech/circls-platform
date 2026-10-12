@@ -1,7 +1,7 @@
 'use client';
 
 import { formatPrice } from '@/lib/money';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useAdminChangeRequestDetail,
   useAdminChangeRequests,
@@ -9,6 +9,7 @@ import {
   useAdminListingDetail,
   useApproveChangeRequest,
   useApproveListing,
+  useCreateListingPreview,
   useRejectChangeRequest,
   useRejectListing,
 } from '@/lib/api/queries';
@@ -215,6 +216,92 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
   return null;
 }
 
+// ── Customer preview ───────────────────────────────────────────────────────────
+
+/**
+ * The listing as a customer will see it: the consumer site's own page for it,
+ * framed in preview mode (apps/consumer/lib/preview.ts), which the API lets
+ * read before approval. An arena previews through its venue's page — that is
+ * where customers find it. A fresh link is minted each time this mounts; it
+ * expires on its own.
+ */
+function CustomerPreview({ row }: { row: AdminListingRow }) {
+  const mint = useCreateListingPreview();
+  const { mutate } = mint;
+  const [device, setDevice] = useState<'phone' | 'desktop'>('phone');
+
+  useEffect(() => {
+    mutate({ type: row.type, id: row.id });
+  }, [mutate, row.type, row.id]);
+
+  const preview = mint.data;
+
+  return (
+    <div className="flex h-full flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-slate-500">
+          {row.type === 'arena'
+            ? 'Shown on its venue\u2019s customer page, as it will appear once approved.'
+            : 'The customer page, as it will appear once approved.'}{' '}
+          Booking is turned off in the preview.
+        </p>
+        <div className="flex items-center gap-2">
+          <div
+            role="group"
+            aria-label="Preview size"
+            className="inline-flex rounded-md border border-slate-200 bg-white p-0.5"
+          >
+            {(['phone', 'desktop'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDevice(d)}
+                aria-pressed={device === d}
+                className={[
+                  'rounded px-2 py-0.5 text-xs font-medium capitalize transition-colors',
+                  device === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+                ].join(' ')}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          {preview && (
+            <a
+              href={preview.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Open in new tab ↗
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="flex min-h-[420px] flex-1 justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+        {mint.isPending && <p className="self-center text-sm text-slate-400">Preparing the preview…</p>}
+        {mint.isError && (
+          <p className="max-w-md self-center px-4 text-center text-sm text-red-600">
+            Couldn&apos;t open the preview: {(mint.error as Error).message}
+          </p>
+        )}
+        {preview && (
+          <iframe
+            key={preview.url}
+            src={preview.url}
+            title="Customer preview"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            className={[
+              'h-full border-0 bg-white',
+              device === 'phone' ? 'w-[390px] max-w-full border-x border-slate-200' : 'w-full',
+            ].join(' ')}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -225,8 +312,12 @@ interface DetailPanelProps {
   busy: boolean;
 }
 
+/** What the review panel shows: the submitted fields, or the customer page. */
+type DetailView = 'details' | 'preview';
+
 function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelProps) {
   const { data, isLoading, isError, error } = useAdminListingDetail(row.type, row.id);
+  const [view, setView] = useState<DetailView>('details');
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -236,8 +327,13 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
         onClick={onClose}
         aria-hidden="true"
       />
-      {/* Panel */}
-      <div className="relative flex w-full max-w-lg flex-col bg-white shadow-xl">
+      {/* Panel — wider for the preview, which frames a whole customer page. */}
+      <div
+        className={[
+          'relative flex w-full flex-col bg-white shadow-xl transition-[max-width]',
+          view === 'preview' ? 'max-w-3xl' : 'max-w-lg',
+        ].join(' ')}
+      >
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
           <div>
@@ -246,29 +342,58 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
             </p>
             <h2 className="mt-0.5 text-lg font-semibold text-slate-900">{row.name}</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-4 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-            </svg>
-          </button>
+          <div className="ml-4 flex items-center gap-3">
+            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+              {(
+                [
+                  { id: 'details', label: 'Details' },
+                  { id: 'preview', label: 'Customer preview' },
+                ] as { id: DetailView; label: string }[]
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setView(t.id)}
+                  aria-pressed={view === t.id}
+                  className={[
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    view === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+                  ].join(' ')}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isLoading && (
-            <p className="text-sm text-slate-400">Loading details…</p>
+          {view === 'preview' ? (
+            <CustomerPreview row={row} />
+          ) : (
+            <>
+              {isLoading && (
+                <p className="text-sm text-slate-400">Loading details…</p>
+              )}
+              {isError && (
+                <p className="text-sm text-red-600">
+                  Failed to load: {error instanceof Error ? error.message : 'unknown error'}
+                </p>
+              )}
+              {data && <DetailContent detail={data} />}
+            </>
           )}
-          {isError && (
-            <p className="text-sm text-red-600">
-              Failed to load: {error instanceof Error ? error.message : 'unknown error'}
-            </p>
-          )}
-          {data && <DetailContent detail={data} />}
         </div>
 
         {/* Actions */}

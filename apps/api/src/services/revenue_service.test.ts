@@ -62,15 +62,25 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
     base?: number | null;
     commission?: number | null;
     currency?: string;
+    /**
+     * Whether this charge was heading for settlement — i.e. it has a
+     * settlement hold. True for every charge captured the normal way, which is
+     * why it is the default; `net` only counts money that will actually reach
+     * the partner. Pass false for the late-success-after-cancellation shape,
+     * which is never held and is auto-refunded.
+     */
+    held?: boolean;
     at: string;
   }): Promise<void> {
+    const held = opts.kind === 'charge' && (opts.held ?? true);
     await db.execute(sql`
       insert into payments (booking_id, tenant_id, provider, amount_paise, settle_base_paise,
-                            partner_commission_paise, currency, status, kind, created_at)
+                            partner_commission_paise, currency, status, kind,
+                            settlement_hold_until, created_at)
       values (${opts.booking}::uuid, ${opts.tenant ?? tenantId}::uuid, 'stub',
               ${opts.amount}, ${opts.base ?? null}, ${opts.commission ?? null},
               ${opts.currency ?? 'INR'}, ${opts.status ?? (opts.kind === 'charge' ? 'captured' : 'captured')},
-              ${opts.kind}, ${opts.at}::timestamptz)
+              ${opts.kind}, ${held ? opts.at : null}::timestamptz, ${opts.at}::timestamptz)
     `);
   }
 
@@ -238,6 +248,54 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
       // The charge on the 6th and its refund on the 7th, separated.
       const chargeOnly = await getPlatformRevenue(AT(6), AT(7));
       expect(chargeOnly.find((x) => x.itemType === 'slot')!.grossPaise).toBe(50000);
+    });
+
+    /**
+     * The fix: a payment that succeeds AFTER its booking was cancelled is
+     * auto-refunded and never held for settlement, so it never reaches a
+     * payout. Gross must still show it — the customer really was charged, and
+     * really was refunded — but net must not deduct the commission
+     * snapshotted on it, because Circls never took that cut.
+     *
+     * Before this, net was short by exactly that commission, and an admin
+     * reading it would have thought the partner over-paid when they were not.
+     */
+    it('leaves net alone for a charge that never reaches settlement', async () => {
+      const [t] = (await db.execute<Record<string, unknown>>(sql`
+        insert into tenants (name, slug, commission_bps)
+        values (${`LateRev ${Date.now()}`}, ${`laterev-${Date.now()}`}, 1000)
+        returning id
+      `)) as unknown as Record<string, unknown>[];
+      const lateTenant = t!['id'] as string;
+      const [v] = (await db.execute<Record<string, unknown>>(sql`
+        insert into venues (tenant_id, name) values (${lateTenant}::uuid, 'Late Rev') returning id
+      `)) as unknown as Record<string, unknown>[];
+      const lateVenue = v!['id'] as string;
+
+      const late = await insertBooking({
+        tenant: lateTenant,
+        itemType: 'slot',
+        venue: lateVenue,
+        at: AT(30),
+      });
+      await insertPayment({
+        booking: late, tenant: lateTenant, kind: 'charge', status: 'refunded',
+        amount: 50000, base: 45000, commission: 4500, held: false, at: AT(30),
+      });
+      await insertPayment({
+        booking: late, tenant: lateTenant, kind: 'refund',
+        amount: -50000, base: -45000, at: AT(30),
+      });
+
+      const { items } = await getTenantItemRevenue(lateTenant, 'venue', FROM, TO);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        grossPaise: 0,       // taken and given back — the customer saw both
+        refundsPaise: 50000, // and it is still reported as a refund
+        netPaise: 0,         // but nothing is owed, and nothing is withheld
+        commissionPaise: 0,  // Circls took no cut of a sale that never was
+        bookings: 0,         // and it was never a sale to begin with
+      });
     });
 
     it('dates a refund when it was made, not when the sale was', async () => {

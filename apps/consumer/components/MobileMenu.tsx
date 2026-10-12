@@ -18,6 +18,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
 const ACCOUNT_LINKS: { href: string; label: string }[] = [
   { href: '/me/bookings', label: 'My bookings' },
   { href: '/me/memberships', label: 'My memberships' },
+  { href: '/me/wishlist', label: 'Wishlist' },
   { href: '/me/questions', label: 'My questions' },
   { href: '/me/profile', label: 'Settings' },
 ];

@@ -24,6 +24,7 @@ import type {
   SupportIssue,
   TeamMember,
   Tenant,
+  TenantEarnings,
   TenantInvitation,
   TenantProfile,
   TenantRole,
@@ -550,6 +551,11 @@ export interface ReleaseInput {
   businessDayStartMin?: number;
   /** Last-used builder template to persist on the arena for prefill. */
   template?: ScheduleTemplate;
+  /**
+   * true = also save this plan as the arena's rolling weekly plan and switch
+   * auto-rollover on; false = switch it off; omitted = leave as is.
+   */
+  autoRollover?: boolean;
 }
 
 /** One from→to price-change group in a release summary. */
@@ -592,6 +598,32 @@ export function useReleaseSlots(arenaId: string) {
       // the builder prefills the latest on the next visit.
       void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
     },
+  });
+}
+
+export interface SetRolloverInput {
+  enabled: boolean;
+  /** Required the first time rollover is switched on; replaces the saved plan otherwise. */
+  plan?: {
+    quantizationMin: number;
+    businessDayStartMin: number;
+    cells: ReleaseCell[];
+  };
+}
+
+/**
+ * Switch an arena's auto-rollover on/off, or replace its rolling plan without
+ * releasing anything now. Releasing with `autoRollover: true` does both at once.
+ */
+export function useSetArenaRollover(arenaId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetRolloverInput) =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}/rollover`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['arena', arenaId] }),
   });
 }
 
@@ -770,6 +802,30 @@ export function useAnalytics(tenantId: string) {
     queryKey: ['analytics', tenantId],
     queryFn: () => apiFetch<Analytics>(`/v1/tenants/${tenantId}/analytics`),
     enabled: Boolean(tenantId),
+  });
+}
+
+// ── Earnings hooks ────────────────────────────────────────────────────────────
+
+/**
+ * Net payable for [from, to). `enabled` lets the page hold the request back
+ * until it knows the organisation and that the member may see financials —
+ * a Staff member would only get a 403.
+ */
+export function useEarnings(
+  tenantId: string | null,
+  range: { from: string; to: string } | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['earnings', tenantId, range?.from, range?.to],
+    queryFn: () =>
+      apiFetch<TenantEarnings>(
+        `/v1/tenants/${tenantId}/earnings?from=${encodeURIComponent(range!.from)}&to=${encodeURIComponent(range!.to)}`,
+      ),
+    // `range` is null while the period is incomplete — a cleared date field —
+    // so the query is disabled and queryFn never runs.
+    enabled: Boolean(tenantId) && range !== null && enabled,
   });
 }
 

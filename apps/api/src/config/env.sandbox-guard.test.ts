@@ -7,6 +7,7 @@ const prodBase = {
   RAZORPAY_KEY_ID: 'k',
   RAZORPAY_KEY_SECRET: 's',
   RAZORPAY_WEBHOOK_SECRET: 'w',
+  LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
 };
 
 describe('production rejects sandbox-only env vars', () => {

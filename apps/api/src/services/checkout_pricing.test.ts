@@ -70,6 +70,7 @@ describe('computeCheckout', () => {
       discountedBasePaise: 50000,
       consumerCommissionPaise: 0,
       gatewayFeeCustomerPaise: 1209,
+      gatewayFeeWaivedPaise: 0,
       otherChargesPaise: 1209,
       totalPaise: 51209,
       gatewayFeeEstimatePaise: 1209,
@@ -83,6 +84,7 @@ describe('computeCheckout', () => {
       discountedBasePaise: 45000,
       consumerCommissionPaise: 0,
       gatewayFeeCustomerPaise: 1088,
+      gatewayFeeWaivedPaise: 0,
       otherChargesPaise: 1088,
       totalPaise: 46088,
       gatewayFeeEstimatePaise: 1088,
@@ -96,6 +98,7 @@ describe('computeCheckout', () => {
       discountedBasePaise: 0,
       consumerCommissionPaise: 0,
       gatewayFeeCustomerPaise: 0,
+      gatewayFeeWaivedPaise: 0,
       otherChargesPaise: 0,
       totalPaise: 0,
       gatewayFeeEstimatePaise: 0,
@@ -109,6 +112,7 @@ describe('computeCheckout', () => {
       discountedBasePaise: 50000,
       consumerCommissionPaise: 0,
       gatewayFeeCustomerPaise: 1525,
+      gatewayFeeWaivedPaise: 0,
       otherChargesPaise: 1525,
       totalPaise: 51525,
       gatewayFeeEstimatePaise: 1525,
@@ -117,6 +121,40 @@ describe('computeCheckout', () => {
   });
   it('a fully-discounted Stripe checkout is free (no stranded fixed fee)', () => {
     expect(computeCheckout(50000, { discountType: 'fixed', discountValue: 60000, maxDiscountPaise: null }, 'stripe').totalPaise).toBe(0);
+  });
+});
+
+describe('gatewayFeeWaivedPaise', () => {
+  it('is the whole legacy gross-up when the customer pays none of the fee', () => {
+    const b = computeCheckout(50000, null, 'razorpay', billing({ customerShareBps: 0 }));
+    expect(b.totalPaise).toBe(50000);
+    expect(b.gatewayFeeCustomerPaise).toBe(0);
+    expect(b.otherChargesPaise).toBe(0);
+    // Checkout shows "₹12.09" struck through, then FREE.
+    expect(b.gatewayFeeWaivedPaise).toBe(1209);
+  });
+  it('is the unpaid remainder when the customer pays part of the fee', () => {
+    const b = computeCheckout(50000, null, 'razorpay', billing({ customerShareBps: 5000 }));
+    expect(b.gatewayFeeCustomerPaise + b.gatewayFeeWaivedPaise).toBe(1209);
+    expect(b.gatewayFeeWaivedPaise).toBeGreaterThan(0);
+  });
+  it('is measured after the discount, like the fee itself', () => {
+    const b = computeCheckout(
+      50000,
+      { discountType: 'percent', discountValue: 1000, maxDiscountPaise: null },
+      'razorpay',
+      billing({ customerShareBps: 0 }),
+    );
+    expect(b.totalPaise).toBe(45000);
+    expect(b.gatewayFeeWaivedPaise).toBe(1088);
+  });
+  it('includes the Stripe fixed component', () => {
+    const b = computeCheckout(50000, null, 'stripe', billing({ customerShareBps: 0 }));
+    expect(b.gatewayFeeWaivedPaise).toBe(1525);
+  });
+  it('is zero for a free checkout', () => {
+    const b = computeCheckout(0, null, 'stripe', billing({ customerShareBps: 0 }));
+    expect(b.gatewayFeeWaivedPaise).toBe(0);
   });
 });
 

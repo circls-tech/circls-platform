@@ -24,7 +24,7 @@ import { refundSentence } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { Button, Card, StatusPill } from '@/lib/ui';
+import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -214,6 +214,13 @@ export default function ArenaReceptionPage() {
                 status={arena.status}
                 {...(arena.status === 'suspended' ? { label: 'Closed' } : {})}
               />
+              {arena.autoRolloverEnabled && (
+                <Badge
+                  tone="success"
+                  label="Auto-rollover on"
+                  title="The next 7 days are kept released from the saved weekly plan."
+                />
+              )}
             </div>
           )}
         </div>

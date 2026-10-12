@@ -5,6 +5,7 @@ import { arenas, type ScheduleTemplate, type Slot, slotReleases, slots } from '.
 import { BadRequest, Conflict } from '../lib/errors.js';
 import { MAX_RELEASE_CELLS, MAX_RELEASE_SPAN_DAYS } from '../lib/booking_limits.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
+import { applyRolloverChange } from '../lib/rollover_plan.js';
 import { resolvePricePaise } from './pricing_service.js';
 import { getArenaById } from './arena_service.js';
 import { getVenueById } from './venue_service.js';
@@ -29,6 +30,12 @@ export interface ReleaseInput {
   businessDayStartMin?: number;
   /** Last-used builder template, persisted on the arena for prefill next time. */
   template?: ScheduleTemplate;
+  /**
+   * `true` saves this release's weekly plan (cells + quantization + day start)
+   * as the arena's rolling plan and switches auto-rollover on; `false`
+   * switches it off (the saved plan is kept). Omitted = leave as is.
+   */
+  autoRollover?: boolean;
 }
 
 export interface Occurrence {
@@ -133,7 +140,7 @@ function weekdayFormatter(tz: string): Intl.DateTimeFormat {
  * in the target tz to discover the actual local wall-clock reading at that UTC
  * moment, derive the tz offset from the difference, then correct.
  */
-function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string): string {
+export function localMinutesToUtcIso(dateStr: string, localMinutes: number, tz: string): string {
   const dateUtcMidnight = Date.UTC(
     parseInt(dateStr.slice(0, 4), 10),
     parseInt(dateStr.slice(5, 7), 10) - 1,
@@ -300,6 +307,23 @@ export async function releaseSlots(
     if (input.template !== undefined) arenaPatch.scheduleTemplate = input.template;
     if (Object.keys(arenaPatch).length > 0) {
       await tx.update(arenas).set(arenaPatch).where(eq(arenas.id, arenaId));
+    }
+    // Rollover changes go through the one shared helper so this path and
+    // PUT /rollover validate, store and audit identically. The saved plan is
+    // exactly what is being released now — grid edits included.
+    if (input.autoRollover !== undefined) {
+      await applyRolloverChange(tx, ctx, arena, {
+        enabled: input.autoRollover,
+        ...(input.autoRollover
+          ? {
+              plan: {
+                quantizationMin: input.quantizationMin,
+                businessDayStartMin: dayStartMin,
+                cells: input.cells,
+              },
+            }
+          : {}),
+      });
     }
 
     const [rel] = await tx

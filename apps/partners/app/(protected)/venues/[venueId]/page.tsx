@@ -7,11 +7,12 @@ import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { useCan } from '@/lib/use_can';
-import { Badge, StatusPill, TagsInput } from '@/lib/ui';
+import { Badge, Button, StatusPill, TagsInput } from '@/lib/ui';
 
 export default function VenuePage() {
   const { venueId } = useParams<{ venueId: string }>();
@@ -30,6 +31,7 @@ export default function VenuePage() {
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const inferredSport = !sport ? inferSport(tags) : null;
 
@@ -67,6 +69,19 @@ export default function VenuePage() {
           <StatusPill
             status={venue.status}
             {...(venue.status === 'suspended' ? { label: 'Closed' } : {})}
+          />
+          {/* The venue's page on the customer site, whatever its status — the
+              only way to see a pending venue (and its pending arenas) as
+              customers will. */}
+          <Button variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>
+            Preview
+          </Button>
+          <ListingPreviewModal
+            open={previewOpen}
+            onClose={() => setPreviewOpen(false)}
+            tenantId={venueTenantId}
+            type="venue"
+            id={venue.id}
           />
           {canEditVenue && (
             <span className="ml-auto">

@@ -43,6 +43,9 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       payload: { name: 'ChkRoutes', slug: `chkroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
+    // This suite asserts customer-pays-all gross-up totals; pin the share,
+    // since the product default (migration 0064) is 0 = fee waived.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
 
     // Create a published event with a single General tier at 50000 paise
     const ev = await app.inject({
@@ -101,6 +104,7 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
     // Fee-split fields feed the checkout tooltip; with default knobs the whole
     // "other charges" line is the customer's gateway-fee share.
     expect(body.gatewayFeePaise).toBe(1209);
+    expect(body.gatewayFeeWaivedPaise).toBe(0);
     expect(body.platformFeePaise).toBe(0);
     expect(body.otherChargesPaise).toBe(body.gatewayFeePaise + body.platformFeePaise);
     // Org-billing internals must never reach consumers.
@@ -128,6 +132,29 @@ describe.skipIf(!runIntegration)('checkout quote + public coupons endpoints', ()
       expect(body.otherChargesPaise).toBe(body.gatewayFeePaise + body.platformFeePaise);
     } finally {
       await db.execute(sql`update tenants set consumer_commission_bps = 0 where id = ${tenantId}`);
+    }
+  });
+
+  it('quote reports the waived gateway fee when the tenant bears it for the customer', async () => {
+    // Customer pays 0% of the fee: total is the bare base, and the fee the
+    // customer would have paid (1209) is surfaced so checkout can show it
+    // struck through as FREE.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 0 where id = ${tenantId}`);
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/consumer/checkout/quote',
+        headers: bearer('consumer'),
+        payload: { itemType: 'event', eventId, lines: [{ tierId, quantity: 1 }] },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.totalPaise).toBe(50000);
+      expect(body.gatewayFeePaise).toBe(0);
+      expect(body.otherChargesPaise).toBe(0);
+      expect(body.gatewayFeeWaivedPaise).toBe(1209);
+    } finally {
+      await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
     }
   });
 
@@ -197,6 +224,9 @@ describe.skipIf(!runIntegration)('checkout quote with multi-tier event lines', (
       payload: { name: 'TierQuoteCo', slug: `tierquote-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
+    // This suite asserts customer-pays-all gross-up totals; pin the share,
+    // since the product default (migration 0064) is 0 = fee waived.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
 
     // Create event with two tiers: VIP (50000) + GA (20000)
     const ev = await app.inject({

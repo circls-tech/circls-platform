@@ -148,3 +148,44 @@ export const payouts = pgTable(
 
 export type Payout = typeof payouts.$inferSelect;
 export type NewPayout = typeof payouts.$inferInsert;
+
+/**
+ * What one payout actually paid for, line by line.
+ *
+ * Written by `reconcileWeeklyPayouts` in the same transaction as its payout,
+ * so the split is RECORDED at the moment it is computed rather than
+ * re-derived later. The lines sum to the payout's `amount_paise` exactly —
+ * see payout_allocation.ts for the policy that guarantees it.
+ *
+ * Each line carries its own `status`, so an admin can settle one event without
+ * settling the whole week; the payout's own status is the rollup of these.
+ * `item_id` is null for an unattributable sale and for the synthetic
+ * `advance` / `unattributed` lines, which is why the unique index is
+ * NULLS NOT DISTINCT.
+ */
+export const payoutItems = pgTable('payout_items', {
+  id: uuidPk(),
+  payoutId: uuid('payout_id').notNull(),
+  tenantId: uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id),
+  /** 'slot' | 'event' | 'membership' | 'advance' | 'unattributed'. */
+  itemType: text('item_type').notNull(),
+  itemId: uuid('item_id'),
+  currency: text('currency').notNull().default('INR'),
+  grossPaise: bigintPaise('gross_paise').notNull().default(0),
+  refundsPaise: bigintPaise('refunds_paise').notNull().default(0),
+  commissionPaise: bigintPaise('commission_paise').notNull().default(0),
+  /** gross − refunds − this line's share of the clamped commission. */
+  amountPaise: bigintPaise('amount_paise').notNull(),
+  /** 'pending' | 'paid'. */
+  status: text('status').notNull().default('pending'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paidReference: text('paid_reference'),
+  paidByUserId: uuid('paid_by_user_id'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export type PayoutItem = typeof payoutItems.$inferSelect;
+export type NewPayoutItem = typeof payoutItems.$inferInsert;

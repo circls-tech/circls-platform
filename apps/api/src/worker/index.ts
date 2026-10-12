@@ -9,6 +9,7 @@ import { reconcileCashfreePayments } from '../services/payment_recovery_service.
 import { reconcileWeeklyPayouts } from '../services/payout_service.js';
 import { deliverPendingOutboundWebhooks } from '../services/webhook_subscriptions_service.js';
 import { autoArchiveEndedEvents, expireLapsedMemberships } from '../services/lifecycle_sweeps.js';
+import { runScheduleRollover } from '../services/schedule_rollover_service.js';
 
 /**
  * In-process pg-boss worker. One queue per scheduled job; each handler delegates
@@ -95,6 +96,18 @@ const JOBS: ScheduledJob[] = [
     run: async () => {
       const archived = await autoArchiveEndedEvents();
       if (archived > 0) logger.info({ archived }, 'event_auto_archive_complete');
+    },
+  },
+  {
+    // Keeps every auto-rollover arena's next 7 business days released. Hourly
+    // so each venue's own business-day boundary is picked up within the hour,
+    // whatever its timezone; idempotent, since only days with no slots at all
+    // are generated.
+    queue: 'schedule-rollover',
+    cron: '7 * * * *',
+    run: async () => {
+      const r = await runScheduleRollover();
+      if (r.daysReleased > 0 || r.failed > 0) logger.info(r, 'schedule_rollover_complete');
     },
   },
   {

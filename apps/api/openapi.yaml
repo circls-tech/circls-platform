@@ -317,6 +317,17 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/arenas/{arenaId}/rollover:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/arenas/{arenaId}/schedule:
     put:
       parameters:
@@ -1458,6 +1469,47 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/me/wishlist:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/me/wishlist/ids:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/me/wishlist/{itemType}/{itemId}:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: itemType
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: itemId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: itemType
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: itemId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/consumer/payments/{orderId}/status:
     get:
       parameters:
@@ -1608,6 +1660,7 @@ paths:
                   - otherChargesPaise
                   - totalPaise
                   - gatewayFeePaise
+                  - gatewayFeeWaivedPaise
                   - platformFeePaise
                   - currency
                   - coupon
@@ -1630,6 +1683,13 @@ paths:
                   gatewayFeePaise:
                     type: integer
                     description: The customer's share of the payment-gateway charge.
+                  gatewayFeeWaivedPaise:
+                    type: integer
+                    description: >-
+                      The part of the payment-gateway charge the customer is NOT
+                      paying (the organisation or Circls bears it). Checkout shows
+                      gatewayFeePaise + gatewayFeeWaivedPaise struck through and, when
+                      gatewayFeePaise is 0, "FREE" — like a waived delivery fee.
                   platformFeePaise:
                     type: integer
                     description: Circls platform fee (consumer-side commission), if configured.

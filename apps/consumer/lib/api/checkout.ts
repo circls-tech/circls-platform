@@ -18,6 +18,10 @@ export interface QuoteResponse {
    *  feeds the breakdown tooltip. Optional: older API responses lack them. */
   gatewayFeePaise?: number;
   platformFeePaise?: number;
+  /** The part of the gateway charge the customer is NOT paying (the venue or
+   *  Circls bears it). Shown struck through — and as FREE when the customer
+   *  pays none of it. Optional: older API responses lack it. */
+  gatewayFeeWaivedPaise?: number;
   /** ISO 4217 — 'INR', or 'USD' for US venues. Amounts are its minor units. */
   currency: string;
   coupon: { id: string; code: string; description: string | null } | null;

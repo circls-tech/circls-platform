@@ -8,8 +8,10 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
   executePayout,
+  executePayoutItem,
   getPayoutBreakdown,
   listPayouts,
+  listTenantPayoutItems,
   reconcileWeeklyPayouts,
 } from '../services/payout_service.js';
 
@@ -21,7 +23,7 @@ import {
  */
 
 const listQuerySchema = z.object({
-  status: z.enum(['pending', 'paid']).optional(),
+  status: z.enum(['pending', 'partially_paid', 'paid']).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -32,6 +34,10 @@ const executeBodySchema = z.object({
 });
 
 const payoutIdParamSchema = z.object({ id: z.string().uuid() });
+
+const itemListQuerySchema = z.object({
+  status: z.enum(['pending', 'paid']).optional(),
+});
 
 export const adminPayoutRoutes: FastifyPluginAsync = async (app) => {
   // ── GET /v1/admin/payouts — paginated, newest first ────────────────────────
@@ -104,6 +110,48 @@ export const adminPayoutRoutes: FastifyPluginAsync = async (app) => {
       actorUserId: user.id,
       reference: body.data.reference,
       note: body.data.note,
+    });
+  });
+
+  // ── GET /v1/admin/tenants/:id/payout-items — one org's payout lines ────────
+  // Feeds the tenant page's Earnings tab, which offers Mark paid per item.
+  app.get('/v1/admin/tenants/:id/payout-items', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.payouts.read');
+
+    const parsed = itemListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid query parameters', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    return { rows: await listTenantPayoutItems(id, parsed.data.status) };
+  });
+
+  // ── POST /v1/admin/payout-items/:id/execute — settle ONE line ──────────────
+  // Same capability as paying a whole payout: this moves real money, it just
+  // moves one item's worth of it.
+  app.post('/v1/admin/payout-items/:id/execute', { preHandler: requireAuth }, async (req) => {
+    const { id } = payoutIdParamSchema.parse(req.params);
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.payouts.execute');
+
+    const parsed = executeBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new BadRequest('A payment reference is required', 'bad_request', {
+        issues: parsed.error.issues,
+      });
+    }
+    return executePayoutItem({
+      payoutItemId: id,
+      reference: parsed.data.reference,
+      actorUserId: user.id,
+      note: parsed.data.note,
     });
   });
 };

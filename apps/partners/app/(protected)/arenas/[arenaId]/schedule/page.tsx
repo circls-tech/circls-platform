@@ -11,6 +11,7 @@ import {
   useArenaSlots,
   useMyRole,
   useReleaseSlots,
+  useSetArenaRollover,
   useVenues,
   type ReleaseCell,
   type ReleaseResult,
@@ -63,6 +64,18 @@ function parseCellId(id: string): { dayOfWeek: number; startTimeMin: number; dur
   const m = /^prev-(\d+)-(\d+)-(\d+)$/.exec(id);
   if (!m) return null;
   return { dayOfWeek: Number(m[1]), startTimeMin: Number(m[2]), durationMin: Number(m[3]) };
+}
+
+/** "4 Jul 2026, 22:15" in the viewer's locale — for the rollover card. */
+function fmtWhen(iso: string | null | undefined): string {
+  if (!iso) return 'never';
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /** Map the band-editor rows to the pure Band model. */
@@ -196,6 +209,28 @@ export default function ScheduleBuilderPage() {
   const releaseSlots = useReleaseSlots(arenaId);
   const [releaseResult, setReleaseResult] = useState<ReleaseResult | null>(null);
 
+  // ── Auto-rollover ──
+  // Ticked = this release also saves the plan as the arena's rolling plan and
+  // switches rollover on. Unticked sends nothing, so a one-off release never
+  // silently switches rollover off or replaces the saved plan — switching off
+  // is its own button in the status card.
+  const [rolloverChecked, setRolloverChecked] = useState(false);
+  // True while the grid shows the saved rolling plan (loaded via "Edit the
+  // rolling plan") rather than cells generated from the bands above.
+  const [cellsFromPlan, setCellsFromPlan] = useState(false);
+  const setRollover = useSetArenaRollover(arenaId);
+  // Outcome of the last rollover action, shown only in the card whose button
+  // was pressed (the status card at the top, or the Release card).
+  type RolloverWhere = 'status' | 'release';
+  const [rolloverMsg, setRolloverMsgState] = useState<{ where: RolloverWhere; text: string } | null>(null);
+  const [rolloverActionWhere, setRolloverActionWhere] = useState<RolloverWhere>('status');
+  const setRolloverMsg = (text: string | null, where: RolloverWhere = 'status') =>
+    setRolloverMsgState(text ? { where, text } : null);
+  const rolloverError = (where: RolloverWhere) =>
+    setRollover.error && rolloverActionWhere === where ? (setRollover.error as Error).message : null;
+  const rolloverPlan = arena?.rolloverPlan ?? null;
+  const rolloverOn = arena?.autoRolloverEnabled ?? false;
+
   // ── Prefill from the arena's saved template (once it first loads) ──
   const prefilledRef = useRef(false);
   useEffect(() => {
@@ -219,8 +254,10 @@ export default function ScheduleBuilderPage() {
   // ── Band-editor helpers ──
   function clearDerived() {
     setCells(null);
+    setCellsFromPlan(false);
     setReleaseResult(null);
     setValidationError(null);
+    setRolloverMsg(null);
   }
 
   function updateBand(index: number, patch: Partial<BandRow>) {
@@ -269,6 +306,7 @@ export default function ScheduleBuilderPage() {
 
     setWeekStart(sundayOnOrBefore(startDate));
     setCells(expandBandsToCells({ bands: bandModel, dayStartMin, quantizationMin }));
+    setCellsFromPlan(false);
   }
 
   // ── Existing schedule for the selected range ──
@@ -401,11 +439,61 @@ export default function ScheduleBuilderPage() {
         cells,
         businessDayStartMin: dayStartMin,
         template,
+        ...(rolloverChecked ? { autoRollover: true } : {}),
       });
       setReleaseResult(result);
+      if (rolloverChecked) setRolloverMsg('Auto-rollover is on and this plan is saved as the rolling plan.', 'release');
     } catch {
       // error surfaced via releaseSlots.error
     }
+  }
+
+  // ── Auto-rollover actions ──
+  /** Save the current cell plan as the rolling plan without releasing any dates. */
+  async function handleSavePlanOnly() {
+    if (!cells || cells.length === 0) return;
+    setRolloverMsg(null);
+    setRolloverActionWhere('release');
+    try {
+      await setRollover.mutateAsync({
+        enabled: true,
+        plan: { quantizationMin, businessDayStartMin: dayStartMin, cells },
+      });
+      setRolloverMsg(
+        'Rolling plan saved. Days generated from now on use it; days that already have slots are unchanged.',
+        'release',
+      );
+    } catch {
+      // error surfaced via setRollover.error
+    }
+  }
+
+  async function handleRolloverToggle(enabled: boolean) {
+    setRolloverMsg(null);
+    setRolloverActionWhere('status');
+    try {
+      await setRollover.mutateAsync({ enabled });
+      setRolloverMsg(enabled ? 'Auto-rollover is back on.' : 'Auto-rollover is off. The saved plan is kept.');
+    } catch {
+      // error surfaced via setRollover.error
+    }
+  }
+
+  /**
+   * Load the saved rolling plan into the grid so it can be edited and re-saved.
+   * Deliberately does NOT tick the release opt-in: editing the plan should end
+   * in "Save the rolling plan", not in a release of today's dates.
+   */
+  function handleEditRollingPlan() {
+    if (!rolloverPlan) return;
+    setValidationError(null);
+    setReleaseResult(null);
+    setRolloverMsg(null);
+    setQuantizationMin(rolloverPlan.quantizationMin);
+    setDayStartTime(minToTime(rolloverPlan.businessDayStartMin));
+    setWeekStart(sundayOnOrBefore(startDate));
+    setCells(rolloverPlan.cells.map((c) => ({ ...c })));
+    setCellsFromPlan(true);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -428,6 +516,65 @@ export default function ScheduleBuilderPage() {
       </div>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Schedule Builder</h1>
+
+      {/* Auto-rollover status */}
+      {!cannotSchedule && arena && (
+        <Card
+          title="Auto-rollover"
+          subtitle="Keeps the next 7 days released from a saved weekly plan, so a day is never unbookable because the schedule ran out."
+        >
+          <div className="flex flex-col gap-3">
+            {rolloverOn && rolloverPlan ? (
+              <p className="text-sm text-slate-700">
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">On</span>{' '}
+                Every hour, any of the next 7 business days with no slots is released from the plan saved{' '}
+                <span className="font-medium">{fmtWhen(rolloverPlan.savedAt)}</span> ({rolloverPlan.cells.length} slots a
+                week, {rolloverPlan.quantizationMin}-min). Days that already have slots are never touched. Last checked{' '}
+                {fmtWhen(arena.rolloverLastRunAt)}.
+              </p>
+            ) : rolloverPlan ? (
+              <p className="text-sm text-slate-700">
+                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">Off</span>{' '}
+                A plan saved {fmtWhen(rolloverPlan.savedAt)} is kept, so you can switch back on without rebuilding.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-700">
+                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">Off</span>{' '}
+                Build your week below, then tick <span className="font-medium">Keep this schedule rolling automatically</span>{' '}
+                when you release.
+              </p>
+            )}
+
+            {rolloverError('status') && (
+              <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{rolloverError('status')}</p>
+            )}
+            {rolloverMsg?.where === 'status' && <p className="text-sm text-green-700">{rolloverMsg.text}</p>}
+
+            {rolloverPlan && (
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={handleEditRollingPlan}>
+                  Edit the rolling plan
+                </Button>
+                {rolloverOn ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={setRollover.isPending}
+                    onClick={() => void handleRolloverToggle(false)}
+                    className="text-red-500"
+                  >
+                    Switch off
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="ghost" loading={setRollover.isPending} onClick={() => void handleRolloverToggle(true)}>
+                    Switch back on
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Config form */}
       {cannotSchedule ? (
@@ -495,10 +642,16 @@ export default function ScheduleBuilderPage() {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button onClick={handleBuildPreview} variant="secondary">
-              Generate preview
+              {cellsFromPlan ? 'Rebuild grid from bands' : 'Generate preview'}
             </Button>
+            {cellsFromPlan && (
+              <span className="text-xs text-amber-700">
+                The grid below is the saved rolling plan. Rebuilding replaces it with these bands and drops the
+                plan's per-cell prices and blocks.
+              </span>
+            )}
           </div>
 
           {validationError && <p className="mt-3 text-sm text-red-600">{validationError}</p>}
@@ -512,6 +665,13 @@ export default function ScheduleBuilderPage() {
             title="Preview grid"
             subtitle="Drag to select cells, or click a day / time header to toggle a whole column or row. Then set price / block in the inspector panel. Slots that are already booked show dimmed and can't be edited — a release never changes them."
           >
+            {cellsFromPlan && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <span className="font-semibold">Editing the saved rolling plan.</span> Change cells here, then use{' '}
+                <span className="font-medium">Save the rolling plan</span> below. The pricing bands above are not part of
+                this plan — <span className="font-medium">Rebuild grid from bands</span> would replace it.
+              </div>
+            )}
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
               <span className="font-medium">Times shown in</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
@@ -560,14 +720,62 @@ export default function ScheduleBuilderPage() {
                 changed.</span> Your bands are saved for next time.
               </p>
 
+              {/* Auto-rollover opt-in */}
+              <div className="rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-brand-600"
+                    checked={rolloverChecked}
+                    onChange={(e) => { setRolloverChecked(e.target.checked); setRolloverMsg(null); }}
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium text-slate-800">Keep this schedule rolling automatically</span>
+                    <span className="block text-xs text-slate-500">
+                      {rolloverOn && rolloverPlan
+                        ? 'Replaces the saved rolling plan with the grid above.'
+                        : 'Saves the grid above as the rolling plan and switches auto-rollover on.'}
+                    </span>
+                  </span>
+                </label>
+
+                {rolloverChecked && (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <p className="font-semibold">Heads up</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      <li>
+                        Every hour, any of the next 7 business days with no slots yet is released from this exact grid —
+                        at <span className="font-medium">these prices</span>, with these blocks — until you change the
+                        plan or switch rollover off.
+                      </li>
+                      <li>
+                        Days that already have slots are never touched, so to close a day for good, block its slots
+                        rather than removing them.
+                      </li>
+                      <li>
+                        You can edit the plan any time. Changes apply to days generated after you save — never to days
+                        that already have slots.
+                      </li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
               {releaseSlots.error && (
                 <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{(releaseSlots.error as Error).message}</p>
+              )}
+              {rolloverError('release') && (
+                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{rolloverError('release')}</p>
+              )}
+              {rolloverMsg?.where === 'release' && !releaseResult && (
+                <p className="text-sm text-green-700">{rolloverMsg.text}</p>
               )}
 
               {releaseResult && (
                 <div className="rounded bg-green-50 px-4 py-3 text-sm text-green-800">
                   <p className="font-semibold">Schedule released.</p>
                   <ChangeSummary s={releaseResult} currency={currency} />
+                  {rolloverMsg?.where === 'release' && <p className="mt-1">{rolloverMsg.text}</p>}
                   <Link
                     href={`/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
                     className="mt-2 inline-block font-medium text-green-700 hover:underline"
@@ -578,14 +786,29 @@ export default function ScheduleBuilderPage() {
               )}
 
               {!releaseResult && (
-                <Button
-                  variant="primary"
-                  loading={releaseSlots.isPending}
-                  disabled={releaseSlots.isPending}
-                  onClick={() => void handleRelease()}
-                >
-                  {releaseSlots.isPending ? 'Releasing…' : 'Release schedule'}
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* When the grid is the loaded plan, saving it is the main action
+                      and releasing dates is the secondary one. */}
+                  {(rolloverChecked || cellsFromPlan) && (
+                    <Button
+                      variant={cellsFromPlan ? 'primary' : 'secondary'}
+                      loading={setRollover.isPending}
+                      disabled={releaseSlots.isPending || setRollover.isPending}
+                      onClick={() => void handleSavePlanOnly()}
+                      title="Doesn't release the dates above. The plan applies to days generated from now on."
+                    >
+                      {cellsFromPlan ? 'Save the rolling plan' : 'Save the rolling plan only'}
+                    </Button>
+                  )}
+                  <Button
+                    variant={cellsFromPlan ? 'secondary' : 'primary'}
+                    loading={releaseSlots.isPending}
+                    disabled={releaseSlots.isPending || setRollover.isPending}
+                    onClick={() => void handleRelease()}
+                  >
+                    {releaseSlots.isPending ? 'Releasing…' : rolloverChecked ? 'Release schedule & save rolling plan' : 'Release schedule'}
+                  </Button>
+                </div>
               )}
             </div>
           </Card>

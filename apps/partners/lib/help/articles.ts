@@ -51,7 +51,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up schedules and slot pricing',
     category: 'Scheduling',
     summary:
-      'Use the schedule builder to set pricing bands (including overnight and 24-hour windows), a business-day start, slot durations, and per-slot pricing on a visual grid.',
+      'Use the schedule builder to set pricing bands (including overnight and 24-hour windows), a business-day start, slot durations, and per-slot pricing on a visual grid — then switch on auto-rollover so the next 7 days are always released.',
     quickLink: true,
     order: 3,
   },
@@ -63,6 +63,15 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
       'What each Overview tile counts — revenue is money actually taken, less refunds, dated when it moved — and why a figure can differ from the Activity feed.',
     quickLink: true,
     order: 12,
+  },
+  {
+    slug: 'earnings',
+    title: 'Earnings: what circls will pay you',
+    category: 'Bookings',
+    summary:
+      'Net payout for any period you choose — across events, memberships and venues, and for each one individually, with how much of it has already been transferred. Every figure is what reaches you after commission, gateway charges and refunds, not what your customers were charged.',
+    quickLink: true,
+    order: 16,
   },
   {
     slug: 'activity',

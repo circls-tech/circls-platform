@@ -65,6 +65,9 @@ describe.skipIf(!runIntegration)('coupon redemption in event booking', () => {
       payload: { name: 'RedeemRoutes', slug: `redeemroutes-${SUFFIX}`, country: 'India', acceptTerms: true },
     });
     tenantId = (t.json() as { id: string }).id;
+    // This suite asserts customer-pays-all gross-up totals; pin the share,
+    // since the product default (migration 0064) is 0 = fee waived.
+    await db.execute(sql`update tenants set customer_fee_share_bps = 10000 where id = ${tenantId}`);
 
     const ev = await app.inject({
       method: 'POST',

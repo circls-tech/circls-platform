@@ -290,7 +290,11 @@ export interface AdminPayoutRow {
   advanceRecoupedPaise: number;
   amountPaise: number;
   currency: string;
-  status: 'pending' | 'paid';
+  /**
+   * 'partially_paid' appears once some of a payout's item lines are settled
+   * and others are not — see payout_items.
+   */
+  status: 'pending' | 'partially_paid' | 'paid';
   paidAt: string | null;
   paidReference: string | null;
   createdAt: string;
@@ -350,6 +354,16 @@ export interface AdminListingRow {
 
 export interface AdminListingListResponse {
   rows: AdminListingRow[];
+}
+
+/** `POST /v1/admin/listings/:type/:id/preview` — a short-lived link to the
+ *  listing on the consumer site, readable there whatever its status. An arena
+ *  previews through its venue's page, so `type`/`id` may differ from the ask. */
+export interface AdminListingPreview {
+  url: string;
+  type: 'venue' | 'event' | 'membership';
+  id: string;
+  expiresAt: string;
 }
 
 export interface AdminListingDetail {
@@ -862,4 +876,67 @@ export interface TenantItemRevenue {
    * tab and a card disagree with nothing on screen explaining the gap.
    */
   unattributed: RevenueSlice[];
+}
+
+// ── Tenant earnings (admin view of the partner's own Earnings page) ───────────
+// Mirrors apps/partners/lib/api/types.ts. The admin console reads the SAME
+// endpoint shape from the same service, so an admin and a partner looking at
+// one week see one set of numbers.
+
+/** What was sold. 'venue' covers court/arena slot bookings. */
+export type EarningsStream = 'event' | 'membership' | 'venue';
+
+/** A net total in one currency. Currencies are never summed together. */
+export interface EarningsTotal {
+  currency: string;
+  /** Net payable to the partner, in minor units. Negative if refunds won. */
+  netPaise: number;
+  /** The slice of `netPaise` already transferred on a completed payout. */
+  paidPaise: number;
+  bookings: number;
+}
+
+export interface EarningsStreamTotal extends EarningsTotal {
+  stream: EarningsStream;
+}
+
+/** Net for one individual event, membership plan, or venue. */
+export interface EarningsItem extends EarningsStreamTotal {
+  /** Null when the booking carried nothing to attribute the money to. */
+  id: string | null;
+  name: string | null;
+  venueName: string | null;
+}
+
+/** Cash taken at the partner's own desk. Never part of a Circls payout. */
+export interface DeskTakings {
+  currency: string;
+  amountMinor: number;
+  bookings: number;
+}
+
+export interface TenantEarnings {
+  from: string;
+  to: string;
+  total: EarningsTotal[];
+  byStream: EarningsStreamTotal[];
+  items: EarningsItem[];
+  /** Not included in any total above. */
+  desk: DeskTakings[];
+}
+
+/** One line of a payout: what it paid for, and whether that line is settled. */
+export interface TenantPayoutItem {
+  id: string;
+  payoutId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  /** 'slot' | 'event' | 'membership' | 'advance' | 'unattributed'. */
+  itemType: string;
+  itemId: string | null;
+  currency: string;
+  amountPaise: number;
+  status: 'pending' | 'paid';
+  paidAt: string | null;
+  paidReference: string | null;
 }
