@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { MembershipCard } from '@/components/cards/MembershipCard';
@@ -7,10 +8,12 @@ import { EmptyState } from '@/components/EmptyState';
 import { useAllMemberships } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { membershipInArea } from '@/lib/location/geo';
+import { Input } from '@/lib/ui';
 
 export default function MembershipsPage() {
+  const [search, setSearch] = useState('');
   const { city, country, coords, openPicker } = useLocation();
-  const memberships = useAllMemberships(100);
+  const memberships = useAllMemberships(100, search);
   // Country is the market boundary; a selected city HARD-filters venue-scoped
   // plans by their venue's city, and shared coords without a city restrict
   // them to the nearby radius. Tenant-wide plans stay visible across the
@@ -28,7 +31,15 @@ export default function MembershipsPage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <BackBar href="/" />
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">Memberships</h1>
-        <p className="mb-8 text-sm text-text-secondary">
+        <div className="mt-4 max-w-xl">
+          <Input
+            placeholder="Search by plan, venue or organiser…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search memberships"
+          />
+        </div>
+        <p className="mb-8 mt-3 text-sm text-text-secondary">
           {areaLabel ? (
             <>
               Plans and passes {nearYou ? '' : 'in '}
@@ -51,7 +62,14 @@ export default function MembershipsPage() {
             {memberships.error instanceof Error ? memberships.error.message : 'Failed to load memberships'}
           </p>
         ) : rows.length === 0 ? (
-          <EmptyState title="No memberships yet" body="There are no memberships available right now. Check back soon." />
+          search.trim() ? (
+            <EmptyState
+              title={`Nothing for “${search.trim()}”`}
+              body="Try a different search, or search by venue or organiser name."
+            />
+          ) : (
+            <EmptyState title="No memberships yet" body="There are no memberships available right now. Check back soon." />
+          )
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((m) => <MembershipCard key={m.id} membership={m} />)}

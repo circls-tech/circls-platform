@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { EventCard } from '@/components/cards/EventCard';
@@ -9,6 +10,7 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { eventInRange } from '@/lib/location/geo';
 import { formatDayLabel } from '@/lib/format';
 import type { PublicEventWithVenue } from '@/lib/api/types';
+import { Input } from '@/lib/ui';
 
 /** Group events (already ascending) by calendar day for date dividers. */
 function groupByDay(rows: PublicEventWithVenue[]): { label: string; events: PublicEventWithVenue[] }[] {
@@ -23,8 +25,9 @@ function groupByDay(rows: PublicEventWithVenue[]): { label: string; events: Publ
 }
 
 export default function EventsPage() {
+  const [search, setSearch] = useState('');
   const { city, country, coords, openPicker } = useLocation();
-  const events = useUpcomingEvents(100);
+  const events = useUpcomingEvents(100, search);
   const now = Date.now();
   const upcoming = (events.data ?? [])
     // Defensive guard: never show a past event even if the API regresses.
@@ -40,7 +43,15 @@ export default function EventsPage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <BackBar href="/" />
         <h1 className="mb-1 font-display text-4xl font-extrabold text-ink">What&apos;s on</h1>
-        <p className="mb-8 text-sm text-text-secondary">
+        <div className="mt-4 max-w-xl">
+          <Input
+            placeholder="Search by event, venue or organiser…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search events"
+          />
+        </div>
+        <p className="mb-8 mt-3 text-sm text-text-secondary">
           {coords ? (
             <>
               Upcoming events near{' '}
@@ -71,7 +82,12 @@ export default function EventsPage() {
             {events.error instanceof Error ? events.error.message : 'Failed to load events'}
           </p>
         ) : upcoming.length === 0 ? (
-          coords || country ? (
+          search.trim() ? (
+            <EmptyState
+              title={`Nothing for “${search.trim()}”`}
+              body="Try a different search, or search by venue or organiser name."
+            />
+          ) : coords || country ? (
             <EmptyState
               title="No events here yet"
               body="Check back soon — new ones drop all the time."

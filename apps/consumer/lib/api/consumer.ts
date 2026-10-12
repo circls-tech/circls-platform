@@ -103,11 +103,16 @@ export function useVenueMemberships(venueId: string, preview: string | null = nu
  * Depends on the GET /v1/consumer/events endpoint from spec §12.3 (handed off to
  * the API agent). Until that ships this query errors and callers show empty rows.
  */
-export function useUpcomingEvents(limit = 50) {
+/** Upcoming public events; `search` narrows by event, venue or organiser name. */
+export function useUpcomingEvents(limit = 50, search = '') {
+  const trimmed = search.trim();
   return useQuery({
-    queryKey: ['events', limit],
-    queryFn: () =>
-      apiFetch<{ rows: PublicEventWithVenue[] }>(`/v1/consumer/events?limit=${limit}`),
+    queryKey: ['events', limit, trimmed],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (trimmed) qs.set('search', trimmed);
+      return apiFetch<{ rows: PublicEventWithVenue[] }>(`/v1/consumer/events?${qs.toString()}`);
+    },
     select: (data) => data.rows,
   });
 }
@@ -127,11 +132,16 @@ export function useEvent(eventId: string, preview: string | null = null) {
  * Depends on the GET /v1/consumer/memberships endpoint from spec §12.4 (handed off
  * to the API agent). Until that ships this query errors and callers show empty rows.
  */
-export function useAllMemberships(limit = 50) {
+/** Active public memberships; `search` narrows by plan, venue or organiser name. */
+export function useAllMemberships(limit = 50, search = '') {
+  const trimmed = search.trim();
   return useQuery({
-    queryKey: ['memberships', limit],
-    queryFn: () =>
-      apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/memberships?limit=${limit}`),
+    queryKey: ['memberships', limit, trimmed],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (trimmed) qs.set('search', trimmed);
+      return apiFetch<{ rows: PublicMembershipWithScope[] }>(`/v1/consumer/memberships?${qs.toString()}`);
+    },
     select: (data) => data.rows,
   });
 }
