@@ -117,5 +117,5 @@ From here you can:
 ## Tips
 
 - Confirm the venue's **timezone** before releasing — all slot times are interpreted in it.
-- Release a manageable window (a month or a quarter) and extend it as you go, rather than years at once — or switch on **auto-rollover** and let the next week take care of itself.
+- Release a manageable window (a month or a quarter) and extend it as you go, rather than years at once — or switch on **auto-rollover** and let the next week take care of itself. A single release can cover at most a year (366 days); longer windows are refused.
 - Use **blocking** for one-off closures and reserved events; use **suspending the arena** for longer outages.
