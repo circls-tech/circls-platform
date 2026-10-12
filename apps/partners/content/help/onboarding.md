@@ -4,7 +4,7 @@ Welcome to circls! This guide walks you through the onboarding wizard — from c
 
 You'll need a circls Partner account. If a colleague invited you, follow your invite link instead — you'll join their organisation directly and can skip step 1 (see [Inviting and managing team members](/help/team)).
 
-When you sign up with an email and password we send a **verification link** to that address. You can use the portal right away, but until you click the link a banner reminds you, and your email isn't shown to teammates or used to match your account (for example when someone invites that address). If it didn't arrive, check your spam or junk folder first, then use **Resend email** in the banner, and **I've verified** once you've clicked it.
+When you sign up with an email and password we send a **verification link** to that address. You can use the portal right away, but until you click the link a banner reminds you, and your email isn't shown to teammates or used to match your account (for example when someone invites that address). If it didn't arrive, check your spam or junk folder first, then use **Resend email** in the banner. Each resend replaces the previous link, so always open the **newest** email — an older link shows "expired or already used". Once you've clicked the link, come back to the portal tab and the banner clears on its own (or press **I've verified**).
 
 ## Step 1 — Create your organisation
 
