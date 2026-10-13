@@ -6,6 +6,7 @@ import { OrgCard } from '@/components/cards/OrgCard';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
 import { MembershipCard } from '@/components/cards/MembershipCard';
+import { SearchBar } from '@/components/SearchBar';
 import { useVenues, useUpcomingEvents, useAllMemberships, usePublicOrgs } from '@/lib/api/consumer';
 import { useLocation } from '@/lib/location/LocationProvider';
 import { eventInRange, membershipInArea, venuesForArea } from '@/lib/location/geo';
@@ -27,7 +28,6 @@ export default function LandingPage() {
   // Country is the market boundary; a selected city HARD-filters venues, and
   // shared coords without a city restrict geolocated venues to the nearby
   // radius. The rail simply hides when nothing survives.
-  const nearYou = Boolean(coords) && !city;
   // Organisers carry only a city/country (no coords): city HARD-filters like
   // venues; otherwise the country is the boundary. Unlike the venues rail there
   // is no radius cut in coords-only mode — every in-country org qualifies, and
@@ -41,11 +41,7 @@ export default function LandingPage() {
     .slice(0, 10);
   const orgsTitle = city ? `Organisers in ${city}` : country ? `Organisers in ${country}` : 'Organisers';
   const nearbyVenues = venuesForArea(venues.data ?? [], { city, country, coords }).slice(0, 10);
-  const venuesTitle = city
-    ? `Venues in ${city}`
-    : nearYou || !country
-      ? 'Venues near you'
-      : `Venues in ${country}`;
+  const venuesTitle = 'Venues around you';
   // Shared location → only events within NEARBY_RADIUS_KM; manual city pick or
   // no selection → country-wide, as before.
   const nearbyEvents = (events.data ?? [])
@@ -87,7 +83,8 @@ export default function LandingPage() {
           <p className="mt-4 max-w-lg text-base text-text-secondary">
             Because &ldquo;we should do this sometime&rdquo; deserves an actual time.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <SearchBar className="mt-6 max-w-lg" />
+          <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/venues"><Button variant="primary">Browse venues</Button></Link>
             <Link href="/events"><Button variant="secondary">See what&apos;s on →</Button></Link>
           </div>
@@ -109,7 +106,7 @@ export default function LandingPage() {
         )}
         {nearbyEvents.length > 0 && (
           <HScroll
-            title={coords ? "What's on near you" : country ? `What's on in ${country}` : 'Upcoming events'}
+            title="Events around you"
             viewAllHref="/events"
           >
             {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
@@ -124,15 +121,7 @@ export default function LandingPage() {
 
         {nearbyMemberships.length > 0 && (
           <HScroll
-            title={
-              city
-                ? `Memberships in ${city}`
-                : nearYou
-                  ? 'Memberships near you'
-                  : country
-                    ? `Memberships in ${country}`
-                    : 'Memberships'
-            }
+            title="Memberships around you"
             viewAllHref="/memberships"
           >
             {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}

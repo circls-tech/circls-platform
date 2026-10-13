@@ -452,6 +452,13 @@ export interface PublicMembershipWithScope extends PublicMembership {
   country: string | null;
 }
 
+/** GET /v1/consumer/search — one term matched by name across the catalogue. */
+export interface SearchResults {
+  events: PublicEventWithVenue[];
+  memberships: PublicMembershipWithScope[];
+  venues: PublicVenue[];
+}
+
 // ── Questions threads (support Q&A on events / arenas / memberships) ──────────
 
 export type QuestionSubjectType = 'event' | 'arena' | 'membership' | 'general';

@@ -4,6 +4,7 @@ import { useLocation } from '@/lib/location/LocationProvider';
 import { BrandMark } from '@/lib/ui';
 import { MobileMenu } from '@/components/MobileMenu';
 import { ProfileSidebar } from '@/components/ProfileSidebar';
+import { SearchIcon } from '@/components/SearchBar';
 
 export function Header() {
   const { city, country, placeLabel, openPicker } = useLocation();
@@ -21,6 +22,13 @@ export function Header() {
         </Link>
 
         <nav className="flex items-center gap-3 lg:gap-6">
+          <Link
+            href="/search"
+            aria-label="Search events, venues and memberships"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] border-[2px] border-ink bg-white text-ink shadow-offset-sm hover:bg-surface-2"
+          >
+            <SearchIcon />
+          </Link>
           <button
             onClick={openPicker}
             className="flex items-center gap-1.5 rounded-xl border-[2px] border-ink bg-white px-3.5 py-1.5 text-sm font-bold text-ink shadow-offset-sm"

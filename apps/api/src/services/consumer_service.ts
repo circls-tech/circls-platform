@@ -12,7 +12,7 @@
  * bookEvent, purchaseMembership) but first re-check public visibility so a
  * consumer can't book against an unapproved venue by guessing ids.
  */
-import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { arenas } from '../db/schema/arenas.js';
@@ -135,7 +135,21 @@ function toPublicVenue(v: Venue, brand: BrandSummary, images: PublicImageRef[] =
   };
 }
 
-/** Approved + tenant-active venues that have ≥1 bookable arena; optional name/tag search. */
+/**
+ * A consumer search term as a case-insensitive `LIKE` pattern. The user's
+ * `%`, `_` and `\` are escaped so "100% futsal" matches that text rather than
+ * everything; every `like` below pairs with `escape '\'`.
+ */
+export function likePattern(search: string): string {
+  return `%${search.trim().toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/** `lower(col) like pattern` for one text column. */
+const likeCond = (col: SQL | AnyColumn, like: string): SQL =>
+  sql`lower(${col}) like ${like} escape '\\'`;
+
+/** Approved + tenant-active venues that have ≥1 bookable arena; optional
+ *  search on the venue name, its tags (sports) and the organiser's name. */
 export async function listPublicVenues(opts: { search?: string; limit?: number }): Promise<PublicVenue[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
   const conds = [
@@ -145,10 +159,10 @@ export async function listPublicVenues(opts: { search?: string; limit?: number }
     // Only surface venues a consumer can actually book at (§12.1).
     sql`exists (select 1 from ${arenas} a where a.venue_id = ${venues.id} and a.status = 'active')`,
   ];
-  if (opts.search) {
-    const like = `%${opts.search.toLowerCase()}%`;
-    conds.push(sql`(lower(${venues.name}) like ${like} or exists (
-      select 1 from unnest(${venues.tags}) tag where lower(tag) like ${like}
+  if (opts.search?.trim()) {
+    const like = likePattern(opts.search);
+    conds.push(sql`(${likeCond(venues.name, like)} or ${likeCond(tenants.name, like)} or exists (
+      select 1 from unnest(${venues.tags}) tag where lower(tag) like ${like} escape '\\'
     ))`);
   }
   const rows = await db
@@ -555,10 +569,26 @@ const PUBLIC_EVENT_COLUMNS = {
 /**
  * All published, upcoming events across every visible tenant, soonest first.
  * Venue events require an active venue; org-scoped events have none. Each row
- * carries a resolved location (see toPublicEvent).
+ * carries a resolved location (see toPublicEvent). `search` narrows to events
+ * whose name, venue name or organiser name contains the term.
  */
-export async function listPublicUpcomingEvents(opts: { limit?: number }): Promise<PublicEventWithVenue[]> {
+export async function listPublicUpcomingEvents(
+  opts: { limit?: number; search?: string },
+): Promise<PublicEventWithVenue[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
+  const conds: SQL[] = [
+    eq(events.status, 'published'),
+    eq(tenants.status, 'active'),
+    eq(tenants.hiddenFromCatalog, false),
+    sql`(${events.venueId} is null or ${venues.status} = 'active')`,
+    sql`${events.endsAt} >= now()`,
+  ];
+  if (opts.search?.trim()) {
+    const like = likePattern(opts.search);
+    conds.push(
+      sql`(${likeCond(events.name, like)} or ${likeCond(venues.name, like)} or ${likeCond(tenants.name, like)})`,
+    );
+  }
   // Overfetch: recurring series collapse to one card below, and a long series
   // would otherwise eat the whole window before other events get a row.
   const rows = await db
@@ -566,15 +596,7 @@ export async function listPublicUpcomingEvents(opts: { limit?: number }): Promis
     .from(events)
     .leftJoin(venues, eq(venues.id, events.venueId))
     .innerJoin(tenants, eq(tenants.id, events.tenantId))
-    .where(
-      and(
-        eq(events.status, 'published'),
-        eq(tenants.status, 'active'),
-        eq(tenants.hiddenFromCatalog, false),
-        sql`(${events.venueId} is null or ${venues.status} = 'active')`,
-        sql`${events.endsAt} >= now()`,
-      ),
-    )
+    .where(and(...conds))
     .orderBy(sql`${events.startsAt} asc`)
     .limit(Math.min(limit * 4, 400));
   const joinRows = rows as EventJoinRow[];
@@ -910,7 +932,7 @@ function toPublicMembership(r: MembershipJoinRow): PublicMembershipWithScope {
  * venue to be active. LEFT JOINs venues so tenant-wide rows survive the join.
  */
 export async function listPublicMembershipsAcrossVenues(
-  opts: { limit?: number },
+  opts: { limit?: number; search?: string },
 ): Promise<PublicMembershipWithScope[]> {
   const limit = Math.min(opts.limit ?? 50, 100);
   // Visibility (§12.4): active membership, active tenant, and — only for
@@ -923,6 +945,13 @@ export async function listPublicMembershipsAcrossVenues(
     eq(tenants.hiddenFromCatalog, false),
     sql`(${memberships.venueId} is null or ${venues.status} = 'active')`,
   ];
+  // `search`: the plan's name, the venue it belongs to, or the organiser.
+  if (opts.search?.trim()) {
+    const like = likePattern(opts.search);
+    conds.push(
+      sql`(${likeCond(memberships.name, like)} or ${likeCond(venues.name, like)} or ${likeCond(tenants.name, like)})`,
+    );
+  }
   const rows = await db
     .select(PUBLIC_MEMBERSHIP_COLUMNS)
     .from(memberships)
@@ -932,6 +961,44 @@ export async function listPublicMembershipsAcrossVenues(
     .orderBy(sql`${memberships.createdAt} desc`)
     .limit(limit);
   return attachMembershipTiers(rows as MembershipJoinRow[]);
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export const SEARCH_TYPES = ['event', 'membership', 'venue'] as const;
+export type SearchType = (typeof SEARCH_TYPES)[number];
+
+export interface SearchResults {
+  events: PublicEventWithVenue[];
+  memberships: PublicMembershipWithScope[];
+  venues: PublicVenue[];
+}
+
+/**
+ * The consumer search bar: one term matched by name across upcoming events,
+ * active memberships and bookable venues, each section under the same public
+ * visibility gate as its browse list. A listing also matches on the name of
+ * the venue or organiser it belongs to, so "Turf Park" finds the park, its
+ * events and its passes. `types` limits which sections are queried; the
+ * others come back empty. Ordering per section is the browse order (events
+ * soonest first, the rest newest first).
+ */
+export async function searchPublicCatalogue(opts: {
+  q: string;
+  types?: readonly SearchType[];
+  /** Per-section cap. */
+  limit?: number;
+}): Promise<SearchResults> {
+  const types = new Set<SearchType>(opts.types?.length ? opts.types : SEARCH_TYPES);
+  const limit = Math.min(opts.limit ?? 20, 50);
+  const search = opts.q.trim();
+  if (!search) return { events: [], memberships: [], venues: [] };
+  const [events, memberships, venues] = await Promise.all([
+    types.has('event') ? listPublicUpcomingEvents({ search, limit }) : [],
+    types.has('membership') ? listPublicMembershipsAcrossVenues({ search, limit }) : [],
+    types.has('venue') ? listPublicVenues({ search, limit }) : [],
+  ]);
+  return { events, memberships, venues };
 }
 
 /** A single public membership by id, enriched with scope, or null when it does
