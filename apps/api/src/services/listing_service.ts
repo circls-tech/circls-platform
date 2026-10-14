@@ -11,7 +11,20 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { arenas, events, memberships, type MembershipBenefits, tenants, venues } from '../db/schema/index.js';
+import {
+  arenas,
+  eventImages,
+  events,
+  memberships,
+  type MembershipBenefits,
+  tenants,
+  venueImages,
+  venues,
+  type VenueOpeningHours,
+} from '../db/schema/index.js';
+import { getStorage } from '../lib/storage.js';
+import { listTiers as listEventTiers } from './event_tiers_service.js';
+import { listTiers as listMembershipTiers } from './membership_tiers_service.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 
@@ -247,6 +260,32 @@ export async function listListingsForReview(input: {
   }));
 }
 
+/**
+ * One priced option on an event or membership plan.
+ *
+ * These are the substance of what a partner configured, and for a long time
+ * the review panel could not see them: it read the flat `price_paise` and
+ * `capacity` columns on the parent row, which stopped being the source of
+ * truth when tiers landed. A reviewer was approving a listing without seeing
+ * what it actually sells.
+ */
+export interface ListingTier {
+  id: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  /** Null means uncapped — not zero. */
+  capacity: number | null;
+  /** Memberships only: how long this tier runs for. */
+  durationDays?: number | null;
+}
+
+/** A photo on the listing, as the customer would see it. */
+export interface ListingImage {
+  id: string;
+  url: string;
+}
+
 export interface ListingDetail {
   type: ListingType;
   id: string;
@@ -261,15 +300,46 @@ export interface ListingDetail {
   lng?: number | null;
   tzName?: string | null;
   tags?: string[];
+  // Venue profile — all of this is editable in the partner portal, so a
+  // reviewer has to be able to read it before approving.
+  venueDescription?: string | null;
+  amenities?: string[];
+  openingHours?: VenueOpeningHours | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
   // Arena
   sport?: string | null;
-  capacity?: number | null;
   slotDurationMin?: number | null;
+  /**
+   * Total seats.
+   *
+   * For an ARENA this is the column the partner set. For an event or a
+   * membership it is derived from the tiers, because that is where capacity
+   * actually lives — the parent column is never written and reading it showed
+   * an empty field on every listing. Null means uncapped, which for a tiered
+   * listing means at least one tier is uncapped.
+   */
+  capacity?: number | null;
   // Event
   description?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
+  /**
+   * The CHEAPEST tier's price, mirroring the parent column.
+   *
+   * Kept for compatibility, but on its own it misrepresents a multi-tier
+   * listing as costing its floor. Render `priceMinPaise`/`priceMaxPaise`, or
+   * the tiers themselves, in preference to this.
+   */
   pricePaise?: number | null;
+  priceMinPaise?: number | null;
+  priceMaxPaise?: number | null;
+  /** What the listing actually sells. Empty for venues and arenas. */
+  tiers?: ListingTier[];
   /** Recurring events: series grouping + total dates in the series. */
   seriesId?: string | null;
   seriesCount?: number;
@@ -279,6 +349,87 @@ export interface ListingDetail {
   // Venue link (for arena / membership / venue-scoped event)
   venueId?: string | null;
   venueName?: string | null;
+  /** Venue and event photos — part of the listing being judged. */
+  images?: ListingImage[];
+}
+
+/**
+ * Totals across a listing's tiers.
+ *
+ * Capacity is null when ANY tier is uncapped: an uncapped tier makes the
+ * listing as a whole uncapped, and summing the capped ones would report a
+ * ceiling that does not exist.
+ */
+function summariseTiers(tiers: ListingTier[]): {
+  capacity: number | null;
+  priceMinPaise: number | null;
+  priceMaxPaise: number | null;
+} {
+  if (tiers.length === 0) {
+    return { capacity: null, priceMinPaise: null, priceMaxPaise: null };
+  }
+  const uncapped = tiers.some((t) => t.capacity == null);
+  return {
+    capacity: uncapped ? null : tiers.reduce((sum, t) => sum + (t.capacity ?? 0), 0),
+    priceMinPaise: Math.min(...tiers.map((t) => t.pricePaise)),
+    priceMaxPaise: Math.max(...tiers.map((t) => t.pricePaise)),
+  };
+}
+
+/**
+ * An event's tiers, in the order the partner arranged them.
+ *
+ * Goes through the tiers service rather than the table: tiers are replaced
+ * wholesale on every edit and the old rows are soft-deleted, so a raw read
+ * would show every tier the partner ever had, not the ones on sale.
+ */
+async function eventTiers(eventId: string): Promise<ListingTier[]> {
+  const rows = await listEventTiers(db, eventId);
+  return rows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    capacity: t.capacity,
+  }));
+}
+
+/** A plan's live tiers. Each carries its own duration, so it is reported per tier. */
+async function planTiers(membershipId: string): Promise<ListingTier[]> {
+  const rows = await listMembershipTiers(db, membershipId);
+  return rows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    pricePaise: t.pricePaise,
+    capacity: t.capacity,
+    durationDays: t.durationDays,
+  }));
+}
+
+/**
+ * Listing photos as public URLs.
+ *
+ * Storage keys are useless to a reviewer; the point is to SEE the picture the
+ * customer will. In stub mode publicUrl still returns something renderable,
+ * so this degrades to a broken thumbnail rather than an error.
+ */
+async function venuePhotos(venueId: string): Promise<ListingImage[]> {
+  const rows = await db
+    .select({ id: venueImages.id, storageKey: venueImages.storageKey })
+    .from(venueImages)
+    .where(eq(venueImages.venueId, venueId))
+    .orderBy(venueImages.position);
+  return rows.map((i) => ({ id: i.id, url: getStorage().publicUrl(i.storageKey) }));
+}
+
+async function eventPhotos(eventId: string): Promise<ListingImage[]> {
+  const rows = await db
+    .select({ id: eventImages.id, storageKey: eventImages.storageKey })
+    .from(eventImages)
+    .where(eq(eventImages.eventId, eventId))
+    .orderBy(eventImages.position);
+  return rows.map((i) => ({ id: i.id, url: getStorage().publicUrl(i.storageKey) }));
 }
 
 /** Fetch full detail for a single listing, used by the admin review panel. */
@@ -298,6 +449,15 @@ export async function getListingDetail(
           lat: venues.lat,
           lng: venues.lng,
           tzName: venues.tzName,
+          venueDescription: venues.description,
+          amenities: venues.amenities,
+          openingHours: venues.openingHours,
+          contactPhone: venues.contactPhone,
+          contactEmail: venues.contactEmail,
+          city: venues.city,
+          state: venues.state,
+          postalCode: venues.postalCode,
+          country: venues.country,
           tags: venues.tags,
           status: venues.status,
           createdAt: venues.createdAt,
@@ -307,7 +467,12 @@ export async function getListingDetail(
         .where(eq(venues.id, id))
         .limit(1);
       if (!r) return null;
-      return { type, ...r, createdAt: r.createdAt.toISOString() };
+      return {
+        type,
+        ...r,
+        images: await venuePhotos(id),
+        createdAt: r.createdAt.toISOString(),
+      };
     }
     case 'arena': {
       const [r] = await db
@@ -376,9 +541,22 @@ export async function getListingDetail(
           .where(eq(events.seriesId, r.seriesId));
         seriesCount = c?.count;
       }
+      // `events.capacity` is never written — the create path has no such field
+      // and capacity moved to the tiers (see events_service). Reading the
+      // column showed an empty capacity on every event in the review panel, so
+      // it is derived here and the dead column is dropped from the response.
+      const tiers = await eventTiers(r.id);
+      const { capacity, priceMinPaise, priceMaxPaise } = summariseTiers(tiers);
+      const { capacity: _deadCapacity, ...rest } = r;
       return {
         type,
-        ...r,
+        ...rest,
+        tiers,
+        capacity,
+        priceMinPaise,
+        priceMaxPaise,
+        pricePaise: r.pricePaise === null ? null : Number(r.pricePaise),
+        images: await eventPhotos(r.id),
         venueName,
         ...(seriesCount !== undefined ? { seriesCount } : {}),
         startsAt: r.startsAt.toISOString(),
@@ -415,7 +593,21 @@ export async function getListingDetail(
           .limit(1);
         venueName = v?.name ?? null;
       }
-      return { type, ...r, venueName, createdAt: r.createdAt.toISOString() };
+      // Same story as events: a plan's real prices, durations and seat caps are
+      // per tier, and `memberships.price_paise` only mirrors the cheapest one.
+      const tiers = await planTiers(r.id);
+      const { capacity, priceMinPaise, priceMaxPaise } = summariseTiers(tiers);
+      return {
+        type,
+        ...r,
+        tiers,
+        capacity,
+        priceMinPaise,
+        priceMaxPaise,
+        pricePaise: r.pricePaise === null ? null : Number(r.pricePaise),
+        venueName,
+        createdAt: r.createdAt.toISOString(),
+      };
     }
   }
 }
