@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Arena, arenas } from '../db/schema/index.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
@@ -54,8 +54,17 @@ export async function updateArenaQrTicketConfig(
   return a;
 }
 
+/**
+ * Oldest first, so the list reads the same every time: the portal's
+ * dashboard opens reception on the first arena, and the reception page's
+ * arena switcher keeps the same order.
+ */
 export async function listArenas(venueId: string): Promise<Arena[]> {
-  return db.select().from(arenas).where(eq(arenas.venueId, venueId));
+  return db
+    .select()
+    .from(arenas)
+    .where(eq(arenas.venueId, venueId))
+    .orderBy(asc(arenas.createdAt), asc(arenas.id));
 }
 
 /** Unscoped lookup — callers resolve the arena's venue → tenant for authz. */

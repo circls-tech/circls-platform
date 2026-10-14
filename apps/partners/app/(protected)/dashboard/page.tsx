@@ -16,7 +16,7 @@ import {
   useVenueCurrencies,
 } from '@/lib/currency';
 import { planSummary } from '@/lib/plan_summary';
-import { isEventOnShelf, isMembershipOnShelf, isVenueOnShelf } from '@/lib/shelf';
+import { isArenaLive, isEventOnShelf, isMembershipOnShelf, isVenueOnShelf } from '@/lib/shelf';
 import { useCan } from '@/lib/use_can';
 import { Card, StatusPill } from '@/lib/ui';
 import type {
@@ -309,22 +309,20 @@ function SectionSpinner({ what }: { what: string }) {
  * One venue, with the way into its desk.
  *
  * A venue has no single desk — reception is run per arena — so the button
- * only points straight at a grid when there is exactly one arena to mean. With
- * several it goes to the venue, where each arena carries its own button; that
- * is one extra click, and honest, rather than guessing which court is meant.
+ * opens the first arena's grid, and the reception page carries a switcher to
+ * the venue's other arenas. Reception always lands on a desk: sending a
+ * multi-arena venue to its detail page instead read as a broken link, since
+ * that page is the venue's setup (details, photos, add-an-arena), not a desk.
  *
- * Every arena counts, whatever its listing status. Nothing in the walk-in path
- * checks it, and the venue page offers reception on every row — so filtering
- * to `active` here hid a working desk from exactly the partner most likely to
- * want it: one who has just created a venue and whose arenas await review.
+ * Only live arenas count here: the button is for serving customers now, and
+ * a pending, closed or rejected arena has none. The tile counts the live
+ * ones, and says so when the venue has arenas but none live yet. Every
+ * arena, whatever its status, is still reachable from the venue page.
  */
 function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
   const { data: arenas, isLoading: arenasLoading } = useArenas(venue.id);
-  const desks = arenas ?? [];
-  const deskHref =
-    desks.length === 1
-      ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}`
-      : `/venues/${venue.id}?tenantId=${tenantId}`;
+  const desks = (arenas ?? []).filter(isArenaLive);
+  const deskHref = desks.length > 0 ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}` : null;
 
   return (
     <div className={TILE_CLASS}>
@@ -349,10 +347,12 @@ function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
           {arenasLoading
             ? '\u00a0'
             : desks.length > 0
-              ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'}`
-              : 'No arenas yet'}
+              ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'} live`
+              : (arenas?.length ?? 0) > 0
+                ? 'No live arenas yet'
+                : 'No arenas yet'}
         </p>
-        {desks.length > 0 && <ReceptionButton href={deskHref} />}
+        {deskHref && <ReceptionButton href={deskHref} />}
       </div>
     </div>
   );

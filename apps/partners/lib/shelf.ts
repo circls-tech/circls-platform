@@ -49,6 +49,14 @@ const MEMBERSHIP_SHELF: Record<Membership['status'], boolean> = {
 
 export const isVenueOnShelf = (v: { status: ListingStatus }): boolean => VENUE_SHELF[v.status];
 
+/**
+ * Stricter than the shelf: a desk is only offered for an arena that is live.
+ * The dashboard's Reception button and the reception page's arena switcher
+ * are for serving customers now, and a pending, closed or rejected arena has
+ * no customers to serve. Its grid stays reachable from the venue page.
+ */
+export const isArenaLive = (a: { status: ListingStatus }): boolean => a.status === 'active';
+
 export const isEventOnShelf = (e: { status: EventStatus }): boolean => EVENT_SHELF[e.status];
 
 export const isMembershipOnShelf = (m: { status: Membership['status'] }): boolean =>

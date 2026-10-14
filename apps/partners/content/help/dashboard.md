@@ -37,7 +37,7 @@ Below the chart, one section per kind of thing you run, so the jobs done daily a
 
 These sections list what you are **currently running**, so anything withdrawn from sale is left out: closed and rejected venues, cancelled and rejected events, and deactivated and rejected plans. None of those is on the consumer app either, and mixed in they buried the ones you are actually selling. Each stays on its own page — **Venues**, **Events**, **Memberships** — where you can reopen, reactivate or read it back. Anything **awaiting review** does appear here, and so does an event still in **draft**: both are on their way to live and still yours to work on.
 
-**Venues** carry a **Reception** button. A venue has no single desk — reception is run per arena — so the button goes straight to the grid when the venue has exactly one arena to mean, and to the venue otherwise, where each arena carries its own button. The tile also says how many arenas there are.
+**Venues** carry a **Reception** button. A venue has no single desk — reception is run per arena — so the button opens the grid of the venue's first **live** arena, and the reception page has an **Arena** switcher at the top for the venue's other live arenas. The tile says how many arenas are live; arenas still pending review, closed or rejected are not counted and have no desk here. Click the venue's name instead to open its page, where every arena is listed with its status, and **Edit details** there opens its details and photos.
 
 **Memberships** carry a **Reception** button too, and a plan has only one desk, so it opens the walk-in form directly — ready for a name, with no hunting.
 
