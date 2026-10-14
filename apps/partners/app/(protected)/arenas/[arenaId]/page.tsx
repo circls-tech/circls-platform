@@ -24,6 +24,7 @@ import type { QrTicketConfig } from '@/lib/api/types';
 import { refundSentence } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
+import { isArenaLive } from '@/lib/shelf';
 import { useTimezone } from '@/lib/timezone_context';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 
@@ -67,10 +68,13 @@ export default function ArenaReceptionPage() {
   const venue = venues?.find((v) => v.id === arena?.venueId);
   const tz = venue?.tzName ?? FALLBACK_TZ;
   // The venue's other desks. Reception is run per arena, but staff think in
-  // venues — the dashboard's button lands on the first arena, and from here
-  // the rest are one click away rather than a trip back through the venue.
+  // venues — the dashboard's button lands on the first live arena, and from
+  // here the rest are one click away rather than a trip back through the
+  // venue. Only live arenas are offered (plus this one, wherever you are, so
+  // the switcher always shows where you stand); the venue page lists the rest.
   const { data: siblings } = useArenas(arena?.venueId ?? '');
-  const arenaTabs = siblings && siblings.length > 1 ? siblings : [];
+  const arenaTabs = (siblings ?? []).filter((a) => a.id === arenaId || isArenaLive(a));
+  const showSwitcher = arenaTabs.length > 1;
   const currency = useCurrency({ venueId: arena?.venueId });
 
   // The grid is *displayed* in the portal-wide viewing timezone (top-bar
@@ -266,8 +270,8 @@ export default function ArenaReceptionPage() {
         </div>
       </div>
 
-      {/* Arena switcher: the venue's other desks, when it has more than one. */}
-      {arenaTabs.length > 0 && (
+      {/* Arena switcher: the venue's live desks, when there is more than one. */}
+      {showSwitcher && (
         <nav aria-label="Arenas at this venue" className="flex flex-wrap items-center gap-1">
           <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
             Arena
