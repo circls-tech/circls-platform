@@ -366,6 +366,16 @@ export interface AdminListingPreview {
   expiresAt: string;
 }
 
+export interface AdminListingTier {
+  id: string;
+  name: string;
+  description?: string | null;
+  pricePaise: number;
+  /** Null means uncapped, not zero. */
+  capacity: number | null;
+  durationDays?: number | null;
+}
+
 export interface AdminListingDetail {
   type: AdminListingType;
   id: string;
@@ -382,13 +392,30 @@ export interface AdminListingDetail {
   tags?: string[];
   // Arena
   sport?: string | null;
+  /** Arena: the column. Event/membership: derived from tiers. Null = uncapped. */
   capacity?: number | null;
   slotDurationMin?: number | null;
+  // Venue profile, all editable in the partner portal.
+  venueDescription?: string | null;
+  amenities?: string[];
+  openingHours?: Record<string, unknown> | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
   // Event
   description?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
+  /** The cheapest tier, mirroring the parent column. Prefer the range below. */
   pricePaise?: number | null;
+  priceMinPaise?: number | null;
+  priceMaxPaise?: number | null;
+  /** What the listing actually sells — empty for venues and arenas. */
+  tiers?: AdminListingTier[];
+  images?: { id: string; url: string }[];
   /** Recurring events: series grouping + total dates in the series. */
   seriesId?: string | null;
   seriesCount?: number;

@@ -19,6 +19,7 @@ import type {
   AdminChangeRequestRow,
   AdminListingDetail,
   AdminListingRow,
+  AdminListingTier,
   AdminListingType,
 } from '@/lib/api/types';
 
@@ -124,7 +125,148 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
           label="Tags"
           value={detail.tags && detail.tags.length > 0 ? detail.tags.join(', ') : 'None'}
         />
+        {/* Everything below is filled in by the partner and was invisible to
+            whoever approved the listing. */}
+        <Field label="Contact phone" value={detail.contactPhone} />
+        <Field label="Contact email" value={detail.contactEmail} />
+        <Field
+          label="Locality"
+          value={[detail.city, detail.state, detail.postalCode, detail.country]
+            .filter(Boolean)
+            .join(', ') || null}
+        />
+        <Field
+          label="Amenities"
+          value={detail.amenities && detail.amenities.length > 0
+            ? detail.amenities.join(', ')
+            : 'None'}
+        />
+        {detail.venueDescription && (
+          <div className="sm:col-span-2">
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Description
+            </dt>
+            <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">
+              {detail.venueDescription}
+            </dd>
+          </div>
+        )}
+        {detail.openingHours && (
+          <div className="sm:col-span-2">
+            <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Opening hours
+            </dt>
+            <dd className="mt-0.5 whitespace-pre-wrap font-mono text-xs text-slate-700">
+              {JSON.stringify(detail.openingHours, null, 1)}
+            </dd>
+          </div>
+        )}
+        {photoStrip(detail.images)}
       </dl>
+    );
+  }
+
+  /**
+   * A listing's tiers.
+   *
+   * This is what the partner actually configured, and it is the only honest
+   * answer to "what does this cost and how many seats are there" — the flat
+   * price column is just the cheapest tier, and the flat capacity column is
+   * never written at all.
+   */
+  function tierTable(tiers: AdminListingTier[], showDuration = false) {
+    if (tiers.length === 0) {
+      return (
+        <div className="sm:col-span-2">
+          <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Tiers</dt>
+          <dd className="mt-0.5 text-sm text-amber-700">
+            None configured — this listing has nothing for a customer to buy.
+          </dd>
+        </div>
+      );
+    }
+    return (
+      <div className="sm:col-span-2">
+        <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          Tiers ({tiers.length})
+        </dt>
+        <dd className="mt-1 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-1 pr-3 font-medium">Name</th>
+                <th className="py-1 pr-3 text-right font-medium">Price</th>
+                <th className="py-1 pr-3 text-right font-medium">Capacity</th>
+                {showDuration && <th className="py-1 pr-3 text-right font-medium">Duration</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => (
+                <tr key={t.id} className="border-b border-slate-100 align-top">
+                  <td className="py-1.5 pr-3 text-slate-800">
+                    {t.name}
+                    {t.description && (
+                      <span className="block text-xs text-slate-500">{t.description}</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right text-slate-700">
+                    {formatPrice(t.pricePaise)}
+                  </td>
+                  {/* Null is uncapped, which is a real answer — not a gap. */}
+                  <td className="py-1.5 pr-3 text-right text-slate-700">
+                    {t.capacity != null ? t.capacity : 'Uncapped'}
+                  </td>
+                  {showDuration && (
+                    <td className="py-1.5 pr-3 text-right text-slate-700">
+                      {t.durationDays != null ? `${t.durationDays} days` : '—'}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </dd>
+      </div>
+    );
+  }
+
+  /** "₹500" for one price, "₹500 – ₹2,000" across tiers. */
+  function priceValue(d: AdminListingDetail): string | null {
+    if (d.priceMinPaise == null) return formatPrice(d.pricePaise);
+    if (d.priceMaxPaise == null || d.priceMinPaise === d.priceMaxPaise) {
+      return formatPrice(d.priceMinPaise);
+    }
+    return `${formatPrice(d.priceMinPaise)} – ${formatPrice(d.priceMaxPaise)}`;
+  }
+
+  /**
+   * Total seats across tiers. "Uncapped" only when it genuinely is — which,
+   * before tiers were read here, is what every event claimed.
+   */
+  function capacityValue(d: AdminListingDetail): string {
+    if (d.capacity != null) return String(d.capacity);
+    return (d.tiers?.length ?? 0) > 0 ? 'Uncapped (a tier has no limit)' : 'Uncapped';
+  }
+
+  function photoStrip(images: { id: string; url: string }[] | undefined) {
+    if (!images || images.length === 0) return null;
+    return (
+      <div className="sm:col-span-2">
+        <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          Photos ({images.length})
+        </dt>
+        <dd className="mt-1 flex flex-wrap gap-2">
+          {images.map((img) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={img.id}
+              src={img.url}
+              alt=""
+              className="h-20 w-28 rounded-md border border-slate-200 object-cover"
+            />
+          ))}
+        </dd>
+      </div>
     );
   }
 
@@ -160,8 +302,8 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
         {detail.venueId && <Field label="Venue" value={detail.venueName} />}
         <Field label="Starts" value={fmtDatetime(detail.startsAt)} />
         <Field label="Ends" value={fmtDatetime(detail.endsAt)} />
-        <Field label="Price" value={formatPrice(detail.pricePaise)} />
-        <Field label="Capacity" value={detail.capacity != null ? String(detail.capacity) : 'Unlimited'} />
+        <Field label="Price" value={priceValue(detail)} />
+        <Field label="Capacity" value={capacityValue(detail)} />
         {!detail.venueId && <Field label="Address" value={fmtAddress(detail.addressJson)} />}
         {detail.tzName && <Field label="Timezone" value={detail.tzName} />}
         {detail.description && (
@@ -170,6 +312,8 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
             <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">{detail.description}</dd>
           </div>
         )}
+        {tierTable(detail.tiers ?? [])}
+        {photoStrip(detail.images)}
       </dl>
     );
   }
@@ -183,7 +327,8 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
           label="Scope"
           value={detail.venueId ? `Venue: ${detail.venueName ?? detail.venueId}` : 'Tenant-wide'}
         />
-        <Field label="Price" value={formatPrice(detail.pricePaise)} />
+        <Field label="Price" value={priceValue(detail)} />
+        <Field label="Capacity" value={capacityValue(detail)} />
         <Field
           label="Duration"
           value={detail.durationDays != null ? `${detail.durationDays} days` : null}
@@ -194,6 +339,7 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
             <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">{detail.description}</dd>
           </div>
         )}
+        {tierTable(detail.tiers ?? [], true)}
         {benefitEntries.length > 0 && (
           <div className="sm:col-span-2">
             <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">Benefits</dt>
