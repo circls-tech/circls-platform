@@ -309,9 +309,10 @@ function SectionSpinner({ what }: { what: string }) {
  * One venue, with the way into its desk.
  *
  * A venue has no single desk — reception is run per arena — so the button
- * only points straight at a grid when there is exactly one arena to mean. With
- * several it goes to the venue, where each arena carries its own button; that
- * is one extra click, and honest, rather than guessing which court is meant.
+ * opens the first arena's grid, and the reception page carries a switcher to
+ * the venue's other arenas. Reception always lands on a desk: sending a
+ * multi-arena venue to its detail page instead read as a broken link, since
+ * that page is the venue's setup (details, photos, add-an-arena), not a desk.
  *
  * Every arena counts, whatever its listing status. Nothing in the walk-in path
  * checks it, and the venue page offers reception on every row — so filtering
@@ -321,10 +322,7 @@ function SectionSpinner({ what }: { what: string }) {
 function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
   const { data: arenas, isLoading: arenasLoading } = useArenas(venue.id);
   const desks = arenas ?? [];
-  const deskHref =
-    desks.length === 1
-      ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}`
-      : `/venues/${venue.id}?tenantId=${tenantId}`;
+  const deskHref = desks.length > 0 ? `/arenas/${desks[0]!.id}?tenantId=${tenantId}` : null;
 
   return (
     <div className={TILE_CLASS}>
@@ -352,7 +350,7 @@ function VenueTile({ venue, tenantId }: { venue: Venue; tenantId: string }) {
               ? `${desks.length} ${desks.length === 1 ? 'arena' : 'arenas'}`
               : 'No arenas yet'}
         </p>
-        {desks.length > 0 && <ReceptionButton href={deskHref} />}
+        {deskHref && <ReceptionButton href={deskHref} />}
       </div>
     </div>
   );

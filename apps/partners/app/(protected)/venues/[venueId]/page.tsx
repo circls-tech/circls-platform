@@ -2,8 +2,6 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
-import { VenueImages } from '@/components/VenueImages';
-import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
@@ -76,6 +74,13 @@ export default function VenuePage() {
           <Button variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>
             Preview
           </Button>
+          {/* Details and photos live on their own page, so this one can lead
+              with the arenas. Read-only members can still read them. */}
+          <Link href={`/venues/${venue.id}/details${tenantId ? `?tenantId=${tenantId}` : ''}`}>
+            <Button variant="secondary" size="sm">
+              {canEditVenue ? 'Edit details' : 'Details'}
+            </Button>
+          </Link>
           <ListingPreviewModal
             open={previewOpen}
             onClose={() => setPreviewOpen(false)}
@@ -96,8 +101,6 @@ export default function VenuePage() {
           )}
         </div>
       )}
-      {venue && <VenueDetailsForm venue={venue} />}
-      <VenueImages venueId={venueId} readOnly={!canEditVenue} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Arenas</h1>
         <div className="flex gap-2">

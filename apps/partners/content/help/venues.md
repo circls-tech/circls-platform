@@ -15,7 +15,7 @@ New venues start in **pending review**. You can edit details, fill in the addres
 
 ## Editing a venue
 
-Open a venue from the **Venues** list to reach its detail page. The **Venue details** panel at the top of that page lets you edit everything customers see and save it in place — name, timezone (read-only here), tags and address, plus the trust details below. You can also manage photos and jump to **Events** and **Bookings**.
+Open a venue from the **Venues** list to reach its page. It leads with the venue's arenas, with **Events** and **Bookings** beside them. Click **Edit details** beside the venue's status (members who can only view see it as **Details**) to open the venue's details and photos on a page of their own. There, the **Venue details** panel lets you edit everything customers see and save it in place — name, timezone (read-only here), tags and address, plus the trust details below.
 
 ### Venue details (description, amenities, hours, contact, address)
 
@@ -51,7 +51,7 @@ A new arena's default slot length is 60 minutes; change it in the [schedule buil
 
 ## Uploading photos
 
-Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue detail page. With more than one photo, visitors browse the gallery on the public venue page with the arrows or by swiping, and listing cards cycle through the photos on their own.
+Photos appear in your consumer listing, so they matter. Manage them in the **Photos** section of the venue's details page (**Edit details** on the venue page). With more than one photo, visitors browse the gallery on the public venue page with the arrows or by swiping, and listing cards cycle through the photos on their own.
 
 - Click **Add photos** and select one or more images. Accepted formats are **JPEG, PNG and WebP**.
 - You can upload up to **12 photos** per venue. Uploads run one at a time with a progress indicator.

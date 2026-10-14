@@ -10,6 +10,7 @@ import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
 import {
   useArena,
+  useArenas,
   useArenaSlots,
   useBulkSlots,
   useCancelBookingById,
@@ -63,7 +64,13 @@ export default function ArenaReceptionPage() {
   const { data: arena } = useArena(arenaId);
   const setArenaOpen = useSetArenaOpen(arenaId, arena?.venueId ?? '');
   const { data: venues } = useVenues(orgId ?? '');
-  const tz = venues?.find((v) => v.id === arena?.venueId)?.tzName ?? FALLBACK_TZ;
+  const venue = venues?.find((v) => v.id === arena?.venueId);
+  const tz = venue?.tzName ?? FALLBACK_TZ;
+  // The venue's other desks. Reception is run per arena, but staff think in
+  // venues — the dashboard's button lands on the first arena, and from here
+  // the rest are one click away rather than a trip back through the venue.
+  const { data: siblings } = useArenas(arena?.venueId ?? '');
+  const arenaTabs = siblings && siblings.length > 1 ? siblings : [];
   const currency = useCurrency({ venueId: arena?.venueId });
 
   // The grid is *displayed* in the portal-wide viewing timezone (top-bar
@@ -204,6 +211,17 @@ export default function ArenaReceptionPage() {
               Dashboard
             </Link>
             <span>/</span>
+            {venue && (
+              <>
+                <Link
+                  href={`/venues/${venue.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
+                  className="hover:underline"
+                >
+                  {venue.name}
+                </Link>
+                <span>/</span>
+              </>
+            )}
             <span className="font-medium text-slate-700">Reception</span>
           </div>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
@@ -247,6 +265,33 @@ export default function ArenaReceptionPage() {
           )}
         </div>
       </div>
+
+      {/* Arena switcher: the venue's other desks, when it has more than one. */}
+      {arenaTabs.length > 0 && (
+        <nav aria-label="Arenas at this venue" className="flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Arena
+          </span>
+          {arenaTabs.map((a) => {
+            const current = a.id === arenaId;
+            return (
+              <Link
+                key={a.id}
+                href={`/arenas/${a.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
+                aria-current={current ? 'page' : undefined}
+                className={[
+                  'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+                  current
+                    ? 'border-[#17151D] bg-[#CDBBF7] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                    : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+                ].join(' ')}
+              >
+                {a.name}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
 
       {/* Loading / error / empty */}
       {isLoading && (
