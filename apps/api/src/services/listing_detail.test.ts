@@ -51,7 +51,7 @@ describe.skipIf(!runIntegration)('listing detail — what the partner entered', 
 
   async function eventWithTiers(
     name: string,
-    tiers: { name: string; pricePaise: number; capacity: number | null }[],
+    tiers: { name: string; pricePaise: number; capacity: number | null; deletedAt?: Date }[],
   ): Promise<string> {
     const [e] = await db
       .insert(events)
@@ -114,6 +114,20 @@ describe.skipIf(!runIntegration)('listing detail — what the partner entered', 
     expect(d?.tiers?.[1]?.capacity).toBeNull();
   });
 
+  it('ignores tiers the partner has since removed', async () => {
+    // Tiers are replaced wholesale on every edit and the old rows are only
+    // soft-deleted, so a raw read of the table shows every tier the listing
+    // ever had. The reviewer must see what is on sale now.
+    const id = await eventWithTiers('Edited', [
+      { name: 'Old VIP', pricePaise: 150000, capacity: 20, deletedAt: new Date() },
+      { name: 'GA', pricePaise: 50000, capacity: 100 },
+    ]);
+    const d = await getListingDetail('event', id);
+    expect(d?.tiers?.map((t) => t.name)).toEqual(['GA']);
+    expect(d?.capacity).toBe(100);
+    expect(d?.priceMaxPaise).toBe(50000);
+  });
+
   it('reports no capacity for an event with no tiers, rather than a false zero', async () => {
     const id = await eventWithTiers('Empty', []);
     const d = await getListingDetail('event', id);
@@ -121,7 +135,7 @@ describe.skipIf(!runIntegration)('listing detail — what the partner entered', 
     expect(d?.tiers).toEqual([]);
   });
 
-  it('carries a membership plan s tiers, with their own durations', async () => {
+  it('carries the tiers of a membership plan, with their own durations', async () => {
     const [m] = await db
       .insert(memberships)
       .values({ tenantId, name: 'Plan', pricePaise: 0, durationDays: 30, status: 'pending_review' })

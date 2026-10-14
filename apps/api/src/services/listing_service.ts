@@ -15,8 +15,6 @@ import {
   arenas,
   eventImages,
   events,
-  eventTicketTiers,
-  membershipTiers,
   memberships,
   type MembershipBenefits,
   tenants,
@@ -25,6 +23,8 @@ import {
   type VenueOpeningHours,
 } from '../db/schema/index.js';
 import { getStorage } from '../lib/storage.js';
+import { listTiers as listEventTiers } from './event_tiers_service.js';
+import { listTiers as listMembershipTiers } from './membership_tiers_service.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 
@@ -376,49 +376,32 @@ function summariseTiers(tiers: ListingTier[]): {
   };
 }
 
-/** An event's tiers, in the order the partner arranged them. */
+/**
+ * An event's tiers, in the order the partner arranged them.
+ *
+ * Goes through the tiers service rather than the table: tiers are replaced
+ * wholesale on every edit and the old rows are soft-deleted, so a raw read
+ * would show every tier the partner ever had, not the ones on sale.
+ */
 async function eventTiers(eventId: string): Promise<ListingTier[]> {
-  const rows = await db
-    .select({
-      id: eventTicketTiers.id,
-      name: eventTicketTiers.name,
-      description: eventTicketTiers.description,
-      pricePaise: eventTicketTiers.pricePaise,
-      capacity: eventTicketTiers.capacity,
-      sortOrder: eventTicketTiers.sortOrder,
-    })
-    .from(eventTicketTiers)
-    .where(eq(eventTicketTiers.eventId, eventId))
-    .orderBy(eventTicketTiers.sortOrder);
+  const rows = await listEventTiers(db, eventId);
   return rows.map((t) => ({
     id: t.id,
     name: t.name,
     description: t.description,
-    pricePaise: Number(t.pricePaise),
+    pricePaise: t.pricePaise,
     capacity: t.capacity,
   }));
 }
 
-/** A plan's tiers. Each carries its own duration, so it is reported per tier. */
+/** A plan's live tiers. Each carries its own duration, so it is reported per tier. */
 async function planTiers(membershipId: string): Promise<ListingTier[]> {
-  const rows = await db
-    .select({
-      id: membershipTiers.id,
-      name: membershipTiers.name,
-      description: membershipTiers.description,
-      pricePaise: membershipTiers.pricePaise,
-      capacity: membershipTiers.capacity,
-      durationDays: membershipTiers.durationDays,
-      sortOrder: membershipTiers.sortOrder,
-    })
-    .from(membershipTiers)
-    .where(eq(membershipTiers.membershipId, membershipId))
-    .orderBy(membershipTiers.sortOrder);
+  const rows = await listMembershipTiers(db, membershipId);
   return rows.map((t) => ({
     id: t.id,
     name: t.name,
     description: t.description,
-    pricePaise: Number(t.pricePaise),
+    pricePaise: t.pricePaise,
     capacity: t.capacity,
     durationDays: t.durationDays,
   }));
