@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
+import { cardChipRowClass } from '@/components/chips';
 import { SportImage } from '@/components/SportImage';
 import { Badge } from '@/lib/ui';
 import { matchSport } from '@/lib/sportImages';
@@ -11,8 +13,6 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
   const sport = matchSport(venue.tags);
   const city = cityOf(venue.addressJson);
   return (
-    // The heart is a sibling of the link, not a child: a button inside an
-    // anchor is invalid HTML, and this keeps the whole card clickable.
     <div className={`relative ${className}`}>
     <Link
       href={`/venues/${venue.id}`}
@@ -44,7 +44,11 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
         )}
       </div>
     </Link>
-      <LikeButton itemType="venue" itemId={venue.id} name={venue.name} className="absolute right-2.5 top-2.5 z-10" />
+      {/* Share and save sit outside the link; see chips.ts. */}
+      <div className={cardChipRowClass}>
+        <ShareButton title={venue.name} text={city ?? undefined} path={`/venues/${venue.id}`} />
+        <LikeButton itemType="venue" itemId={venue.id} name={venue.name} />
+      </div>
     </div>
   );
 }

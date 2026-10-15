@@ -8,6 +8,7 @@ import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { LikeButton } from '@/components/LikeButton';
 import { ShareButton } from '@/components/ShareButton';
+import { headerPillRowClass } from '@/components/chips';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -132,8 +133,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                     <h1 className="font-display text-4xl font-extrabold text-ink">{ev.name}</h1>
                     {ev.isStandalone && <Badge tone="neutral" label="Event" />}
                   </div>
-                  {/* Wraps into a stack where the title's longest word plus two pills won't fit (phones). */}
-                  <div className="mt-1 flex flex-wrap items-start justify-end gap-2 sm:shrink-0">
+                  <div className={headerPillRowClass}>
                     {/* No share in preview: the event is not public yet, so the link would 404. */}
                     {!preview && (
                       <ShareButton

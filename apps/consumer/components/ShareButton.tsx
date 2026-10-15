@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { shareLink, type ShareOutcome } from '@/lib/share';
+import { inlinePillClass, overlayChipClass } from '@/components/chips';
 
+/** The three-dots-and-lines share glyph (the Android / Material one). */
 function ShareIcon({ className = '' }: { className?: string }) {
   return (
     <svg
@@ -14,9 +16,11 @@ function ShareIcon({ className = '' }: { className?: string }) {
       className={className}
       aria-hidden
     >
-      <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-      <path d="M16 6l-4-4-4 4" />
-      <path d="M12 2v13" />
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.59 13.51l6.83 3.98" />
+      <path d="M15.41 6.51l-6.82 3.98" />
     </svg>
   );
 }
@@ -41,8 +45,9 @@ function CheckIcon({ className = '' }: { className?: string }) {
 const NOTE_MS = 2500;
 
 /**
- * One tap to share a listing: the device's share sheet where there is one, a
- * copied link everywhere else (most desktop browsers).
+ * One tap to share a listing: the device's share sheet where there is one
+ * (phones, Safari, Chrome and Edge on Windows and macOS), a copied link
+ * everywhere else.
  *
  * Two faces, matching `LikeButton`:
  *   - `overlay` (default) — a round chip for the corner of a card image. It
@@ -59,6 +64,8 @@ const NOTE_MS = 2500;
  * `path` is the listing's canonical path (e.g. `/events/<id>`); the origin is
  * added at click time so the link points at whichever host served the page
  * and never carries the current URL's query string (a preview token, say).
+ * Pages in preview mode should not render this at all: the listing is not
+ * public yet, so the link would 404 for everyone it is sent to.
  */
 export function ShareButton({
   title,
@@ -99,8 +106,10 @@ export function ShareButton({
   const copied = outcome === 'copied';
   const note = copied ? 'Link copied' : outcome === 'unavailable' ? 'Copy the address bar to share' : null;
   const icon = copied ? <CheckIcon className="h-4 w-4" /> : <ShareIcon className="h-4 w-4" />;
-  // Screen readers hear the outcome the tick shows sighted users.
-  const status = note && (
+  // Screen readers hear the outcome the tick shows sighted users. The live
+  // region is always in the DOM: one that appears together with its text is
+  // usually not announced.
+  const status = (
     <span role="status" className="sr-only">
       {note}
     </span>
@@ -113,14 +122,7 @@ export function ShareButton({
         onClick={onClick}
         aria-label={`Share ${title}`}
         title={note ?? undefined}
-        className={[
-          'inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border-[2px] border-ink bg-white',
-          'px-3 py-1.5 text-sm font-semibold text-ink shadow-offset-sm',
-          'transition-[transform,box-shadow] duration-100',
-          'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
-          'active:translate-x-0 active:translate-y-0 active:shadow-none',
-          className,
-        ].join(' ')}
+        className={`${inlinePillClass} text-ink ${className}`}
       >
         {icon}
         <span>{copied ? 'Copied' : 'Share'}</span>
@@ -135,11 +137,7 @@ export function ShareButton({
       onClick={onClick}
       aria-label={`Share ${title}`}
       title={note ?? undefined}
-      className={[
-        'flex h-8 w-8 items-center justify-center rounded-full! border-[2px] border-ink bg-white text-ink shadow-offset-sm',
-        'transition-transform duration-100 hover:scale-110 active:scale-95',
-        className,
-      ].join(' ')}
+      className={`${overlayChipClass} text-ink ${className}`}
     >
       {icon}
       {status}

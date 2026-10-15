@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
+import { cardChipRowClass } from '@/components/chips';
 import { SportImage } from '@/components/SportImage';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
@@ -39,8 +41,6 @@ export function MembershipCard({
   const scope = membershipScope(membership);
   const brand = membership.brand;
   return (
-    // The heart is a sibling of the link, not a child: a button inside an
-    // anchor is invalid HTML, and this keeps the whole card clickable.
     <div className={`relative ${className}`}>
     <Link
       href={href}
@@ -81,7 +81,11 @@ export function MembershipCard({
         </span>
       </div>
     </Link>
-      <LikeButton itemType="membership" itemId={membership.id} name={membership.name} className="absolute right-2.5 top-2.5 z-10" />
+      {/* Share and save sit outside the link; see chips.ts. */}
+      <div className={cardChipRowClass}>
+        <ShareButton title={membership.name} text={scope.label} path={href} />
+        <LikeButton itemType="membership" itemId={membership.id} name={membership.name} />
+      </div>
     </div>
   );
 }
