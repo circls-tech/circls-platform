@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { type FormEvent, Suspense, useEffect, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import {
   isSeriesResult,
   useCreateTenantEvent,
+  useEvent,
   type CreateTenantEventInput,
 } from '@/lib/api/events';
 import { useCurrency } from '@/lib/currency';
@@ -16,10 +17,17 @@ import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
-import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
+import {
+  TiersEditor,
+  emptyTier,
+  tierDraftFromApi,
+  tiersToPayload,
+  type TierDraft,
+} from '@/components/TiersEditor';
 import { EventQuestionsEditor } from '@/components/EventQuestionsEditor';
 import {
   hasChoiceQuestionWithoutOptions,
+  questionDraftFromApi,
   questionsToPayload,
   type QuestionDraft,
 } from '@/lib/events/questions';
@@ -64,12 +72,26 @@ function localToTzIso(local: string, tz: string): string {
 type Scope = 'venue' | 'standalone';
 
 export default function NewTenantEventPage() {
+  // useSearchParams needs a Suspense boundary on a statically-rendered route.
+  return (
+    <Suspense fallback={null}>
+      <NewTenantEventForm />
+    </Suspense>
+  );
+}
+
+function NewTenantEventForm() {
   const router = useRouter();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
   const { data: venues } = useVenues(tenantId);
   const createEvent = useCreateTenantEvent(tenantId);
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  // `?from=<eventId>` opens the form as a copy of that event (its Duplicate
+  // button). Everything but the dates, recurrence and photos is seeded from it.
+  const fromId = useSearchParams().get('from');
+  const { data: source, error: sourceError } = useEvent(tenantId, fromId);
+  const [seededFrom, setSeededFrom] = useState<string | null>(null);
 
   const [scope, setScope] = useState<Scope>('venue');
   const [venueId, setVenueId] = useState('');
@@ -110,6 +132,41 @@ export default function NewTenantEventPage() {
     country: scope === 'standalone' ? country || null : null,
   });
   const busy = createEvent.isPending || uploadProgress !== null;
+
+  // Seed the form from the source event once it loads — only once, so the
+  // organiser's edits aren't overwritten by a refetch.
+  useEffect(() => {
+    if (!source || seededFrom === source.id) return;
+    setSeededFrom(source.id);
+    const addr = (source.addressJson ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' ? v : '');
+    if (source.venueId) {
+      setScope('venue');
+      setVenueId(source.venueId);
+    } else {
+      setScope('standalone');
+      setLine1(str(addr.line1));
+      setLine2(str(addr.line2));
+      setCity(str(addr.city));
+      setStateRegion(str(addr.state));
+      setPincode(str(addr.pincode));
+      setCountry(str(addr.country));
+      if (source.tzName) setTz(source.tzName);
+      setCoords(source.lat != null && source.lng != null ? { lat: source.lat, lng: source.lng } : null);
+    }
+    setName(source.name);
+    setDescription(source.description ?? '');
+    // Live tier ids are dropped: a copy gets tiers of its own.
+    setTiers(
+      source.tiers.length > 0
+        ? source.tiers.map(({ id: _id, ...t }) => tierDraftFromApi(t))
+        : [emptyTier()],
+    );
+    setQuestions((source.questions ?? []).map(questionDraftFromApi));
+    setMaxPerUser(source.maxPerUser == null ? null : String(source.maxPerUser));
+    setQrConfig(source.qrTicketConfig);
+    setRedirect(source.postBookingRedirect);
+  }, [source, seededFrom]);
 
   /** Fill the address fields + coordinates from a chosen autocomplete result. */
   function applySuggestion(s: AddressSuggestion) {
@@ -265,7 +322,25 @@ export default function NewTenantEventPage() {
       <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
         &larr; Events
       </Link>
-      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
+        {fromId ? 'Duplicate event' : 'New event'}
+      </h1>
+
+      {fromId && (
+        <p className="rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          {sourceError ? (
+            <>Couldn’t load the event to copy ({sourceError.message}) — the form below starts blank.</>
+          ) : source ? (
+            <>
+              Copying <span className="font-medium text-slate-800">{source.name}</span>. Dates,
+              recurrence and photos aren’t copied — set new dates below. The copy is saved as a
+              separate draft; the original is left as it is.
+            </>
+          ) : (
+            <>Loading the event to copy…</>
+          )}
+        </p>
+      )}
 
       <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">

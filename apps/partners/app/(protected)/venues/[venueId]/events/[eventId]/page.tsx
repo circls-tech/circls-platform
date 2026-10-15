@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useCan } from '@/lib/use_can';
@@ -107,6 +107,7 @@ function isoToVenueTzLocal(iso: string, tzName: string): string {
 }
 
 export default function EventDetailPage() {
+  const router = useRouter();
   const { venueId, eventId } = useParams<{ venueId: string; eventId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
   const { user } = useAuth();
@@ -255,6 +256,18 @@ export default function EventDetailPage() {
               <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
                 Preview
               </Button>
+              {/* The org-level form handles both venue and standalone events,
+                  so the copy opens there — seeded from this event. */}
+              {canWrite && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!authed}
+                  onClick={() => router.push(`/events/new?from=${ev.id}`)}
+                >
+                  Duplicate
+                </Button>
+              )}
             </div>
           </div>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { type FormEvent, useRef, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
@@ -118,6 +118,7 @@ function isoToTzLocal(iso: string, tzName: string): string {
 }
 
 export default function OrgEventDetailPage() {
+  const router = useRouter();
   const { eventId } = useParams<{ eventId: string }>();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
@@ -419,6 +420,18 @@ export default function OrgEventDetailPage() {
               <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
                 Preview
               </Button>
+              {/* Opens the new-event form seeded from this event, whatever
+                  its status — rerunning a finished event is the common case. */}
+              {canWrite && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!authed}
+                  onClick={() => router.push(`/events/new?from=${ev.id}`)}
+                >
+                  Duplicate
+                </Button>
+              )}
               {/* Taking someone's details at the door is a front-desk job, so
                   it belongs beside the event's name — not below the whole
                   registrations table. Gated exactly as the desk itself is. */}

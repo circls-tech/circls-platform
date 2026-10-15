@@ -18,6 +18,18 @@ Creating and changing events — editing, submitting for review, publishing, end
 
 The event is created as a **draft** and you're returned to the Events list. Add ticket tiers next (see below) before submitting.
 
+## Duplicating an event
+
+Running the same event again? Open it and click **Duplicate** next to **Preview** — it works for any event, including ended, cancelled and archived ones. The create form opens with the original's details filled in: where it happens, name, description, ticket tiers (per-tier QR rules included), registration questions, the per-customer ticket limit, QR entry rules and the after-booking link.
+
+Three things are **not** copied, so set them on the form:
+
+- **Dates** — enter a new start and end; the copy never inherits the original's.
+- **Repeats** — the copy starts as a one-time event; switch on **Repeats weekly** if you want a new series.
+- **Photos** — add them on the form or from the copy's **Photos** section once it exists.
+
+Clicking **Create event** saves the copy as a **separate draft**; the original is untouched. Submit the copy for review as usual — a copy of a live event is still a new event to Circls. Only Owners and Managers see **Duplicate**.
+
 ## Recurring events
 
 For something that happens regularly — say a dance workshop every Thursday and Friday — switch **Repeats** to **Repeats weekly**:
