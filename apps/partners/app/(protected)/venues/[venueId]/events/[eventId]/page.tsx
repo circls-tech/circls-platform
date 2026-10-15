@@ -257,13 +257,18 @@ export default function EventDetailPage() {
                 Preview
               </Button>
               {/* The org-level form handles both venue and standalone events,
-                  so the copy opens there — seeded from this event. */}
+                  so the copy opens there — seeded from this event, under this
+                  page's tenant (which may not be the active organisation). */}
               {canWrite && (
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={!authed}
-                  onClick={() => router.push(`/events/new?from=${ev.id}`)}
+                  onClick={() =>
+                    router.push(
+                      `/events/new?from=${ev.id}${tenantId ? `&tenantId=${tenantId}` : ''}`,
+                    )
+                  }
                 >
                   Duplicate
                 </Button>
