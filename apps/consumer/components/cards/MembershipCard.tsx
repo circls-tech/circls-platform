@@ -83,7 +83,8 @@ export function MembershipCard({
     </Link>
       {/* Share and save sit outside the link; see chips.ts. */}
       <div className={cardChipRowClass}>
-        <ShareButton title={membership.name} text={scope.label} path={href} />
+        {/* The venue for a venue plan; the brand for a brand-wide one ("Brand-wide" alone says nothing). */}
+        <ShareButton title={membership.name} text={scope.brandWide ? brand?.name : scope.label} path={href} />
         <LikeButton itemType="membership" itemId={membership.id} name={membership.name} />
       </div>
     </div>

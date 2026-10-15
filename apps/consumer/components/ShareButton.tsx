@@ -106,6 +106,8 @@ export function ShareButton({
   const copied = outcome === 'copied';
   const note = copied ? 'Link copied' : outcome === 'unavailable' ? 'Copy the address bar to share' : null;
   const icon = copied ? <CheckIcon className="h-4 w-4" /> : <ShareIcon className="h-4 w-4" />;
+  // The name tracks the visible label so "click Copied" works for voice control.
+  const label = copied ? `Copied link to ${title}` : `Share ${title}`;
   // Screen readers hear the outcome the tick shows sighted users. The live
   // region is always in the DOM: one that appears together with its text is
   // usually not announced.
@@ -120,7 +122,7 @@ export function ShareButton({
       <button
         type="button"
         onClick={onClick}
-        aria-label={`Share ${title}`}
+        aria-label={label}
         title={note ?? undefined}
         className={`${inlinePillClass} text-ink ${className}`}
       >
@@ -135,7 +137,7 @@ export function ShareButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label={`Share ${title}`}
+      aria-label={label}
       title={note ?? undefined}
       className={`${overlayChipClass} text-ink ${className}`}
     >

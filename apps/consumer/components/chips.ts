@@ -4,9 +4,9 @@
  * apart in padding, border or shadow.
  */
 
-/** A round chip for the corner of a card image. */
+/** A round chip for the corner of a card image (`pointer-events-auto`: see `cardChipRowClass`). */
 export const overlayChipClass = [
-  'flex h-8 w-8 items-center justify-center rounded-full! border-[2px] border-ink bg-white shadow-offset-sm',
+  'pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full! border-[2px] border-ink bg-white shadow-offset-sm',
   'transition-transform duration-100 hover:scale-110 active:scale-95',
 ].join(' ');
 
@@ -21,10 +21,11 @@ export const inlinePillClass = [
 
 /**
  * The row of chips in a card image's top-right corner. It is a sibling of
- * the card's link, not a child (a button inside an anchor is invalid HTML),
- * which also keeps the whole card clickable around it.
+ * the card's link, not a child (a button inside an anchor is invalid HTML).
+ * The row itself ignores the pointer and only the chips take it back, so a
+ * tap on a badge in the row or on the gap between chips still opens the card.
  */
-export const cardChipRowClass = 'absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5';
+export const cardChipRowClass = 'pointer-events-none absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5';
 
 /**
  * The pill group in a detail-page header. It wraps into a stack where the

@@ -145,7 +145,12 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
                   <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* No share in preview: the plan is not public yet, so the link would 404. */}
                     {!preview && (
-                      <ShareButton title={m.name} text={scope.label} path={`/memberships/${m.id}`} variant="inline" />
+                      <ShareButton
+                        title={m.name}
+                        text={scope.brandWide ? m.brand?.name : scope.label}
+                        path={`/memberships/${m.id}`}
+                        variant="inline"
+                      />
                     )}
                     <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" />
                   </div>
