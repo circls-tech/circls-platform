@@ -6,6 +6,7 @@ import { BackBar } from '@/components/BackBar';
 import { PreviewBanner } from '@/components/PreviewBanner';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { OffersStrip } from '@/components/OffersStrip';
@@ -137,10 +138,22 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
                 />
               ) : null}
               <div className="bg-lav p-6 text-ink">
-                <div className="flex items-center gap-2">
+                {/* Wraps so the pills drop to their own line on a phone. */}
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">{scope.label}</p>
                   {scope.brandWide && <Badge tone="neutral" label="Brand-wide" />}
-                  <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" className="ml-auto" />
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                    {/* No share in preview: the plan is not public yet, so the link would 404. */}
+                    {!preview && (
+                      <ShareButton
+                        title={m.name}
+                        text={scope.brandWide ? m.brand?.name : scope.label}
+                        path={`/memberships/${m.id}`}
+                        variant="inline"
+                      />
+                    )}
+                    <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" />
+                  </div>
                 </div>
                 <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
                 {m.description && <p className="mt-2 whitespace-pre-line text-sm text-ink-soft">{m.description}</p>}

@@ -7,6 +7,9 @@ import { PreviewBanner } from '@/components/PreviewBanner';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { AddressLink } from '@/components/AddressLink';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
+import { headerPillRowClass } from '@/components/chips';
+import { cityOf } from '@/lib/location/geo';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -158,7 +161,18 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
               <div className="bg-white p-5">
                 <div className="flex items-start justify-between gap-3">
                   <h1 className="font-display text-4xl font-extrabold text-ink">{venueQ.data.venue.name}</h1>
-                  <LikeButton itemType="venue" itemId={venueQ.data.venue.id} name={venueQ.data.venue.name} variant="inline" className="mt-1" />
+                  <div className={headerPillRowClass}>
+                    {/* No share in preview: the venue is not public yet, so the link would 404. */}
+                    {!preview && (
+                      <ShareButton
+                        title={venueQ.data.venue.name}
+                        text={cityOf(venueQ.data.venue.addressJson) ?? undefined}
+                        path={`/venues/${venueQ.data.venue.id}`}
+                        variant="inline"
+                      />
+                    )}
+                    <LikeButton itemType="venue" itemId={venueQ.data.venue.id} name={venueQ.data.venue.name} variant="inline" />
+                  </div>
                 </div>
                 {venueQ.data.venue.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -239,7 +253,7 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {eventsQ.data.map((ev) => (
-                    <EventCard key={ev.id} event={ev} currency={currency} />
+                    <EventCard key={ev.id} event={ev} currency={currency} preview={Boolean(preview)} />
                   ))}
                 </div>
               )}
@@ -636,13 +650,27 @@ function CartBar({
   );
 }
 
-function EventCard({ event, currency }: { event: PublicEvent; currency: CurrencyCode }) {
+function EventCard({
+  event,
+  currency,
+  preview,
+}: {
+  event: PublicEvent;
+  currency: CurrencyCode;
+  /** In preview the venue's events are not public yet, so there is nothing shareable. */
+  preview: boolean;
+}) {
   const isFree = event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
-        <LikeButton itemType="event" itemId={event.id} name={event.name} />
+        <div className="flex shrink-0 items-center gap-2">
+          {!preview && (
+            <ShareButton title={event.name} text={formatDateTime(event.startsAt)} path={`/events/${event.id}`} />
+          )}
+          <LikeButton itemType="event" itemId={event.id} name={event.name} />
+        </div>
       </div>
       <p className="mt-0.5 text-sm text-text-secondary">
         {formatDateTime(event.startsAt)}

@@ -7,6 +7,8 @@ import { PreviewBanner } from '@/components/PreviewBanner';
 import { StickyActionBar } from '@/components/StickyActionBar';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
+import { headerPillRowClass } from '@/components/chips';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -131,7 +133,18 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                     <h1 className="font-display text-4xl font-extrabold text-ink">{ev.name}</h1>
                     {ev.isStandalone && <Badge tone="neutral" label="Event" />}
                   </div>
-                  <LikeButton itemType="event" itemId={ev.id} name={ev.name} variant="inline" className="mt-1" />
+                  <div className={headerPillRowClass}>
+                    {/* No share in preview: the event is not public yet, so the link would 404. */}
+                    {!preview && (
+                      <ShareButton
+                        title={ev.name}
+                        text={`${formatDateTime(ev.startsAt)} · ${ev.locationName}`}
+                        path={`/events/${ev.id}`}
+                        variant="inline"
+                      />
+                    )}
+                    <LikeButton itemType="event" itemId={ev.id} name={ev.name} variant="inline" />
+                  </div>
                 </div>
                 <p className="mt-1 text-sm text-text-secondary">{formatDateTime(ev.startsAt)}</p>
                 {(ev.seriesOccurrences?.length ?? 0) > 1 && (

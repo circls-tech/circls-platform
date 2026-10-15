@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useIsLiked, useToggleLike } from '@/lib/api/wishlist';
 import type { WishlistItemType } from '@/lib/api/types';
+import { inlinePillClass, overlayChipClass } from '@/components/chips';
 
 function Heart({ filled, className = '' }: { filled: boolean; className?: string }) {
   return (
@@ -82,14 +83,7 @@ export function LikeButton({
         onClick={onClick}
         aria-pressed={liked}
         aria-label={label}
-        className={[
-          'inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border-[2px] border-ink bg-white',
-          'px-3 py-1.5 text-sm font-semibold shadow-offset-sm',
-          'transition-[transform,box-shadow] duration-100',
-          'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
-          'active:translate-x-0 active:translate-y-0 active:shadow-none',
-          colour,
-        ].join(' ')}
+        className={`${inlinePillClass} ${colour}`}
       >
         <Heart filled={liked} className="h-4 w-4" />
         <span className="text-ink">{liked ? 'Saved' : 'Save'}</span>
@@ -110,12 +104,7 @@ export function LikeButton({
       aria-pressed={liked}
       aria-label={label}
       title={error ?? undefined}
-      className={[
-        'flex h-8 w-8 items-center justify-center rounded-full! border-[2px] border-ink bg-white shadow-offset-sm',
-        'transition-transform duration-100 hover:scale-110 active:scale-95',
-        colour,
-        className,
-      ].join(' ')}
+      className={`${overlayChipClass} ${colour} ${className}`}
     >
       <Heart filled={liked} className="h-4 w-4" />
     </button>
