@@ -7,6 +7,7 @@ import { PreviewBanner } from '@/components/PreviewBanner';
 import { ImageCarousel } from '@/components/ImageCarousel';
 import { AddressLink } from '@/components/AddressLink';
 import { LikeButton } from '@/components/LikeButton';
+import { ShareButton } from '@/components/ShareButton';
 import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
@@ -642,7 +643,10 @@ function EventCard({ event, currency }: { event: PublicEvent; currency: Currency
     <Card className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
-        <LikeButton itemType="event" itemId={event.id} name={event.name} />
+        <div className="flex shrink-0 items-center gap-2">
+          <ShareButton title={event.name} text={formatDateTime(event.startsAt)} path={`/events/${event.id}`} />
+          <LikeButton itemType="event" itemId={event.id} name={event.name} />
+        </div>
       </div>
       <p className="mt-0.5 text-sm text-text-secondary">
         {formatDateTime(event.startsAt)}
