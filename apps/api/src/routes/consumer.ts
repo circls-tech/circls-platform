@@ -58,8 +58,12 @@ export const activityEventInput = z.object({
   clientTs: z.string().datetime(),
   sessionId: z.string().max(200).optional(),
 });
+
+/** Which client sent the batch. Stored on every row of it (consumer_activity.app). */
+export const ACTIVITY_APPS = ['web', 'android', 'ios'] as const;
 export const activityBatchBody = z.object({
   events: z.array(activityEventInput).min(1).max(200),
+  app: z.enum(ACTIVITY_APPS).optional(),
 });
 
 /** Reverse-geocode query — coords the consumer shared from the browser. */
@@ -377,7 +381,7 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const parsed = activityBatchBody.safeParse(req.body);
     if (!parsed.success)
       throw new BadRequest('Invalid activity payload', 'bad_request', { issues: parsed.error.issues });
-    const accepted = await logConsumerActivity(user.id, parsed.data.events);
+    const accepted = await logConsumerActivity(user.id, parsed.data.events, parsed.data.app ?? null);
     return { accepted };
   });
 

@@ -2,6 +2,7 @@
 import type { MouseEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useActivity } from '@/lib/activity/ActivityProvider';
 import { useIsLiked, useToggleLike } from '@/lib/api/wishlist';
 import type { WishlistItemType } from '@/lib/api/types';
 
@@ -55,6 +56,7 @@ export function LikeButton({
   const pathname = usePathname();
   const liked = useIsLiked(itemType, itemId);
   const toggle = useToggleLike();
+  const activity = useActivity();
 
   function onClick(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
@@ -65,6 +67,7 @@ export function LikeButton({
       router.push(`/login?redirect=${encodeURIComponent(here)}`);
       return;
     }
+    activity.log(liked ? 'unlike' : 'like', { itemType, itemId });
     toggle.mutate({ itemType, itemId, liked: !liked });
   }
 

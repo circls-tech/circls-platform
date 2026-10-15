@@ -38,6 +38,7 @@ import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
 import type { CartSlot } from '@/lib/checkout/types';
 import { MAX_CART_SLOTS } from '@/lib/checkout/limits';
 import { usePreviewToken } from '@/lib/preview';
+import { useActivity, useItemView } from '@/lib/activity/ActivityProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 
 export default function VenuePage({ params }: { params: Promise<{ venueId: string }> }) {
@@ -56,6 +57,8 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
   // unapproved venue as a customer will. Same page, booking turned off.
   const preview = usePreviewToken();
   const venueQ = useVenue(venueId, preview);
+  useItemView('venue', venueId, !preview);
+  const activity = useActivity();
   const eventsQ = useVenueEvents(venueId, preview);
   const membershipsQ = useVenueMemberships(venueId, preview);
   // Owning-org profile, enriches the "Hosted by" byline. Degrades to the
@@ -94,6 +97,9 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
   const currency = currencyForCountry(venueQ.data?.venue.address.country);
 
   function toggleCartSlot(slot: CartSlot) {
+    if (!cart.has(slot.id)) {
+      activity.log('slot_select', { itemType: 'slot', itemId: slot.id, props: { venueId, arenaId: slot.arenaId } });
+    }
     setCart((prev) => {
       const next = new Map(prev);
       if (next.has(slot.id)) next.delete(slot.id);

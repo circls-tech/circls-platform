@@ -13,6 +13,8 @@ export const consumerActivity = pgTable('consumer_activity', {
   id: uuidPk(),
   userId: uuid('user_id').notNull(),
   sessionId: text('session_id'),
+  /** Client the row came from: 'web' | 'android' | 'ios'; null = unknown (legacy). */
+  app: text('app'),
   eventType: text('event_type').notNull(),
   itemType: text('item_type'),
   itemId: uuid('item_id'),

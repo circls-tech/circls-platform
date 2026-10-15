@@ -1658,11 +1658,13 @@ const ACTIVITY_UUID_RE =
 export async function logConsumerActivity(
   userId: string,
   events: ActivityEventInput[],
+  app: string | null = null,
 ): Promise<number> {
   if (events.length === 0) return 0;
   const rows = events.map((e) => ({
     userId,
     sessionId: e.sessionId ?? null,
+    app,
     eventType: e.eventType,
     itemType: e.itemType ?? null,
     itemId: e.itemId && ACTIVITY_UUID_RE.test(e.itemId) ? e.itemId : null,

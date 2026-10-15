@@ -49,3 +49,21 @@ describe.skipIf(!runIntegration)('logConsumerActivity insert (DB)', () => {
     expect(true).toBe(true);
   });
 });
+
+describe('activity batch app marker', () => {
+  const good = { eventType: 'screen_view', clientTs: '2026-06-06T07:30:00.000Z' };
+
+  it('accepts web, android and ios', () => {
+    for (const app of ['web', 'android', 'ios']) {
+      expect(activityBatchBody.safeParse({ events: [good], app }).success).toBe(true);
+    }
+  });
+
+  it('is optional (older app builds do not send it)', () => {
+    expect(activityBatchBody.safeParse({ events: [good] }).success).toBe(true);
+  });
+
+  it('rejects an unknown client name', () => {
+    expect(activityBatchBody.safeParse({ events: [good], app: 'desktop' }).success).toBe(false);
+  });
+});
