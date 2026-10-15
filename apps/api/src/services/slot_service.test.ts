@@ -503,7 +503,8 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       const existingSlots = await db
         .select()
         .from(slots)
-        .where(sql`arena_id = ${arenaId} and deleted_at is null`);
+        .where(sql`arena_id = ${arenaId} and deleted_at is null and status = 'open'`)
+        .orderBy(sql`lower(time_range)`);
 
       const slotIds = existingSlots.slice(0, 1).map((s) => s.id);
       const result = await bulkUpdateSlots(ctx, slotIds, {});
@@ -514,7 +515,8 @@ describe.skipIf(!runIntegration)('slot_service integration', () => {
       const existingSlots = await db
         .select()
         .from(slots)
-        .where(sql`arena_id = ${arenaId} and deleted_at is null`);
+        .where(sql`arena_id = ${arenaId} and deleted_at is null and status = 'open'`)
+        .orderBy(sql`lower(time_range)`);
 
       const targetSlot = existingSlots[0];
       if (!targetSlot) throw new Error('No slots to test with');
