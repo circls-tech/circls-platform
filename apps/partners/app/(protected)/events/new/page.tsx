@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { type FormEvent, Suspense, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import {
   isSeriesResult,
   useCreateTenantEvent,
+  useEvent,
   type CreateTenantEventInput,
 } from '@/lib/api/events';
 import { useCurrency } from '@/lib/currency';
@@ -23,6 +24,7 @@ import {
   questionsToPayload,
   type QuestionDraft,
 } from '@/lib/events/questions';
+import { duplicateDraftFromEvent } from '@/lib/events/duplicate';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
@@ -38,7 +40,7 @@ import {
   isValidRedirectUrl,
   redirectToPayload,
 } from '@/components/PostBookingRedirectEditor';
-import type { PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
+import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/types';
 import { Button, Card, Input } from '@/lib/ui';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
@@ -64,41 +66,118 @@ function localToTzIso(local: string, tz: string): string {
 type Scope = 'venue' | 'standalone';
 
 export default function NewTenantEventPage() {
-  const router = useRouter();
+  // useSearchParams needs a Suspense boundary on a statically-rendered route.
+  return (
+    <Suspense fallback={null}>
+      <NewTenantEventRoute />
+    </Suspense>
+  );
+}
+
+/**
+ * Resolves the tenant and, for `?from=<eventId>` (an event's Duplicate
+ * button), loads the event to copy before the form mounts. The form is keyed
+ * on tenant + source, so it is born seeded rather than patched after the
+ * fact: nothing the organiser types can be overwritten by a late fetch, and
+ * switching organisation or dropping `?from` gives a fresh blank form.
+ */
+function NewTenantEventRoute() {
+  const params = useSearchParams();
+  const fromId = params.get('from');
   const { activeTenantId } = useOrg();
-  const tenantId = activeTenantId ?? '';
+  // The ?tenantId link param first (venue-scoped pages carry it); without it,
+  // the active organisation.
+  const tenantId = params.get('tenantId') || activeTenantId || '';
+  const { data: source, error: sourceError } = useEvent(tenantId, fromId);
+
+  if (!tenantId) {
+    return <p className="text-sm text-slate-500">Select an organization first.</p>;
+  }
+
+  const sourcePending = Boolean(fromId) && !source && !sourceError;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
+        &larr; Events
+      </Link>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
+        {fromId ? 'Duplicate event' : 'New event'}
+      </h1>
+
+      {fromId && (
+        <p className="rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          {sourceError ? (
+            <>Couldn’t load the event to copy ({sourceError.message}) — the form below starts blank.</>
+          ) : source ? (
+            <>
+              Copying <span className="font-medium text-slate-800">{source.name}</span>. Dates,
+              recurrence and photos aren’t copied — set new dates below. The copy is saved as a
+              separate draft; the original is left as it is.
+            </>
+          ) : (
+            <>Loading the event to copy…</>
+          )}
+        </p>
+      )}
+
+      {!sourcePending && (
+        <NewTenantEventForm
+          key={`${tenantId}:${source?.id ?? 'blank'}`}
+          tenantId={tenantId}
+          source={source ?? null}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewTenantEventForm({
+  tenantId,
+  source,
+}: {
+  tenantId: string;
+  /** The event to copy, already loaded; null for a blank form. */
+  source: VenueEvent | null;
+}) {
+  const router = useRouter();
   const { data: venues } = useVenues(tenantId);
   const createEvent = useCreateTenantEvent(tenantId);
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  // Seeded once, on mount — the route remounts this form whenever the source
+  // changes, so there is no later patch to race the organiser's edits.
+  const [seed] = useState(() => (source ? duplicateDraftFromEvent(source) : null));
 
-  const [scope, setScope] = useState<Scope>('venue');
-  const [venueId, setVenueId] = useState('');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [scope, setScope] = useState<Scope>(seed?.scope ?? 'venue');
+  const [venueId, setVenueId] = useState(seed?.venueId ?? '');
+  const [name, setName] = useState(seed?.name ?? '');
+  const [description, setDescription] = useState(seed?.description ?? '');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
-  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
-  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
-  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [tiers, setTiers] = useState<TierDraft[]>(seed?.tiers ?? [emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>(seed?.questions ?? []);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(seed?.qrConfig ?? null);
   // null = no per-customer ticket limit; else the count input's string value.
-  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
-  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(seed?.maxPerUser ?? null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(seed?.redirect ?? null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  const [line1, setLine1] = useState('');
-  const [line2, setLine2] = useState('');
-  const [city, setCity] = useState('');
-  const [stateRegion, setStateRegion] = useState('');
-  const [pincode, setPincode] = useState('');
-  const [country, setCountry] = useState('');
-  const [tz, setTz] = useState('Asia/Kolkata');
+  const [line1, setLine1] = useState(seed?.address.line1 ?? '');
+  const [line2, setLine2] = useState(seed?.address.line2 ?? '');
+  const [city, setCity] = useState(seed?.address.city ?? '');
+  const [stateRegion, setStateRegion] = useState(seed?.address.state ?? '');
+  const [pincode, setPincode] = useState(seed?.address.pincode ?? '');
+  const [country, setCountry] = useState(seed?.address.country ?? '');
+  const [tz, setTz] = useState(seed?.address.tz ?? 'Asia/Kolkata');
   // Coordinates are held here (never shown) — set from an autocomplete pick and
   // cleared on any manual address edit so the server geocodes from the typed
   // address on create. Organisers never enter lat/lng by hand.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    seed?.address.coords ?? null,
+  );
   const [err, setErr] = useState<string | null>(null);
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
@@ -243,31 +322,13 @@ export default function NewTenantEventPage() {
     }
   }
 
-  if (!activeTenantId) {
-    return <p className="text-sm text-slate-500">Select an organization first.</p>;
-  }
-
   // Only once the role is known, so Owners and Managers never see it flash up.
   if (!roleLoading && !can('events.write')) {
-    return (
-      <div className="flex flex-col gap-6">
-        <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
-          &larr; Events
-        </Link>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
-        <RoleNotice>Your role can’t create events — Owners and Managers can.</RoleNotice>
-      </div>
-    );
+    return <RoleNotice>Your role can’t create events — Owners and Managers can.</RoleNotice>;
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        &larr; Events
-      </Link>
-      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
-
-      <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
+    <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Where</label>
@@ -399,6 +460,5 @@ export default function NewTenantEventPage() {
           </div>
         </form>
       </Card>
-    </div>
   );
 }

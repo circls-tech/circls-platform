@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { type FormEvent, useRef, useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import { useCan } from '@/lib/use_can';
+import { addressDraftFromApi } from '@/lib/events/duplicate';
 import {
   useCancelEventSeries,
   useArchiveTenantEvent,
@@ -118,6 +119,7 @@ function isoToTzLocal(iso: string, tzName: string): string {
 }
 
 export default function OrgEventDetailPage() {
+  const router = useRouter();
   const { eventId } = useParams<{ eventId: string }>();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
@@ -222,16 +224,15 @@ export default function OrgEventDetailPage() {
     setRedirect(ev.postBookingRedirect ?? null);
     setVenueChoice(ev.venueId ?? '');
     // Prefill the standalone address from whatever the event already carries.
-    const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
-    const str = (k: string) => (typeof addr[k] === 'string' ? (addr[k] as string) : '');
-    setLine1(str('line1'));
-    setLine2(str('line2'));
-    setCity(str('city'));
-    setStateRegion(str('state'));
-    setPincode(str('pincode'));
-    setCountryForm(str('country'));
-    setCoords(ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : null);
-    setTzForm(ev.tzName ?? 'Asia/Kolkata');
+    const addr = addressDraftFromApi(ev);
+    setLine1(addr.line1);
+    setLine2(addr.line2);
+    setCity(addr.city);
+    setStateRegion(addr.state);
+    setPincode(addr.pincode);
+    setCountryForm(addr.country);
+    setCoords(addr.coords);
+    setTzForm(addr.tz);
     setErrorMsg(null);
     setEditing(true);
   }
@@ -419,6 +420,18 @@ export default function OrgEventDetailPage() {
               <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
                 Preview
               </Button>
+              {/* Opens the new-event form seeded from this event, whatever
+                  its status — rerunning a finished event is the common case. */}
+              {canWrite && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!authed}
+                  onClick={() => router.push(`/events/new?from=${ev.id}`)}
+                >
+                  Duplicate
+                </Button>
+              )}
               {/* Taking someone's details at the door is a front-desk job, so
                   it belongs beside the event's name — not below the whole
                   registrations table. Gated exactly as the desk itself is. */}

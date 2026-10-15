@@ -96,7 +96,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Creating and publishing events',
     category: 'Events',
     summary:
-      'How to create one-off or weekly recurring events, add photos (choosing the cover and its listing crop), define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
+      'How to create one-off or weekly recurring events, duplicate a past one, add photos (choosing the cover and its listing crop), define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
     order: 5,
   },
   {
