@@ -97,7 +97,8 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
   const currency = currencyForCountry(venueQ.data?.venue.address.country);
 
   function toggleCartSlot(slot: CartSlot) {
-    if (!cart.has(slot.id)) {
+    // Only a selection the cart will take: a full cart leaves it unchanged.
+    if (!cart.has(slot.id) && cart.size < MAX_CART_SLOTS) {
       activity.log('slot_select', { itemType: 'slot', itemId: slot.id, props: { venueId, arenaId: slot.arenaId } });
     }
     setCart((prev) => {

@@ -20,6 +20,11 @@ describe('ActivityLogger', () => {
     const { logger } = make();
     logger.log('screen_view', { props: { route: '/events/[id]' } });
     expect(logger.pendingCount).toBe(1);
+    expect(logger.snapshot()[0]).toMatchObject({
+      eventType: 'screen_view',
+      sessionId: 's1',
+      clientTs: '2026-10-16T10:00:00.000Z',
+    });
   });
 
   it('sends nothing until ready, then drains the queue', async () => {
@@ -34,7 +39,6 @@ describe('ActivityLogger', () => {
     await logger.flush();
     expect(sent).toHaveLength(1);
     expect(sent[0]!.map((e) => e.eventType)).toEqual(['screen_view', 'search', 'item_view']);
-    expect(sent[0]![0]).toMatchObject({ sessionId: 's1', clientTs: '2026-10-16T10:00:00.000Z' });
     expect(logger.pendingCount).toBe(0);
   });
 
@@ -52,7 +56,7 @@ describe('ActivityLogger', () => {
   it('drops the oldest events once the queue is full', () => {
     const { logger } = make({ maxQueue: 3 });
     for (const t of ['a', 'b', 'c', 'd']) logger.log(t);
-    expect(logger.pendingCount).toBe(3);
+    expect(logger.snapshot().map((e) => e.eventType)).toEqual(['b', 'c', 'd']);
   });
 
   it('splits a large queue into batches the API accepts', async () => {
@@ -74,6 +78,25 @@ describe('ActivityLogger', () => {
     expect(logger.pendingCount).toBe(0);
   });
 
+  it('keeps a batch in the queue until its send settles', async () => {
+    // The first send hangs until released; later ones settle at once.
+    let finish: () => void = () => {};
+    const send = vi.fn((_events: ActivityEvent[]) =>
+      send.mock.calls.length === 1 ? new Promise<void>((resolve) => (finish = resolve)) : Promise.resolve(),
+    );
+    const logger = new ActivityLogger({ send, sessionId: 's1' });
+    logger.log('a');
+    logger.setReady(true);
+    const flushing = logger.flush();
+    // In flight: still pending (a page unload here leaves it for the next load).
+    expect(logger.pendingCount).toBe(1);
+    logger.log('b');
+    finish();
+    await flushing;
+    expect(logger.pendingCount).toBe(0);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it('restores persisted events ahead of new ones and ignores junk', async () => {
     const { logger, sent } = make();
     logger.log('new');
@@ -86,11 +109,35 @@ describe('ActivityLogger', () => {
     expect(sent[0]!.map((e) => e.eventType)).toEqual(['old', 'new']);
   });
 
-  it('reports queue changes so the provider can persist them', () => {
+  it('reset forgets the queue and stamps a new session', () => {
+    const { logger } = make();
+    logger.log('a');
+    logger.reset('s2');
+    expect(logger.pendingCount).toBe(0);
+    logger.log('b');
+    expect(logger.snapshot()[0]).toMatchObject({ eventType: 'b', sessionId: 's2' });
+  });
+
+  it('reports queue changes with the ready flag so the provider can persist them', () => {
     const onChange = vi.fn();
     const { logger } = make({ onChange });
     logger.log('a');
-    expect(onChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ eventType: 'a' })]));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([expect.objectContaining({ eventType: 'a' })]),
+      false,
+    );
+    logger.setReady(true);
+    expect(onChange).toHaveBeenLastCalledWith(expect.any(Array), true);
+  });
+
+  it('survives an onChange handler that throws', () => {
+    const { logger } = make({
+      onChange: () => {
+        throw new Error('storage blocked');
+      },
+    });
+    expect(() => logger.log('a')).not.toThrow();
+    expect(logger.pendingCount).toBe(1);
   });
 });
 
@@ -99,5 +146,10 @@ describe('routePattern', () => {
     expect(routePattern('/events/0193a4f2-1b2c-4d5e-8f90-123456789abc')).toBe('/events/[id]');
     expect(routePattern('/me/bookings')).toBe('/me/bookings');
     expect(routePattern('/')).toBe('/');
+  });
+
+  it('collapses organisation slugs', () => {
+    expect(routePattern('/orgs/acme-sports')).toBe('/orgs/[slug]');
+    expect(routePattern('/orgs')).toBe('/orgs');
   });
 });

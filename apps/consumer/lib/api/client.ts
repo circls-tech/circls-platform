@@ -1,6 +1,8 @@
 import { auth } from '@/lib/firebase/client';
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.circls.app';
+/** The API origin, for the rare caller that must build a request by hand. */
+export const API_BASE = BASE;
 
 interface ApiErrorBody {
   error?: { code: string; message: string; details?: unknown };

@@ -67,8 +67,12 @@ export function LikeButton({
       router.push(`/login?redirect=${encodeURIComponent(here)}`);
       return;
     }
-    activity.log(liked ? 'unlike' : 'like', { itemType, itemId });
-    toggle.mutate({ itemType, itemId, liked: !liked });
+    // Logged once the API has accepted it: a refused like (cap reached,
+    // listing gone) must not count as one.
+    toggle.mutate(
+      { itemType, itemId, liked: !liked },
+      { onSuccess: () => activity.log(liked ? 'unlike' : 'like', { itemType, itemId }) },
+    );
   }
 
   const label = liked ? `Remove ${name} from your wishlist` : `Save ${name} to your wishlist`;

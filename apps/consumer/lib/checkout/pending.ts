@@ -1,5 +1,6 @@
 'use client';
 
+import { sessionRead, sessionRemove, sessionWrite } from '../storage';
 import type { CartSlot, CheckoutItem, CheckoutPrefill } from './types';
 
 /**
@@ -36,62 +37,31 @@ interface Stamped<T> {
   value: T;
 }
 
-/**
- * sessionStorage throws rather than returning null in a few real situations —
- * Safari private browsing, and browsers configured to block site data — so
- * every access is wrapped. Losing a cart is a worse-but-tolerable outcome; a
- * thrown exception that blanks the page is not.
- */
-function session(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
+// Storage access goes through lib/storage, which absorbs the cases where
+// sessionStorage throws (Safari private browsing, blocked site data, SSR).
+// Losing a cart is a worse-but-tolerable outcome; a blank page is not.
 function readStamped<T>(key: string): T | null {
-  const store = session();
-  if (!store) return null;
+  const raw = sessionRead(key);
+  if (!raw) return null;
   try {
-    const raw = store.getItem(key);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as Stamped<T>;
     if (typeof parsed?.savedAt !== 'number' || Date.now() - parsed.savedAt > MAX_AGE_MS) {
-      store.removeItem(key);
+      sessionRemove(key);
       return null;
     }
     return parsed.value;
   } catch {
     // Corrupt or foreign data under our key — drop it rather than trip over it.
-    try {
-      store.removeItem(key);
-    } catch {
-      /* nothing further we can do */
-    }
+    sessionRemove(key);
     return null;
   }
 }
 
 function writeStamped<T>(key: string, value: T): void {
-  const store = session();
-  if (!store) return;
-  try {
-    store.setItem(key, JSON.stringify({ savedAt: Date.now(), value } satisfies Stamped<T>));
-  } catch {
-    /* quota or blocked storage — the cart just won't survive the redirect */
-  }
+  sessionWrite(key, JSON.stringify({ savedAt: Date.now(), value } satisfies Stamped<T>));
 }
 
-function remove(key: string): void {
-  const store = session();
-  if (!store) return;
-  try {
-    store.removeItem(key);
-  } catch {
-    /* ignore */
-  }
-}
+const remove = sessionRemove;
 
 export function savePendingCheckout(pending: PendingCheckout): void {
   writeStamped(PENDING_KEY, pending);
