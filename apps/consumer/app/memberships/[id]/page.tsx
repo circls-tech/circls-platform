@@ -17,6 +17,7 @@ import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
 import { usePreviewToken } from '@/lib/preview';
+import { useItemView } from '@/lib/activity/ActivityProvider';
 import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
@@ -59,6 +60,7 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
   // unapproved plan as a customer will. Same page, buying turned off.
   const preview = usePreviewToken();
   const membershipQ = useMembership(id, preview);
+  useItemView('membership', id, !preview);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const m = membershipQ.data;

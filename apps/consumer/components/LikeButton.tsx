@@ -2,6 +2,7 @@
 import type { MouseEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useActivity } from '@/lib/activity/ActivityProvider';
 import { useIsLiked, useToggleLike } from '@/lib/api/wishlist';
 import type { WishlistItemType } from '@/lib/api/types';
 import { inlinePillClass, overlayChipClass } from '@/components/chips';
@@ -56,6 +57,7 @@ export function LikeButton({
   const pathname = usePathname();
   const liked = useIsLiked(itemType, itemId);
   const toggle = useToggleLike();
+  const activity = useActivity();
 
   function onClick(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
@@ -66,7 +68,12 @@ export function LikeButton({
       router.push(`/login?redirect=${encodeURIComponent(here)}`);
       return;
     }
-    toggle.mutate({ itemType, itemId, liked: !liked });
+    // Logged once the API has accepted it: a refused like (cap reached,
+    // listing gone) must not count as one.
+    toggle.mutate(
+      { itemType, itemId, liked: !liked },
+      { onSuccess: () => activity.log(liked ? 'unlike' : 'like', { itemType, itemId }) },
+    );
   }
 
   const label = liked ? `Remove ${name} from your wishlist` : `Save ${name} to your wishlist`;

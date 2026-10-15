@@ -456,6 +456,13 @@
       "when": 1784340000000,
       "tag": "0065_wishlist_items",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784420000000,
+      "tag": "0066_consumer_activity_app",
+      "breakpoints": true
     }
   ]
 }

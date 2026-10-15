@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AuthProvider } from '@/lib/firebase/auth_context';
+import { ActivityProvider } from '@/lib/activity/ActivityProvider';
 import { CheckoutProvider } from '@/lib/checkout/CheckoutProvider';
 import { LocationProvider } from '@/lib/location/LocationProvider';
 import { NavDepthTracker } from '@/lib/nav/NavDepthTracker';
@@ -13,12 +14,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <AuthProvider>
-        <LocationProvider>
-          <CheckoutProvider>
-            <NavDepthTracker />
-            {children}
-          </CheckoutProvider>
-        </LocationProvider>
+        <ActivityProvider>
+          <LocationProvider>
+            <CheckoutProvider>
+              <NavDepthTracker />
+              {children}
+            </CheckoutProvider>
+          </LocationProvider>
+        </ActivityProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
 import { usePreviewToken } from '@/lib/preview';
+import { useItemView } from '@/lib/activity/ActivityProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 import { AddressLink } from '@/components/AddressLink';
 import { OffersStrip } from '@/components/OffersStrip';
@@ -38,6 +39,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // unapproved event as a customer will. Same page, booking turned off.
   const preview = usePreviewToken();
   const eventQ = useEvent(id, preview);
+  useItemView('event', id, !preview);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
   const ev = eventQ.data;

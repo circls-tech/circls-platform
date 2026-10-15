@@ -24,6 +24,7 @@ import {
   type QuoteResponse,
 } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
+import { useActivity } from '@/lib/activity/ActivityProvider';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
@@ -75,6 +76,7 @@ function quoteItem(item: CheckoutItem): QuoteRequest {
 
 export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: CheckoutItem; prefill: CheckoutPrefill; onSuccess?: () => void; onClose: () => void }) {
   const { user } = useAuth();
+  const activity = useActivity();
   const profile = useMyProfile();
   const quote = useCheckoutQuote();
   const bookSlots = useBookSlots();
@@ -136,8 +138,21 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   useEffect(() => {
     if (!firedSuccess.current && (phase.kind === 'success' || phase.kind === 'reserved')) {
       firedSuccess.current = true;
+      activity.log('booking_created', {
+        itemType: item.kind,
+        itemId: item.kind === 'event' ? item.eventId : item.kind === 'membership' ? item.membershipId : item.slotIds[0],
+        props: {
+          kind: item.kind,
+          ...(item.kind === 'slot' ? { slotIds: item.slotIds } : {}),
+          totalPaise: breakdown?.totalPaise ?? null,
+          currency: breakdown?.currency ?? null,
+          coupon: appliedCode ?? null,
+          outcome: phase.kind,
+        },
+      });
       onSuccess?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, onSuccess]);
 
   function applyCode(code: string) {

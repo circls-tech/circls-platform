@@ -1,6 +1,7 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useActivity } from '@/lib/activity/ActivityProvider';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { EmptyState } from '@/components/EmptyState';
@@ -61,6 +62,18 @@ function SearchInner() {
 
   const results = useSearch(q, scope);
   const data = results.data;
+  // One `search` row per settled term, counted once its own results are in
+  // (placeholderData keeps the previous term's list on screen while loading).
+  const activity = useActivity();
+  const lastLogged = useRef<string | null>(null);
+  useEffect(() => {
+    if (!q || !data || results.isPlaceholderData) return;
+    const key = `${scope}:${q}`;
+    if (lastLogged.current === key) return;
+    lastLogged.current = key;
+    const count = data.events.length + data.venues.length + data.memberships.length;
+    activity.log('search', { props: { query: q, scope, resultCount: count, zeroResults: count === 0 } });
+  }, [activity, q, scope, data, results.isPlaceholderData]);
   const sel = { city, country, coords };
   const nearYou = Boolean(coords) && !city;
   const areaLabel = city ?? (nearYou ? 'near you' : country);
