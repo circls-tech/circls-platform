@@ -116,7 +116,7 @@ export function AuditDiff({ before, after }: { before: unknown; after: unknown }
           type="button"
           onClick={() => toggle('summary')}
           aria-expanded={view === 'summary'}
-          className="text-xs font-medium text-blue-700 hover:underline"
+          className="text-xs font-medium text-brand-900 hover:underline"
         >
           {view === 'summary' ? 'Hide' : 'Summary'}
         </button>

@@ -138,7 +138,7 @@ function QuestionsPageContent() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Questions</h1>
+          <h1 className="text-xl font-extrabold tracking-tight text-[#17151D]">Questions</h1>
           <p className="mt-0.5 text-sm text-slate-500">
             Consumer questions on events, arenas and memberships across all orgs.
           </p>

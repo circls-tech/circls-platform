@@ -121,7 +121,7 @@ export function ShelfTabs<K extends string>({
           onClick={() => onChange(o.key)}
           className={
             value === o.key
-              ? 'rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white'
+              ? 'rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900'
               : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
           }
         >
@@ -143,7 +143,7 @@ function ThRight({ children }: { children: React.ReactNode }) {
 
 function TableShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
       <table className="w-full min-w-[720px] text-sm">{children}</table>
     </div>
   );

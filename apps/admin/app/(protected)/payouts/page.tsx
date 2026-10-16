@@ -116,7 +116,7 @@ export default function PayoutsPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Payouts</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Payouts</h1>
           <p className="text-sm text-slate-500">
             Weekly Circls-as-merchant payouts to venues.
           </p>
@@ -140,7 +140,7 @@ export default function PayoutsPage() {
                 className={[
                   'rounded px-3 py-1.5 text-sm font-medium transition-colors',
                   filter === f.id
-                    ? 'bg-slate-900 text-white'
+                    ? 'bg-brand-600 text-slate-900 ring-1 ring-inset ring-[#17151D]'
                     : 'text-slate-600 hover:text-slate-900',
                 ].join(' ')}
               >
@@ -163,9 +163,9 @@ export default function PayoutsPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[960px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Venue</th>
               <th className="px-4 py-2 font-medium">Period</th>
@@ -208,7 +208,7 @@ export default function PayoutsPage() {
                     type="button"
                     onClick={() => setOpenBreakdown(openBreakdown === r.id ? null : r.id)}
                     aria-expanded={openBreakdown === r.id}
-                    className="text-left text-blue-700 hover:underline"
+                    className="text-left text-brand-900 hover:underline"
                   >
                     {r.tenantName}
                   </button>

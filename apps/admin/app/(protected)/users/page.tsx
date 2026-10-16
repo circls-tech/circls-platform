@@ -100,7 +100,7 @@ export default function ConsumerUsersPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Consumers</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Consumers</h1>
           <p className="text-sm text-slate-500">
             Every consumer account with booking, activity and login rollups.
           </p>
@@ -128,7 +128,7 @@ export default function ConsumerUsersPage() {
             type="button"
             onClick={() => void downloadCsv()}
             disabled={downloading}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
           >
             {downloading ? 'Preparing…' : 'Download CSV'}
           </button>
@@ -139,9 +139,9 @@ export default function ConsumerUsersPage() {
       </p>
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[1100px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">User</th>
               <th className="px-4 py-2 font-medium">Contact</th>

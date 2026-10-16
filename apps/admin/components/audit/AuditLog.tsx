@@ -113,7 +113,7 @@ function AuditLogContent({ fixedTenantId }: { fixedTenantId?: string }) {
       {/* Filters */}
       <form
         onSubmit={(event) => { event.preventDefault(); apply(); }}
-        className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+        className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]"
       >
         {/* The plain-language search comes first: it is what most people have —
             an org name or someone's phone — rather than a UUID. */}
@@ -198,7 +198,7 @@ function AuditLogContent({ fixedTenantId }: { fixedTenantId?: string }) {
             <button
               type="submit"
               disabled={formInvalid}
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-md border-2 border-[#17151D] bg-brand-600 px-3 py-2 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
             >
               Apply
             </button>
@@ -217,9 +217,9 @@ function AuditLogContent({ fixedTenantId }: { fixedTenantId?: string }) {
       </form>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className={`w-full text-sm ${fixedTenantId ? 'min-w-[800px]' : 'min-w-[960px]'}`}>
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">When (IST)</th>
               {!fixedTenantId && <th className="px-4 py-2 font-medium">Tenant</th>}
@@ -260,7 +260,7 @@ function AuditLogContent({ fixedTenantId }: { fixedTenantId?: string }) {
                   {r.tenantId ? (
                     <Link
                       href={`/tenants/${r.tenantId}`}
-                      className="text-blue-700 hover:underline"
+                      className="text-brand-900 hover:underline"
                       title={r.tenantId}
                     >
                       {r.tenantName ?? `${r.tenantId.slice(0, 8)}…`}

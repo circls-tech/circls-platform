@@ -69,7 +69,7 @@ export default function PaymentsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Payments</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Payments</h1>
         <p className="text-sm text-slate-500">
           Which gateway takes Indian (INR) payments. US payments always go through Stripe.
         </p>
@@ -97,7 +97,7 @@ export default function PaymentsPage() {
               switch to {GATEWAY_NAME[data.inrGateway]} here.
             </div>
           )}
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
             <h2 className="text-sm font-semibold text-slate-900">New Indian payments go to</h2>
             <p className="mt-0.5 text-xs text-slate-500">
               {data.source === 'admin' && data.updatedAt
@@ -153,7 +153,7 @@ export default function PaymentsPage() {
             </p>
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
             <h2 className="text-sm font-semibold text-slate-900">Automatic failover to Razorpay</h2>
             {data.failover.active && data.failover.until ? (
               <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

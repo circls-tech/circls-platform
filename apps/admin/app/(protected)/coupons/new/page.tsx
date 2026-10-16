@@ -92,11 +92,11 @@ export default function NewAdminCouponPage() {
     <div className="space-y-4">
       <Link href="/coupons" className="text-sm text-slate-500 hover:text-slate-800">&larr; Coupons</Link>
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">New platform coupon</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">New platform coupon</h1>
         <p className="text-sm text-slate-500">Circls-funded — partner payouts are unaffected. Money amounts are in ₹.</p>
       </div>
 
-      <form onSubmit={onSubmit} className="grid max-w-2xl grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
+      <form onSubmit={onSubmit} className="grid max-w-2xl grid-cols-1 gap-4 rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] sm:grid-cols-2">
         <label className={labelCls}>Code
           <input className={inputCls} value={code} onChange={(e) => setCode(e.target.value)} placeholder="DIWALI20" />
           <span className="mt-1 block text-xs font-normal text-slate-400">Stored uppercase. Unique across the platform.</span>
@@ -169,7 +169,7 @@ export default function NewAdminCouponPage() {
         {err && <p className="text-sm text-red-600 sm:col-span-2">{err}</p>}
         <div className="flex justify-end gap-2 sm:col-span-2">
           <button type="button" onClick={() => router.push('/coupons')} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button type="submit" disabled={create.isPending} className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+          <button type="submit" disabled={create.isPending} className="rounded-md border-2 border-[#17151D] bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50">
             {create.isPending ? 'Creating…' : 'Create coupon'}
           </button>
         </div>

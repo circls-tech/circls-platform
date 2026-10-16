@@ -135,12 +135,12 @@ export default function AdminCouponDetailPage() {
       {coupon && (
         <>
           <div className="flex items-center justify-between gap-3">
-            <h1 className="font-mono text-2xl font-semibold text-slate-900">{coupon.code}</h1>
+            <h1 className="font-mono text-2xl font-extrabold tracking-tight text-[#17151D]">{coupon.code}</h1>
             <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[coupon.status] ?? 'bg-slate-100 text-slate-600'}`}>{coupon.status}</span>
           </div>
 
           {!editing && (
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
               <dl className="grid grid-cols-1 gap-y-4 sm:grid-cols-2">
                 <Field label="Scope">{coupon.scopeType === 'org' ? 'Platform-wide' : `${coupon.scopeType} (${coupon.scopeId})`}</Field>
                 <Field label="Discount">{discountLabel(coupon)}{coupon.maxDiscountPaise != null ? ` (max ${rupees(coupon.maxDiscountPaise)})` : ''}</Field>
@@ -155,14 +155,14 @@ export default function AdminCouponDetailPage() {
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
                 <button type="button" onClick={startEdit} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">Edit</button>
                 {coupon.status === 'active' && <button type="button" disabled={update.isPending} onClick={() => setStatus('paused')} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">Pause</button>}
-                {coupon.status === 'paused' && <button type="button" disabled={update.isPending} onClick={() => setStatus('active')} className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50">Resume</button>}
+                {coupon.status === 'paused' && <button type="button" disabled={update.isPending} onClick={() => setStatus('active')} className="rounded-md border-2 border-[#17151D] bg-brand-600 px-2.5 py-1 text-xs font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50">Resume</button>}
                 <button type="button" disabled={del.isPending} onClick={onDelete} className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50">Delete</button>
               </div>
             </div>
           )}
 
           {editing && (
-            <form onSubmit={onSubmit} className="grid max-w-2xl grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
+            <form onSubmit={onSubmit} className="grid max-w-2xl grid-cols-1 gap-4 rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D] sm:grid-cols-2">
               <p className="text-xs text-slate-500 sm:col-span-2">Code, scope, and discount type/amount can&apos;t be changed after creation. Create a new coupon to change those.</p>
               <label className={`${labelCls} sm:col-span-2`}>Description
                 <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -198,7 +198,7 @@ export default function AdminCouponDetailPage() {
               </label>
               <div className="flex justify-end gap-2 sm:col-span-2">
                 <button type="button" onClick={() => setEditing(false)} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={update.isPending} className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+                <button type="submit" disabled={update.isPending} className="rounded-md border-2 border-[#17151D] bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50">
                   {update.isPending ? 'Saving…' : 'Save changes'}
                 </button>
               </div>

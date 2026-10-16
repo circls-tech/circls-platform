@@ -405,7 +405,7 @@ function CustomerPreview({ row }: { row: AdminListingRow }) {
                 aria-pressed={device === d}
                 className={[
                   'rounded px-2 py-0.5 text-xs font-medium capitalize transition-colors',
-                  device === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+                  device === d ? 'bg-brand-600 text-slate-900 ring-1 ring-inset ring-[#17151D]' : 'text-slate-600 hover:text-slate-900',
                 ].join(' ')}
               >
                 {d}
@@ -503,7 +503,7 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
                   aria-pressed={view === t.id}
                   className={[
                     'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                    view === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
+                    view === t.id ? 'bg-brand-600 text-slate-900 ring-1 ring-inset ring-[#17151D]' : 'text-slate-600 hover:text-slate-900',
                   ].join(' ')}
                 >
                   {t.label}
@@ -877,9 +877,9 @@ function ChangesSection() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[720px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Org</th>
               <th className="px-4 py-2 font-medium">Event</th>
@@ -1041,7 +1041,7 @@ export default function ListingsPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Review queue</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Review queue</h1>
           <p className="text-sm text-slate-500">
             Listings awaiting Circls review before they go live.
           </p>
@@ -1055,7 +1055,7 @@ export default function ListingsPage() {
               className={[
                 'rounded px-3 py-1.5 text-sm font-medium transition-colors',
                 type === t.id
-                  ? 'bg-slate-900 text-white'
+                  ? 'bg-brand-600 text-slate-900 ring-1 ring-inset ring-[#17151D]'
                   : 'text-slate-600 hover:text-slate-900',
               ].join(' ')}
             >
@@ -1074,9 +1074,9 @@ export default function ListingsPage() {
       )}
 
       {type !== 'changes' && (
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[640px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Venue / Org</th>
               <th className="px-4 py-2 font-medium">Name</th>

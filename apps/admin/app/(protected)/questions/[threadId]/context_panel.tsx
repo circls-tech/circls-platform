@@ -108,7 +108,7 @@ export function CustomerContextPanel({ threadId }: { threadId: string }) {
   const { data, isLoading, isError } = useAdminQuestionContext(threadId);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

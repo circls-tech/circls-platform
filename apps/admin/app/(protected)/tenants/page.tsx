@@ -88,7 +88,7 @@ export default function TenantsPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Tenants</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Tenants</h1>
           <p className="text-sm text-slate-500">
             {status === 'active'
               ? 'Active tenants — switch Status to see suspended ones.'
@@ -105,7 +105,7 @@ export default function TenantsPage() {
         />
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border-2 border-[#17151D] bg-white p-3 shadow-[4px_4px_0_#17151D]">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</span>
           <select
@@ -176,9 +176,9 @@ export default function TenantsPage() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[720px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Slug</th>
