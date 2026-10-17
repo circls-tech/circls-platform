@@ -547,7 +547,7 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-white px-4 py-2 text-sm"
           >
             Cancel
           </button>
@@ -555,7 +555,7 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
             type="button"
             onClick={() => onReject(row)}
             disabled={busy}
-            className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#FFB0A3] px-4 py-2 text-sm"
           >
             Reject
           </button>
@@ -563,7 +563,7 @@ function DetailPanel({ row, onClose, onApprove, onReject, busy }: DetailPanelPro
             type="button"
             onClick={() => onApprove(row)}
             disabled={busy}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#BCE3A0] px-4 py-2 text-sm"
           >
             Approve
           </button>
@@ -800,7 +800,7 @@ function ChangeDetailPanel({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-white px-4 py-2 text-sm"
           >
             Cancel
           </button>
@@ -808,7 +808,7 @@ function ChangeDetailPanel({
             type="button"
             onClick={() => onReject(row)}
             disabled={busy}
-            className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#FFB0A3] px-4 py-2 text-sm"
           >
             Reject
           </button>
@@ -816,7 +816,7 @@ function ChangeDetailPanel({
             type="button"
             onClick={() => onApprove(row)}
             disabled={busy}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#BCE3A0] px-4 py-2 text-sm"
           >
             Approve &amp; apply
           </button>
@@ -937,7 +937,7 @@ function ChangesSection() {
                     <button
                       type="button"
                       onClick={() => setSelectedRow(r)}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-white px-3 py-1 text-xs"
                     >
                       View
                     </button>
@@ -945,7 +945,7 @@ function ChangesSection() {
                       type="button"
                       onClick={() => onApprove(r)}
                       disabled={busy}
-                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#BCE3A0] px-3 py-1 text-xs"
                     >
                       {approve.isPending ? 'Working…' : 'Approve'}
                     </button>
@@ -953,7 +953,7 @@ function ChangesSection() {
                       type="button"
                       onClick={() => onReject(r)}
                       disabled={busy}
-                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#FFB0A3] px-3 py-1 text-xs"
                     >
                       {reject.isPending ? 'Working…' : 'Reject'}
                     </button>
@@ -1123,7 +1123,7 @@ export default function ListingsPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedRow(r)}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-white px-3 py-1 text-xs"
                     >
                       View
                     </button>
@@ -1131,7 +1131,7 @@ export default function ListingsPage() {
                       type="button"
                       onClick={() => onApprove(r)}
                       disabled={busy}
-                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#BCE3A0] px-3 py-1 text-xs"
                     >
                       {approve.isPending ? 'Working…' : 'Approve'}
                     </button>
@@ -1139,7 +1139,7 @@ export default function ListingsPage() {
                       type="button"
                       onClick={() => onReject(r)}
                       disabled={busy}
-                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      className="rounded-md border-2 border-[#17151D] font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 bg-[#FFB0A3] px-3 py-1 text-xs"
                     >
                       {reject.isPending ? 'Working…' : 'Reject'}
                     </button>

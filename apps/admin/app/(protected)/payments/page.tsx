@@ -136,7 +136,7 @@ export default function PaymentsPage() {
                         type="button"
                         onClick={() => onSwitch(g)}
                         disabled={setGateway.isPending}
-                        className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                        className="mt-2 rounded-md border-2 border-[#17151D] bg-brand-600 px-3 py-1.5 text-xs font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                       >
                         {setGateway.isPending ? 'Switching…' : `Switch to ${GATEWAY_NAME[g]}`}
                       </button>
