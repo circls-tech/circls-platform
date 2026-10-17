@@ -256,7 +256,7 @@ export default function PayoutsPage() {
                       type="button"
                       onClick={() => onMarkPaid(r)}
                       disabled={execute.isPending}
-                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      className="rounded-md border-2 border-[#17151D] bg-[#BCE3A0] px-3 py-1 text-xs font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                     >
                       {execute.isPending
                         ? 'Working…'

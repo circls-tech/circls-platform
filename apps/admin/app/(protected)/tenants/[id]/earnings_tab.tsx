@@ -482,7 +482,7 @@ function ItemTable({
                         title={`${money(pendingPaise, i.currency)} across ${pending.length} payout line${
                           pending.length === 1 ? '' : 's'
                         }`}
-                        className="rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900 disabled:opacity-50"
+                        className="rounded-md border-2 border-[#17151D] bg-[#BCE3A0] px-3 py-1 text-xs font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                       >
                         {busy ? 'Working…' : `Mark paid · ${money(pendingPaise, i.currency)}`}
                       </button>
@@ -586,7 +586,7 @@ function NonItemLines({ lines, currency }: { lines: TenantPayoutItem[]; currency
               type="button"
               onClick={() => onMarkPaid(l)}
               disabled={busyId === l.id}
-              className="rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900 disabled:opacity-50"
+              className="rounded-md border-2 border-[#17151D] bg-[#BCE3A0] px-3 py-1 text-xs font-bold whitespace-nowrap text-[#17151D] shadow-[2px_2px_0_#17151D] transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
             >
               {busyId === l.id ? 'Working…' : 'Mark paid'}
             </button>
