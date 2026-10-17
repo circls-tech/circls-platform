@@ -17,8 +17,10 @@ import type { EventStatus, ListingStatus, Membership } from '@/lib/api/types';
  * new value silently and shown it among what is selling.
  */
 
-/** `true` = on shelf. */
-const VENUE_SHELF: Record<ListingStatus, boolean> = {
+/** `true` = on shelf. Venues and arenas share the listing lifecycle, so they
+ *  share this map: a closed arena is off its venue's default tab for the same
+ *  reason a closed venue is off the Venues page's. */
+const LISTING_SHELF: Record<ListingStatus, boolean> = {
   pending_review: true,
   active: true,
   rejected: false,
@@ -47,7 +49,12 @@ const MEMBERSHIP_SHELF: Record<Membership['status'], boolean> = {
   suspended: false,
 };
 
-export const isVenueOnShelf = (v: { status: ListingStatus }): boolean => VENUE_SHELF[v.status];
+export const isVenueOnShelf = (v: { status: ListingStatus }): boolean => LISTING_SHELF[v.status];
+
+/** Same shelf as a venue's: a closed or rejected arena is reachable from the
+ *  venue page's other tab, not mixed in with the courts that are taking
+ *  bookings. */
+export const isArenaOnShelf = (a: { status: ListingStatus }): boolean => LISTING_SHELF[a.status];
 
 /**
  * Stricter than the shelf: a desk is only offered for an arena that is live.
