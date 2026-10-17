@@ -16,6 +16,11 @@
 
   /* Brand sheet: ink + cream paper. */
   --color-ink:            #17151D;
+
+  /* Muted text sits on the cream surface now, where Tailwind's slate-500
+     (#64748b) only reaches 4.3:1. Darken it a notch so every text-slate-500
+     label clears the 4.5:1 AA floor on cream (4.9:1) and on white (5.4:1). */
+  --color-slate-500:      #5f6b7f;
   --color-surface:        #FAF3E8;
   --color-surface-card:   #ffffff;
   --color-border:         #e5e7eb;
@@ -58,8 +63,10 @@ body {
   }
 }
 
+/* Ink, not the pale sky primary: brand-600 is ~1.6:1 against cream and white,
+   which would leave keyboard users with no visible focus ring. */
 *:focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
   border-radius: var(--radius);
 }
