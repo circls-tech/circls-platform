@@ -72,7 +72,7 @@ Both venues and arenas move through the same set of statuses:
 
 Consumers only ever see **active** arenas inside **active** venues. If something isn't showing up publicly, check its status here first.
 
-The **Venues** page has two tabs. **Active** holds your live venues and any awaiting review; **Closed & rejected** holds the ones that aren't on the consumer portal, so they don't crowd the venues you're running.
+The **Venues** page has two tabs. **Active** holds your live venues and any awaiting review; **Closed & rejected** holds the ones that aren't on the consumer portal, so they don't crowd the venues you're running. A venue's arena list is split the same way, with a count on each tab.
 
 ## Closing a venue
 
@@ -89,7 +89,7 @@ Use **Close venue** at the top of a venue's page when it's shutting — for reno
 
 ### Closing one arena
 
-To take a single court or space out of use while the rest of the venue stays open, use **Close arena** on that arena's reception page. It works exactly like closing a venue: the arena stops taking online bookings, nothing is deleted or cancelled, the confirmation counts that arena's upcoming bookings, and **Reopen arena** puts it back where it was. A closed arena shows as **Closed** in its venue's arena list.
+To take a single court or space out of use while the rest of the venue stays open, use **Close arena** on that arena's reception page. It works exactly like closing a venue: the arena stops taking online bookings, nothing is deleted or cancelled, the confirmation counts that arena's upcoming bookings, and **Reopen arena** puts it back where it was. A closed arena moves to the **Closed & rejected** tab of its venue's arena list, marked **Closed**; the **Active** tab keeps only the arenas that are taking bookings or awaiting review. Open the closed arena from that tab to reach its reception page and reopen it — there is no separate "archive": closing is how you retire a court you no longer run, and its schedule and booking history stay where they were.
 
 ## Customer questions
 

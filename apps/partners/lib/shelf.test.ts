@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isEventOnShelf, isMembershipOnShelf, isVenueOnShelf } from './shelf';
+import { isArenaOnShelf, isEventOnShelf, isMembershipOnShelf, isVenueOnShelf } from './shelf';
 
 describe('isVenueOnShelf', () => {
   it('keeps a venue that is live, or on its way there', () => {
@@ -13,6 +13,19 @@ describe('isVenueOnShelf', () => {
     // Not reachable from the venue enum today, but the type admits it, and a
     // status nobody has classified must not default to visible.
     expect(isVenueOnShelf({ status: 'inactive' })).toBe(false);
+  });
+});
+
+describe('isArenaOnShelf', () => {
+  it('keeps an arena that is live, or awaiting review with its venue', () => {
+    expect(isArenaOnShelf({ status: 'active' })).toBe(true);
+    expect(isArenaOnShelf({ status: 'pending_review' })).toBe(true);
+  });
+
+  it('moves a closed or rejected arena to the other tab', () => {
+    expect(isArenaOnShelf({ status: 'suspended' })).toBe(false);
+    expect(isArenaOnShelf({ status: 'rejected' })).toBe(false);
+    expect(isArenaOnShelf({ status: 'inactive' })).toBe(false);
   });
 });
 
