@@ -245,7 +245,7 @@ export default function SupportIssuesPage() {
       </p>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Support Issues</h1>
+          <h1 className="text-xl font-extrabold tracking-tight text-[#17151D]">Support Issues</h1>
           <p className="mt-0.5 text-sm text-slate-500">
             Partner Help Centre issues and consumer Help-chatbot concerns.
           </p>

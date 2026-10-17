@@ -35,7 +35,7 @@ function LineTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2 font-medium">{showContact ? 'Customer' : 'What'}</th>
             <th className="px-4 py-2 text-right font-medium">Bookings</th>
@@ -111,7 +111,7 @@ function BookingTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2 font-medium">Customer</th>
             <th className="px-4 py-2 font-medium">What it was for</th>
@@ -258,7 +258,7 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
               onClick={() => setTab(k)}
               className={
                 tab === k
-                  ? 'rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white'
+                  ? 'rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900'
                   : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
               }
             >
@@ -334,7 +334,7 @@ export function PayoutBreakdown({ payoutId }: { payoutId: string }) {
         </p>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         {tab === 'item' ? (
           <LineTable
             lines={data.byItem}

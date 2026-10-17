@@ -114,7 +114,7 @@ function RevenueCard({
   const bookings = totals.reduce((n, t) => n + t.bookings, 0);
 
   return (
-    <div className="flex h-full flex-col gap-3 rounded-lg bg-white p-4 ring-1 ring-slate-200">
+    <div className="flex h-full flex-col gap-3 rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
         {!loading && (
@@ -200,7 +200,7 @@ export function RevenueSection() {
               onClick={() => setPreset(p.id)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                 preset === p.id
-                  ? 'bg-slate-900 text-white'
+                  ? 'bg-brand-600 text-slate-900 ring-1 ring-[#17151D]'
                   : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
               }`}
             >

@@ -205,7 +205,7 @@ export default function QuestionThreadPage() {
           &larr; Questions
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold text-slate-900">
+          <h1 className="text-xl font-extrabold tracking-tight text-[#17151D]">
             {t.subjectType === 'general'
               ? 'General question'
               : t.subject.name
@@ -232,7 +232,7 @@ export default function QuestionThreadPage() {
           )}
           <span>
             Tenant{' '}
-            <Link href={`/tenants/${t.tenantId}`} className="font-mono text-blue-700 hover:underline">
+            <Link href={`/tenants/${t.tenantId}`} className="font-mono text-brand-900 hover:underline">
               {t.tenantId.slice(0, 8)}…
             </Link>
           </span>
@@ -295,7 +295,7 @@ export default function QuestionThreadPage() {
 
       {/* Support-intake interview transcript (support-origin threads only). */}
       {t.flowAnswers && t.flowAnswers.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Interview answers
           </h2>
@@ -325,7 +325,7 @@ export default function QuestionThreadPage() {
       </div>
 
       {/* Reply composer */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
         <label htmlFor="reply-body" className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">
           Reply as Circls
         </label>
@@ -359,7 +359,7 @@ export default function QuestionThreadPage() {
             type="button"
             onClick={() => void handleReply()}
             disabled={isArchived || isClosed || reply.isPending || trimmed.length === 0}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
           >
             {reply.isPending ? 'Sending…' : 'Send reply'}
           </button>

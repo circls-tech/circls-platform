@@ -36,10 +36,10 @@ export default function AdminCouponsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Coupons</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Coupons</h1>
           <p className="text-sm text-slate-500">Platform-wide, Circls-funded promotional coupons.</p>
         </div>
-        <Link href="/coupons/new" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+        <Link href="/coupons/new" className="rounded-md border-2 border-[#17151D] bg-brand-600 px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700">
           New coupon
         </Link>
       </div>
@@ -48,12 +48,12 @@ export default function AdminCouponsPage() {
 
       {stats && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Circls-funded discount spend</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{rupees(stats.platformFunded.discountPaise)}</p>
             <p className="mt-0.5 text-xs text-slate-500">{stats.platformFunded.redemptions} redemption{stats.platformFunded.redemptions === 1 ? '' : 's'} — absorbed by Circls, partner payouts unaffected.</p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Partner-funded discounts</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{rupees(stats.orgFunded.discountPaise)}</p>
             <p className="mt-0.5 text-xs text-slate-500">{stats.orgFunded.redemptions} redemption{stats.orgFunded.redemptions === 1 ? '' : 's'} — funded by partners via their own coupons.</p>
@@ -62,7 +62,7 @@ export default function AdminCouponsPage() {
       )}
 
       {stats && stats.monthly.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">Circls-funded spend by month</div>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -85,9 +85,9 @@ export default function AdminCouponsPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
         <table className="w-full min-w-[900px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Code</th>
               <th className="px-4 py-2 font-medium">Scope</th>
@@ -106,7 +106,7 @@ export default function AdminCouponsPage() {
             {coupons?.map((c) => (
               <tr key={c.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2.5 font-mono text-xs font-medium">
-                  <Link href={`/coupons/${c.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">{c.code}</Link>
+                  <Link href={`/coupons/${c.id}`} className="text-brand-900 hover:text-brand-800 hover:underline">{c.code}</Link>
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-600">{c.scopeType === 'org' ? 'Platform-wide' : c.scopeType}</td>
                 <td className="px-4 py-2.5 text-xs text-slate-700">{discountLabel(c)}</td>

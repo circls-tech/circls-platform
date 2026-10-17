@@ -129,7 +129,7 @@ export default function TenantDetailPage() {
           &larr; Tenants
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-slate-900">{t.name}</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">{t.name}</h1>
           <span className="font-mono text-xs text-slate-500">{t.slug}</span>
           <StatusPill status={t.status} />
           {t.hiddenFromCatalog ? (
@@ -282,9 +282,9 @@ function MembersTab({ data }: { data: AdminTenantDetail }) {
   }
   return (
     <div className="space-y-4">
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
       <table className="w-full min-w-[640px] text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2 font-medium">Name</th>
             <th className="px-4 py-2 font-medium">Email</th>
@@ -461,7 +461,7 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
           type="button"
           onClick={save}
           disabled={update.isPending || splitInvalid}
-          className="rounded-md border border-slate-900 bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {update.isPending ? 'Saving…' : 'Save billing settings'}
         </button>
@@ -522,9 +522,9 @@ function EventOverridesTable({ tenant }: { tenant: AdminTenantDetail['tenant'] }
             : 'This tenant has no events.'}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
           <table className="w-full min-w-[900px] text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2 font-medium">Event</th>
                 <th className="px-4 py-2 font-medium">Venue</th>
@@ -663,7 +663,7 @@ function EventOverrideRow({
 // helpers
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
       <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">{title}</h2>
       <dl className="space-y-2 text-sm">{children}</dl>
     </section>

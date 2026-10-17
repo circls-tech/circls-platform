@@ -1,25 +1,42 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand blue scale */
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  /* Brand sky scale — the logo's petal sky blue (#a9c9f2) IS the primary (600).
+     Mirrors the partner portal so both consoles read as one product. */
+  --color-brand-50:  #f5f9fe;
+  --color-brand-100: #ecf3fc;
+  --color-brand-200: #dfeafa;
+  --color-brand-300: #d1e0f8;
+  --color-brand-400: #c3d7f6;
+  --color-brand-500: #b6d0f4;
+  --color-brand-600: #a9c9f2;
+  --color-brand-700: #8ab3e6;
+  --color-brand-800: #6390cc;
+  --color-brand-900: #47709f;
 
-  /* Neutrals — slate */
-  --color-surface:        #f8fafc;
+  /* Brand sheet: ink + cream paper. */
+  --color-ink:            #17151D;
+
+  /* Muted text sits on the cream surface now, where Tailwind's slate-500
+     (#64748b) only reaches 4.3:1. Darken it a notch so every text-slate-500
+     label clears the 4.5:1 AA floor on cream (4.9:1) and on white (5.4:1). */
+  --color-slate-500:      #5f6b7f;
+  --color-surface:        #FAF3E8;
   --color-surface-card:   #ffffff;
   --color-border:         #e5e7eb;
   --color-text-primary:   #0f172a;
   --color-text-secondary: #475569;
   --color-text-muted:     #94a3b8;
+
+  /* Petals (brand sheet) — used for nav highlights and stat-tile chips. */
+  --color-petal-yellow:   #FCE38A;
+  --color-petal-salmon:   #FFB0A3;
+  --color-petal-green:    #BCE3A0;
+  --color-petal-mint:     #9CE0D4;
+  --color-petal-pink:     #F9B4D4;
+  --color-petal-lavender: #CDBBF7;
+  --color-petal-sky:      #A9C9F2;
+  --color-petal-peach:    #FFD2A1;
 
   /* Border radius */
   --radius: 0.5rem;
@@ -35,12 +52,21 @@ body {
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-body), "Plus Jakarta Sans", system-ui, sans-serif;
 }
 
+/* Brand sheet: Bricolage Grotesque for display & headlines everywhere.
+   In @layer base so per-element utilities still win over it. */
+@layer base {
+  h1, h2, h3 {
+    font-family: var(--font-display), "Bricolage Grotesque", sans-serif;
+  }
+}
+
+/* Ink, not the pale sky primary: brand-600 is ~1.6:1 against cream and white,
+   which would leave keyboard users with no visible focus ring. */
 *:focus-visible {
-  outline: 2px solid var(--color-brand-600);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
   border-radius: var(--radius);
 }

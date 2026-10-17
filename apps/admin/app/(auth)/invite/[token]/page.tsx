@@ -181,7 +181,7 @@ export default function AcceptInvitePage() {
   if (error && !meta) {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-3 p-6">
-        <h1 className="text-2xl font-semibold">Invitation not found</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Invitation not found</h1>
         <p className="text-sm text-slate-600">
           The link may have expired or been revoked.
         </p>
@@ -201,7 +201,7 @@ export default function AcceptInvitePage() {
       <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6">
         {result.roleChanged ? (
           <>
-            <h1 className="text-2xl font-semibold">Role updated</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Role updated</h1>
             <p className="text-sm text-slate-600">
               You were already a member of <strong>{result.tenantName}</strong>. Your role has been
               upgraded from <strong>{formatRole(result.previousRole ?? '')}</strong> to{' '}
@@ -210,14 +210,14 @@ export default function AcceptInvitePage() {
           </>
         ) : (
           <>
-            <h1 className="text-2xl font-semibold">You&apos;re already a member</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">You&apos;re already a member</h1>
             <p className="text-sm text-slate-600">
               You&apos;re already part of <strong>{result.tenantName}</strong> as{' '}
               <strong>{formatRole(result.role)}</strong>. There&apos;s nothing to accept.
             </p>
           </>
         )}
-        <Link href="/dashboard" className="rounded bg-blue-600 px-4 py-2 text-center text-white">
+        <Link href="/dashboard" className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 text-center font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700">
           Go to dashboard
         </Link>
       </main>
@@ -244,7 +244,7 @@ export default function AcceptInvitePage() {
   if (mode === 'mismatch') {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-2xl font-semibold">Join {meta.tenantName}</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Join {meta.tenantName}</h1>
         <p className="text-sm text-slate-600">{invitedAs}</p>
         <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
           This invitation is for <strong>{meta.email}</strong>, but you&apos;re signed in as{' '}
@@ -253,7 +253,7 @@ export default function AcceptInvitePage() {
         <button
           onClick={handleSwitchAccount}
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Switching…' : `Switch to ${meta.email}`}
         </button>
@@ -265,7 +265,7 @@ export default function AcceptInvitePage() {
   if (mode === 'loggedIn') {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-2xl font-semibold">Join {meta.tenantName}</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Join {meta.tenantName}</h1>
         <p className="text-sm text-slate-600">{invitedAs}</p>
         <p className="text-sm text-slate-500">
           You&apos;re signed in as <strong>{meta.email}</strong>.
@@ -273,7 +273,7 @@ export default function AcceptInvitePage() {
         <button
           onClick={handleLoggedInAccept}
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Accepting…' : 'Accept invitation'}
         </button>
@@ -285,7 +285,7 @@ export default function AcceptInvitePage() {
   const isLogin = mode === 'login';
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Join {meta.tenantName}</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Join {meta.tenantName}</h1>
       <p className="text-sm text-slate-600">
         {invitedAs}{' '}
         {isLogin
@@ -312,7 +312,7 @@ export default function AcceptInvitePage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Accepting…' : isLogin ? 'Log in & accept' : 'Accept invitation'}
         </button>

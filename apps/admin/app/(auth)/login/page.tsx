@@ -28,9 +28,10 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <div className="flex items-center gap-3">
-        <BrandMark className="h-11 w-11" />
-        <h1 className="text-2xl font-bold tracking-tight">circls Admin</h1>
+      {/* Stacked lockup — the petal C on top, the product name beneath it. */}
+      <div className="flex flex-col items-center gap-3 text-center">
+        <BrandMark className="h-20 w-20" />
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Admin console</h1>
       </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="email">
@@ -60,7 +61,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-2 font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
