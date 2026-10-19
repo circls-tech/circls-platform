@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useVenueEvents, usePublishEvent } from '@/lib/api/events';
 import { formatMoney, useCurrency } from '@/lib/currency';
-import { Button, Card, StatusPill } from '@/lib/ui';
+import { BackLink, Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
 import { useCan } from '@/lib/use_can';
@@ -42,12 +42,7 @@ export default function VenueEventsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link
-        href={`/venues/${venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
-        className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
-      >
-        &larr; Back to venue
-      </Link>
+      <BackLink href={`/venues/${venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`}>Venue</BackLink>
       <div className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Events</h1>
         {canWrite && (

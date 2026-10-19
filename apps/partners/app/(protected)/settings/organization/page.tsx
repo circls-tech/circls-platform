@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import {
@@ -13,7 +12,7 @@ import {
   VENUE_IMAGE_TYPES,
   type UpdateTenantProfileInput,
 } from '@/lib/api/queries';
-import { Button, Card, Input } from '@/lib/ui';
+import { BackLink, Button, Card, Input } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RoleNotice } from '@/components/RoleNotice';
 
@@ -35,10 +34,8 @@ export default function OrganizationSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Link href="/settings" className="text-sm text-slate-500">
-          ← Settings
-        </Link>
+      <div className="flex flex-col gap-3">
+        <BackLink href="/settings">Settings</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Organisation profile</h1>
       </div>
       <p className="max-w-2xl text-sm text-slate-500">

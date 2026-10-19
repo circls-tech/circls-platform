@@ -1,11 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { useAuditLog } from '@/lib/api/queries';
 import type { AuditLogItem } from '@/lib/api/types';
+import { BackLink } from '@/lib/ui/BackLink';
 import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
@@ -90,13 +90,8 @@ export default function AuditLogPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/settings"
-          className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
-        >
-          &larr; Settings
-        </Link>
+      <div className="flex flex-col gap-3">
+        <BackLink href="/settings">Settings</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Activity Log</h1>
       </div>
 
