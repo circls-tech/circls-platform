@@ -67,6 +67,9 @@ export default function VenuePage() {
       setTags([]);
       setQrConfig(null);
       setCreated(true);
+      // A new arena is pending review, so it lands on the Active tab; show it
+      // rather than leave the partner on the other tab wondering where it went.
+      setShelf('open');
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -158,6 +161,15 @@ export default function VenuePage() {
           ))}
         </div>
       )}
+      {arenas && shown.length === 0 && (
+        <p className="text-sm text-gray-500">
+          {arenas.length === 0
+            ? 'No arenas yet.'
+            : shelf === 'closed'
+              ? 'No closed or rejected arenas.'
+              : 'No active arenas. Closed and rejected ones are on the other tab.'}
+        </p>
+      )}
       <ul className="flex flex-col gap-2">
         {shown.map((a) => (
           <li
@@ -192,15 +204,6 @@ export default function VenuePage() {
             )}
           </li>
         ))}
-        {arenas && shown.length === 0 && (
-          <p className="text-sm text-gray-500">
-            {arenas.length === 0
-              ? 'No arenas yet.'
-              : shelf === 'closed'
-                ? 'No closed or rejected arenas.'
-                : 'No active arenas. Closed and rejected ones are on the other tab.'}
-          </p>
-        )}
       </ul>
       {canAddArena && (
         <form
