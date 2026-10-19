@@ -20,7 +20,8 @@
  *       consumer bookings only store a phone, so the profile is what lets the
  *       confirmation reach both mobile and email
  *   booking reminders (T-24h, T-1h):
- *     - only when phone is present; SMS always, WhatsApp when provider is set
+ *     - slot bookings only, and only when phone is present; SMS always,
+ *       WhatsApp when provider is set
  *   kyc state change:
  *     - tenant owner's email, via tenant_members WHERE role='owner' join users
  */
@@ -54,26 +55,75 @@ export async function processPendingNotifications(): Promise<number> {
 interface BookingNotifyContext {
   bookingId: string;
   tenantId: string;
+  /** bookings.item_type ('slot' | 'event' | 'membership'); picks the copy. */
+  itemType: string;
   customerName: string;
   customerUserId: string | null;
   phone: string | null;
   email: string | null;
+  /** The venue, or the organiser when an event or membership has no venue. */
   venueName: string;
+  /** Slot bookings only; '' when unknown. */
   arenaName: string;
+  eventTitle: string | null;
+  membershipName: string | null;
+  /** When the booked slot or event starts. */
   startAt: Date | null;
-  totalRupees: string;
   whenText: string;
+  /** Membership bookings: the day the membership runs out. */
+  validUntilText: string | null;
+  /** The total with its currency ("Rs 500.00", "$25.00"); null = state none. */
+  totalText: string | null;
 }
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
+/** Venue timezone default (venues.tz_name's column default). */
+const DEFAULT_TZ = 'Asia/Kolkata';
+
+/** en-IN shapes: "04 Jul 2026, 18:00" and "04 Jul 2026". */
+const WHEN_FORMAT: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'short',
   day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
-});
+};
+const DATE_FORMAT: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: '2-digit' };
+
+/**
+ * Format `d` in the booking's local timezone. tz_name is free text, so a zone
+ * Intl doesn't know falls back to IST instead of throwing: this runs inside
+ * the payment-capture transaction, and a throw there rolls back the capture.
+ */
+function formatInZone(d: Date, tz: string, format: Intl.DateTimeFormatOptions): string {
+  try {
+    return new Intl.DateTimeFormat('en-IN', { ...format, timeZone: tz }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat('en-IN', { ...format, timeZone: DEFAULT_TZ }).format(d);
+  }
+}
+
+/**
+ * A booking total with its currency: "Rs 500.00" for INR, as these messages
+ * have always put it, and "$25.00" for USD. The *_paise columns hold minor
+ * units of the booking's own currency, so a USD booking's are cents.
+ */
+function formatTotal(minor: number, currency: string): string {
+  const amount = (minor / 100).toFixed(2);
+  const code = currency.toUpperCase();
+  if (code === 'INR') return `Rs ${amount}`;
+  if (code === 'USD') return `$${amount}`;
+  return `${code} ${amount}`;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A uuid from bookings.item_data, or null. A malformed id must never reach a
+ *  uuid comparison, where it would throw. */
+function itemDataId(itemData: Record<string, unknown>, key: string): string | null {
+  const v = itemData[key];
+  return typeof v === 'string' && UUID_RE.test(v) ? v : null;
+}
 
 function isEmail(s: string): boolean {
   return /.+@.+\..+/.test(s);
@@ -112,43 +162,17 @@ function extractContacts(
 }
 
 /**
- * Load a booking + venue + arena + customer contact for a notification.
- * Returns null if the booking isn't found — callers no-op in that case.
+ * A slot booking's start and arena.
  *
- * Why two queries: the slot-side data (start_at, arena name) is 1:N to the
- * booking when slots haven't been released, so we aggregate separately to
- * avoid GROUP BY gymnastics. The fallback arena name comes from the
- * booking's `slot_arena_id` snapshot when slots have been released
- * (cancelled-booking case).
+ * Why a separate query: the slot-side data (start_at, arena name) is 1:N to
+ * the booking when slots haven't been released, so we aggregate separately to
+ * avoid GROUP BY gymnastics. Once slots have been released (cancelled-booking
+ * case), the booking's own `time_range` and `slot_arena_id` snapshots stand in.
  */
-async function loadBookingContext(bookingId: string): Promise<BookingNotifyContext | null> {
-  const bookingRows = await db.execute<Record<string, unknown>>(sql`
-    select b.id                       as id,
-           b.tenant_id                as tenant_id,
-           b.customer_name            as customer_name,
-           b.customer_contact         as customer_contact,
-           b.customer_contact_json    as customer_contact_json,
-           b.customer_user_id         as customer_user_id,
-           b.total_paise              as total_paise,
-           lower(b.time_range)        as booking_start_at,
-           v.name                     as venue_name,
-           ab_fallback.name           as fallback_arena_name,
-           u.phone_e164               as user_phone,
-           u.email                    as user_email,
-           u.display_name             as user_display_name,
-           u.deleted_at               as user_deleted_at
-      from bookings b
-      left join venues v           on v.id = b.venue_id
-      left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
-      left join users u            on u.id = b.customer_user_id
-     where b.id = ${bookingId}
-     limit 1
-  `);
-  const arr = bookingRows as unknown as Record<string, unknown>[];
-  const r = arr[0];
-  if (!r) return null;
-
-  // Slot-side: aggregate min(start_at) + take any matching arena name.
+async function loadBookedSlots(
+  bookingId: string,
+  booking: Record<string, unknown>,
+): Promise<{ startAt: Date | null; arenaName: string }> {
   const slotRows = await db.execute<Record<string, unknown>>(sql`
     select min(lower(s.time_range)) as slot_start_at,
            max(a.name)               as slot_arena_name
@@ -159,6 +183,132 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
   `);
   const slotArr = slotRows as unknown as Record<string, unknown>[];
   const slotAgg = slotArr[0] ?? {};
+
+  const startAtRaw =
+    (slotAgg['slot_start_at'] as string | null) ??
+    (booking['booking_start_at'] as string | null) ??
+    null;
+  return {
+    startAt: startAtRaw ? new Date(startAtRaw) : null,
+    arenaName:
+      (slotAgg['slot_arena_name'] as string | null) ??
+      (booking['fallback_arena_name'] as string | null) ??
+      '',
+  };
+}
+
+/**
+ * An event booking's event (`bookings.item_data.eventId`): its title, its
+ * start, and where it takes place now. The location follows the event, not
+ * the booking's `venue_id` snapshot, because a partner can re-scope an event
+ * after it has sold tickets. A venue-less (standalone) event carries its own
+ * timezone. This mirrors the consumer event payload (consumer_service's
+ * `toPublicEvent`).
+ */
+async function loadBookedEvent(
+  itemData: Record<string, unknown>,
+  tenantId: string,
+): Promise<{ title: string; startsAt: Date; venueName: string | null; tz: string | null } | null> {
+  const eventId = itemDataId(itemData, 'eventId');
+  if (!eventId) return null;
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    select e.name      as name,
+           e.starts_at as starts_at,
+           e.venue_id  as venue_id,
+           e.tz_name   as tz_name,
+           v.name      as venue_name,
+           v.tz_name   as venue_tz_name
+      from events e
+      left join venues v on v.id = e.venue_id
+     where e.id = ${eventId}
+       and e.tenant_id = ${tenantId}
+     limit 1
+  `);
+  const e = (rows as unknown as Record<string, unknown>[])[0];
+  if (!e) return null;
+  const standalone = e['venue_id'] == null;
+  return {
+    title: e['name'] as string,
+    startsAt: new Date(e['starts_at'] as string),
+    venueName: (e['venue_name'] as string | null) ?? null,
+    tz: ((standalone ? e['tz_name'] : e['venue_tz_name']) as string | null) ?? null,
+  };
+}
+
+/**
+ * A membership booking's plan (`bookings.item_data.membershipId`) and where it
+ * is held. When the booking also carries its user_membership (`item_data.
+ * userMembershipId`, stamped at purchase), this includes when it runs out.
+ */
+async function loadBookedMembership(
+  itemData: Record<string, unknown>,
+  tenantId: string,
+): Promise<{ name: string; venueName: string | null; tz: string | null; endsAt: Date | null } | null> {
+  const membershipId = itemDataId(itemData, 'membershipId');
+  if (!membershipId) return null;
+  const userMembershipId = itemDataId(itemData, 'userMembershipId');
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    select m.name     as name,
+           v.name     as venue_name,
+           v.tz_name  as venue_tz_name,
+           um.ends_at as ends_at
+      from memberships m
+      left join venues v on v.id = m.venue_id
+      left join user_memberships um
+             on um.id = ${userMembershipId}
+            and um.membership_id = m.id
+     where m.id = ${membershipId}
+       and m.tenant_id = ${tenantId}
+     limit 1
+  `);
+  const m = (rows as unknown as Record<string, unknown>[])[0];
+  if (!m) return null;
+  return {
+    name: m['name'] as string,
+    venueName: (m['venue_name'] as string | null) ?? null,
+    tz: (m['venue_tz_name'] as string | null) ?? null,
+    endsAt: m['ends_at'] ? new Date(m['ends_at'] as string) : null,
+  };
+}
+
+/**
+ * Load a booking, what it is for (slots, an event or a membership), and the
+ * customer's contacts for a notification. Returns null if the booking isn't
+ * found — callers no-op in that case.
+ */
+async function loadBookingContext(bookingId: string): Promise<BookingNotifyContext | null> {
+  const bookingRows = await db.execute<Record<string, unknown>>(sql`
+    select b.id                       as id,
+           b.tenant_id                as tenant_id,
+           b.item_type                as item_type,
+           b.item_data                as item_data,
+           b.payment_method           as payment_method,
+           b.customer_name            as customer_name,
+           b.customer_contact         as customer_contact,
+           b.customer_contact_json    as customer_contact_json,
+           b.customer_user_id         as customer_user_id,
+           b.total_paise              as total_paise,
+           b.currency                 as currency,
+           lower(b.time_range)        as booking_start_at,
+           v.name                     as venue_name,
+           v.tz_name                  as venue_tz_name,
+           tn.name                    as tenant_name,
+           ab_fallback.name           as fallback_arena_name,
+           u.phone_e164               as user_phone,
+           u.email                    as user_email,
+           u.display_name             as user_display_name,
+           u.deleted_at               as user_deleted_at
+      from bookings b
+      left join venues v           on v.id = b.venue_id
+      left join tenants tn         on tn.id = b.tenant_id
+      left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
+      left join users u            on u.id = b.customer_user_id
+     where b.id = ${bookingId}
+     limit 1
+  `);
+  const arr = bookingRows as unknown as Record<string, unknown>[];
+  const r = arr[0];
+  if (!r) return null;
 
   const { phone, email } = extractContacts(
     (r['customer_contact_json'] as Record<string, unknown> | null) ?? null,
@@ -184,20 +334,54 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
     ? null
     : (email ?? (userEmail && isEmail(userEmail) ? userEmail : null));
 
+  // What the booking is for. Each item type knows its own place and time;
+  // until one says otherwise, that is the booking's venue and no start time.
+  const tenantId = r['tenant_id'] as string;
+  const itemType = r['item_type'] as string;
+  const itemData = (r['item_data'] as Record<string, unknown> | null) ?? {};
+  let venueName = (r['venue_name'] as string | null) ?? null;
+  let tz = (r['venue_tz_name'] as string | null) ?? null;
+  let startAt: Date | null = null;
+  let arenaName = '';
+  let eventTitle: string | null = null;
+  let membershipName: string | null = null;
+  let validUntil: Date | null = null;
+
+  if (itemType === 'event') {
+    const ev = await loadBookedEvent(itemData, tenantId);
+    if (ev) {
+      venueName = ev.venueName;
+      tz = ev.tz;
+      startAt = ev.startsAt;
+    }
+    // Should the event not load, the title snapshotted at booking time.
+    const snapshot = itemData['eventName'];
+    eventTitle = ev?.title ?? (typeof snapshot === 'string' && snapshot ? snapshot : 'your event');
+  } else if (itemType === 'membership') {
+    const m = await loadBookedMembership(itemData, tenantId);
+    if (m) {
+      venueName = m.venueName;
+      tz = m.tz;
+      membershipName = m.name;
+      validUntil = m.endsAt;
+    }
+  } else {
+    const booked = await loadBookedSlots(bookingId, r);
+    startAt = booked.startAt;
+    arenaName = booked.arenaName;
+  }
+
+  const zone = tz ?? DEFAULT_TZ;
   const totalPaise = Number(r['total_paise'] ?? 0);
-  const startAtRaw =
-    (slotAgg['slot_start_at'] as string | null) ??
-    (r['booking_start_at'] as string | null) ??
-    null;
-  const startAt = startAtRaw ? new Date(startAtRaw) : null;
-  const arenaName =
-    (slotAgg['slot_arena_name'] as string | null) ??
-    (r['fallback_arena_name'] as string | null) ??
-    '';
+  // A registration the partner recorded (payment_method 'external') stores a
+  // zero total because Circls took no money. The attendee may still have paid
+  // the partner, so rather than claim "Rs 0.00" the copy states no total.
+  const statesTotal = !(r['payment_method'] === 'external' && totalPaise === 0);
 
   return {
     bookingId: r['id'] as string,
-    tenantId: r['tenant_id'] as string,
+    tenantId,
+    itemType,
     customerName:
       (r['customer_name'] as string | null) ??
       (r['user_display_name'] as string | null) ??
@@ -205,22 +389,33 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
     customerUserId: (r['customer_user_id'] as string | null) ?? null,
     phone: resolvedPhone,
     email: resolvedEmail,
-    venueName: (r['venue_name'] as string | null) ?? 'the venue',
+    // A venue-less event or org-wide membership is named for its organiser,
+    // as the consumer app does.
+    venueName: venueName ?? (r['tenant_name'] as string | null) ?? 'the venue',
     arenaName,
+    eventTitle,
+    membershipName,
     startAt,
-    totalRupees: (totalPaise / 100).toFixed(2),
-    whenText: startAt ? IST_FMT.format(startAt) : 'your booked time',
+    whenText: startAt ? formatInZone(startAt, zone, WHEN_FORMAT) : 'your booked time',
+    validUntilText: validUntil ? formatInZone(validUntil, zone, DATE_FORMAT) : null,
+    totalText: statesTotal ? formatTotal(totalPaise, (r['currency'] as string | null) ?? 'INR') : null,
   };
 }
 
+/** The template payload. `itemType` picks the event/membership copy; null
+ *  fields drop out of the sections that use them. */
 function basePayload(ctx: BookingNotifyContext): Record<string, unknown> {
   return {
     bookingId: ctx.bookingId,
+    itemType: ctx.itemType,
     customerName: ctx.customerName,
     venueName: ctx.venueName,
     arenaName: ctx.arenaName,
+    eventTitle: ctx.eventTitle,
+    membershipName: ctx.membershipName,
     when: ctx.whenText,
-    totalRupees: ctx.totalRupees,
+    validUntil: ctx.validUntilText,
+    total: ctx.totalText,
   };
 }
 
@@ -279,7 +474,10 @@ export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
   }
 
   // Schedule reminders if we know when the booking starts and it's in the future.
-  if (ctx.startAt && ctx.phone) {
+  // Slot bookings only: a queued reminder isn't withdrawn when its booking is
+  // cancelled or moved, and cancelEvent leaves an event's bookings confirmed,
+  // so an event reminder could still go out for an event that is off.
+  if (ctx.itemType === 'slot' && ctx.startAt && ctx.phone) {
     const now = Date.now();
     const t24 = new Date(ctx.startAt.getTime() - 24 * 60 * 60 * 1000);
     const t1 = new Date(ctx.startAt.getTime() - 60 * 60 * 1000);
