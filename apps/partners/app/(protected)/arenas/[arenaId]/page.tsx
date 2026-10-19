@@ -76,6 +76,12 @@ export default function ArenaReceptionPage() {
   const arenaTabs = (siblings ?? []).filter((a) => a.id === arenaId || isArenaLive(a));
   const showSwitcher = arenaTabs.length > 1;
   const currency = useCurrency({ venueId: arena?.venueId });
+  // Where "back" goes: the venue this desk belongs to. Reception is usually
+  // opened from the venue's arena list or the dashboard, and the venue page is
+  // the one place that lists every desk, so it is the natural step back.
+  const venueHref = arena
+    ? `/venues/${arena.venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`
+    : '/venues';
 
   // The grid is *displayed* in the portal-wide viewing timezone (top-bar
   // selector). On "Auto" this falls back to the venue's own tz. Slot times,
@@ -207,6 +213,9 @@ export default function ArenaReceptionPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <Link href={venueHref} className="text-sm text-gray-500">
+        ← {venue?.name ?? 'Venue'}
+      </Link>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -217,10 +226,7 @@ export default function ArenaReceptionPage() {
             <span>/</span>
             {venue && (
               <>
-                <Link
-                  href={`/venues/${venue.id}${tenantId ? `?tenantId=${tenantId}` : ''}`}
-                  className="hover:underline"
-                >
+                <Link href={venueHref} className="hover:underline">
                   {venue.name}
                 </Link>
                 <span>/</span>
