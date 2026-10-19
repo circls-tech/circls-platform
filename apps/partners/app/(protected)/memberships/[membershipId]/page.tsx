@@ -1,7 +1,6 @@
 'use client';
 
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
@@ -15,7 +14,7 @@ import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
 import { useCan } from '@/lib/use_can';
-import { Button, Card, StatusPill } from '@/lib/ui';
+import { BackLink, Button, Card, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
 import { ReceptionButton } from '@/components/ReceptionButton';
@@ -83,9 +82,7 @@ export default function MembershipDetailPage() {
   if (!membership) {
     return (
       <div className="flex flex-col gap-3">
-        <Link href="/memberships" className="text-sm text-slate-500 hover:underline">
-          ← Memberships
-        </Link>
+        <BackLink href="/memberships">Memberships</BackLink>
         <p className="text-sm text-slate-500">
           That plan isn&apos;t in this organisation. It may belong to another one — check the
           switcher in the top bar.
@@ -132,10 +129,8 @@ export default function MembershipDetailPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Link href="/memberships" className="text-sm text-slate-500 hover:underline">
-          ← Memberships
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
+        <BackLink href="/memberships">Memberships</BackLink>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
             {membership.name}
           </h1>

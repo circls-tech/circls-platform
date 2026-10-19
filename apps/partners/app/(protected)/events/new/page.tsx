@@ -41,7 +41,7 @@ import {
   redirectToPayload,
 } from '@/components/PostBookingRedirectEditor';
 import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/types';
-import { Button, Card, Input } from '@/lib/ui';
+import { BackLink, Button, Card, Input } from '@/lib/ui';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
 function localToTzIso(local: string, tz: string): string {
@@ -98,9 +98,7 @@ function NewTenantEventRoute() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/events" className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        &larr; Events
-      </Link>
+      <BackLink href="/events">Events</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
         {fromId ? 'Duplicate event' : 'New event'}
       </h1>

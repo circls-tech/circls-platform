@@ -26,7 +26,7 @@ import { formatMoney, useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { isArenaLive } from '@/lib/shelf';
 import { useTimezone } from '@/lib/timezone_context';
-import { Badge, Button, Card, StatusPill } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, StatusPill } from '@/lib/ui';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -213,9 +213,7 @@ export default function ArenaReceptionPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={venueHref} className="text-sm text-gray-500">
-        ← {venue?.name ?? 'Venue'}
-      </Link>
+      <BackLink href={venueHref}>{venue?.name ?? 'Venue'}</BackLink>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

@@ -20,3 +20,6 @@ export { TagsInput } from './TagsInput';
 export type { TagsInputProps } from './TagsInput';
 
 export { BrandMark } from './BrandMark';
+
+export { BackLink } from './BackLink';
+export type { BackLinkProps } from './BackLink';
