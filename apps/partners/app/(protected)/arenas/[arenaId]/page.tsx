@@ -76,12 +76,14 @@ export default function ArenaReceptionPage() {
   const arenaTabs = (siblings ?? []).filter((a) => a.id === arenaId || isArenaLive(a));
   const showSwitcher = arenaTabs.length > 1;
   const currency = useCurrency({ venueId: arena?.venueId });
-  // Where "back" goes: the venue this desk belongs to. Reception is usually
-  // opened from the venue's arena list or the dashboard, and the venue page is
-  // the one place that lists every desk, so it is the natural step back.
-  const venueHref = arena
-    ? `/venues/${arena.venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`
-    : '/venues';
+  // Where "back" goes: the venue this desk belongs to, once it has resolved
+  // in this organisation. Until then (or when it never does, say an arena
+  // reached without its tenantId while another org is active) the honest
+  // target is the venues list, labelled as such, rather than a venue page the
+  // active organisation cannot open.
+  const back = venue
+    ? { href: `/venues/${venue.id}${tenantId ? `?tenantId=${tenantId}` : ''}`, label: venue.name }
+    : { href: '/venues', label: 'Venues' };
 
   // The grid is *displayed* in the portal-wide viewing timezone (top-bar
   // selector). On "Auto" this falls back to the venue's own tz. Slot times,
@@ -213,26 +215,11 @@ export default function ArenaReceptionPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={venueHref}>{venue?.name ?? 'Venue'}</BackLink>
+      <BackLink href={back.href}>{back.label}</BackLink>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Link href="/dashboard" className="hover:underline">
-              Dashboard
-            </Link>
-            <span>/</span>
-            {venue && (
-              <>
-                <Link href={venueHref} className="hover:underline">
-                  {venue.name}
-                </Link>
-                <span>/</span>
-              </>
-            )}
-            <span className="font-medium text-slate-700">Reception</span>
-          </div>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Reception</h1>
           {arena && (
             <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
               <span className="font-medium">{arena.name}</span>

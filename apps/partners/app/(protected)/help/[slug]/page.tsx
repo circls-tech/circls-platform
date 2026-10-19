@@ -29,7 +29,6 @@ export default async function HelpArticlePage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Breadcrumb */}
       <BackLink href="/help">Help Centre</BackLink>
 
       {/* Header */}

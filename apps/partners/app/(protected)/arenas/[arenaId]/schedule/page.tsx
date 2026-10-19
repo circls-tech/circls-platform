@@ -505,18 +505,6 @@ export default function ScheduleBuilderPage() {
   return (
     <div className="flex flex-col gap-6">
       <BackLink href={receptionHref}>Reception</BackLink>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Link href="/dashboard" className="hover:underline">
-          Dashboard
-        </Link>
-        <span>/</span>
-        <Link href={receptionHref} className="hover:underline">
-          Arena
-        </Link>
-        <span>/</span>
-        <span className="text-slate-700 font-medium">Schedule Builder</span>
-      </div>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Schedule Builder</h1>
 

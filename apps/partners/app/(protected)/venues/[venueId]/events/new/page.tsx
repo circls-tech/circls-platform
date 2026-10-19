@@ -183,10 +183,12 @@ export default function NewEventPage() {
   }
 
   // Only once the role is known, so Owners and Managers never see it flash up.
+  const eventsHref = `/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`;
+
   if (!roleLoading && !can('events.write')) {
     return (
       <div className="flex flex-col gap-6">
-        <BackLink href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}>Events</BackLink>
+        <BackLink href={eventsHref}>Events</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
         <RoleNotice>Your role can’t create events — Owners and Managers can.</RoleNotice>
       </div>
@@ -195,7 +197,7 @@ export default function NewEventPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}>Events</BackLink>
+      <BackLink href={eventsHref}>Events</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
 
       <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
