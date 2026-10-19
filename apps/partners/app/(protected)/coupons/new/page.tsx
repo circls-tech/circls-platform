@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
@@ -10,7 +9,7 @@ import { RoleNotice } from '@/components/RoleNotice';
 import { useTenantEvents } from '@/lib/api/events';
 import { useMemberships } from '@/lib/api/memberships';
 import { currencySymbol, useVenueCurrencies } from '@/lib/currency';
-import { Button, Card, Input } from '@/lib/ui';
+import { BackLink, Button, Card, Input } from '@/lib/ui';
 
 const selectCls =
   'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300';
@@ -106,7 +105,7 @@ export default function NewCouponPage() {
 
   const header = (
     <>
-      <Link href="/coupons" className="text-sm text-slate-500 hover:text-slate-800">&larr; Coupons</Link>
+      <BackLink href="/coupons">Coupons</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New coupon</h1>
     </>
   );

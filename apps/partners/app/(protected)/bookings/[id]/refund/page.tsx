@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
   useBookingDetail,
   useCancelBookingWithReason,
@@ -14,7 +13,7 @@ import type { CancelResult } from '@/lib/api/types';
 import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { RoleNotice } from '@/components/RoleNotice';
-import { Badge, Button, Card, Input } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
 
 export default function RefundBookingPage() {
@@ -75,18 +74,16 @@ export default function RefundBookingPage() {
     );
   }
 
+  // Back to the venue's bookings once the booking has resolved; until then the
+  // honest target is the dashboard, labelled as such.
+  const back = booking
+    ? { href: `/venues/${booking.venueId}/bookings`, label: 'Bookings' }
+    : { href: '/dashboard', label: 'Dashboard' };
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Link href={booking ? `/venues/${booking.venueId}/bookings` : '/dashboard'} className="hover:underline">
-            Bookings
-          </Link>
-          <span>/</span>
-          <span className="font-medium text-slate-700">Refund</span>
-        </div>
-        <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Refund booking</h1>
-      </div>
+      <BackLink href={back.href}>{back.label}</BackLink>
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Refund booking</h1>
 
       {isLoading && (
         <Card>

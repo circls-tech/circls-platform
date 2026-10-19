@@ -8,7 +8,7 @@ import { useOrg } from '@/lib/org_context';
 import { useCreateMembership, useUploadMembershipCover } from '@/lib/api/memberships';
 import { useMyRole, useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
-import { Button, Card } from '@/lib/ui';
+import { BackLink, Button, Card } from '@/lib/ui';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
 import {
@@ -82,10 +82,8 @@ export default function NewMembershipPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Link href="/memberships" className="text-sm text-slate-500 hover:underline">
-          ← Memberships
-        </Link>
-        <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
+        <BackLink href="/memberships">Memberships</BackLink>
+        <h1 className="mt-3 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
           New plan
         </h1>
       </div>

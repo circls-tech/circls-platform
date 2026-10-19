@@ -1,12 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { useNotifications } from '@/lib/api/queries';
 import type { NotificationItem, NotificationChannel, NotificationStatus } from '@/lib/api/types';
-import { Badge, Button, Card } from '@/lib/ui';
+import { BackLink, Badge, Button, Card } from '@/lib/ui';
 
 function statusTone(s: NotificationStatus): 'success' | 'warning' | 'open' | 'neutral' {
   if (s === 'sent')    return 'success';
@@ -62,13 +61,8 @@ export default function NotificationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/settings"
-          className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
-        >
-          &larr; Settings
-        </Link>
+      <div className="flex flex-col gap-3">
+        <BackLink href="/settings">Settings</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Notifications</h1>
       </div>
 

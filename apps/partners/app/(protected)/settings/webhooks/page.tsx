@@ -12,6 +12,7 @@ import {
   useWebhookSubscriptions,
 } from '@/lib/api/queries';
 import type { WebhookSubscription } from '@/lib/api/types';
+import { BackLink } from '@/lib/ui/BackLink';
 import { Badge } from '@/lib/ui/Badge';
 import { Button } from '@/lib/ui/Button';
 import { Card } from '@/lib/ui/Card';
@@ -101,13 +102,8 @@ export default function WebhooksPage() {
   const canManage = can('integration.api_keys.manage');
 
   const header = (
-    <div className="flex items-center gap-4">
-      <Link
-        href="/settings"
-        className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-      >
-        &larr; Settings
-      </Link>
+    <div className="flex flex-col gap-3">
+      <BackLink href="/settings">Settings</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Outbound webhooks</h1>
     </div>
   );

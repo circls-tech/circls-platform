@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
@@ -8,7 +7,7 @@ import { useTimezone } from '@/lib/timezone_context';
 import { useCan } from '@/lib/use_can';
 import { useTenantCoupons, useTenantCouponStats, useUpdateCoupon, useDeleteCoupon, type Coupon, type UpdateCouponPatch } from '@/lib/api/coupons';
 import { type CurrencyCode, currencySymbol, formatMoney, useVenueCurrencies } from '@/lib/currency';
-import { Button, Card, Input, StatusPill } from '@/lib/ui';
+import { BackLink, Button, Card, Input, StatusPill } from '@/lib/ui';
 
 const selectCls = 'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a]';
 
@@ -102,7 +101,7 @@ export default function CouponDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/coupons" className="text-sm text-slate-500 hover:text-slate-800">&larr; Coupons</Link>
+      <BackLink href="/coupons">Coupons</BackLink>
       {isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {!isLoading && !coupon && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">Coupon not found.</p>}
       {errorMsg && <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errorMsg}</p>}

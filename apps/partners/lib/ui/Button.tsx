@@ -30,8 +30,12 @@ const variantClasses: Record<ButtonVariant, string> = {
  * deliberately left flat — it is a text-weight action, and a raised
  * transparent button looks like a mistake.
  */
+/** The ink border and hard offset shadow alone, for raised things that are
+ *  not buttons (the BackLink chip) and bring their own hover motion. */
+export const INK_RAISED = 'border-2 border-[#17151D] shadow-[3px_3px_0_#17151D]';
+
 const RAISED = [
-  'border-2 border-[#17151D] shadow-[3px_3px_0_#17151D]',
+  INK_RAISED,
   'transition-transform hover:-translate-y-0.5',
   'active:translate-y-0 active:shadow-[1px_1px_0_#17151D]',
   // A button you can't press shouldn't look like it stands up.

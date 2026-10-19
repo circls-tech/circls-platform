@@ -1,11 +1,10 @@
 'use client';
-import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
 import { useVenue } from '@/lib/api/queries';
 import { useCan } from '@/lib/use_can';
-import { StatusPill } from '@/lib/ui';
+import { BackLink, StatusPill } from '@/lib/ui';
 
 /**
  * A venue's setup — the details customers read, and its photos — on a page
@@ -23,9 +22,7 @@ export default function VenueDetailsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={venueHref} className="text-sm text-gray-500">
-        ← {venue?.name ?? 'Venue'}
-      </Link>
+      <BackLink href={venueHref}>{venue?.name ?? 'Venue'}</BackLink>
       {venue && (
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">

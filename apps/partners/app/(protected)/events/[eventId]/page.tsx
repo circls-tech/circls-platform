@@ -60,7 +60,7 @@ import {
 } from '@/components/MaxPerUserField';
 import type { PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
-import { Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
 /** Display a UTC instant in the given zone (the event's own tz, or the
  *  portal-wide viewing tz when overridden). Display only — event scheduling
@@ -387,9 +387,7 @@ export default function OrgEventDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={backHref} className="text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        &larr; Events
-      </Link>
+      <BackLink href={backHref}>Events</BackLink>
 
       {isLoading && <p className="py-6 text-center text-sm text-slate-400">Loading…</p>}
 

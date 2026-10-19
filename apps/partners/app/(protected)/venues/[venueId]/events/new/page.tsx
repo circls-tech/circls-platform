@@ -29,7 +29,7 @@ import {
   occurrencePayloads,
   type RecurrenceValue,
 } from '@/components/RecurrenceEditor';
-import { Button, Card, Input } from '@/lib/ui';
+import { BackLink, Button, Card, Input } from '@/lib/ui';
 
 /**
  * Convert a `<input type="datetime-local">` value (interpreted as Asia/Kolkata
@@ -183,15 +183,12 @@ export default function NewEventPage() {
   }
 
   // Only once the role is known, so Owners and Managers never see it flash up.
+  const eventsHref = `/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`;
+
   if (!roleLoading && !can('events.write')) {
     return (
       <div className="flex flex-col gap-6">
-        <Link
-          href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}
-          className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
-        >
-          &larr; Events
-        </Link>
+        <BackLink href={eventsHref}>Events</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
         <RoleNotice>Your role can’t create events — Owners and Managers can.</RoleNotice>
       </div>
@@ -200,12 +197,7 @@ export default function NewEventPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link
-        href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}
-        className="text-sm text-slate-500 hover:text-slate-800 transition-colors"
-      >
-        &larr; Events
-      </Link>
+      <BackLink href={eventsHref}>Events</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
 
       <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">

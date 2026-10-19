@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { HELP_ARTICLES, getArticleMeta } from '@/lib/help/articles';
 import { getArticleBody } from '@/lib/help/content';
+import { BackLink } from '@/lib/ui/BackLink';
 
 // Pre-render every known article at build time.
 export function generateStaticParams() {
@@ -28,13 +29,7 @@ export default async function HelpArticlePage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Breadcrumb */}
-      <Link
-        href="/help"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-brand-600"
-      >
-        <span aria-hidden="true">←</span> Back to Help Centre
-      </Link>
+      <BackLink href="/help">Help Centre</BackLink>
 
       {/* Header */}
       <div className="flex flex-col gap-1">

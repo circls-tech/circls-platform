@@ -23,7 +23,7 @@ import type {
   QuestionStatus,
   QuestionThreadDetailThread,
 } from '@/lib/api/types';
-import { Badge, Button, Card, StatusPill } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RoleNotice } from '@/components/RoleNotice';
 import { CATEGORY_LABELS, SUBJECT_LABELS } from '../labels';
@@ -709,12 +709,7 @@ export default function QuestionThreadPage() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <div>
-        <Link
-          href="/questions"
-          className="text-sm text-slate-500 transition-colors hover:text-slate-800"
-        >
-          &larr; Questions
-        </Link>
+        <BackLink href="/questions">Questions</BackLink>
       </div>
       {!activeTenantId ? (
         <Card subtitle="Select or create an organization first to view its questions.">

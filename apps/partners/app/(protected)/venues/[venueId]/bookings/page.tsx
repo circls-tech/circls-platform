@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -14,7 +13,7 @@ import {
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
-import { Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
+import { BackLink, Badge, BadgeTone, Button, Card, Input, Modal } from '@/lib/ui';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { dayBoundsInTz, isCalendarDate, rangeBoundsInTz } from '@/lib/time';
@@ -398,23 +397,14 @@ export default function BookingsPage() {
     downloadCsv(bookingsToCsv(bookings, displayTz, currency), `bookings-${stamp}.csv`);
   }
 
+  const venueHref = `/venues/${venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`;
+
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href={venueHref}>Venue</BackLink>
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Link
-              href={`/venues/${venueId}${tenantId ? `?tenantId=${tenantId}` : ''}`}
-              className="hover:underline"
-            >
-              Venue
-            </Link>
-            <span>/</span>
-            <span className="font-medium text-slate-700">Bookings</span>
-          </div>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Bookings</h1>
-        </div>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Bookings</h1>
         <Button
           variant="secondary"
           size="sm"

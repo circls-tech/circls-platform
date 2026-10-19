@@ -11,7 +11,7 @@ import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { isArenaOnShelf } from '@/lib/shelf';
 import { useCan } from '@/lib/use_can';
-import { Badge, Button, StatusPill, TagsInput } from '@/lib/ui';
+import { BackLink, Badge, Button, StatusPill, TagsInput } from '@/lib/ui';
 
 type ArenaShelf = 'open' | 'closed';
 
@@ -77,9 +77,7 @@ export default function VenuePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/venues" className="text-sm text-gray-500">
-        ← Venues
-      </Link>
+      <BackLink href="/venues">Venues</BackLink>
       {venue && (
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
