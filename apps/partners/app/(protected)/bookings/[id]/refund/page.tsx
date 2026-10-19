@@ -14,7 +14,7 @@ import type { CancelResult } from '@/lib/api/types';
 import { refundTierCopy } from '@/lib/bookings/refund_copy';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { RoleNotice } from '@/components/RoleNotice';
-import { Badge, Button, Card, Input } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, Input } from '@/lib/ui';
 import { useTimezone } from '@/lib/timezone_context';
 
 export default function RefundBookingPage() {
@@ -75,11 +75,14 @@ export default function RefundBookingPage() {
     );
   }
 
+  const bookingsHref = booking ? `/venues/${booking.venueId}/bookings` : '/dashboard';
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <BackLink href={bookingsHref}>Bookings</BackLink>
       <div>
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Link href={booking ? `/venues/${booking.venueId}/bookings` : '/dashboard'} className="hover:underline">
+          <Link href={bookingsHref} className="hover:underline">
             Bookings
           </Link>
           <span>/</span>

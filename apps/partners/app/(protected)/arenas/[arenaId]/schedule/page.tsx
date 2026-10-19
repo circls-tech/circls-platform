@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { RoleNotice } from '@/components/RoleNotice';
-import { Button, Card, Input } from '@/lib/ui';
+import { BackLink, Button, Card, Input } from '@/lib/ui';
 import {
   useArena,
   useArenaSlots,
@@ -500,15 +500,18 @@ export default function ScheduleBuilderPage() {
   // Render
   // ──────────────────────────────────────────────────────────────────────────
 
+  const receptionHref = `/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`;
+
   return (
     <div className="flex flex-col gap-6">
+      <BackLink href={receptionHref}>Reception</BackLink>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-slate-500">
         <Link href="/dashboard" className="hover:underline">
           Dashboard
         </Link>
         <span>/</span>
-        <Link href={`/arenas/${arenaId}${tenantId ? `?tenantId=${tenantId}` : ''}`} className="hover:underline">
+        <Link href={receptionHref} className="hover:underline">
           Arena
         </Link>
         <span>/</span>
