@@ -9,8 +9,18 @@ import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
+import { isArenaOnShelf } from '@/lib/shelf';
 import { useCan } from '@/lib/use_can';
 import { Badge, Button, StatusPill, TagsInput } from '@/lib/ui';
+
+type ArenaShelf = 'open' | 'closed';
+
+/** Same split as the Venues page: what is taking bookings (or about to) on
+ *  one tab, what a partner closed or circls rejected on the other. */
+const SHELF_TABS: { key: ArenaShelf; label: string }[] = [
+  { key: 'open', label: 'Active' },
+  { key: 'closed', label: 'Closed & rejected' },
+];
 
 export default function VenuePage() {
   const { venueId } = useParams<{ venueId: string }>();
@@ -30,8 +40,16 @@ export default function VenuePage() {
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [shelf, setShelf] = useState<ArenaShelf>('open');
 
   const inferredSport = !sport ? inferSport(tags) : null;
+
+  const offShelf = (arenas ?? []).filter((a) => !isArenaOnShelf(a));
+  const shown = shelf === 'closed' ? offShelf : (arenas ?? []).filter(isArenaOnShelf);
+  const counts: Record<ArenaShelf, number> = {
+    open: (arenas?.length ?? 0) - offShelf.length,
+    closed: offShelf.length,
+  };
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -49,6 +67,9 @@ export default function VenuePage() {
       setTags([]);
       setQrConfig(null);
       setCreated(true);
+      // A new arena is pending review, so it lands on the Active tab; show it
+      // rather than leave the partner on the other tab wondering where it went.
+      setShelf('open');
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -119,8 +140,38 @@ export default function VenuePage() {
         </div>
       </div>
       {isLoading && <p className="text-gray-500">Loading…</p>}
+      {arenas && (
+        <div className="flex gap-1" role="tablist" aria-label="Arena shelf">
+          {SHELF_TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={shelf === t.key}
+              onClick={() => setShelf(t.key)}
+              className={[
+                'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+                shelf === t.key
+                  ? 'border-[#17151D] bg-[#BCE3A0] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                  : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+              ].join(' ')}
+            >
+              {t.label} <span className="font-normal text-slate-500">({counts[t.key]})</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {arenas && shown.length === 0 && (
+        <p className="text-sm text-gray-500">
+          {arenas.length === 0
+            ? 'No arenas yet.'
+            : shelf === 'closed'
+              ? 'No closed or rejected arenas.'
+              : 'No active arenas. Closed and rejected ones are on the other tab.'}
+        </p>
+      )}
       <ul className="flex flex-col gap-2">
-        {arenas?.map((a) => (
+        {shown.map((a) => (
           <li
             key={a.id}
             className="rounded border border-gray-200 bg-white p-3 hover:border-brand-400"
@@ -153,7 +204,6 @@ export default function VenuePage() {
             )}
           </li>
         ))}
-        {arenas?.length === 0 && <p className="text-sm text-gray-500">No arenas yet.</p>}
       </ul>
       {canAddArena && (
         <form
