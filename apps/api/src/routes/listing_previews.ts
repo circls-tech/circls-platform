@@ -13,6 +13,7 @@ import {
   PREVIEW_TYPES,
   resolvePreviewTarget,
   SCRATCH_ID,
+  SCRATCH_TYPES,
 } from '../services/listing_preview_service.js';
 
 /**
@@ -28,10 +29,11 @@ import {
  * The response carries the consumer-site URL with the token already on it, so
  * neither portal needs to know where the consumer site lives.
  *
- * A partner may also mint a SCRATCH preview (id `scratch`): the consumer page
- * for a listing that is not saved yet, which renders what the create form
- * posts to it. Nothing is looked up — there is nothing to look up — and the
- * token opens no stored listing.
+ * A partner may also mint a SCRATCH preview (id `scratch`) of an event or a
+ * membership: the consumer page for a listing that is not saved yet, which
+ * renders what the create form posts to it. Nothing is looked up — there is
+ * nothing to look up — and the token opens no stored listing. Venues have no
+ * such page, so a venue scratch preview is refused.
  */
 
 const partnerParams = z.object({
@@ -65,7 +67,12 @@ export const listingPreviewRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, READ_CAP[type]);
-      if (id === SCRATCH_ID) return createListingPreview({ type, id });
+      if (id === SCRATCH_ID) {
+        if (!(SCRATCH_TYPES as readonly string[]).includes(type)) {
+          throw new BadRequest(`No scratch preview for a ${type}`, 'bad_request');
+        }
+        return createListingPreview({ type, id });
+      }
       const target = await resolvePreviewTarget(type, id);
       // Another organisation's listing reads as absent, not as forbidden:
       // ids must not be probeable across tenants.

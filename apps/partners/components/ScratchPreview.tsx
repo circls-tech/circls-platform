@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCreateListingPreview, type ListingPreviewType } from '@/lib/api/preview';
 import {
   SCRATCH_ID,
@@ -8,12 +8,7 @@ import {
   SCRATCH_READY_MESSAGE,
 } from '@/lib/api/scratch_listing';
 import { Button, Modal } from '@/lib/ui';
-
-const NOUN: Record<ListingPreviewType, string> = {
-  venue: 'venue',
-  event: 'event',
-  membership: 'plan',
-};
+import { PREVIEW_NOUN, PreviewDeviceToggle, PreviewFrame, type PreviewDevice } from './PreviewFrame';
 
 export interface ScratchPreviewProps {
   open: boolean;
@@ -52,7 +47,7 @@ function useDocked(): boolean {
 /** Docked pane widths per size, and the room the form leaves for them. The
  *  form reads the CSS variable (`xl:pr-[var(--scratch-preview-w)]`), set here
  *  while the pane is docked, so widening the pane pushes the form over. */
-const DOCKED_WIDTH: Record<'phone' | 'desktop', { pane: string; room: string }> = {
+const DOCKED_WIDTH: Record<PreviewDevice, { pane: string; room: string }> = {
   phone: { pane: 'w-[440px]', room: '460px' },
   desktop: { pane: 'w-[900px]', room: '920px' },
 };
@@ -61,7 +56,7 @@ export const SCRATCH_PREVIEW_ROOM_VAR = '--scratch-preview-w';
 export function ScratchPreview({ open, onClose, tenantId, type, listing, files }: ScratchPreviewProps) {
   const docked = useDocked();
   // Phone first: that is where most customers will meet the listing.
-  const [device, setDevice] = useState<'phone' | 'desktop'>('phone');
+  const [device, setDevice] = useState<PreviewDevice>('phone');
   const room = open && docked ? DOCKED_WIDTH[device].room : null;
   useEffect(() => {
     const root = document.documentElement;
@@ -119,14 +114,16 @@ function ScratchPreviewPane({
   listing: object;
   files: File[];
   docked: boolean;
-  device: 'phone' | 'desktop';
-  onDevice: (d: 'phone' | 'desktop') => void;
+  device: PreviewDevice;
+  onDevice: (d: PreviewDevice) => void;
   onClose: () => void;
 }) {
   const mint = useCreateListingPreview(tenantId);
   const { mutate } = mint;
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [childReady, setChildReady] = useState(false);
+  // Counted, not flagged: a frame that reloads (or comes back from a link)
+  // announces itself again and must get the listing again.
+  const [readySignals, setReadySignals] = useState(0);
 
   // One token per pane: minted when the preview opens.
   useEffect(() => {
@@ -141,57 +138,48 @@ function ScratchPreviewPane({
     function onMessage(ev: MessageEvent) {
       if (!origin || ev.origin !== origin) return;
       if (ev.source !== frameRef.current?.contentWindow) return;
-      if ((ev.data as { type?: unknown } | null)?.type === SCRATCH_READY_MESSAGE) setChildReady(true);
+      if ((ev.data as { type?: unknown } | null)?.type === SCRATCH_READY_MESSAGE) {
+        setReadySignals((n) => n + 1);
+      }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [origin]);
 
-  // Post the form's state on every change, a beat after typing stops.
+  // The form rebuilds the listing on every render; only a change in what it
+  // says (or in the picked files) is worth a post, a beat after typing stops.
+  const signature = useMemo(
+    () => JSON.stringify(listing) + '|' + files.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join(','),
+    [listing, files],
+  );
+  const latest = useRef({ listing, files });
+  latest.current = { listing, files };
   useEffect(() => {
-    if (!childReady || !origin) return;
+    if (readySignals === 0 || !origin) return;
     const target = frameRef.current?.contentWindow;
     if (!target) return;
     const id = window.setTimeout(() => {
-      target.postMessage({ type: SCRATCH_LISTING_MESSAGE, listing, images: files }, origin);
+      const { listing: l, images } = { listing: latest.current.listing, images: latest.current.files };
+      target.postMessage({ type: SCRATCH_LISTING_MESSAGE, listing: l, images }, origin);
     }, 250);
     return () => window.clearTimeout(id);
-  }, [childReady, origin, listing, files]);
+  }, [readySignals, origin, signature]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-slate-600">
           {docked ? (
-            <>This is the {NOUN[type]}&apos;s page on the customer site. It follows the form as you type.</>
+            <>This is the {PREVIEW_NOUN[type]}&apos;s page on the customer site. It follows the form as you type.</>
           ) : (
             <>
-              This is the {NOUN[type]}&apos;s page on the customer site, as it will appear once live.
+              This is the {PREVIEW_NOUN[type]}&apos;s page on the customer site, as it will appear once live.
               Nothing is saved until you press Create.
             </>
           )}
         </p>
         <div className="flex items-center gap-2">
-          <div
-            role="group"
-            aria-label="Preview size"
-            className="inline-flex rounded-md border border-slate-200 bg-white p-0.5"
-          >
-            {(['phone', 'desktop'] as const).map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onDevice(d)}
-                aria-pressed={device === d}
-                className={[
-                  'rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                  device === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
-                ].join(' ')}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
+          <PreviewDeviceToggle device={device} onChange={onDevice} />
           {docked && (
             <Button variant="secondary" size="sm" onClick={onClose}>
               Close
@@ -200,34 +188,14 @@ function ScratchPreviewPane({
         </div>
       </div>
 
-      <div
-        className={[
-          'flex min-h-[420px] justify-center overflow-hidden rounded-[var(--radius)] border-2 border-[#17151D] bg-slate-100',
-          docked ? 'min-h-0 flex-1' : 'h-[70vh]',
-        ].join(' ')}
-      >
-        {mint.isPending && <p className="self-center text-sm text-slate-500">Preparing the preview…</p>}
-        {mint.isError && (
-          <p className="max-w-md self-center px-4 text-center text-sm text-red-600">
-            Couldn&apos;t open the preview: {(mint.error as Error).message}
-          </p>
-        )}
-        {preview && (
-          <iframe
-            ref={frameRef}
-            key={preview.url}
-            src={preview.url}
-            title="Customer preview"
-            // The consumer site handles its own scripts; it needs nothing from
-            // this page beyond the listing we post to it.
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            className={[
-              'h-full border-0 bg-white',
-              device === 'phone' ? 'w-[390px] max-w-full border-x-2 border-[#17151D]' : 'w-full',
-            ].join(' ')}
-          />
-        )}
-      </div>
+      <PreviewFrame
+        url={preview?.url}
+        pending={mint.isPending}
+        error={mint.isError ? (mint.error as Error) : null}
+        device={device}
+        className={docked ? 'min-h-0 flex-1' : 'h-[70vh] min-h-[420px]'}
+        frameRef={frameRef}
+      />
 
       {!docked && (
         <div className="flex justify-end">

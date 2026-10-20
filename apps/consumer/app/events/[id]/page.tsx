@@ -17,7 +17,8 @@ import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { SCRATCH_ID, safeImageUrl, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import type { PublicEventWithVenue } from '@/lib/api/types';
 import { useItemView } from '@/lib/activity/ActivityProvider';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -49,21 +50,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   const { user } = useAuth();
   const ev: PublicEventWithVenue | undefined = scratch
     ? scratchQ.listing
-      ? {
-          ...scratchQ.listing,
-          images: scratchQ.imageUrls.map((url, i) => ({
-            url,
-            position: i,
-            width: null,
-            height: null,
-            focalX: 0.5,
-            focalY: 0.5,
-          })),
-          brand: {
-            ...scratchQ.listing.brand,
-            logoUrl: safeImageUrl(scratchQ.listing.brand?.logoUrl),
-          },
-        }
+      ? { ...scratchQ.listing, images: scratchQ.images }
       : undefined
     : eventQ.data;
   // Owning-org profile for the "Organised by" block; degrades to the compact
@@ -133,13 +120,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
       <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
         {!preview && <BackBar fallbackHref="/events" />}
         {scratch && scratchQ.status !== 'ready' ? (
-          <p className="text-sm text-text-secondary">
-            {scratchQ.status === 'denied'
-              ? 'This preview link is not valid any more — open the preview again from the form.'
-              : scratchQ.status === 'verifying'
-                ? 'Preparing the preview…'
-                : 'Waiting for the form…'}
-          </p>
+          <ScratchStatusNote status={scratchQ.status} />
         ) : eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
         ) : eventQ.isError ? (
@@ -233,10 +214,18 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
                 <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} className="mt-2" />
+                {/* Not a link from a scratch preview: the frame would leave
+                    the posted listing behind. */}
                 {!ev.isStandalone && ev.venueId && (
-                  <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
-                    More at {ev.venueName}
-                  </Link>
+                  scratch ? (
+                    <span className="mt-1 block text-sm font-semibold text-coral-deep underline">
+                      More at {ev.venueName}
+                    </span>
+                  ) : (
+                    <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
+                      More at {ev.venueName}
+                    </Link>
+                  )
                 )}
               </div>
             </div>

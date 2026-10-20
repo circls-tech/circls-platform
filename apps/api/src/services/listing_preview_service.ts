@@ -37,6 +37,11 @@ export type PreviewType = (typeof PREVIEW_TYPES)[number];
  */
 export const SCRATCH_ID = 'scratch';
 
+/** The listing types whose consumer page has a scratch mode. Venues are
+ *  created in the onboarding wizard and have no such page yet. */
+export const SCRATCH_TYPES = ['event', 'membership'] as const satisfies readonly PreviewType[];
+export type ScratchType = (typeof SCRATCH_TYPES)[number];
+
 /** How long a minted preview link stays valid. Long enough to read a listing
  *  through and share the link across the desk; short enough that a leaked
  *  link is not a lasting back door to an unapproved listing. */

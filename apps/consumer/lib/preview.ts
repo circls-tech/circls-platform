@@ -1,8 +1,9 @@
 'use client';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
+import type { Brand, ImageRef } from '@/lib/api/types';
 
 /**
  * Listing preview mode.
@@ -83,14 +84,15 @@ export function safeImageUrl(url: unknown): string | null {
 /**
  * Listen for the listing the parent frame posts, once the API confirms the
  * token is a scratch preview of `type`. Messages are accepted from the parent
- * frame only. Picked photos arrive as Files and are handed back as object
- * URLs, revoked when replaced.
+ * frame only. The listing comes back with its brand's logo URL sanitised;
+ * picked photos arrive as Files and are handed back as image refs on object
+ * URLs, revoked when replaced and on unmount.
  */
-export function useScratchListing<T>(
+export function useScratchListing<T extends { brand: Brand }>(
   active: boolean,
   token: string | null,
   type: 'venue' | 'event' | 'membership',
-): { status: ScratchStatus; listing: T | null; imageUrls: string[] } {
+): { status: ScratchStatus; listing: T | null; images: ImageRef[] } {
   const verify = useQuery({
     queryKey: ['scratch-preview', type, token],
     queryFn: () =>
@@ -110,7 +112,8 @@ export function useScratchListing<T>(
       if (ev.source !== window.parent) return;
       const data = ev.data as Partial<ScratchListingMessage<T>> | null;
       if (!data || data.type !== SCRATCH_LISTING_MESSAGE || !data.listing) return;
-      setListing(data.listing);
+      const posted = data.listing;
+      setListing({ ...posted, brand: { ...posted.brand, logoUrl: safeImageUrl(posted.brand?.logoUrl) } });
       const files = Array.isArray(data.images) ? data.images.filter((f) => f instanceof Blob) : [];
       setImageUrls((prev) => {
         prev.forEach((u) => URL.revokeObjectURL(u));
@@ -124,7 +127,20 @@ export function useScratchListing<T>(
     return () => window.removeEventListener('message', onMessage);
   }, [active, verified]);
 
-  useEffect(() => () => imageUrls.forEach((u) => URL.revokeObjectURL(u)), [imageUrls]);
+  // Revoke whatever is current on unmount only; replacements are revoked by
+  // the setter above, so this never pulls a URL out from under a render.
+  const urlsRef = useRef<string[]>([]);
+  urlsRef.current = imageUrls;
+  useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
+
+  const images: ImageRef[] = imageUrls.map((url, i) => ({
+    url,
+    position: i,
+    width: null,
+    height: null,
+    focalX: 0.5,
+    focalY: 0.5,
+  }));
 
   const status: ScratchStatus = !active
     ? 'waiting'
@@ -135,5 +151,5 @@ export function useScratchListing<T>(
         : listing
           ? 'ready'
           : 'waiting';
-  return { status, listing, imageUrls };
+  return { status, listing, images };
 }

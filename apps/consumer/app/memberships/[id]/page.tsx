@@ -16,7 +16,8 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { SCRATCH_ID, safeImageUrl, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import { useItemView } from '@/lib/activity/ActivityProvider';
 import type { MembershipBenefits, PublicMembershipTier, PublicMembershipWithScope } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
@@ -69,14 +70,7 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
   const { user } = useAuth();
   const m: PublicMembershipWithScope | undefined = scratch
     ? scratchQ.listing
-      ? {
-          ...scratchQ.listing,
-          artworkUrl: scratchQ.imageUrls[0] ?? null,
-          brand: {
-            ...scratchQ.listing.brand,
-            logoUrl: safeImageUrl(scratchQ.listing.brand?.logoUrl),
-          },
-        }
+      ? { ...scratchQ.listing, artworkUrl: scratchQ.images[0]?.url ?? null }
       : undefined
     : membershipQ.data;
   // Enrich with the full org profile when we know the brand slug. Degrades to
@@ -136,13 +130,7 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
       <main className={`mx-auto max-w-3xl px-4 pt-8${selectedTier ? ' pb-28' : ' pb-8'}`}>
         {!preview && <BackBar fallbackHref="/memberships" />}
         {scratch && scratchQ.status !== 'ready' ? (
-          <p className="text-sm text-text-secondary">
-            {scratchQ.status === 'denied'
-              ? 'This preview link is not valid any more — open the preview again from the form.'
-              : scratchQ.status === 'verifying'
-                ? 'Preparing the preview…'
-                : 'Waiting for the form…'}
-          </p>
+          <ScratchStatusNote status={scratchQ.status} />
         ) : membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (
@@ -262,9 +250,13 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
               )}
 
               {m.venueId && (
-                <Link href={`/venues/${m.venueId}`} className="text-sm font-semibold text-coral-deep underline">
-                  More at {m.scopeName}
-                </Link>
+                scratch ? (
+                  <span className="text-sm font-semibold text-coral-deep underline">More at {m.scopeName}</span>
+                ) : (
+                  <Link href={`/venues/${m.venueId}`} className="text-sm font-semibold text-coral-deep underline">
+                    More at {m.scopeName}
+                  </Link>
+                )
               )}
             </Card>
 

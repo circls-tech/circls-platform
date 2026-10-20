@@ -3,12 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useCreateListingPreview, type ListingPreviewType } from '@/lib/api/preview';
 import { Button, Modal } from '@/lib/ui';
-
-const NOUN: Record<ListingPreviewType, string> = {
-  venue: 'venue',
-  event: 'event',
-  membership: 'plan',
-};
+import { PREVIEW_NOUN, PreviewDeviceToggle, PreviewFrame, type PreviewDevice } from './PreviewFrame';
 
 export interface ListingPreviewModalProps {
   open: boolean;
@@ -49,7 +44,7 @@ export function ListingPreviewModal({
   const mint = useCreateListingPreview(tenantId);
   const { mutate, reset } = mint;
   // Phone first: that is where most customers will meet the listing.
-  const [device, setDevice] = useState<'phone' | 'desktop'>('phone');
+  const [device, setDevice] = useState<PreviewDevice>('phone');
 
   useEffect(() => {
     if (!open) {
@@ -66,30 +61,11 @@ export function ListingPreviewModal({
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-slate-600">
-            This is the {NOUN[type]}&apos;s page on the customer site, exactly as it will appear
+            This is the {PREVIEW_NOUN[type]}&apos;s page on the customer site, exactly as it will appear
             once live. Booking is turned off in the preview.
           </p>
           <div className="flex items-center gap-2">
-            <div
-              role="group"
-              aria-label="Preview size"
-              className="inline-flex rounded-md border border-slate-200 bg-white p-0.5"
-            >
-              {(['phone', 'desktop'] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDevice(d)}
-                  aria-pressed={device === d}
-                  className={[
-                    'rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                    device === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900',
-                  ].join(' ')}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
+            <PreviewDeviceToggle device={device} onChange={setDevice} />
             {preview && (
               <a
                 href={preview.url}
@@ -103,32 +79,13 @@ export function ListingPreviewModal({
           </div>
         </div>
 
-        <div className="flex h-[70vh] min-h-[420px] justify-center overflow-hidden rounded-[var(--radius)] border-2 border-[#17151D] bg-slate-100">
-          {mint.isPending && (
-            <p className="self-center text-sm text-slate-500">Preparing the preview…</p>
-          )}
-          {mint.isError && (
-            <p className="max-w-md self-center px-4 text-center text-sm text-red-600">
-              Couldn&apos;t open the preview: {(mint.error as Error).message}
-            </p>
-          )}
-          {preview && (
-            <iframe
-              key={preview.url}
-              src={preview.url}
-              title="Customer preview"
-              // The consumer site handles its own navigation and scripts; it
-              // needs nothing from this page, and this page nothing from it.
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              className={[
-                'h-full border-0 bg-white',
-                device === 'phone'
-                  ? 'w-[390px] max-w-full border-x-2 border-[#17151D]'
-                  : 'w-full',
-              ].join(' ')}
-            />
-          )}
-        </div>
+        <PreviewFrame
+          url={preview?.url}
+          pending={mint.isPending}
+          error={mint.isError ? (mint.error as Error) : null}
+          device={device}
+          className="h-[70vh] min-h-[420px]"
+        />
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>

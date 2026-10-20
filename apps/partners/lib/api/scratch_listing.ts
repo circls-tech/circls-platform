@@ -34,13 +34,6 @@ export interface ScratchEventTier {
   remaining: number | null;
 }
 
-export interface ScratchOccurrence {
-  id: string;
-  startsAt: string;
-  endsAt: string;
-  locationName: string;
-}
-
 /** Mirrors the consumer's PublicEventWithVenue (detail view). */
 export interface ScratchEvent {
   id: string;
@@ -68,7 +61,6 @@ export interface ScratchEvent {
   locAddressJson: Record<string, unknown> | null;
   /** Photos travel separately as Files; the page builds the gallery. */
   images: never[];
-  seriesOccurrences?: ScratchOccurrence[];
 }
 
 export interface ScratchAddress {
@@ -126,7 +118,6 @@ export function scratchEvent(input: {
   venue: Venue | null | undefined;
   address?: ScratchAddress;
   tz: string;
-  occurrences?: ScratchOccurrence[];
 }): ScratchEvent {
   const tiers = eventTiers(input.tiers);
   const v = input.venue ?? null;
@@ -156,9 +147,6 @@ export function scratchEvent(input: {
     locTzName: input.tz,
     locAddressJson: v ? venueAddress(v) : addr ? { ...addr } : null,
     images: [],
-    ...(input.occurrences && input.occurrences.length > 1
-      ? { seriesOccurrences: input.occurrences }
-      : {}),
   };
 }
 

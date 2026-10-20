@@ -209,6 +209,13 @@ describe.skipIf(!runIntegration)('listing preview routes', () => {
     expect(wrongType.statusCode).toBe(401);
     const none = await app.inject({ method: 'GET', url: '/v1/consumer/previews/scratch?type=event' });
     expect(none.statusCode).toBe(401);
+    // No consumer page renders a scratch venue, so none is minted.
+    const venue = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantAId}/listings/venue/scratch/preview`,
+      headers: bearer('ownerA'),
+    });
+    expect(venue.statusCode).toBe(400);
     const real = await app.inject({
       method: 'GET',
       url: `/v1/consumer/events/${draftEventId}`,
