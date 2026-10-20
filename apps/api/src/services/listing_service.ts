@@ -559,8 +559,9 @@ export async function getListingDetail(
         images: await eventPhotos(r.id),
         venueName,
         ...(seriesCount !== undefined ? { seriesCount } : {}),
-        startsAt: r.startsAt.toISOString(),
-        endsAt: r.endsAt.toISOString(),
+        // Null on a draft that has no dates yet (audit views may list drafts).
+        startsAt: r.startsAt?.toISOString() ?? null,
+        endsAt: r.endsAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
       };
     }

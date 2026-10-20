@@ -21,6 +21,7 @@ import type { EventStatus, ListingStatus, Membership } from '@/lib/api/types';
  *  share this map: a closed arena is off its venue's default tab for the same
  *  reason a closed venue is off the Venues page's. */
 const LISTING_SHELF: Record<ListingStatus, boolean> = {
+  draft: true,
   pending_review: true,
   active: true,
   rejected: false,
@@ -42,6 +43,7 @@ const EVENT_SHELF: Record<EventStatus, boolean> = {
 };
 
 const MEMBERSHIP_SHELF: Record<Membership['status'], boolean> = {
+  draft: true,
   pending_review: true,
   active: true,
   inactive: false,

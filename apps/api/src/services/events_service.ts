@@ -202,8 +202,9 @@ export interface CreateEventInput {
   tzName?: string | undefined;
   name: string;
   description?: string | undefined;
-  startsAt: Date;
-  endsAt: Date;
+  /** Both may be absent on a draft; submission for review requires them. */
+  startsAt?: Date | null | undefined;
+  endsAt?: Date | null | undefined;
   /** Legacy: set by replaceTiers to the minimum tier price. Default 0. */
   pricePaise?: number | undefined;
   capacity?: number | undefined;
@@ -289,18 +290,40 @@ function canonicalizeStandaloneCities(inputs: CreateEventInput[]): void {
   }
 }
 
+/**
+ * What a draft must have before it can be created: only a sane window when
+ * both dates are given, and a timezone with any standalone address. Dates,
+ * location and tiers may all be missing on a draft — {@link eventMissing}
+ * lists them, and submission for review refuses until the list is empty.
+ */
 function validateCreateEventInput(input: CreateEventInput): void {
-  if (input.startsAt >= input.endsAt) {
+  if (input.startsAt && input.endsAt && input.startsAt >= input.endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
   }
-  if (!input.venueId) {
-    if (!input.addressJson) {
-      throw new BadRequest('Org-scoped events require an address', 'event_address_required');
-    }
-    if (!input.tzName) {
-      throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
-    }
+  if (!input.venueId && input.addressJson && !input.tzName) {
+    throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
   }
+}
+
+/** What an event still lacks before it can go to review, by field. */
+export type EventMissing = 'dates' | 'location' | 'tiers';
+
+/**
+ * The parts of a draft that are not there yet: its dates (both, in order),
+ * a location (a venue, or a standalone address with a timezone) and at
+ * least one ticket tier. Empty for a complete event.
+ */
+export async function eventMissing(exec: Pick<typeof db, 'select'>, event: Event): Promise<EventMissing[]> {
+  const missing: EventMissing[] = [];
+  if (!event.startsAt || !event.endsAt || event.startsAt >= event.endsAt) missing.push('dates');
+  const hasAddress = event.addressJson != null && Object.keys(event.addressJson).length > 0;
+  if (!event.venueId && !(hasAddress && event.tzName)) missing.push('location');
+  const [tierCount] = await exec
+    .select({ n: sql<number>`count(*)::int` })
+    .from(eventTicketTiers)
+    .where(eq(eventTicketTiers.eventId, event.id));
+  if (!tierCount || Number(tierCount.n) === 0) missing.push('tiers');
+  return missing;
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -323,8 +346,8 @@ async function insertEventTx(
       tzName: isStandalone ? (input.tzName ?? null) : null,
       name: input.name,
       description: input.description ?? null,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
+      startsAt: input.startsAt ?? null,
+      endsAt: input.endsAt ?? null,
       pricePaise: input.pricePaise ?? 0,
       capacity: input.capacity ?? null,
       maxPerUser: input.maxPerUser ?? null,
@@ -336,7 +359,9 @@ async function insertEventTx(
     .returning();
   if (!row) throw new Error('event insert returned no row');
 
-  await replaceTiers(tx, row.id, input.tenantId, input.tiers);
+  // A draft may have no tiers yet; replaceTiers insists on one, so it is
+  // only called once there is something to write.
+  if (input.tiers.length > 0) await replaceTiers(tx, row.id, input.tenantId, input.tiers);
   await replaceQuestions(tx, row.id, input.tenantId, input.questions ?? []);
 
   await writeAudit(tx, ctx, 'event.created', 'event', row.id, null, {
@@ -389,7 +414,9 @@ export async function createEventSeries(
   await deriveStandaloneCoords(occurrences);
 
   const seriesId = randomUUID();
-  const sorted = [...occurrences].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const sorted = [...occurrences].sort(
+    (a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0),
+  );
   return db.transaction(async (tx) => {
     const rows: Event[] = [];
     for (const occ of sorted) {
@@ -423,6 +450,16 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
     const drafts = existing.filter((e) => e.status === 'draft');
     if (drafts.length === 0) {
       throw new Conflict('No draft occurrences left to submit', 'event_not_draft');
+    }
+    // Every date goes to review at once, so every date must be complete.
+    for (const ev of drafts) {
+      const missing = await eventMissing(tx, ev);
+      if (missing.length > 0) {
+        throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
+          eventId: ev.id,
+          missing,
+        });
+      }
     }
 
     const updated: Event[] = [];
@@ -675,9 +712,11 @@ async function applyEventPatchTx(
   opts: { auditAction: string; tierMode: 'replace' | 'live' },
 ): Promise<Event> {
   const eventId = existing.id;
+  // A draft may still lack one or both dates; the window is checked once both
+  // are known (and again at submission, which requires them).
   const startsAt = patch.startsAt ?? existing.startsAt;
   const endsAt = patch.endsAt ?? existing.endsAt;
-  if (startsAt >= endsAt) {
+  if (startsAt && endsAt && startsAt >= endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
   }
 
@@ -733,7 +772,7 @@ async function applyEventPatchTx(
   // date: paid out before the event happened (moved later, nothing left to claw
   // back on a refund) or held past its settlement week (moved earlier). Same tx
   // as the `ends_at` write, so the two can't diverge.
-  if (set.endsAt !== undefined && set.endsAt.getTime() !== existing.endsAt.getTime()) {
+  if (set.endsAt != null && set.endsAt.getTime() !== existing.endsAt?.getTime()) {
     await reholdForEvent(eventId, tx);
   }
 
@@ -842,6 +881,11 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
     if (existing.status !== 'draft') {
       throw new Conflict('Only draft events can be submitted for review', 'event_not_draft');
     }
+    // A draft may be saved with gaps; review needs the whole thing.
+    const missing = await eventMissing(tx, existing);
+    if (missing.length > 0) {
+      throw new Conflict('This event is not complete yet', 'event_incomplete', { missing });
+    }
 
     const [updated] = await tx
       .update(events)
@@ -947,11 +991,11 @@ export async function reopenEvent(ctx: AuditCtx, eventId: string): Promise<Event
         status: existing.status,
       });
     }
-    if (existing.endsAt.getTime() <= Date.now()) {
+    if (!existing.endsAt || existing.endsAt.getTime() <= Date.now()) {
       throw new Conflict(
         'This event is already past its end time and cannot be reopened',
         'event_window_passed',
-        { endsAt: existing.endsAt.toISOString() },
+        { endsAt: existing.endsAt?.toISOString() ?? null },
       );
     }
 

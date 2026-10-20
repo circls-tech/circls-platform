@@ -11,6 +11,7 @@ import { getGeocoder } from '../lib/geocoding/index.js';
 import { suggestCity } from '../lib/geocoding/gazetteer.js';
 import {
   closeVenue,
+  submitVenueForReview,
   createVenue,
   getCloseImpact,
   getVenueById,
@@ -51,6 +52,8 @@ const venueMetadataShape = {
 
 const createVenueSchema = z.object({
   name: z.string().min(1).max(200),
+  /** Save as a draft instead of sending it to review. */
+  draft: z.boolean().optional(),
   tzName: z.string().min(1).max(64).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
@@ -58,7 +61,7 @@ const createVenueSchema = z.object({
   tags: z.array(z.string().min(1).max(40)).max(20).optional(),
   ...venueMetadataShape,
 });
-const updateVenueSchema = createVenueSchema.partial().extend({
+const updateVenueSchema = createVenueSchema.omit({ draft: true }).partial().extend({
   status: z.enum(['active', 'suspended']).optional(),
 });
 
@@ -129,9 +132,10 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'venues.write');
     assertTermsAccepted(ctx);
-    const { name, tzName, lat, lng, addressJson, tags } = parsed.data;
+    const { name, tzName, lat, lng, addressJson, tags, draft } = parsed.data;
     return createVenue(tenantId, {
       name,
+      ...(draft !== undefined ? { draft } : {}),
       tzName: tzName ?? 'Asia/Kolkata',
       lat: lat ?? null,
       lng: lng ?? null,
@@ -213,6 +217,17 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
     return getCloseImpact(venue.tenantId, id, arenaId);
+  });
+
+  // ── POST /v1/venues/:id/submit — a draft goes to Circls review ────────────
+  app.post('/v1/venues/:id/submit', { preHandler: requireAuth }, async (req) => {
+    const { id } = req.params as { id: string };
+    const venue = await getVenueById(id);
+    if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, venue.tenantId);
+    assertCap(ctx, 'venues.write');
+    return submitVenueForReview({ tenantId: venue.tenantId, actorUserId: user.id }, id);
   });
 
   app.post('/v1/venues/:id/close', { preHandler: requireAuth }, async (req) => {

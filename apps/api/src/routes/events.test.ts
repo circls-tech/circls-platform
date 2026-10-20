@@ -156,7 +156,8 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('rejects a payload with neither venueId nor addressJson', async () => {
+  it('saves a payload with neither venueId nor addressJson as a draft that cannot be submitted yet', async () => {
+    // A draft may have no location yet; submission for review asks for one.
     const res = await app.inject({
       method: 'POST',
       url: `/v1/tenants/${tenantId}/events`,
@@ -168,7 +169,17 @@ describe.skipIf(!runIntegration)('tenant event routes', () => {
         tiers: [{ name: 'General', pricePaise: 0 }],
       },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    const ev = res.json() as { id: string; status: string; venueId: string | null };
+    expect(ev.status).toBe('draft');
+    expect(ev.venueId).toBeNull();
+    const submit = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/events/${ev.id}/publish`,
+      headers: bearer('owner'),
+    });
+    expect(submit.statusCode).toBe(409);
+    expect((submit.json() as { error: { details: { missing: string[] } } }).error.details.missing).toEqual(['location']);
   });
 
   it('rejects a standalone payload with an empty address object', async () => {

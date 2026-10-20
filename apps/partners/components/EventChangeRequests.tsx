@@ -141,8 +141,9 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
 
   function openForm() {
     setName(ev.name);
-    setStartsAtLocal(isoToTzLocal(ev.startsAt, eventTz));
-    setEndsAtLocal(isoToTzLocal(ev.endsAt, eventTz));
+    // Change requests are for published events, which always have dates.
+    setStartsAtLocal(ev.startsAt ? isoToTzLocal(ev.startsAt, eventTz) : '');
+    setEndsAtLocal(ev.endsAt ? isoToTzLocal(ev.endsAt, eventTz) : '');
     // Keep tier ids so the API updates live tiers in place (sold tickets stay
     // attached); a row added in the editor has no id and becomes a new tier.
     setTiers(ev.tiers.map(tierDraftFromApi));

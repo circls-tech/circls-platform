@@ -682,12 +682,12 @@ export async function getPublicEventById(
         ),
       )
       .orderBy(sql`${events.startsAt} asc`);
-    seriesOccurrences = occRows.map((o) => ({
-      id: o.id,
-      startsAt: o.startsAt,
-      endsAt: o.endsAt,
-      locationName: o.venueName ?? o.tenantName,
-    }));
+    seriesOccurrences = occRows.flatMap((o) =>
+      // A draft date with no window yet (preview only) has nothing to show.
+      o.startsAt && o.endsAt
+        ? [{ id: o.id, startsAt: o.startsAt, endsAt: o.endsAt, locationName: o.venueName ?? o.tenantName }]
+        : [],
+    );
     if (images.length === 0) {
       const imagesBySeries = await imagesForSeries([joinRow.e.seriesId]);
       images = imagesBySeries.get(joinRow.e.seriesId) ?? [];

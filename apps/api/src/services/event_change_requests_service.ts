@@ -75,13 +75,24 @@ function toUpdatePatch(patch: EventChangeRequestPatch): UpdateEventPatch {
  * Everything here is re-checked at approve time (the event may change in
  * between); this exists so partners get errors at submit, not days later.
  */
+/** A published event always has both dates; a draft without them has no
+ *  business here. Narrows, or refuses with a clear code. */
+function requireDates(event: Event): Event & { startsAt: Date; endsAt: Date } {
+  if (!event.startsAt || !event.endsAt) {
+    throw new Conflict('This event has no dates yet', 'event_dates_missing');
+  }
+  return event as Event & { startsAt: Date; endsAt: Date };
+}
+
 async function validatePatchAgainstEvent(
   database: typeof db,
   event: Event,
   patch: EventChangeRequestPatch,
 ): Promise<void> {
-  const startsAt = patch.startsAt !== undefined ? new Date(patch.startsAt) : event.startsAt;
-  const endsAt = patch.endsAt !== undefined ? new Date(patch.endsAt) : event.endsAt;
+  // Change requests are for published events, which always carry both dates;
+  // a draft never gets here (it is edited directly).
+  const startsAt = patch.startsAt !== undefined ? new Date(patch.startsAt) : requireDates(event).startsAt;
+  const endsAt = patch.endsAt !== undefined ? new Date(patch.endsAt) : requireDates(event).endsAt;
   if (startsAt >= endsAt) {
     throw new BadRequest('startsAt must be before endsAt', 'invalid_event_window');
   }
@@ -143,8 +154,8 @@ async function buildSnapshot(
 ): Promise<EventChangeRequestSnapshot> {
   const snapshot: EventChangeRequestSnapshot = {};
   if (patch.name !== undefined) snapshot.name = event.name;
-  if (patch.startsAt !== undefined) snapshot.startsAt = event.startsAt.toISOString();
-  if (patch.endsAt !== undefined) snapshot.endsAt = event.endsAt.toISOString();
+  if (patch.startsAt !== undefined) snapshot.startsAt = requireDates(event).startsAt.toISOString();
+  if (patch.endsAt !== undefined) snapshot.endsAt = requireDates(event).endsAt.toISOString();
   if (patchedFields(patch).some((k) => LOCATION_KEYS.has(k))) {
     snapshot.venueId = event.venueId;
     snapshot.addressJson = event.addressJson;
@@ -330,7 +341,8 @@ export async function listChangeRequestsForReview(input?: {
     tenantId: r.tenantId,
     tenantName: r.tenantName,
     eventName: r.eventName,
-    eventStartsAt: r.eventStartsAt.toISOString(),
+    // Only published events have change requests, and those always have dates.
+    eventStartsAt: r.eventStartsAt?.toISOString() ?? '',
     fields: patchedFields(r.patch),
     createdAt: r.createdAt.toISOString(),
   }));
@@ -403,8 +415,8 @@ export async function getChangeRequestDetail(id: string): Promise<ChangeRequestD
       id: event.id,
       name: event.name,
       status: event.status,
-      startsAt: event.startsAt.toISOString(),
-      endsAt: event.endsAt.toISOString(),
+      startsAt: requireDates(event).startsAt.toISOString(),
+      endsAt: requireDates(event).endsAt.toISOString(),
       venueId: event.venueId,
       venueName: currentVenue?.name ?? null,
       addressJson: event.addressJson,

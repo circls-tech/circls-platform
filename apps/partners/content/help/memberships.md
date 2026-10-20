@@ -25,7 +25,7 @@ Creating and editing plans, activating and deactivating them, and their artwork 
 
 Artwork can also be added or changed later while editing the plan (see below).
 
-**Preview** (next to **Create plan**, available once the plan has a name) shows the plan's page on the customer site exactly as the form stands — name, description, scope, artwork, tiers, benefits and terms — and follows your edits as you make them; nothing is saved until you press **Create plan**. You land on the new plan's page, where it starts in **pending review** until Circls approves it. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
+**Preview** (next to **Create plan**, available once the plan has a name) shows the plan's page on the customer site exactly as the form stands — name, description, scope, artwork, tiers, benefits and terms — and follows your edits as you make them; nothing is saved until you press a button below it. **Create plan** sends it to review; **Save as draft** keeps it to yourself for now — a draft needs only a name, its tiers can follow. You land on the new plan's page: a submitted plan starts in **pending review** until Circls approves it; a draft stays a **draft** until you click **Submit for review** there, which needs at least one tier and opens the customer-site preview first.
 
 ## The plans list
 
@@ -35,6 +35,7 @@ Artwork can also be added or changed later while editing the plan (see below).
 
 | Status | Meaning | What you can do |
 | --- | --- | --- |
+| **draft** | Saved but not yet submitted — yours alone, not in the review queue. | Edit; **Submit for review** once it has a tier. |
 | **pending_review** | Awaiting the circls team's approval before it can be sold. | Edit. |
 | **active** | Approved and on sale. | View buyers; **Deactivate**. |
 | **inactive** | Taken off sale by you. Existing members keep their access until it expires. | Edit; **Activate** to put it back on sale; view buyers. |

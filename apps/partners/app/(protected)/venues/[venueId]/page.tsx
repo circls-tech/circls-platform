@@ -6,7 +6,7 @@ import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
-import { useArenas, useCreateArena, useSetVenueOpen, useVenue } from '@/lib/api/queries';
+import { useArenas, useCreateArena, useSetVenueOpen, useSubmitVenue, useVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { isArenaOnShelf } from '@/lib/shelf';
@@ -39,7 +39,22 @@ export default function VenuePage() {
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // The customer-site preview. 'submit' is the preview that stands between
+  // "Submit for review" on a draft and the submission itself.
+  const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
+  const submitVenue = useSubmitVenue(tenantId);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  async function handleSubmitForReview() {
+    if (!venue) return;
+    setSubmitError(null);
+    try {
+      await submitVenue.mutateAsync(venue.id);
+      setPreview('closed');
+    } catch (e) {
+      setPreview('closed');
+      setSubmitError((e as Error).message);
+    }
+  }
   const [shelf, setShelf] = useState<ArenaShelf>('open');
 
   const inferredSport = !sport ? inferSport(tags) : null;
@@ -90,9 +105,16 @@ export default function VenuePage() {
           {/* The venue's page on the customer site, whatever its status — the
               only way to see a pending venue (and its pending arenas) as
               customers will. */}
-          <Button variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>
+          <Button variant="secondary" size="sm" onClick={() => setPreview('look')}>
             Preview
           </Button>
+          {/* A draft is the partner's own until they send it to review; the
+              customer-site preview opens first, with the submission inside. */}
+          {canEditVenue && venue.status === 'draft' && (
+            <Button petal="#A7E3BF" size="sm" loading={submitVenue.isPending} onClick={() => setPreview('submit')}>
+              Submit for review
+            </Button>
+          )}
           {/* Details and photos live on their own page, so this one can lead
               with the arenas. Read-only members can still read them. */}
           <Link href={`/venues/${venue.id}/details${tenantId ? `?tenantId=${tenantId}` : ''}`}>
@@ -101,12 +123,22 @@ export default function VenuePage() {
             </Button>
           </Link>
           <ListingPreviewModal
-            open={previewOpen}
-            onClose={() => setPreviewOpen(false)}
+            open={preview !== 'closed'}
+            onClose={() => setPreview('closed')}
             tenantId={venueTenantId}
             type="venue"
             id={venue.id}
+            {...(preview === 'submit'
+              ? {
+                  confirm: {
+                    label: 'Submit for review',
+                    onConfirm: handleSubmitForReview,
+                    loading: submitVenue.isPending,
+                  },
+                }
+              : {})}
           />
+          {submitError && <p className="w-full text-sm text-red-600">{submitError}</p>}
           {canEditVenue && (
             <span className="ml-auto">
               <CloseReopenControl

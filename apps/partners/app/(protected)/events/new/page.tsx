@@ -219,20 +219,19 @@ function NewTenantEventForm({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!startsAtLocal || !endsAtLocal) {
-      setErr('Set a start and end time.');
+    // A draft is saved with what is there: dates, location and tiers may all
+    // wait for later (Submit for review asks for them). One date without the
+    // other, or a half-filled tier, is a slip rather than a gap.
+    if (Boolean(startsAtLocal) !== Boolean(endsAtLocal)) {
+      setErr('Set both a start and an end time, or leave both for later.');
       return;
     }
-    if (scope === 'venue' && !venueId) {
-      setErr('Pick a venue, or switch to a standalone address.');
-      return;
-    }
-    if (scope === 'standalone' && !line1.trim() && !city.trim()) {
-      setErr('Enter at least an address line or city.');
-      return;
-    }
-    if (tiers.some((t) => !t.name.trim())) {
-      setErr('Give every ticket tier a name.');
+    const namedTiers = tiers.filter((t) => t.name.trim());
+    // An untouched tier row (no name, zero price, nothing else) is simply dropped.
+    const halfFilled = (t: TierDraft) =>
+      t.name.trim() === '' && (parseFloat(t.priceRupees || '0') > 0 || Boolean(t.description?.trim()) || Boolean(t.capacity?.trim()));
+    if (tiers.some(halfFilled)) {
+      setErr('Give every ticket tier a name, or remove the empty ones.');
       return;
     }
     if (hasChoiceQuestionWithoutOptions(questions)) {
@@ -270,11 +269,13 @@ function NewTenantEventForm({
       ...(description ? { description } : {}),
       ...(occurrences
         ? { occurrences }
-        : {
-            startsAt: localToTzIso(startsAtLocal, effectiveTz),
-            endsAt: localToTzIso(endsAtLocal, effectiveTz),
-          }),
-      tiers: tiersToPayload(tiers),
+        : startsAtLocal && endsAtLocal
+          ? {
+              startsAt: localToTzIso(startsAtLocal, effectiveTz),
+              endsAt: localToTzIso(endsAtLocal, effectiveTz),
+            }
+          : {}),
+      tiers: tiersToPayload(namedTiers),
       questions: questionsToPayload(questions),
       maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
@@ -283,7 +284,8 @@ function NewTenantEventForm({
 
     let input: CreateTenantEventInput;
     if (scope === 'venue') {
-      input = { ...base, venueId };
+      // No venue picked yet: the draft has no location until it does.
+      input = venueId ? { ...base, venueId } : { ...base };
     } else {
       const addressJson: Record<string, unknown> = {};
       if (line1.trim()) addressJson.line1 = line1.trim();
@@ -294,12 +296,16 @@ function NewTenantEventForm({
       if (country.trim()) addressJson.country = country.trim();
       // Coordinates come from an autocomplete pick when available; otherwise
       // they're omitted and the API derives them from the address (its geocoder).
-      input = {
-        ...base,
-        addressJson,
-        tzName: tz,
-        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
-      };
+      // No address typed yet: the draft has no location until it does.
+      input =
+        Object.keys(addressJson).length > 0
+          ? {
+              ...base,
+              addressJson,
+              tzName: tz,
+              ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+            }
+          : { ...base };
     }
 
     try {
@@ -337,7 +343,7 @@ function NewTenantEventForm({
 
   return (
     <div className={previewOpen ? 'xl:pr-[var(--scratch-preview-w)]' : ''}>
-    <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
+    <Card title="Details" subtitle="Only a name is needed to save a draft — dates, location and ticket tiers can follow. Submit for review from the event's page when it's complete; Circls approves it before it goes live.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Where</label>
@@ -421,8 +427,8 @@ function NewTenantEventForm({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input label={`Starts (${effectiveTz})`} type="datetime-local" value={startsAtLocal} onChange={(e) => setStartsAtLocal(e.target.value)} required />
-            <Input label={`Ends (${effectiveTz})`} type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} required />
+            <Input label={`Starts (${effectiveTz})`} type="datetime-local" value={startsAtLocal} onChange={(e) => setStartsAtLocal(e.target.value)} />
+            <Input label={`Ends (${effectiveTz})`} type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} />
           </div>
 
           <RecurrenceEditor
@@ -473,7 +479,7 @@ function NewTenantEventForm({
               {previewOpen ? 'Hide preview' : 'Preview'}
             </Button>
             <Button type="submit" loading={busy}>
-              {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
+              {recurrence.mode === 'weekly' ? 'Save recurring draft' : 'Save draft'}
             </Button>
           </div>
         </form>

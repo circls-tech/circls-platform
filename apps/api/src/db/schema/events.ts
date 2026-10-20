@@ -51,8 +51,9 @@ export const events = pgTable('events', {
   tzName: text('tz_name'),
   name: text('name').notNull(),
   description: text('description'),
-  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
-  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+  /** Null on a draft that has no dates yet; submission for review requires both. */
+  startsAt: timestamp('starts_at', { withTimezone: true }),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
   pricePaise: bigintPaise('price_paise').notNull().default(0),
   capacity: integer('capacity'),
   /** Per-customer ticket cap for the whole event (summed across all tiers and

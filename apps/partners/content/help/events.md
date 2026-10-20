@@ -14,11 +14,11 @@ Creating and changing events — editing, submitting for review, publishing, end
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
    - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
    - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
-4. Click **Create event**.
+4. Click **Save draft**. Only the **name** is needed to save — the dates, the location and the ticket tiers can follow.
 
-Before you do, **Preview** (next to **Create event**, available once the event has a name and a start) shows the event's page on the customer site exactly as the form stands — name, description, date, venue or address, photos and ticket tiers — and keeps up with every edit you make. Nothing is created until you press **Create event**; on a wide screen the preview sits beside the form, on a narrower one it opens over it and **Back to the form** returns you to editing. See [Previewing as a customer](#previewing-as-a-customer) for what the page shows.
+Before you do, **Preview** (next to **Create event**, available once the event has a name and a start) shows the event's page on the customer site exactly as the form stands — name, description, date, venue or address, photos and ticket tiers — and keeps up with every edit you make. Nothing is created until you press **Save draft**; on a wide screen the preview sits beside the form, on a narrower one it opens over it and **Back to the form** returns you to editing. See [Previewing as a customer](#previewing-as-a-customer) for what the page shows.
 
-The event is created as a **draft** and you're returned to the Events list. Add ticket tiers next (see below) before submitting.
+The event is created as a **draft** and you're returned to the Events list. A draft is yours alone: customers never see it and the Circls team is not asked to review it until you submit. Open it to fill in what's missing — the event's page lists what is **still needed** (a start and end, a venue or address, at least one ticket tier) and **Submit for review** stays off until the list is empty.
 
 ## Duplicating an event
 
@@ -30,7 +30,7 @@ Three things are **not** copied, so set them on the form:
 - **Repeats** — the copy starts as a one-time event; switch on **Repeats weekly** if you want a new series.
 - **Photos** — add them on the form or from the copy's **Photos** section once it exists.
 
-Clicking **Create event** saves the copy as a **separate draft**; the original is untouched. Submit the copy for review as usual — a copy of a live event is still a new event to Circls. Only Owners and Managers see **Duplicate**.
+Clicking **Save draft** saves the copy as a **separate draft**; the original is untouched. Submit the copy for review as usual — a copy of a live event is still a new event to Circls. Only Owners and Managers see **Duplicate**.
 
 ## Recurring events
 
@@ -206,7 +206,7 @@ Preview is available to every member of your organisation, including Staff and R
 
 Open an event to see its detail page. What you can do depends on its status:
 
-- **Draft** — click **Edit** to change any field (name, description, start/end). You can also add, edit, or remove ticket tiers. When it's ready, click **Submit for review**: the customer-site preview opens so you can check the page, and you confirm the submission from there. **Cancel** drops the event.
+- **Draft** — click **Edit** to change any field (name, description, start/end — the dates may stay empty until you have them). You can also add, edit, or remove ticket tiers. The page says what is **still needed** before review: a start and end, a venue or address, and at least one ticket tier. Once nothing is missing, click **Submit for review**: the customer-site preview opens so you can check the page, and you confirm the submission from there. **Cancel** drops the event.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
 - **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
 - **Cancelled**, **rejected** or **ended** — read-only.

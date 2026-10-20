@@ -109,7 +109,9 @@ export default function VenueEventsPage() {
                       </Link>
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(ev.startsAt, resolveTz(ev.tzName))} → {fmt(ev.endsAt, resolveTz(ev.tzName))}
+                      {ev.startsAt && ev.endsAt
+                        ? `${fmt(ev.startsAt, resolveTz(ev.tzName))} → ${fmt(ev.endsAt, resolveTz(ev.tzName))}`
+                        : 'Dates to be set'}
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">
                       {ev.pricePaise === 0 ? (

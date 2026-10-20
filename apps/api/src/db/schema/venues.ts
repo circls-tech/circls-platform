@@ -18,6 +18,7 @@ export type VenueOpeningHours = Record<string, { open: string; close: string }[]
  * only see `active` venues whose tenant is not suspended.
  */
 export const venueStatus = pgEnum('venue_status', [
+  'draft',
   'pending_review',
   'active',
   'suspended',

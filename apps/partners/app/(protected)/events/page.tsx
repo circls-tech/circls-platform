@@ -50,7 +50,8 @@ function groupRows(events: VenueEventSummary[]): EventRow[] {
     } else {
       row.seriesSize += 1;
       row.seriesHasDraft = row.seriesHasDraft || ev.status === 'draft';
-      if (new Date(ev.startsAt) < new Date(row.ev.startsAt)) row.ev = ev;
+      // The soonest dated occurrence fronts the row; an undated draft never does.
+      if (ev.startsAt && (!row.ev.startsAt || new Date(ev.startsAt) < new Date(row.ev.startsAt))) row.ev = ev;
     }
   }
   return order.map((k) => byKey.get(k)!);
@@ -170,7 +171,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                   {ev.name}
                 </Link>
                 <p className="mt-0.5 text-xs text-slate-400">
-                  {fmtEventTime(ev.startsAt, resolveTz(ev.tzName))}
+                  {ev.startsAt ? fmtEventTime(ev.startsAt, resolveTz(ev.tzName)) : 'Date to be set'}
                   {seriesSize > 1 && ` · first of ${seriesSize} dates`}
                 </p>
               </div>
@@ -201,6 +202,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {canWrite &&
                   !ev.seriesId &&
                   ev.status === 'completed' &&
+                  ev.endsAt != null &&
                   new Date(ev.endsAt) > new Date() && (
                     <Button
                       petal="#A7E3BF"

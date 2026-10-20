@@ -142,14 +142,32 @@ export interface MembershipTierInput {
 }
 
 export interface CreateMembershipInput {
+  /** Save as a draft instead of sending it to review; tiers may wait. */
+  draft?: boolean;
   venueId?: string;
   name: string;
   description?: string;
   terms?: string | null;
-  /** Plan tiers (min 1). */
+  /** Plan tiers (min 1, unless saving a draft). */
   tiers: MembershipTierInput[];
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
+}
+
+/** A draft plan goes to Circls review (draft → pending_review); needs a tier. */
+export function useSubmitMembership(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (membershipId: string) =>
+      apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${membershipId}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: (_m, membershipId) => {
+      void qc.invalidateQueries({ queryKey: ['memberships', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['membership', membershipId] });
+    },
+  });
 }
 
 export function useCreateMembership(tenantId: string) {

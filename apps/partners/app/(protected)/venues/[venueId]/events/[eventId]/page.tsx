@@ -134,6 +134,13 @@ export default function EventDetailPage() {
   // The customer-site preview. 'submit' is the preview that stands between
   // "Submit for review" and the submission itself, with the confirm inside it.
   const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
+  // What a draft still lacks before it can go to review (a venue event has
+  // its location): dates and a ticket tier, as the API checks them.
+  const stillNeeded: string[] = [];
+  if (ev && ev.status === 'draft') {
+    if (!ev.startsAt || !ev.endsAt) stillNeeded.push('start and end');
+    if (ev.tiers.length === 0) stillNeeded.push('a ticket tier');
+  }
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -150,8 +157,8 @@ export default function EventDetailPage() {
     if (!ev) return;
     setName(ev.name);
     setDescription(ev.description ?? '');
-    setStartsAtLocal(isoToVenueTzLocal(ev.startsAt, tz));
-    setEndsAtLocal(isoToVenueTzLocal(ev.endsAt, tz));
+    setStartsAtLocal(ev.startsAt ? isoToVenueTzLocal(ev.startsAt, tz) : '');
+    setEndsAtLocal(ev.endsAt ? isoToVenueTzLocal(ev.endsAt, tz) : '');
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
@@ -183,8 +190,9 @@ export default function EventDetailPage() {
   async function onSubmitEdit(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
-    if (!startsAtLocal || !endsAtLocal) {
-      setErrorMsg('Set a start and end time.');
+    // A draft may keep its dates for later; one without the other is a slip.
+    if (Boolean(startsAtLocal) !== Boolean(endsAtLocal)) {
+      setErrorMsg('Set both a start and an end time, or leave both for later.');
       return;
     }
     if (tiers.some((t) => !t.name.trim())) {
@@ -205,8 +213,9 @@ export default function EventDetailPage() {
         input: {
           name,
           description,
-          startsAt: localToVenueTzIso(startsAtLocal, tz),
-          endsAt: localToVenueTzIso(endsAtLocal, tz),
+          ...(startsAtLocal && endsAtLocal
+            ? { startsAt: localToVenueTzIso(startsAtLocal, tz), endsAt: localToVenueTzIso(endsAtLocal, tz) }
+            : {}),
           tiers: tiersToPayload(tiers),
           questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
@@ -303,7 +312,9 @@ export default function EventDetailPage() {
                     When ({displayTz})
                   </dt>
                   <dd className="mt-1 text-sm text-slate-700">
-                    {fmt(ev.startsAt, displayTz)} → {fmt(ev.endsAt, displayTz)}
+                    {ev.startsAt && ev.endsAt
+                      ? `${fmt(ev.startsAt, displayTz)} → ${fmt(ev.endsAt, displayTz)}`
+                      : 'Dates to be set'}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
@@ -350,11 +361,17 @@ export default function EventDetailPage() {
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
-                      disabled={!authed}
+                      disabled={!authed || stillNeeded.length > 0}
+                      title={stillNeeded.length ? `Still needed: ${stillNeeded.join(', ')}` : undefined}
                       onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>
+                    {stillNeeded.length > 0 && (
+                      <span className="text-xs text-slate-500">
+                        Still needed before review: {stillNeeded.join(', ')}.
+                      </span>
+                    )}
                     <Button
                       variant="danger"
                       size="sm"
@@ -451,14 +468,12 @@ export default function EventDetailPage() {
                     type="datetime-local"
                     value={startsAtLocal}
                     onChange={(e) => setStartsAtLocal(e.target.value)}
-                    required
                   />
                   <Input
                     label={`Ends (${tz})`}
                     type="datetime-local"
                     value={endsAtLocal}
                     onChange={(e) => setEndsAtLocal(e.target.value)}
-                    required
                   />
                 </div>
 

@@ -13,6 +13,7 @@ import { venues } from './venues.js';
  */
 // Listing-approval lifecycle: `pending_review` → `active` ⇄ `inactive`; or `rejected`.
 export const membershipStatus = pgEnum('membership_status', [
+  'draft',
   'pending_review',
   'active',
   'inactive',

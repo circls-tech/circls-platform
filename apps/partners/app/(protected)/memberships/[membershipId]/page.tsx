@@ -8,8 +8,7 @@ import {
   useActivateMembership,
   useDeactivateMembership,
   useMemberships,
-  useUpdateMembership,
-} from '@/lib/api/memberships';
+  useUpdateMembership, useSubmitMembership, } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
@@ -70,7 +69,21 @@ export default function MembershipDetailPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<MembershipPlanDraft | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // The customer-site preview. 'submit' is the preview that stands between
+  // "Submit for review" on a draft and the submission itself.
+  const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
+  const submitPlan = useSubmitMembership(tenantId);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  async function handleSubmitForReview(membershipId: string) {
+    setSubmitError(null);
+    try {
+      await submitPlan.mutateAsync(membershipId);
+      setPreview('closed');
+    } catch (e) {
+      setPreview('closed');
+      setSubmitError((e as Error).message);
+    }
+  }
 
   // Seed the editor once the plan has loaded, and re-seed if it changes under
   // us (a save, or an admin decision landing while the page is open).
@@ -93,7 +106,10 @@ export default function MembershipDetailPage() {
 
   // Circls reviews a plan before it goes live, so a live one can't be edited
   // freely; deactivate it first.
-  const editable = membership.status === 'pending_review' || membership.status === 'inactive';
+  const editable =
+    membership.status === 'draft' || membership.status === 'pending_review' || membership.status === 'inactive';
+  // A draft needs at least one tier before it can go to review.
+  const stillNeeded = membership.status === 'draft' && membership.tiers.length === 0 ? ['a ticket tier'] : [];
   const currency = currencyFor(membership.venueId);
   const venueLabel = membership.venueId
     ? (venues?.find((v) => v.id === membership.venueId)?.name ?? 'Venue')
@@ -137,16 +153,43 @@ export default function MembershipDetailPage() {
           <StatusPill status={membership.status} />
           {/* The plan's page on the customer site, whatever its status — the
               only way to see a pending plan as customers will. */}
-          <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreviewOpen(true)}>
+          <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
             Preview
           </Button>
+          {/* A draft is the partner's own until they send it to review; the
+              customer-site preview opens first, with the submission inside. */}
+          {membership.status === 'draft' && canEditPlan && (
+            <Button
+              petal="#A7E3BF"
+              size="sm"
+              disabled={!authed || stillNeeded.length > 0}
+              title={stillNeeded.length ? `Still needed: ${stillNeeded.join(', ')}` : undefined}
+              loading={submitPlan.isPending}
+              onClick={() => setPreview('submit')}
+            >
+              Submit for review
+            </Button>
+          )}
           <ListingPreviewModal
-            open={previewOpen}
-            onClose={() => setPreviewOpen(false)}
+            open={preview !== 'closed'}
+            onClose={() => setPreview('closed')}
             tenantId={tenantId}
             type="membership"
             id={membership.id}
+            {...(preview === 'submit'
+              ? {
+                  confirm: {
+                    label: 'Submit for review',
+                    onConfirm: () => handleSubmitForReview(membership.id),
+                    loading: submitPlan.isPending,
+                  },
+                }
+              : {})}
           />
+          {stillNeeded.length > 0 && (
+            <span className="text-xs text-slate-500">Still needed before review: {stillNeeded.join(', ')}.</span>
+          )}
+          {submitError && <span className="text-xs text-red-600">{submitError}</span>}
           {/* Signing someone up at the counter is the thing staff come here to
               do most often, so it sits beside the name rather than below the
               members table. Offered on every plan — a partner can record an

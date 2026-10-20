@@ -30,8 +30,7 @@ import {
   removeMembershipCover,
   setMembershipActive,
   updateMember,
-  updateMembership,
-} from '../services/memberships_service.js';
+  updateMembership, submitMembershipForReview, } from '../services/memberships_service.js';
 import { assertMembershipPurchasable } from '../services/consumer_service.js';
 import { getVenueById } from '../services/venue_service.js';
 
@@ -72,6 +71,8 @@ const tierSchema = z.object({
   qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
+/** On create a draft may have no tiers yet; submission for review asks for one. */
+const createTiersField = z.array(tierSchema).max(20);
 
 /** Map a parsed tier to the service input, coercing its benefits to the typed shape. */
 function tierToInput(t: z.infer<typeof tierSchema>) {
@@ -92,17 +93,22 @@ const createSchema = z
     name: z.string().min(1).max(200),
     description: z.string().optional(),
     terms: termsField,
+    /** Save as a draft instead of sending it to review; tiers may wait. */
+    draft: z.boolean().optional(),
     // Legacy single-plan fields (still accepted). A `tiers` array supersedes them;
     // when only these are sent the service synthesizes a single "Standard" tier.
     pricePaise: z.number().int().min(0).optional(),
     durationDays: z.number().int().min(1).max(3650).optional(),
     benefits: benefitsSchema.optional(),
-    tiers: tiersField.optional(),
+    tiers: createTiersField.optional(),
     qrTicketConfig: qrTicketConfigSchema.optional(),
   })
   .refine(
-    (d) => (d.tiers && d.tiers.length > 0) || (d.pricePaise !== undefined && d.durationDays !== undefined),
-    { message: 'Provide tiers, or pricePaise + durationDays' },
+    (d) =>
+      d.draft === true ||
+      (d.tiers && d.tiers.length > 0) ||
+      (d.pricePaise !== undefined && d.durationDays !== undefined),
+    { message: 'Provide tiers, or pricePaise + durationDays (or save as a draft)' },
   );
 
 const updateSchema = z.object({
@@ -152,6 +158,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       name: parsed.data.name,
       description: parsed.data.description,
       terms: parsed.data.terms,
+      ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
       ...(parsed.data.tiers ? { tiers: parsed.data.tiers.map(tierToInput) } : {}),
       ...(parsed.data.pricePaise !== undefined ? { pricePaise: parsed.data.pricePaise } : {}),
       ...(parsed.data.durationDays !== undefined ? { durationDays: parsed.data.durationDays } : {}),
@@ -227,6 +234,15 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'memberships.write');
     return removeMembershipCover(tenantId, id);
+  });
+
+  // ── POST .../memberships/:id/submit — a draft goes to Circls review ───────
+  app.post('/v1/tenants/:tenantId/memberships/:id/submit', { preHandler: requireAuth }, async (req) => {
+    const { tenantId, id } = req.params as { tenantId: string; id: string };
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'memberships.write');
+    return submitMembershipForReview({ tenantId, actorUserId: user.id }, id);
   });
 
   app.post('/v1/tenants/:tenantId/memberships/:id/activate', { preHandler: requireAuth }, async (req) => {

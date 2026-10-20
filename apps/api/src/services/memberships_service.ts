@@ -200,6 +200,8 @@ export async function countMembersByStatus(
 export interface CreateMembershipInput {
   tenantId: string;
   actorUserId: string;
+  /** Save as a draft — tiers may wait; submission for review asks for one. */
+  draft?: boolean | undefined;
   venueId?: string | undefined;
   name: string;
   description?: string | undefined;
@@ -221,6 +223,8 @@ export interface CreateMembershipInput {
 function resolveCreateTiers(input: CreateMembershipInput): MembershipTierInput[] {
   if (input.tiers && input.tiers.length > 0) return input.tiers;
   if (input.pricePaise === undefined || input.durationDays === undefined) {
+    // A draft may have no tiers yet (eventMissing-style: checked at submission).
+    if (input.draft) return [];
     throw new BadRequest('A membership needs at least one tier', 'membership_tiers_required');
   }
   return [
@@ -239,7 +243,10 @@ export async function createMembership(
   input: CreateMembershipInput,
 ): Promise<PartnerMembershipWithTiers> {
   const tiers = resolveCreateTiers(input);
-  const cheapest = tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a));
+  // Legacy display fields mirror the cheapest tier; a tierless draft shows nothing yet.
+  const cheapest = tiers.length
+    ? tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a))
+    : { pricePaise: 0, durationDays: 30, benefits: { items: [] } as MembershipBenefits };
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(memberships)
@@ -254,13 +261,15 @@ export async function createMembership(
         benefits: cheapest.benefits ?? { items: [] },
         terms: input.terms ?? null,
         qrTicketConfig: input.qrTicketConfig ?? null,
-        // New listings await Circls review before going live (subproject B).
-        status: 'pending_review',
+        // New listings await Circls review before going live (subproject B) —
+        // unless the partner wants a draft to come back to first.
+        status: input.draft ? 'draft' : 'pending_review',
       })
       .returning();
     if (!row) throw new Error('membership insert returned no row');
 
-    const liveTiers = await replaceTiers(tx, row.id, input.tenantId, tiers);
+    // A tierless draft writes no tiers; replaceTiers insists on one.
+    const liveTiers = tiers.length > 0 ? await replaceTiers(tx, row.id, input.tenantId, tiers) : [];
 
     await writeAudit(
       tx,
@@ -299,6 +308,45 @@ export interface UpdateMembershipPatch {
   tiers?: MembershipTierInput[];
 }
 
+
+/**
+ * Send a draft plan to Circls review: draft → pending_review. A plan is sold
+ * by its tiers, so it needs at least one; everything else may follow.
+ */
+export async function submitMembershipForReview(
+  ctx: { tenantId: string; actorUserId: string },
+  membershipId: string,
+): Promise<Membership> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update');
+    if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
+    if (existing.status !== 'draft') {
+      throw new Conflict('Only a draft plan can be submitted for review', 'membership_not_draft', {
+        status: existing.status,
+      });
+    }
+    const [tierCount] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(membershipTiers)
+      .where(eq(membershipTiers.membershipId, membershipId));
+    if (!tierCount || Number(tierCount.n) === 0) {
+      throw new Conflict('This plan is not complete yet', 'membership_incomplete', { missing: ['tiers'] });
+    }
+    const [updated] = await tx
+      .update(memberships)
+      .set({ status: 'pending_review' })
+      .where(eq(memberships.id, membershipId))
+      .returning();
+    await writeAudit(tx, ctx, 'membership.submitted_for_review', 'membership', membershipId, { status: 'draft' }, { status: 'pending_review' });
+    return updated!;
+  });
+}
+
 /**
  * Edit a membership's fields. Allowed only when it's not consumer-live
  * (pending_review or inactive) — a live (`active`) one must be deactivated
@@ -316,7 +364,7 @@ export async function updateMembership(
       .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
       .limit(1);
     if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
-    if (existing.status !== 'pending_review' && existing.status !== 'inactive') {
+    if (existing.status !== 'draft' && existing.status !== 'pending_review' && existing.status !== 'inactive') {
       throw new Conflict(
         `A ${existing.status} membership can't be edited — deactivate it first`,
         'membership_not_editable',

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useVenues, useCreateVenue } from '@/lib/api/queries';
 import { useCan } from '@/lib/use_can';
@@ -38,12 +38,23 @@ function AddVenueModal({
     onClose();
   }
 
+  // "Save as draft" sets this just before the form submits, so the handler
+  // knows whether the venue goes to review now or stays the partner's own.
+  const asDraft = useRef(false);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const isDraft = asDraft.current;
+    asDraft.current = false;
     if (!name.trim()) { setError('Venue name is required.'); return; }
     try {
-      await createVenue.mutateAsync({ name: name.trim(), tzName: tzName.trim() || undefined, tags });
+      await createVenue.mutateAsync({
+        name: name.trim(),
+        tzName: tzName.trim() || undefined,
+        tags,
+        ...(isDraft ? { draft: true } : {}),
+      });
       handleClose();
     } catch (err) {
       setError((err as Error).message ?? 'Could not create venue.');
@@ -83,9 +94,23 @@ function AddVenueModal({
           </Button>
           <Button
             type="submit"
+            variant="secondary"
+            disabled={!name.trim() || createVenue.isPending}
+            onClick={() => {
+              asDraft.current = true;
+            }}
+            title="Keep it to yourself for now; submit it for review from its page when it's ready"
+          >
+            Save as draft
+          </Button>
+          <Button
+            type="submit"
             variant="primary"
             loading={createVenue.isPending}
             disabled={!name.trim()}
+            onClick={() => {
+              asDraft.current = false;
+            }}
           >
             Add venue
           </Button>

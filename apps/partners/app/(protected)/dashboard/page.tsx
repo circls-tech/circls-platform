@@ -417,7 +417,8 @@ function VenuesSection({ tenantId }: { tenantId: string }) {
  * carries the date instead, and says plainly when the event is today.
  */
 function EventTile({ event, tenantId, tz }: { event: VenueEventSummary; tenantId: string; tz: string }) {
-  const starts = new Date(event.startsAt);
+  // A draft may have no date yet; the tile then says so instead of a day.
+  const starts = event.startsAt ? new Date(event.startsAt) : null;
   const fmt = new Intl.DateTimeFormat('en-IN', {
     timeZone: tz,
     day: '2-digit',
@@ -427,7 +428,7 @@ function EventTile({ event, tenantId, tz }: { event: VenueEventSummary; tenantId
   });
   const dayOf = (d: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
-  const isToday = dayOf(starts) === dayOf(new Date());
+  const isToday = starts != null && dayOf(starts) === dayOf(new Date());
 
   return (
     <div className={TILE_CLASS}>
@@ -441,7 +442,9 @@ function EventTile({ event, tenantId, tz }: { event: VenueEventSummary; tenantId
         <StatusPill status={event.status} />
       </div>
       <p className="text-xs text-slate-400">
-        {isToday ? (
+        {starts == null ? (
+          'Date to be set'
+        ) : isToday ? (
           <span className="font-bold text-[#EE5C2B]">Today, {fmt.format(starts).split(', ').pop()}</span>
         ) : (
           fmt.format(starts)
@@ -482,13 +485,15 @@ function EventsSection({ tenantId }: { tenantId: string }) {
   // What is coming, soonest first — then the most recent of what has been.
   // Sorting on the date alone put a fortnight-old event at the front, which is
   // the opposite of quick access.
+  // Undated drafts count as upcoming and sort last among them.
   const now = new Date().toISOString();
+  const FAR = '9999';
   const upcoming = onShelf
-    .filter((e) => e.endsAt >= now)
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    .filter((e) => !e.endsAt || e.endsAt >= now)
+    .sort((a, b) => (a.startsAt ?? FAR).localeCompare(b.startsAt ?? FAR));
   const past = onShelf
-    .filter((e) => e.endsAt < now)
-    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+    .filter((e) => e.endsAt != null && e.endsAt < now)
+    .sort((a, b) => (b.startsAt ?? FAR).localeCompare(a.startsAt ?? FAR));
   const shown = [...upcoming, ...past].slice(0, SECTION_LIMIT);
 
   return (

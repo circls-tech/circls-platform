@@ -185,7 +185,7 @@ describe.skipIf(!runIntegration)('event_change_requests_service', () => {
 
     const [updated] = await db.select().from(events).where(eq(events.id, ev.id)).limit(1);
     expect(updated!.name).toBe('Approved Name');
-    expect(updated!.startsAt.toISOString()).toBe('2031-02-01T10:00:00.000Z');
+    expect(updated!.startsAt!.toISOString()).toBe('2031-02-01T10:00:00.000Z');
     expect(updated!.status).toBe('published');
 
     // Approve/reject on a settled request conflicts.
