@@ -148,6 +148,38 @@ export async function reholdForEvent(eventId: string, exec: Executor = db): Prom
 }
 
 /**
+ * Re-anchor the settlement hold for one slot booking whose slots moved
+ * (reschedule_service). Same rows and the same floor as {@link reholdForEvent},
+ * keyed by the booking instead of an event: the money settles after the NEW
+ * end, never before anyone could still react.
+ */
+export async function reholdForBooking(bookingId: string, exec: Executor = db): Promise<number> {
+  const moved = await exec
+    .update(payments)
+    .set({
+      settlementHoldUntil: sql`greatest(
+        ${holdAnchorFor(sql`${payments.bookingId}`)},
+        now() + (${env.SETTLEMENT_HOLD_BUFFER_MIN}::int * interval '1 minute')
+      )`,
+    })
+    .where(
+      and(
+        eq(payments.bookingId, bookingId),
+        eq(payments.kind, 'charge'),
+        sql`${payments.status} in ('captured', 'refunded', 'partially_refunded')`,
+        isNull(payments.settlementReleasedAt),
+        sql`${payments.settlementHoldUntil} is not null`,
+      ),
+    )
+    .returning({ id: payments.id });
+
+  if (moved.length > 0) {
+    logger.info({ bookingId, moved: moved.length }, 'settlement_hold_reanchored_booking');
+  }
+  return moved.length;
+}
+
+/**
  * Worker handler — runs every 5 minutes. Flips eligible captured charges to
  * `settlement_released_at = now()`. The actual fund movement happens in
  * Razorpay's settlement cycle; this row is our internal reconciliation flag.

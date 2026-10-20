@@ -17,6 +17,7 @@
  * without the side effects, so the portal can show the refund before it's made.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { parseTstzRange } from '../lib/tstzrange.js';
 import { db } from '../db/client.js';
 import { bookings, events, payments, slots, userMemberships } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
@@ -67,11 +68,7 @@ export interface RefundPreview {
 
 /** Postgres tstzrange text form looks like `["2026-..","2026-..")`. */
 function parseTstzRangeStart(range: string): Date | null {
-  // Strip the bracket and pull the first ISO timestamp.
-  const match = range.match(/^[[(]"?([^",)]+)"?,/);
-  if (!match) return null;
-  const d = new Date(match[1]!);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseTstzRange(range).start;
 }
 
 interface CancellationInputs {

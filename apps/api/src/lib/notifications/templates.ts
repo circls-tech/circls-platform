@@ -43,6 +43,7 @@ interface TemplateDef {
  * Variable contract (what the dispatcher passes in `payload`):
  *   booking.confirmed  → venueName, arenaName, when, totalRupees, bookingId
  *   booking.cancelled  → venueName, when, refundRupees? (omit when free)
+ *   booking.rescheduled → venueName, arenaName, when (the NEW time), bookingId
  *   booking.reminder_* → venueName, arenaName, when
  *   otp.login          → code
  *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
@@ -84,6 +85,27 @@ const TEMPLATES: Record<string, TemplateDef> = {
         'Your booking at {{venueName}} on {{when}} has been cancelled.\n\n' +
         'Booking ref: {{bookingId}}\n\n' +
         '— Circls',
+    },
+  },
+
+  'booking.rescheduled': {
+    sms: {
+      body: 'Circls: Your booking at {{venueName}} has moved to {{when}} ({{arenaName}}). Ref {{bookingId}}.',
+    },
+    email: {
+      subject: 'Booking moved — {{venueName}}',
+      body:
+        'Hi {{customerName}},\n\n' +
+        'Your booking at {{venueName}} has been moved.\n\n' +
+        'New time: {{when}}\n' +
+        'Arena: {{arenaName}}\n' +
+        'Booking ref: {{bookingId}}\n\n' +
+        'If this time does not suit you, reply to the venue or cancel from your bookings.\n— Circls',
+    },
+    whatsapp: {
+      body:
+        'Your booking at *{{venueName}}* has moved to {{when}} ({{arenaName}}). ' +
+        'Ref: {{bookingId}}.',
     },
   },
 

@@ -71,6 +71,21 @@ The **final refund amount is decided by the server at the moment you submit**, s
 
 Cancelling a booking from an arena's reception grid is the same cancellation without the reason: it frees the slot and, for a booking paid online, refunds the customer in full. The confirmation shows what will be refunded before you confirm.
 
+## Rescheduling a booking
+
+A confirmed court booking can be **moved to other slots** at the same venue — another time, another day or another court — without refunding and rebooking. The booking keeps its reference, its customer and its payment; only the slots change. Owners, Managers and Staff can do it (the same right as cancelling); Read-only members can't. A booking that has already started can't be moved — mark it a no-show or refund it instead.
+
+1. From the booking detail, click **Reschedule** — or, on the arena's reception grid, select the booking's slot and click **Reschedule** next to **Cancel booking**.
+2. Pick a **court** and a **day** (the booking's own court and day open first), then tick the slots to move to. Only open slots that are still ahead are offered, plus the booking's own slots on that court, so shifting an hour along is a matter of re-ticking.
+3. The summary shows the new span, what the new slots add up to and how that compares with what the current slots cost — slot against slot, so a coupon the customer used is not counted against them.
+4. Add a reason if you like (it goes in the audit log) and click **Move booking**.
+
+The old slots go back on sale, the new ones are taken, and the customer is told the new time by SMS and email; their reminders are re-queued for it. If one of the new slots is taken in the meantime, nothing changes and you're told.
+
+**Money doesn't move when you reschedule.** The customer's payment stays as it was, and the difference between the old slots' price and the new slots' price is shown on the page and recorded on the booking: more, collect it at the venue; less, settle it with the customer (a refund from the portal is always for the whole booking). A difference left unsettled from an earlier move is carried into the next one, so it is never lost. QR entry passes are reissued for the new span.
+
+**Recording that the difference changed hands.** When you collect or hand back the difference at the counter, record it so the booking's money trail is complete: tick **collected from the customer now** (or **handed back to the customer now**) on the reschedule page if it happens as you move the booking, or open the booking later and click **Mark as settled** on the reschedule notice. Either way an **adjustment** line appears in the booking's payment history, marked *external* — it never passes through circls, so it doesn't appear in your payouts or revenue. Until you record it, the booking shows the difference as not yet settled.
+
 ## No-shows
 
 When a customer doesn't turn up, their booking can be marked **no_show**. This keeps your records and analytics accurate and distinguishes genuine no-shows from cancellations. No-show handling does not by itself trigger a refund.

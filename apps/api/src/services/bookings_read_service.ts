@@ -120,6 +120,16 @@ export interface BookingDetailSlot {
   arenaName: string;
 }
 
+/** The last reschedule of a court booking, as reschedule_service records it. */
+export interface BookingRescheduleInfo {
+  at: string;
+  reason: string;
+  /** newTotal - paid at the time: positive = to collect, negative = owed back. */
+  priceDeltaPaise: number;
+  /** When the difference was recorded as settled at the counter, if it has been. */
+  settledAt: string | null;
+}
+
 export interface BookingDetail {
   id: string;
   /** The booking's organisation — whose roles decide what a member may do with it. */
@@ -136,6 +146,8 @@ export interface BookingDetail {
   arenaId: string | null;
   arenaName: string | null;
   slots: BookingDetailSlot[];
+  /** Null unless the booking has been rescheduled. */
+  lastReschedule: BookingRescheduleInfo | null;
 }
 
 export async function getBookingDetail(
@@ -157,6 +169,7 @@ export async function getBookingDetail(
            b.total_paise        as total_paise,
            b.created_at         as created_at,
            b.slot_arena_id      as booking_arena_id,
+           b.item_data->'lastReschedule' as last_reschedule,
            ab.name              as booking_arena_name
       from bookings b
       left join arenas ab on ab.id = b.slot_arena_id
@@ -228,5 +241,19 @@ export async function getBookingDetail(
     arenaId,
     arenaName,
     slots,
+    lastReschedule: rescheduleInfo(booking['last_reschedule']),
+  };
+}
+
+/** The reschedule record's partner-facing slice, or null when there is none. */
+function rescheduleInfo(raw: unknown): BookingRescheduleInfo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r['at'] !== 'string') return null;
+  return {
+    at: r['at'],
+    reason: typeof r['reason'] === 'string' ? r['reason'] : '',
+    priceDeltaPaise: Number(r['priceDeltaPaise'] ?? 0),
+    settledAt: typeof r['settledAt'] === 'string' ? r['settledAt'] : null,
   };
 }
