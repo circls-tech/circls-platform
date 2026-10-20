@@ -31,6 +31,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { submitDraftForReview } from './draft_review.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -67,6 +68,9 @@ export interface PartnerMembership extends Membership {
 /** Partner-facing membership with its live plan tiers attached. */
 export type PartnerMembershipWithTiers = PartnerMembership & {
   tiers: MembershipTierWithRemaining[];
+  /** On the detail read: what a draft still lacks before review ([] on a
+   *  complete draft and on every other status). Absent on write results. */
+  missing?: ('tiers')[];
 };
 
 function withCoverUrl(m: Membership): PartnerMembership {
@@ -92,7 +96,9 @@ export async function getMembership(
     .limit(1);
   if (!row) return null;
   const tiers = await listTiersWithRemaining(db, membershipId);
-  return { ...withCoverUrl(row), tiers };
+  // What a draft still lacks before review, as submission will judge it.
+  const missing = row.status === 'draft' ? membershipMissing(tiers.length) : [];
+  return { ...withCoverUrl(row), tiers, missing };
 }
 
 export interface MembershipPurchaseRow {
@@ -334,17 +340,13 @@ export async function submitMembershipForReview(
       .select({ n: sql<number>`count(*)::int` })
       .from(membershipTiers)
       .where(eq(membershipTiers.membershipId, membershipId));
-    if (!tierCount || Number(tierCount.n) === 0) {
-      throw new Conflict('This plan is not complete yet', 'membership_incomplete', { missing: ['tiers'] });
-    }
-    const [updated] = await tx
-      .update(memberships)
-      .set({ status: 'pending_review' })
-      .where(eq(memberships.id, membershipId))
-      .returning();
-    await writeAudit(tx, ctx, 'membership.submitted_for_review', 'membership', membershipId, { status: 'draft' }, { status: 'pending_review' });
-    return updated!;
+    return submitDraftForReview(tx, ctx, 'membership', membershipId, membershipMissing(Number(tierCount?.n ?? 0)));
   });
+}
+
+/** What a draft plan still lacks before review: a tier. */
+export function membershipMissing(tierCount: number): ('tiers')[] {
+  return tierCount === 0 ? ['tiers'] : [];
 }
 
 /**

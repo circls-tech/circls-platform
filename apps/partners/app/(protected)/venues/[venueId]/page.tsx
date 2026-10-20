@@ -7,6 +7,7 @@ import { ReceptionButton } from '@/components/ReceptionButton';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { useArenas, useCreateArena, useSetVenueOpen, useSubmitVenue, useVenue } from '@/lib/api/queries';
+import { describeRefusal } from '@/lib/listings/missing';
 import { inferSport } from '@/lib/api/sport_inference';
 import type { QrTicketConfig } from '@/lib/api/types';
 import { isArenaOnShelf } from '@/lib/shelf';
@@ -52,7 +53,7 @@ export default function VenuePage() {
       setPreview('closed');
     } catch (e) {
       setPreview('closed');
-      setSubmitError((e as Error).message);
+      setSubmitError(describeRefusal(e));
     }
   }
   const [shelf, setShelf] = useState<ArenaShelf>('open');

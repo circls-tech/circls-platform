@@ -30,7 +30,9 @@ import {
   removeMembershipCover,
   setMembershipActive,
   updateMember,
-  updateMembership, submitMembershipForReview, } from '../services/memberships_service.js';
+  submitMembershipForReview,
+  updateMembership,
+} from '../services/memberships_service.js';
 import { assertMembershipPurchasable } from '../services/consumer_service.js';
 import { getVenueById } from '../services/venue_service.js';
 

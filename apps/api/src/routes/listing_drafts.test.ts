@@ -77,6 +77,8 @@ describe.skipIf(!runIntegration)('listing drafts', () => {
     const body = refused.json() as ErrorBody;
     expect(body.error.code).toBe('event_incomplete');
     expect(body.error.details?.missing?.sort()).toEqual(['dates', 'location', 'tiers']);
+    const detail = await app.inject({ method: 'GET', url: `/v1/tenants/${tenantId}/events/${ev.id}`, headers: bearer('owner') });
+    expect((detail.json() as { missing: string[] }).missing.sort()).toEqual(['dates', 'location', 'tiers']);
 
     // One date without the other is a slip, not a draft.
     const half = await app.inject({
@@ -128,6 +130,41 @@ describe.skipIf(!runIntegration)('listing drafts', () => {
     expect(submitted.statusCode).toBe(200);
     const [row] = await db.select({ status: events.status }).from(events).where(eq(events.id, id));
     expect(row?.status).toBe('pending_review');
+  });
+
+  it('a series goes to review only when every date is complete', async () => {
+    const start = new Date(Date.now() + 10 * 86_400_000);
+    const occ = (days: number, tiers?: unknown[]) => ({
+      startsAt: new Date(start.getTime() + days * 86_400_000).toISOString(),
+      endsAt: new Date(start.getTime() + days * 86_400_000 + 3_600_000).toISOString(),
+      ...(tiers ? { tiers } : {}),
+    });
+    const created = await app.inject({
+      method: 'POST',
+      url: `/v1/venues/${venueId}/events`,
+      headers: bearer('owner'),
+      payload: {
+        name: 'Weekly, half ready',
+        tiers: [],
+        // Only the first date brings a tier; the second is incomplete on its own.
+        occurrences: [occ(0, [{ name: 'Entry', pricePaise: 10000, capacity: null }]), occ(7)],
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const series = created.json() as { seriesId: string; events: { id: string }[] };
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantId}/event-series/${series.seriesId}/publish`,
+      headers: bearer('owner'),
+    });
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json() as ErrorBody & { error: { details: { eventId: string } } };
+    expect(body.error.code).toBe('event_incomplete');
+    expect(body.error.details.missing).toEqual(['tiers']);
+    expect(series.events.map((e) => e.id)).toContain(body.error.details.eventId);
+    // Nothing moved: both dates are still drafts.
+    const rows = await db.select({ status: events.status }).from(events).where(eq(events.seriesId, series.seriesId));
+    expect(rows.every((r) => r.status === 'draft')).toBe(true);
   });
 
   it('a venue saved as a draft stays the partner’s own until submitted, and is not public', async () => {
@@ -183,6 +220,17 @@ describe.skipIf(!runIntegration)('listing drafts', () => {
     });
     expect(refused.statusCode).toBe(409);
     expect((refused.json() as ErrorBody).error.code).toBe('membership_incomplete');
+
+    // A draft is editable (the guard used to allow pending_review and inactive only).
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/v1/tenants/${tenantId}/memberships/${plan.id}`,
+      headers: bearer('owner'),
+      payload: { name: 'Someday Pass, renamed' },
+    });
+    expect(renamed.statusCode).toBe(200);
+    const detail = await app.inject({ method: 'GET', url: `/v1/tenants/${tenantId}/memberships/${plan.id}`, headers: bearer('owner') });
+    expect((detail.json() as { missing: string[] }).missing).toEqual(['tiers']);
 
     const edited = await app.inject({
       method: 'PATCH',

@@ -638,6 +638,8 @@ export interface VenueEvent {
   archivedAt: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
+  /** Detail read only: what a draft still lacks before review ('dates' | 'location' | 'tiers'); [] otherwise. */
+  missing?: ('dates' | 'location' | 'tiers')[];
   /** Registration questions consumers answer at booking. Present on the detail endpoint. */
   questions: EventQuestion[];
 }
@@ -754,6 +756,8 @@ export interface Membership {
   /** Derived public artwork URL on partner list/cover responses (PR #110). */
   coverUrl?: string | null;
   status: 'draft' | 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
+  /** Detail read only: what a draft still lacks before review (['tiers'] or []). */
+  missing?: ('tiers')[];
   /** QR ticket rules for purchases of this plan; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   /** Plan tiers (min 1). Present on list + detail endpoints. */

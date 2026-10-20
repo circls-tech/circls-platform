@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
 import { useCan } from '@/lib/use_can';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal } from '@/lib/listings/missing';
 
 function fmt(iso: string, tz: string) {
   return new Intl.DateTimeFormat('en-IN', {
@@ -41,7 +42,8 @@ export default function VenueEventsPage() {
     try {
       await publish.mutateAsync(id);
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      // An incomplete draft is refused with what it still lacks; say so.
+      setErrorMsg(describeRefusal(e));
     } finally {
       setSubmittingId(null);
     }

@@ -42,6 +42,7 @@ import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
 import { BackLink, Button, Card, Input, StatusPill } from '@/lib/ui';
@@ -134,13 +135,9 @@ export default function EventDetailPage() {
   // The customer-site preview. 'submit' is the preview that stands between
   // "Submit for review" and the submission itself, with the confirm inside it.
   const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
-  // What a draft still lacks before it can go to review (a venue event has
-  // its location): dates and a ticket tier, as the API checks them.
-  const stillNeeded: string[] = [];
-  if (ev && ev.status === 'draft') {
-    if (!ev.startsAt || !ev.endsAt) stillNeeded.push('start and end');
-    if (ev.tiers.length === 0) stillNeeded.push('a ticket tier');
-  }
+  // What the API says a draft still lacks before review (the same list it
+  // would refuse submission with), so the button can say so instead of failing.
+  const stillNeeded = missingCopy(ev?.status === 'draft' ? ev.missing : []);
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -174,7 +171,7 @@ export default function EventDetailPage() {
       setPreview('closed');
     } catch (e) {
       setPreview('closed');
-      setErrorMsg((e as Error).message);
+      setErrorMsg(describeRefusal(e));
     }
   }
 
@@ -361,15 +358,15 @@ export default function EventDetailPage() {
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
-                      disabled={!authed || stillNeeded.length > 0}
-                      title={stillNeeded.length ? `Still needed: ${stillNeeded.join(', ')}` : undefined}
+                      disabled={!authed || stillNeeded !== ''}
+                      title={stillNeeded ? `Still needed: ${stillNeeded}` : undefined}
                       onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>
-                    {stillNeeded.length > 0 && (
+                    {stillNeeded && (
                       <span className="text-xs text-slate-500">
-                        Still needed before review: {stillNeeded.join(', ')}.
+                        Still needed before review: {stillNeeded}.
                       </span>
                     )}
                     <Button

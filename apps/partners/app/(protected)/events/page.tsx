@@ -17,6 +17,7 @@ import {
 import type { VenueEventSummary } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal } from '@/lib/listings/missing';
 
 /** Format an event start in a given zone. Each event's natural zone is its own
  *  `tzName`; the portal-wide viewing tz overrides it when set. */
@@ -91,7 +92,8 @@ function EventList({ tenantId }: { tenantId: string }) {
         await publish.mutateAsync(row.ev.id);
       }
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      // An incomplete draft is refused with what it still lacks; say so.
+      setErrorMsg(describeRefusal(e));
     } finally {
       setSubmitting(null);
     }

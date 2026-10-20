@@ -13,6 +13,7 @@ import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
 import { useCan } from '@/lib/use_can';
+import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import { BackLink, Button, Card, StatusPill } from '@/lib/ui';
 import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
@@ -81,7 +82,7 @@ export default function MembershipDetailPage() {
       setPreview('closed');
     } catch (e) {
       setPreview('closed');
-      setSubmitError((e as Error).message);
+      setSubmitError(describeRefusal(e));
     }
   }
 
@@ -108,8 +109,9 @@ export default function MembershipDetailPage() {
   // freely; deactivate it first.
   const editable =
     membership.status === 'draft' || membership.status === 'pending_review' || membership.status === 'inactive';
-  // A draft needs at least one tier before it can go to review.
-  const stillNeeded = membership.status === 'draft' && membership.tiers.length === 0 ? ['a ticket tier'] : [];
+  // What the API says a draft still lacks before review (the same list it
+  // would refuse submission with).
+  const stillNeeded = missingCopy(membership.status === 'draft' ? membership.missing : []);
   const currency = currencyFor(membership.venueId);
   const venueLabel = membership.venueId
     ? (venues?.find((v) => v.id === membership.venueId)?.name ?? 'Venue')
@@ -162,8 +164,8 @@ export default function MembershipDetailPage() {
             <Button
               petal="#A7E3BF"
               size="sm"
-              disabled={!authed || stillNeeded.length > 0}
-              title={stillNeeded.length ? `Still needed: ${stillNeeded.join(', ')}` : undefined}
+              disabled={!authed || stillNeeded !== ''}
+              title={stillNeeded ? `Still needed: ${stillNeeded}` : undefined}
               loading={submitPlan.isPending}
               onClick={() => setPreview('submit')}
             >
@@ -186,8 +188,8 @@ export default function MembershipDetailPage() {
                 }
               : {})}
           />
-          {stillNeeded.length > 0 && (
-            <span className="text-xs text-slate-500">Still needed before review: {stillNeeded.join(', ')}.</span>
+          {stillNeeded && (
+            <span className="text-xs text-slate-500">Still needed before review: {stillNeeded}.</span>
           )}
           {submitError && <span className="text-xs text-red-600">{submitError}</span>}
           {/* Signing someone up at the counter is the thing staff come here to

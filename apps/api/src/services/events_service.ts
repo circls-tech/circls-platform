@@ -11,10 +11,11 @@
  * this layer.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
+import { submitDraftForReview } from './draft_review.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
@@ -171,6 +172,7 @@ export async function getEvent(
   | (Event & {
       tiers: Awaited<ReturnType<typeof listTiersWithRemaining>>;
       questions: Awaited<ReturnType<typeof listQuestions>>;
+      missing: EventMissing[];
     })
   | null
 > {
@@ -182,7 +184,10 @@ export async function getEvent(
   if (!row) return null;
   const tiers = await listTiersWithRemaining(db, eventId);
   const questions = await listQuestions(db, eventId);
-  return { ...row, tiers, questions };
+  // What a draft still lacks before review, as submission will judge it, so
+  // the portal shows the same list it would be refused with. [] otherwise.
+  const missing = row.status === 'draft' ? eventMissingFrom(row, tiers.length) : [];
+  return { ...row, tiers, questions, missing };
 }
 
 /** Unscoped lookup — callers must then assert tenant membership on event.tenantId. */
@@ -314,16 +319,34 @@ export type EventMissing = 'dates' | 'location' | 'tiers';
  * least one ticket tier. Empty for a complete event.
  */
 export async function eventMissing(exec: Pick<typeof db, 'select'>, event: Event): Promise<EventMissing[]> {
+  return (await eventMissingMany(exec, [event])).get(event.id) ?? [];
+}
+
+/** The pure part of {@link eventMissing}: what the row itself lacks, given its tier count. */
+export function eventMissingFrom(event: Event, tierCount: number): EventMissing[] {
   const missing: EventMissing[] = [];
   if (!event.startsAt || !event.endsAt || event.startsAt >= event.endsAt) missing.push('dates');
   const hasAddress = event.addressJson != null && Object.keys(event.addressJson).length > 0;
   if (!event.venueId && !(hasAddress && event.tzName)) missing.push('location');
-  const [tierCount] = await exec
-    .select({ n: sql<number>`count(*)::int` })
-    .from(eventTicketTiers)
-    .where(eq(eventTicketTiers.eventId, event.id));
-  if (!tierCount || Number(tierCount.n) === 0) missing.push('tiers');
+  if (tierCount === 0) missing.push('tiers');
   return missing;
+}
+
+/** {@link eventMissing} for many events at once: one grouped tier count. */
+export async function eventMissingMany(
+  exec: Pick<typeof db, 'select'>,
+  list: Event[],
+): Promise<Map<string, EventMissing[]>> {
+  const out = new Map<string, EventMissing[]>();
+  if (list.length === 0) return out;
+  const counts = await exec
+    .select({ eventId: eventTicketTiers.eventId, n: sql<number>`count(*)::int` })
+    .from(eventTicketTiers)
+    .where(inArray(eventTicketTiers.eventId, list.map((e) => e.id)))
+    .groupBy(eventTicketTiers.eventId);
+  const byId = new Map(counts.map((c) => [c.eventId, Number(c.n)]));
+  for (const ev of list) out.set(ev.id, eventMissingFrom(ev, byId.get(ev.id) ?? 0));
+  return out;
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -452,8 +475,9 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
       throw new Conflict('No draft occurrences left to submit', 'event_not_draft');
     }
     // Every date goes to review at once, so every date must be complete.
+    const missingById = await eventMissingMany(tx, drafts);
     for (const ev of drafts) {
-      const missing = await eventMissing(tx, ev);
+      const missing = missingById.get(ev.id) ?? [];
       if (missing.length > 0) {
         throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
           eventId: ev.id,
@@ -464,21 +488,7 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
 
     const updated: Event[] = [];
     for (const ev of drafts) {
-      const [row] = await tx
-        .update(events)
-        .set({ status: 'pending_review' })
-        .where(eq(events.id, ev.id))
-        .returning();
-      updated.push(row!);
-      await writeAudit(
-        tx,
-        ctx,
-        'event.submitted_for_review',
-        'event',
-        ev.id,
-        { status: 'draft' },
-        { status: 'pending_review', seriesId },
-      );
+      updated.push(await submitDraftForReview(tx, ctx, 'event', ev.id, [], { seriesId }));
     }
     return updated;
   });
@@ -882,20 +892,7 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       throw new Conflict('Only draft events can be submitted for review', 'event_not_draft');
     }
     // A draft may be saved with gaps; review needs the whole thing.
-    const missing = await eventMissing(tx, existing);
-    if (missing.length > 0) {
-      throw new Conflict('This event is not complete yet', 'event_incomplete', { missing });
-    }
-
-    const [updated] = await tx
-      .update(events)
-      .set({ status: 'pending_review' })
-      .where(eq(events.id, eventId))
-      .returning();
-
-    await writeAudit(tx, ctx, 'event.submitted_for_review', 'event', eventId, { status: 'draft' }, { status: 'pending_review' });
-
-    return updated!;
+    return submitDraftForReview(tx, ctx, 'event', eventId, await eventMissing(tx, existing));
   });
 }
 

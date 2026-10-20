@@ -53,6 +53,7 @@ import {
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -195,16 +196,9 @@ export default function OrgEventDetailPage() {
 
   const { resolveTz } = useTimezone();
   const currentVenue = ev?.venueId ? venues?.find((v) => v.id === ev.venueId) : undefined;
-  // What a draft still lacks before it can go to review — the same three
-  // things the API checks (dates, a location, a ticket tier), named here so
-  // the button can say so instead of failing.
-  const stillNeeded: string[] = [];
-  if (ev && ev.status === 'draft') {
-    if (!ev.startsAt || !ev.endsAt) stillNeeded.push('start and end');
-    const hasAddress = ev.addressJson != null && Object.keys(ev.addressJson).length > 0;
-    if (!ev.venueId && !(hasAddress && ev.tzName)) stillNeeded.push('a venue or address');
-    if (ev.tiers.length === 0) stillNeeded.push('a ticket tier');
-  }
+  // What the API says a draft still lacks before review (the same list it
+  // would refuse submission with), so the button can say so instead of failing.
+  const stillNeeded = missingCopy(ev?.status === 'draft' ? ev.missing : []);
   const eventTz = ev?.venueId ? (currentVenue?.tzName ?? 'Asia/Kolkata') : (ev?.tzName ?? 'Asia/Kolkata');
   // The zone times are DISPLAYED in: the event's own zone, or the portal-wide
   // viewing tz when the user overrides it from the top bar.
@@ -264,7 +258,7 @@ export default function OrgEventDetailPage() {
       setPreview('closed');
     } catch (e) {
       setPreview('closed');
-      setErrorMsg((e as Error).message);
+      setErrorMsg(describeRefusal(e));
     }
   }
 
@@ -582,15 +576,15 @@ export default function OrgEventDetailPage() {
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
-                      disabled={!authed || stillNeeded.length > 0}
-                      title={stillNeeded.length ? `Still needed: ${stillNeeded.join(', ')}` : undefined}
+                      disabled={!authed || stillNeeded !== ''}
+                      title={stillNeeded ? `Still needed: ${stillNeeded}` : undefined}
                       onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>
-                    {stillNeeded.length > 0 && (
+                    {stillNeeded && (
                       <span className="text-xs text-slate-500">
-                        Still needed before review: {stillNeeded.join(', ')}.
+                        Still needed before review: {stillNeeded}.
                       </span>
                     )}
                     <Button

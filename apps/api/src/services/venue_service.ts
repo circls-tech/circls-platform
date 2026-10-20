@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
+import { submitDraftForReview } from './draft_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
@@ -248,13 +249,7 @@ export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Prom
         status: existing.status,
       });
     }
-    const [updated] = await tx
-      .update(venues)
-      .set({ status: 'pending_review' })
-      .where(eq(venues.id, venueId))
-      .returning();
-    await writeAudit(tx, ctx, 'venue.submitted_for_review', 'venue', venueId, { status: 'draft' }, { status: 'pending_review' });
-    return updated!;
+    return submitDraftForReview(tx, ctx, 'venue', venueId, []);
   });
 }
 

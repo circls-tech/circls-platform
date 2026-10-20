@@ -8,9 +8,12 @@ interface ApiErrorBody {
 
 export class ApiError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  /** The API's structured detail, when it sent one (a `missing` list, say). */
+  readonly details: Record<string, unknown> | undefined;
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
     super(message);
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -25,7 +28,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const body: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
     const e = (body as ApiErrorBody).error;
-    throw new ApiError(e?.code ?? 'request_failed', e?.message ?? `Request failed (${res.status})`);
+    throw new ApiError(
+      e?.code ?? 'request_failed',
+      e?.message ?? `Request failed (${res.status})`,
+      e?.details && typeof e.details === 'object' ? (e.details as Record<string, unknown>) : undefined,
+    );
   }
   return body as T;
 }
