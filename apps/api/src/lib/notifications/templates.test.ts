@@ -19,6 +19,24 @@ describe('renderTemplate (pure)', () => {
     expect(out.body).not.toMatch(/\{\{[^}]+\}\}/);
   });
 
+  it('renders booking.rescheduled with the new time on every channel', () => {
+    const payload = {
+      customerName: 'Asha',
+      venueName: 'Tigers Arena',
+      arenaName: 'Court 2',
+      when: '05 Jul 2026, 19:00',
+      bookingId: 'abc-123',
+    };
+    for (const channel of ['sms', 'email', 'whatsapp'] as const) {
+      const out = renderTemplate(channel, 'booking.rescheduled', payload);
+      expect(out.body).toContain('05 Jul 2026, 19:00');
+      expect(out.body).toContain('Court 2');
+      expect(out.body).toContain('abc-123');
+      expect(out.body).not.toMatch(/\{\{[^}]+\}\}/);
+    }
+    expect(renderTemplate('email', 'booking.rescheduled', payload).subject).toContain('Tigers Arena');
+  });
+
   it('renders booking.confirmed email with subject + body', () => {
     const out = renderTemplate('email', 'booking.confirmed', {
       customerName: 'Asha',

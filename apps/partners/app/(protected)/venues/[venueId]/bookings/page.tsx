@@ -8,8 +8,7 @@ import {
   useBookingPayments,
   useMyRole,
   useVenueBookings,
-  useVenues,
-} from '@/lib/api/queries';
+  useVenues, useSettleRescheduleDifference, } from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
@@ -165,9 +164,19 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
   const { data: paymentRows } = useBookingPayments(bookingId);
   // The booking's own organisation decides, as it does for the API.
   const { can } = useMyRole(detail?.tenantId);
+  const settle = useSettleRescheduleDifference();
+  const money = (paise: number) => formatMoney(paise, currency);
 
   // Read-only members can't cancel (or so refund) a booking.
   const isCancellable = detail && detail.status !== 'cancelled' && can('bookings.cancel');
+  // A confirmed court booking that hasn't started can be moved to other slots
+  // (the same right as cancelling it).
+  const firstStart = detail?.slots[0]?.startAt;
+  const isMovable =
+    Boolean(isCancellable) &&
+    detail?.status === 'confirmed' &&
+    (detail?.slots.length ?? 0) > 0 &&
+    Boolean(firstStart && new Date(firstStart).getTime() > Date.now());
 
   return (
     <>
@@ -257,6 +266,39 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
               </div>
             </div>
 
+            {/* The last reschedule's price difference: what changed hands at
+                the counter, and whether that has been recorded yet. */}
+            {detail.lastReschedule && detail.lastReschedule.priceDeltaPaise !== 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-medium text-slate-800">
+                    Rescheduled {fmtInTz(detail.lastReschedule.at, tz)} ·{' '}
+                    {detail.lastReschedule.priceDeltaPaise > 0
+                      ? `${money(detail.lastReschedule.priceDeltaPaise)} to collect at the venue`
+                      : `${money(-detail.lastReschedule.priceDeltaPaise)} owed back to the customer`}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {detail.lastReschedule.settledAt
+                      ? `Settled ${fmtInTz(detail.lastReschedule.settledAt, tz)} — in the payments below.`
+                      : 'Not recorded as settled yet.'}
+                  </p>
+                </div>
+                {!detail.lastReschedule.settledAt && can('bookings.cancel') && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={settle.isPending}
+                    onClick={() => bookingId && settle.mutate(bookingId)}
+                  >
+                    Mark as settled
+                  </Button>
+                )}
+                {settle.error && (
+                  <p className="w-full text-xs text-red-600">{(settle.error as Error).message}</p>
+                )}
+              </div>
+            )}
+
             {/* Payments ledger (Phase 14) — charges, refunds, adjustments. */}
             {paymentRows && paymentRows.length > 0 && (
               <div>
@@ -295,7 +337,16 @@ function BookingDetailModal({ bookingId, venueId, tz, currency, onClose }: Booki
 
             {/* Actions */}
             {isCancellable && (
-              <div className="flex justify-end border-t border-slate-100 pt-4">
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                {isMovable && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => bookingId && router.push(`/bookings/${bookingId}/reschedule`)}
+                  >
+                    Reschedule
+                  </Button>
+                )}
                 <Button
                   variant="danger"
                   size="sm"

@@ -35,6 +35,8 @@ import type {
   WebhookDeliveryPage,
   WebhookSubscription,
   WebhookSubscriptionCreateResult,
+  RescheduleResult,
+  SettleRescheduleResult,
 } from './types';
 
 export function useMe() {
@@ -717,6 +719,50 @@ export function useCancelBookingWithReason() {
  * customer gets the timing tiers, staff a full refund), so the viewer is part
  * of the key, and it's never served from cache: each look is a fresh read.
  */
+export interface RescheduleBookingInput {
+  bookingId: string;
+  slotIds: string[];
+  reason: string;
+  /** The price difference was settled at the counter as part of the move. */
+  settleNow?: boolean;
+}
+
+/** Move a confirmed court booking to other slots at its venue (see the API's
+ *  reschedule_service). Refreshes the booking, the venue's lists and the
+ *  grids on both courts. */
+export function useRescheduleBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, slotIds, reason, settleNow }: RescheduleBookingInput) =>
+      apiFetch<RescheduleResult>(`/v1/bookings/${bookingId}/reschedule`, {
+        method: 'POST',
+        body: JSON.stringify({ slotIds, reason, ...(settleNow ? { settleNow } : {}) }),
+      }),
+    onSuccess: (_r, { bookingId }) => {
+      void qc.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
+      void qc.invalidateQueries({ queryKey: ['bookings'] });
+      void qc.invalidateQueries({ queryKey: ['slots'] });
+    },
+  });
+}
+
+/** Record that the last reschedule's price difference changed hands at the
+ *  counter: an adjustment row in the booking's ledger. */
+export function useSettleRescheduleDifference() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (bookingId: string) =>
+      apiFetch<SettleRescheduleResult>(`/v1/bookings/${bookingId}/reschedule/settle`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: (_r, bookingId) => {
+      void qc.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
+      void qc.invalidateQueries({ queryKey: ['booking-payments', bookingId] });
+    },
+  });
+}
+
 export function useRefundPreview(bookingId: string | null, enabled = true) {
   const { user } = useAuth();
   return useQuery({

@@ -13,6 +13,7 @@ import { logger } from '../lib/logger.js';
 import {
   notifyBookingCancelled,
   notifyBookingConfirmed,
+  notifyBookingRescheduled,
   notifyQuestionAsked,
   notifyQuestionReplied,
 } from './notification_service.js';
@@ -60,6 +61,16 @@ export async function onQuestionReplied(threadId: string, messageId: string): Pr
     await notifyQuestionReplied(threadId, messageId);
   } catch (err) {
     logger.warn({ err, threadId, messageId }, 'on_question_replied_hook_failed');
+  }
+}
+
+/** Call after reschedule_service has moved a booking's slots (and committed).
+ *  Tells the customer and re-queues their reminders. Never throws. */
+export async function onBookingRescheduled(bookingId: string): Promise<void> {
+  try {
+    await notifyBookingRescheduled(bookingId);
+  } catch (err) {
+    logger.warn({ err, bookingId }, 'on_booking_rescheduled_hook_failed');
   }
 }
 

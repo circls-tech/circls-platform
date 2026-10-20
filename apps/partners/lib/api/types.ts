@@ -349,6 +349,47 @@ export interface BookingDetail {
   arenaId: string;
   arenaName: string;
   slots: BookingSlot[];
+  /** Null unless the booking has been rescheduled. */
+  lastReschedule: BookingRescheduleInfo | null;
+}
+
+/** The last reschedule of a court booking (see the API's reschedule_service). */
+export interface BookingRescheduleInfo {
+  at: string;
+  reason: string;
+  /** newTotal - paid at the time: positive = to collect, negative = owed back. */
+  priceDeltaPaise: number;
+  /** When the difference was recorded as settled at the counter, if it has been. */
+  settledAt: string | null;
+}
+
+/** POST /v1/bookings/:id/reschedule — the booking, moved to other slots. */
+export interface RescheduleResult {
+  bookingId: string;
+  status: 'confirmed';
+  arenaId: string;
+  fromSlotIds: string[];
+  toSlotIds: string[];
+  /** ISO-8601: the new span. */
+  startAt: string;
+  endAt: string;
+  /** What the customer paid, unchanged by the move. */
+  paidPaise: number;
+  /** What the new slots add up to. */
+  newTotalPaise: number;
+  /** newTotal - paid: positive = collect at the venue, negative = owed back. */
+  priceDeltaPaise: number;
+  /** When the difference was settled at the counter as part of the move. */
+  settledAt: string | null;
+}
+
+/** POST /v1/bookings/:id/reschedule/settle — the difference changed hands. */
+export interface SettleRescheduleResult {
+  bookingId: string;
+  paymentId: string;
+  /** Signed: positive = collected from the customer, negative = handed back. */
+  amountPaise: number;
+  settledAt: string;
 }
 
 export interface AnalyticsTrendDay {

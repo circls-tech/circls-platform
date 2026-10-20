@@ -26,6 +26,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { notifications } from '../db/schema/index.js';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { getNotifications, type DispatchInput } from '../lib/notifications/index.js';
@@ -278,7 +279,15 @@ export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
     });
   }
 
-  // Schedule reminders if we know when the booking starts and it's in the future.
+  await scheduleReminders(ctx, common);
+}
+
+/** Queue the T-24h / T-1h reminders, if we know when the booking starts and
+ *  it is still ahead. */
+async function scheduleReminders(
+  ctx: BookingNotifyContext,
+  common: { tenantId: string; userId: string | null; payload: Record<string, unknown> },
+): Promise<void> {
   if (ctx.startAt && ctx.phone) {
     const now = Date.now();
     const t24 = new Date(ctx.startAt.getTime() - 24 * 60 * 60 * 1000);
@@ -306,6 +315,62 @@ export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
       }
     }
   }
+}
+
+/**
+ * Called after reschedule_service moves a booking's slots. The reminders
+ * queued at confirmation point at the old time, so they are dropped and
+ * queued again for the new one; the customer gets the new time too.
+ */
+export async function notifyBookingRescheduled(bookingId: string): Promise<void> {
+  const ctx = await loadBookingContext(bookingId);
+  if (!ctx) {
+    logger.warn({ bookingId }, 'notify_booking_rescheduled_missing');
+    return;
+  }
+  // Reminders still waiting for the old time: skipped, not sent.
+  await db
+    .update(notifications)
+    .set({ status: 'skipped', error: 'booking rescheduled' })
+    .where(
+      and(
+        eq(notifications.status, 'pending'),
+        sql`${notifications.templateKey} like 'booking.reminder_%'`,
+        sql`${notifications.payload}->>'bookingId' = ${bookingId}`,
+      ),
+    );
+
+  const payload = basePayload(ctx);
+  const common = {
+    tenantId: ctx.tenantId,
+    userId: ctx.customerUserId,
+    payload,
+  };
+  if (ctx.phone) {
+    await safeDispatch({
+      ...common,
+      channel: 'sms' as NotificationChannel,
+      recipient: ctx.phone,
+      templateKey: 'booking.rescheduled',
+    });
+    if (whatsappEnabled()) {
+      await safeDispatch({
+        ...common,
+        channel: 'whatsapp' as NotificationChannel,
+        recipient: ctx.phone,
+        templateKey: 'booking.rescheduled',
+      });
+    }
+  }
+  if (ctx.email) {
+    await safeDispatch({
+      ...common,
+      channel: 'email' as NotificationChannel,
+      recipient: ctx.email,
+      templateKey: 'booking.rescheduled',
+    });
+  }
+  await scheduleReminders(ctx, common);
 }
 
 /** Called from cancellation/refund flow. */
