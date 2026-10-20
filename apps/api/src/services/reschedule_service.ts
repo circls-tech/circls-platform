@@ -29,11 +29,13 @@
  * After commit the customer is told and their reminders are re-queued
  * (notification_hooks.onBookingRescheduled).
  */
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arenas, bookings, payments, slots } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
+import { parseTstzRange } from '../lib/tstzrange.js';
+import { claimSlots } from './booking_service.js';
 import { onBookingRescheduled } from './notification_hooks.js';
 import { issueQrTicketsForBooking, revokeQrTicketsForBooking } from './qr_ticket_service.js';
 import { reholdForBooking } from './settlement_hold_service.js';
@@ -57,11 +59,14 @@ export interface RescheduleResult {
   /** ISO-8601: the new span. */
   startAt: string;
   endAt: string;
-  /** What the customer paid, unchanged. */
+  /** What the customer paid, unchanged by the move (after any discount). */
   paidPaise: number;
+  /** What the slots it held cost. */
+  oldTotalPaise: number;
   /** What the new slots add up to. */
   newTotalPaise: number;
-  /** newTotal - paid: positive = to collect at the venue, negative = owed back. */
+  /** newTotal - oldTotal, plus any difference still unsettled from an earlier
+   *  move: positive = to collect at the venue, negative = owed back. */
   priceDeltaPaise: number;
   /** When the difference was settled at the counter, if it has been. */
   settledAt: string | null;
@@ -76,7 +81,12 @@ export interface RescheduleRecord {
   toSlotIds: string[];
   fromArenaId: string | null;
   toArenaId: string;
+  oldTotalPaise: number;
+  newTotalPaise: number;
+  /** Outstanding difference: this move's, plus what an earlier move left
+   *  unsettled (`carriedPaise`). */
   priceDeltaPaise: number;
+  carriedPaise: number;
   /** Set once the partner records the difference as settled at the counter;
    *  the matching `adjustment` ledger row is `settledPaymentId`. */
   settledAt?: string;
@@ -172,34 +182,29 @@ export async function rescheduleBooking(input: RescheduleInput): Promise<Resched
       .where(and(eq(slots.bookingId, booking.id), sql`${slots.deletedAt} is null`));
 
     // 2. Claim the new ones atomically — the same predicate as a fresh
-    //    booking. A short count means someone got there first; the
-    //    transaction rolls back and the old slots are the booking's again.
-    const claimed = await tx
-      .update(slots)
-      .set({ status: 'booked', bookingId: booking.id, holdExpiresAt: null, heldByUserId: null })
-      .where(
-        and(
-          inArray(slots.id, uniqueSlotIds),
-          eq(slots.tenantId, booking.tenantId),
-          sql`${slots.deletedAt} is null`,
-          sql`lower(${slots.timeRange}) > now()`,
-          or(
-            eq(slots.status, 'open'),
-            and(
-              eq(slots.status, 'held'),
-              or(eq(slots.heldByUserId, input.actorUserId), sql`${slots.holdExpiresAt} < now()`),
-            ),
-          ),
-        ),
-      )
-      .returning({ id: slots.id, pricePaise: slots.pricePaise });
+    //    booking (booking_service.claimSlots). A short count means someone
+    //    got there first; the transaction rolls back and the old slots are
+    //    the booking's again.
+    const claimed = await claimSlots(tx, {
+      slotIds: uniqueSlotIds,
+      bookingId: booking.id,
+      actorUserId: input.actorUserId,
+      tenantId: booking.tenantId,
+    });
     if (claimed.length !== uniqueSlotIds.length) {
       throw new Conflict('Slot already taken', 'slot_taken');
     }
 
+    // Like for like is measured slot against slot — what the old slots cost
+    // against what the new ones cost — never against what was paid, which a
+    // coupon may have lowered. A difference an earlier move left unsettled is
+    // carried into this one rather than forgotten.
     const paidPaise = Number(booking.totalPaise ?? 0);
+    const oldTotalPaise = current.reduce((s, r) => s + Number(r.pricePaise), 0);
     const newTotalPaise = claimed.reduce((s, r) => s + Number(r.pricePaise), 0);
-    const priceDeltaPaise = newTotalPaise - paidPaise;
+    const previous = (booking.itemData?.['lastReschedule'] as RescheduleRecord | undefined) ?? null;
+    const carriedPaise = previous && !previous.settledAt ? Number(previous.priceDeltaPaise ?? 0) : 0;
+    const priceDeltaPaise = newTotalPaise - oldTotalPaise + carriedPaise;
     const record: RescheduleRecord = {
       at: new Date().toISOString(),
       byUserId: input.actorUserId,
@@ -208,7 +213,10 @@ export async function rescheduleBooking(input: RescheduleInput): Promise<Resched
       toSlotIds: uniqueSlotIds,
       fromArenaId,
       toArenaId,
+      oldTotalPaise,
+      newTotalPaise,
       priceDeltaPaise,
+      carriedPaise,
     };
 
     // 3. The booking's own arena and span follow the slots, as on create.
@@ -244,19 +252,20 @@ export async function rescheduleBooking(input: RescheduleInput): Promise<Resched
       'booking',
       booking.id,
       { slotIds: fromSlotIds, arenaId: fromArenaId, timeRange: booking.timeRange },
-      { slotIds: uniqueSlotIds, arenaId: toArenaId, timeRange: updated?.timeRange ?? null, reason: input.reason, paidPaise, newTotalPaise, priceDeltaPaise },
+      { slotIds: uniqueSlotIds, arenaId: toArenaId, timeRange: updated?.timeRange ?? null, reason: input.reason, paidPaise, oldTotalPaise, newTotalPaise, carriedPaise, priceDeltaPaise },
     );
 
-    const span = parseRange(updated?.timeRange ?? null);
+    const span = parseTstzRange(updated?.timeRange ?? null);
     return {
       bookingId: booking.id,
       status: 'confirmed' as const,
       arenaId: toArenaId,
       fromSlotIds,
       toSlotIds: uniqueSlotIds,
-      startAt: span.start,
-      endAt: span.end,
+      startAt: span.start?.toISOString() ?? '',
+      endAt: span.end?.toISOString() ?? '',
       paidPaise,
+      oldTotalPaise,
       newTotalPaise,
       priceDeltaPaise,
       settledAt,
@@ -266,17 +275,6 @@ export async function rescheduleBooking(input: RescheduleInput): Promise<Resched
   // Outside the transaction: best-effort, never fails the move.
   await onBookingRescheduled(result.bookingId);
   return result;
-}
-
-/** `["2026-10-20 10:00:00+00","2026-10-20 11:00:00+00")` → ISO bounds. */
-function parseRange(range: string | null): { start: string; end: string } {
-  const m = range ? /^[[(]"?([^",]+)"?,"?([^")]+)"?[\])]$/.exec(range) : null;
-  const start = m ? new Date(m[1]!) : null;
-  const end = m ? new Date(m[2]!) : null;
-  return {
-    start: start && !Number.isNaN(start.getTime()) ? start.toISOString() : '',
-    end: end && !Number.isNaN(end.getTime()) ? end.toISOString() : '',
-  };
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

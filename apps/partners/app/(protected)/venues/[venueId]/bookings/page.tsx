@@ -7,8 +7,10 @@ import {
   useBookingDetail,
   useBookingPayments,
   useMyRole,
+  useSettleRescheduleDifference,
   useVenueBookings,
-  useVenues, useSettleRescheduleDifference, } from '@/lib/api/queries';
+  useVenues,
+} from '@/lib/api/queries';
 import type { BookingListItem, BookingStatus, Payment } from '@/lib/api/types';
 import { type CurrencyCode, asCurrencyCode, currencySymbol, formatMoney, useCurrency } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';

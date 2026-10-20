@@ -18,6 +18,13 @@ import { useTimezone } from '@/lib/timezone_context';
 import { RoleNotice } from '@/components/RoleNotice';
 import { BackLink, Badge, Button, Card, Input } from '@/lib/ui';
 
+/** UTC noon of a YYYY-MM-DD: a Date that reads as that calendar date in any
+ *  zone within ±12h of UTC, so stepping it by whole days never crosses a
+ *  DST change or the browser's own zone into a neighbouring date. */
+function noonUtc(ymd: string): Date {
+  return new Date(`${ymd}T12:00:00Z`);
+}
+
 /** The calendar date of `d` in `tz`, as YYYY-MM-DD. */
 function ymdInTz(d: Date, tz: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -87,11 +94,12 @@ export default function RescheduleBookingPage() {
   useEffect(() => {
     if (!arenaId && booking?.arenaId) setArenaId(booking.arenaId);
   }, [arenaId, booking?.arenaId]);
-  const [day, setDay] = useState<Date>(() => new Date());
+  // Always UTC noon of a calendar date in the viewing tz (see noonUtc).
+  const [day, setDay] = useState<Date>(() => noonUtc(ymdInTz(new Date(), tz)));
   useEffect(() => {
-    if (firstSlotStart) setDay(new Date(firstSlotStart));
+    if (firstSlotStart) setDay(noonUtc(ymdInTz(new Date(firstSlotStart), tz)));
     // The booking's own day is the natural starting point, once known.
-  }, [firstSlotStart]);
+  }, [firstSlotStart, tz]);
   const bounds = useMemo(() => dayBoundsInTz(day, tz), [day, tz]);
   const { data: daySlots, isLoading: slotsLoading } = useArenaSlots(arenaId, bounds.from, bounds.to, {
     enabled: Boolean(arenaId) && movable,
@@ -128,7 +136,13 @@ export default function RescheduleBookingPage() {
   );
   const newTotal = pickedList.reduce((sum, s) => sum + s.pricePaise, 0);
   const paid = booking?.totalPaise ?? 0;
-  const delta = newTotal - paid;
+  // Like for like: the old slots' price against the new ones', never what
+  // was paid (a coupon may have lowered that). Plus anything an earlier move
+  // left unsettled, which the server carries forward the same way.
+  const oldTotal = booking?.slots.reduce((sum, s) => sum + s.pricePaise, 0) ?? 0;
+  const carried =
+    booking?.lastReschedule && !booking.lastReschedule.settledAt ? booking.lastReschedule.priceDeltaPaise : 0;
+  const delta = newTotal - oldTotal + carried;
   const sameAsNow =
     pickedList.length > 0 &&
     pickedList.length === ownIds.size &&
@@ -260,9 +274,7 @@ export default function RescheduleBookingPage() {
                         type="date"
                         value={ymdInTz(day, tz)}
                         onChange={(e) => {
-                          if (!e.target.value) return;
-                          // Noon of the chosen date, read back in the viewing tz by dayBoundsInTz.
-                          setDay(new Date(`${e.target.value}T12:00:00`));
+                          if (e.target.value) setDay(noonUtc(e.target.value));
                         }}
                         className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-2 py-1.5 text-sm text-[#0f172a]"
                         aria-label="Pick a date"
@@ -319,10 +331,10 @@ export default function RescheduleBookingPage() {
                         {pickedList.length === 0
                           ? 'Tick the slots the booking should move to.'
                           : delta === 0
-                            ? 'Same price as what was paid — nothing to settle.'
+                            ? 'Same price as the current slots — nothing to settle.'
                             : delta > 0
-                              ? `${money(delta)} more than was paid — collect it at the venue.`
-                              : `${money(-delta)} less than was paid — settle the difference with the customer.`}
+                              ? `${money(delta)} more than the current slots${carried ? ' (including what is still unsettled)' : ''} — collect it at the venue.`
+                              : `${money(-delta)} less than the current slots${carried ? ' (including what is still unsettled)' : ''} — settle the difference with the customer.`}
                       </p>
                     </div>
                     <p className="text-lg font-semibold text-slate-800">{money(newTotal)}</p>
@@ -384,7 +396,7 @@ export default function RescheduleBookingPage() {
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {result.priceDeltaPaise === 0
-                      ? 'Same price as paid.'
+                      ? 'Same price as before.'
                       : result.settledAt
                         ? result.priceDeltaPaise > 0
                           ? `${money(result.priceDeltaPaise)} collected at the venue — recorded.`

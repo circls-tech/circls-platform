@@ -17,7 +17,8 @@ vi.mock('../lib/firebase_admin.js', () => ({
 }));
 
 const { closeDb, db } = await import('../db/client.js');
-const { bookings, payments, slots, tenantMembers } = await import('../db/schema/index.js');
+const { arenas, bookings, notifications, payments, qrTickets, slots, tenantMembers } = await import('../db/schema/index.js');
+const { issueQrTicketsForBooking } = await import('../services/qr_ticket_service.js');
 const { buildServer } = await import('../server.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -260,6 +261,82 @@ describe.skipIf(!runIntegration)('POST /v1/bookings/:id/reschedule', () => {
     const none = await app.inject({ method: 'POST', url: `/v1/bookings/${booking3}/reschedule/settle`, headers: bearer('owner') });
     expect(none.statusCode).toBe(409);
     expect((none.json() as { error: { code: string } }).error.code).toBe('no_difference');
+  });
+
+  it('reissues entry passes over the new span and re-queues the reminders', async () => {
+    await db
+      .update(arenas)
+      .set({ qrTicketConfig: { enabled: true, multiUse: false, maxScans: null, validFromOffsetMin: 0, validUntilOffsetMin: null } })
+      .where(eq(arenas.id, arenaAId));
+    const oldSlot = await seedSlot(arenaAId, 90);
+    const bookingId = await seedBooking([oldSlot], arenaAId);
+    const [oldPass] = await issueQrTicketsForBooking(bookingId);
+    expect(oldPass?.status).toBe('active');
+    // A reminder still waiting for the old time, as confirmation would have queued it.
+    const [oldReminder] = await db
+      .insert(notifications)
+      .values({
+        tenantId,
+        channel: 'sms',
+        recipient: '+91-9000000789',
+        templateKey: 'booking.reminder_t24h',
+        payload: { bookingId },
+        status: 'pending',
+        scheduledFor: new Date(Date.now() + 66 * 3_600_000),
+      })
+      .returning({ id: notifications.id });
+
+    const later = await seedSlot(arenaAId, 120);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/bookings/${bookingId}/reschedule`,
+      headers: bearer('owner'),
+      payload: { slotIds: [later] },
+    });
+    expect(res.statusCode).toBe(200);
+    const r = res.json() as RescheduleResult;
+
+    const passes = await db.select().from(qrTickets).where(eq(qrTickets.bookingId, bookingId));
+    const old = passes.find((t) => t.id === oldPass!.id);
+    expect(old?.status).toBe('revoked');
+    const fresh = passes.filter((t) => t.status === 'active');
+    expect(fresh).toHaveLength(1);
+    // Valid over the NEW span (offsets 0 / null above).
+    expect(fresh[0]!.validFrom?.toISOString()).toBe(r.startAt);
+    expect(fresh[0]!.validUntil?.toISOString()).toBe(r.endAt);
+
+    const [skipped] = await db.select({ status: notifications.status }).from(notifications).where(eq(notifications.id, oldReminder!.id));
+    expect(skipped?.status).toBe('skipped');
+    const requeued = await db
+      .select({ templateKey: notifications.templateKey, scheduledFor: notifications.scheduledFor })
+      .from(notifications)
+      .where(sql`${notifications.status} = 'pending' and ${notifications.payload}->>'bookingId' = ${bookingId}`);
+    expect(requeued.map((n) => n.templateKey).sort()).toEqual(['booking.reminder_t1h', 'booking.reminder_t24h']);
+    for (const n of requeued) expect(n.scheduledFor!.getTime()).toBeLessThan(new Date(r.startAt).getTime());
+    await db.update(arenas).set({ qrTicketConfig: null }).where(eq(arenas.id, arenaAId));
+  });
+
+  it('measures the difference slot against slot, and carries an unsettled one forward', async () => {
+    // Paid 800 for two 500 slots (a coupon): moving to two other 500 slots is like for like.
+    const s1 = await seedSlot(arenaAId, 130);
+    const s2 = await seedSlot(arenaAId, 131);
+    const bookingId = await seedBooking([s1, s2], arenaAId);
+    await db.update(bookings).set({ totalPaise: 80000, discountPaise: 20000 }).where(eq(bookings.id, bookingId));
+    const t1 = await seedSlot(arenaBId, 132);
+    const t2 = await seedSlot(arenaBId, 133);
+    const like = await app.inject({ method: 'POST', url: `/v1/bookings/${bookingId}/reschedule`, headers: bearer('owner'), payload: { slotIds: [t1, t2] } });
+    expect(like.statusCode).toBe(200);
+    expect(like.json() as RescheduleResult).toMatchObject({ paidPaise: 80000, oldTotalPaise: 100000, newTotalPaise: 100000, priceDeltaPaise: 0 });
+
+    // Then to dearer slots (+200), left unsettled; then to cheaper ones (-200): the +200 is not forgotten.
+    const d1 = await seedSlot(arenaAId, 134, 60000);
+    const d2 = await seedSlot(arenaAId, 135, 60000);
+    const up = await app.inject({ method: 'POST', url: `/v1/bookings/${bookingId}/reschedule`, headers: bearer('owner'), payload: { slotIds: [d1, d2] } });
+    expect((up.json() as RescheduleResult).priceDeltaPaise).toBe(20000);
+    const c1 = await seedSlot(arenaBId, 136, 50000);
+    const c2 = await seedSlot(arenaBId, 137, 50000);
+    const down = await app.inject({ method: 'POST', url: `/v1/bookings/${bookingId}/reschedule`, headers: bearer('owner'), payload: { slotIds: [c1, c2] } });
+    expect((down.json() as RescheduleResult).priceDeltaPaise).toBe(0);
   });
 
   it('can shift along the same court, re-taking a slot it just gave up', async () => {

@@ -121,12 +121,14 @@ async function issueQrTicketsForBookingLocked(
     .for('update');
   if (!booking || booking.status !== 'confirmed') return [];
 
-  // Idempotent on the passes that still stand: a rescheduled booking's old
-  // passes are revoked first, and fresh ones are issued over the new span.
+  // Idempotent on the passes that stand or were spent: a retried capture must
+  // not mint a second entry after check-in. Only revoked passes are forgotten,
+  // so a rescheduled booking (old passes revoked) gets fresh ones over the new
+  // span.
   const existing = await dbx
     .select()
     .from(qrTickets)
-    .where(and(eq(qrTickets.bookingId, bookingId), eq(qrTickets.status, 'active')));
+    .where(and(eq(qrTickets.bookingId, bookingId), inArray(qrTickets.status, ['active', 'used'])));
   if (existing.length > 0) return existing;
 
   switch (booking.itemType) {

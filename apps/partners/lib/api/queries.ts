@@ -740,7 +740,7 @@ export function useRescheduleBooking() {
       }),
     onSuccess: (_r, { bookingId }) => {
       void qc.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
-      void qc.invalidateQueries({ queryKey: ['bookings'] });
+      void qc.invalidateQueries({ queryKey: ['venue-bookings'] });
       void qc.invalidateQueries({ queryKey: ['slots'] });
     },
   });

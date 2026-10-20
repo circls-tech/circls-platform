@@ -52,6 +52,44 @@ export interface BookSlotsInput {
   note?: string | null;
 }
 
+/** Anything that can run a drizzle UPDATE — `db` or a transaction. */
+type SlotClaimExec = Pick<typeof db, 'update'>;
+
+/**
+ * Atomically claim `slotIds` for `bookingId`: take slots that are open, OR
+ * held by the booking actor (their own active hold), OR held-but-expired
+ * (reclaimable from anyone) — never one whose start has passed (TOCTOU
+ * guard). `tenantId` guards against cross-tenant slot injection: a member of
+ * tenant A passing slotIds from tenant B would otherwise claim B's slots.
+ * Returns the rows actually claimed; a short count means someone got there
+ * first, and the caller rolls back. Shared by the walk-in booking and the
+ * reschedule, so "claimable" means one thing.
+ */
+export async function claimSlots(
+  exec: SlotClaimExec,
+  args: { slotIds: string[]; bookingId: string; actorUserId: string; tenantId: string },
+) {
+  return exec
+    .update(slots)
+    .set({ status: 'booked', bookingId: args.bookingId, holdExpiresAt: null, heldByUserId: null })
+    .where(
+      and(
+        inArray(slots.id, args.slotIds),
+        eq(slots.tenantId, args.tenantId),
+        sql`${slots.deletedAt} is null`,
+        sql`lower(${slots.timeRange}) > now()`,
+        or(
+          eq(slots.status, 'open'),
+          and(
+            eq(slots.status, 'held'),
+            or(eq(slots.heldByUserId, args.actorUserId), sql`${slots.holdExpiresAt} < now()`),
+          ),
+        ),
+      ),
+    )
+    .returning();
+}
+
 export async function bookSlots(
   ctx: AuditCtx,
   venueId: string,
@@ -103,31 +141,13 @@ export async function bookSlots(
       })
       .returning();
 
-    // Atomic claim: take slots that are open, OR held by the booking actor
-    // (their own active hold), OR held-but-expired (reclaimable from anyone).
-    // Using inArray() avoids the any(array::uuid[]) record-cast error from postgres-js.
-    // eq(slots.tenantId, ctx.tenantId) guards against cross-tenant slot injection:
-    // a member of tenant A passing slotIds from tenant B would otherwise claim B's slots.
-    const claimed = await tx
-      .update(slots)
-      .set({ status: 'booked', bookingId: booking!.id, holdExpiresAt: null, heldByUserId: null })
-      .where(
-        and(
-          inArray(slots.id, input.slotIds),
-          eq(slots.tenantId, ctx.tenantId),
-          sql`${slots.deletedAt} is null`,
-          // TOCTOU guard: never claim a slot whose start has passed.
-          sql`lower(${slots.timeRange}) > now()`,
-          or(
-            eq(slots.status, 'open'),
-            and(
-              eq(slots.status, 'held'),
-              or(eq(slots.heldByUserId, ctx.actorUserId), sql`${slots.holdExpiresAt} < now()`),
-            ),
-          ),
-        ),
-      )
-      .returning();
+    // Atomic claim — see claimSlots for what counts as claimable.
+    const claimed = await claimSlots(tx, {
+      slotIds: input.slotIds,
+      bookingId: booking!.id,
+      actorUserId: ctx.actorUserId,
+      tenantId: ctx.tenantId,
+    });
 
     if (claimed.length !== input.slotIds.length) {
       throw new Conflict('Slot already taken', 'slot_taken');
