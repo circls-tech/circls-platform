@@ -53,6 +53,7 @@ import {
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import {
   MaxPerUserField,
   maxPerUserFromApi,
@@ -195,6 +196,9 @@ export default function OrgEventDetailPage() {
 
   const { resolveTz } = useTimezone();
   const currentVenue = ev?.venueId ? venues?.find((v) => v.id === ev.venueId) : undefined;
+  // What the API says a draft still lacks before review (the same list it
+  // would refuse submission with), so the button can say so instead of failing.
+  const stillNeeded = missingCopy(ev?.status === 'draft' ? ev.missing : []);
   const eventTz = ev?.venueId ? (currentVenue?.tzName ?? 'Asia/Kolkata') : (ev?.tzName ?? 'Asia/Kolkata');
   // The zone times are DISPLAYED in: the event's own zone, or the portal-wide
   // viewing tz when the user overrides it from the top bar.
@@ -215,8 +219,8 @@ export default function OrgEventDetailPage() {
     const tz = eventTz;
     setName(ev.name);
     setDescription(ev.description ?? '');
-    setStartsAtLocal(isoToTzLocal(ev.startsAt, tz));
-    setEndsAtLocal(isoToTzLocal(ev.endsAt, tz));
+    setStartsAtLocal(ev.startsAt ? isoToTzLocal(ev.startsAt, tz) : '');
+    setEndsAtLocal(ev.endsAt ? isoToTzLocal(ev.endsAt, tz) : '');
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setQrConfig(ev.qrTicketConfig ?? null);
@@ -254,7 +258,7 @@ export default function OrgEventDetailPage() {
       setPreview('closed');
     } catch (e) {
       setPreview('closed');
-      setErrorMsg((e as Error).message);
+      setErrorMsg(describeRefusal(e));
     }
   }
 
@@ -308,8 +312,9 @@ export default function OrgEventDetailPage() {
   async function onSubmitEdit(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
-    if (!startsAtLocal || !endsAtLocal) {
-      setErrorMsg('Set a start and end time.');
+    // A draft may keep its dates for later; one without the other is a slip.
+    if (Boolean(startsAtLocal) !== Boolean(endsAtLocal)) {
+      setErrorMsg('Set both a start and an end time, or leave both for later.');
       return;
     }
     if (tiers.some((t) => !t.name.trim())) {
@@ -367,8 +372,9 @@ export default function OrgEventDetailPage() {
         input: {
           name,
           description,
-          startsAt: localToTzIso(startsAtLocal, editTz),
-          endsAt: localToTzIso(endsAtLocal, editTz),
+          ...(startsAtLocal && endsAtLocal
+            ? { startsAt: localToTzIso(startsAtLocal, editTz), endsAt: localToTzIso(endsAtLocal, editTz) }
+            : {}),
           tiers: tiersToPayload(tiers),
           questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
@@ -477,7 +483,9 @@ export default function OrgEventDetailPage() {
                     When ({effectiveTz})
                   </dt>
                   <dd className="mt-1 text-sm text-slate-700">
-                    {fmt(ev.startsAt, effectiveTz)} → {fmt(ev.endsAt, effectiveTz)}
+                    {ev.startsAt && ev.endsAt
+                      ? `${fmt(ev.startsAt, effectiveTz)} → ${fmt(ev.endsAt, effectiveTz)}`
+                      : 'Dates to be set'}
                   </dd>
                 </div>
                 <div>
@@ -568,11 +576,17 @@ export default function OrgEventDetailPage() {
                       petal="#A7E3BF"
                       size="sm"
                       loading={publish.isPending}
-                      disabled={!authed}
+                      disabled={!authed || stillNeeded !== ''}
+                      title={stillNeeded ? `Still needed: ${stillNeeded}` : undefined}
                       onClick={() => setPreview('submit')}
                     >
                       Submit for review
                     </Button>
+                    {stillNeeded && (
+                      <span className="text-xs text-slate-500">
+                        Still needed before review: {stillNeeded}.
+                      </span>
+                    )}
                     <Button
                       variant="danger"
                       size="sm"
@@ -629,7 +643,7 @@ export default function OrgEventDetailPage() {
                 )}
                 {/* An event ended by mistake goes straight back on sale,
                     while its window is still open. */}
-                {canWrite && ev.status === 'completed' && new Date(ev.endsAt) > new Date() && (
+                {canWrite && ev.status === 'completed' && ev.endsAt != null && new Date(ev.endsAt) > new Date() && (
                   <Button
                     petal="#A7E3BF"
                     size="sm"
@@ -813,14 +827,12 @@ export default function OrgEventDetailPage() {
                     type="datetime-local"
                     value={startsAtLocal}
                     onChange={(e) => setStartsAtLocal(e.target.value)}
-                    required
                   />
                   <Input
                     label={`Ends (${editTz})`}
                     type="datetime-local"
                     value={endsAtLocal}
                     onChange={(e) => setEndsAtLocal(e.target.value)}
-                    required
                   />
                 </div>
 
@@ -869,7 +881,7 @@ export default function OrgEventDetailPage() {
                   <li key={occ.id} className="flex items-center justify-between gap-3 py-2">
                     {occ.id === eventId ? (
                       <span className="text-sm font-medium text-slate-800">
-                        {fmt(occ.startsAt, effectiveTz)} → {fmt(occ.endsAt, effectiveTz)}
+                        {occ.startsAt && occ.endsAt ? `${fmt(occ.startsAt, effectiveTz)} → ${fmt(occ.endsAt, effectiveTz)}` : 'Dates to be set'}
                         <span className="ml-2 text-xs font-normal text-slate-400">(this page)</span>
                       </span>
                     ) : (
@@ -877,7 +889,7 @@ export default function OrgEventDetailPage() {
                         href={`/events/${occ.id}`}
                         className="text-sm font-medium text-slate-700 underline-offset-2 hover:underline"
                       >
-                        {fmt(occ.startsAt, effectiveTz)} → {fmt(occ.endsAt, effectiveTz)}
+                        {occ.startsAt && occ.endsAt ? `${fmt(occ.startsAt, effectiveTz)} → ${fmt(occ.endsAt, effectiveTz)}` : 'Dates to be set'}
                       </Link>
                     )}
                     <div className="flex items-center gap-2">

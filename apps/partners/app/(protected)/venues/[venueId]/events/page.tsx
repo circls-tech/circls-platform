@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
 import { useCan } from '@/lib/use_can';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal } from '@/lib/listings/missing';
 
 function fmt(iso: string, tz: string) {
   return new Intl.DateTimeFormat('en-IN', {
@@ -41,7 +42,8 @@ export default function VenueEventsPage() {
     try {
       await publish.mutateAsync(id);
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      // An incomplete draft is refused with what it still lacks; say so.
+      setErrorMsg(describeRefusal(e));
     } finally {
       setSubmittingId(null);
     }
@@ -109,7 +111,9 @@ export default function VenueEventsPage() {
                       </Link>
                     </td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(ev.startsAt, resolveTz(ev.tzName))} → {fmt(ev.endsAt, resolveTz(ev.tzName))}
+                      {ev.startsAt && ev.endsAt
+                        ? `${fmt(ev.startsAt, resolveTz(ev.tzName))} → ${fmt(ev.endsAt, resolveTz(ev.tzName))}`
+                        : 'Dates to be set'}
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">
                       {ev.pricePaise === 0 ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
@@ -54,15 +54,29 @@ export default function NewMembershipPage() {
   }, [canPreview]);
   const [artwork, setArtwork] = useState<PendingPhoto[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // "Save as draft" sets this just before the form submits (with the
+  // browser's own validation skipped), so the handler knows which it is.
+  const asDraft = useRef(false);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setErr(null);
+    const isDraft = asDraft.current;
+    asDraft.current = false;
+    if (!draft.name.trim()) {
+      setErr('Give the plan a name.');
+      return;
+    }
     try {
       // Create takes an absent venueId for org-wide, where update takes an
       // explicit null, so the shared input is spread rather than passed whole.
-      const input = planDraftToInput(draft);
+      // A draft keeps only the tiers that have a name; the rest can wait.
+      const input = planDraftToInput({
+        ...draft,
+        tiers: isDraft ? draft.tiers.filter((t) => t.name.trim()) : draft.tiers,
+      });
       const plan = await createMembership.mutateAsync({
+        ...(isDraft ? { draft: true } : {}),
         name: input.name,
         ...(input.description ? { description: input.description } : {}),
         ...(input.venueId ? { venueId: input.venueId } : {}),
@@ -141,9 +155,25 @@ export default function NewMembershipPage() {
               <Button
                 type="submit"
                 size="sm"
+                variant="secondary"
+                formNoValidate
+                disabled={!tenantId || !authed || createMembership.isPending || uploadCover.isPending}
+                onClick={() => {
+                  asDraft.current = true;
+                }}
+                title="Keep it to yourself for now — tiers and the rest can follow"
+              >
+                Save as draft
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
                 petal="#F9B4D4"
                 loading={createMembership.isPending || uploadCover.isPending}
                 disabled={!tenantId || !authed}
+                onClick={() => {
+                  asDraft.current = false;
+                }}
               >
                 Create plan
               </Button>

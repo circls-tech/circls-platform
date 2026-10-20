@@ -109,12 +109,19 @@ export default function NewEventPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!startsAtLocal || !endsAtLocal) {
-      setErr('Set a start and end time.');
+    // A draft is saved with what is there: dates and tiers may wait (Submit
+    // for review asks for them). One date without the other, or a half-filled
+    // tier, is a slip rather than a gap.
+    if (Boolean(startsAtLocal) !== Boolean(endsAtLocal)) {
+      setErr('Set both a start and an end time, or leave both for later.');
       return;
     }
-    if (tiers.some((t) => !t.name.trim())) {
-      setErr('Give every ticket tier a name.');
+    const namedTiers = tiers.filter((t) => t.name.trim());
+    // An untouched tier row (no name, zero price, nothing else) is simply dropped.
+    const halfFilled = (t: TierDraft) =>
+      t.name.trim() === '' && (parseFloat(t.priceRupees || '0') > 0 || Boolean(t.description?.trim()) || Boolean(t.capacity?.trim()));
+    if (tiers.some(halfFilled)) {
+      setErr('Give every ticket tier a name, or remove the empty ones.');
       return;
     }
     if (hasChoiceQuestionWithoutOptions(questions)) {
@@ -157,11 +164,13 @@ export default function NewEventPage() {
         ...(description ? { description } : {}),
         ...(occurrences
           ? { occurrences }
-          : {
-              startsAt: localToVenueTzIso(startsAtLocal, tz),
-              endsAt: localToVenueTzIso(endsAtLocal, tz),
-            }),
-        tiers: tiersToPayload(tiers),
+          : startsAtLocal && endsAtLocal
+            ? {
+                startsAt: localToVenueTzIso(startsAtLocal, tz),
+                endsAt: localToVenueTzIso(endsAtLocal, tz),
+              }
+            : {}),
+        tiers: tiersToPayload(namedTiers),
         questions: questionsToPayload(questions),
         maxPerUser: maxPerUserToPayload(maxPerUser),
         postBookingRedirect: redirectToPayload(redirect),
@@ -210,7 +219,7 @@ export default function NewEventPage() {
       <BackLink href={eventsHref}>Events</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
 
-      <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
+      <Card title="Details" subtitle="Only a name is needed to save a draft — dates and ticket tiers can follow. Submit for review from the event's page when it's complete; Circls approves it before it goes live.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <Input
             label="Name"
@@ -238,14 +247,12 @@ export default function NewEventPage() {
               type="datetime-local"
               value={startsAtLocal}
               onChange={(e) => setStartsAtLocal(e.target.value)}
-              required
             />
             <Input
               label={`Ends (${tz})`}
               type="datetime-local"
               value={endsAtLocal}
               onChange={(e) => setEndsAtLocal(e.target.value)}
-              required
             />
           </div>
 
@@ -294,7 +301,7 @@ export default function NewEventPage() {
               {previewOpen ? 'Hide preview' : 'Preview'}
             </Button>
             <Button type="submit" loading={busy}>
-              {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
+              {recurrence.mode === 'weekly' ? 'Save recurring draft' : 'Save draft'}
             </Button>
           </div>
         </form>

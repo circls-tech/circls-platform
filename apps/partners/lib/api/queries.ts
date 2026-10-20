@@ -264,10 +264,23 @@ export function useUpdateVenue(venueId: string) {
   });
 }
 
+/** A draft venue goes to Circls review (draft → pending_review). */
+export function useSubmitVenue(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (venueId: string) =>
+      apiFetch<Venue>(`/v1/venues/${venueId}/submit`, { method: 'POST', body: JSON.stringify({}) }),
+    onSuccess: (_v, venueId) => {
+      void qc.invalidateQueries({ queryKey: ['venues', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['venue', venueId] });
+    },
+  });
+}
+
 export function useCreateVenue(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; tzName?: string; tags?: string[] }) =>
+    mutationFn: (input: { name: string; tzName?: string; tags?: string[]; draft?: boolean }) =>
       apiFetch<Venue>(`/v1/tenants/${tenantId}/venues`, {
         method: 'POST',
         body: JSON.stringify(input),

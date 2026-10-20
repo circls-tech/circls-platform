@@ -17,6 +17,7 @@ import {
 import type { VenueEventSummary } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { describeRefusal } from '@/lib/listings/missing';
 
 /** Format an event start in a given zone. Each event's natural zone is its own
  *  `tzName`; the portal-wide viewing tz overrides it when set. */
@@ -50,7 +51,8 @@ function groupRows(events: VenueEventSummary[]): EventRow[] {
     } else {
       row.seriesSize += 1;
       row.seriesHasDraft = row.seriesHasDraft || ev.status === 'draft';
-      if (new Date(ev.startsAt) < new Date(row.ev.startsAt)) row.ev = ev;
+      // The soonest dated occurrence fronts the row; an undated draft never does.
+      if (ev.startsAt && (!row.ev.startsAt || new Date(ev.startsAt) < new Date(row.ev.startsAt))) row.ev = ev;
     }
   }
   return order.map((k) => byKey.get(k)!);
@@ -90,7 +92,8 @@ function EventList({ tenantId }: { tenantId: string }) {
         await publish.mutateAsync(row.ev.id);
       }
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      // An incomplete draft is refused with what it still lacks; say so.
+      setErrorMsg(describeRefusal(e));
     } finally {
       setSubmitting(null);
     }
@@ -170,7 +173,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                   {ev.name}
                 </Link>
                 <p className="mt-0.5 text-xs text-slate-400">
-                  {fmtEventTime(ev.startsAt, resolveTz(ev.tzName))}
+                  {ev.startsAt ? fmtEventTime(ev.startsAt, resolveTz(ev.tzName)) : 'Date to be set'}
                   {seriesSize > 1 && ` · first of ${seriesSize} dates`}
                 </p>
               </div>
@@ -201,6 +204,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                 {canWrite &&
                   !ev.seriesId &&
                   ev.status === 'completed' &&
+                  ev.endsAt != null &&
                   new Date(ev.endsAt) > new Date() && (
                     <Button
                       petal="#A7E3BF"

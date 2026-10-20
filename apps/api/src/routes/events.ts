@@ -80,6 +80,8 @@ const tierSchema = z.object({
   qrTicketConfig: qrTicketConfigSchema.optional(),
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
+/** On create a draft may have no tiers yet; submission for review asks for one. */
+const createTiersField = z.array(tierSchema).max(20);
 
 /** Map a parsed tier payload to the service input, normalising its QR override. */
 function tierToInput(t: z.infer<typeof tierSchema>): TierInput {
@@ -144,7 +146,7 @@ const createEventSchema = z
     description: z.string().optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
-    tiers: tiersField,
+    tiers: createTiersField,
     questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
@@ -152,8 +154,10 @@ const createEventSchema = z
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
-  .refine((d) => d.occurrences !== undefined || (d.startsAt && d.endsAt), {
-    message: 'Provide startsAt/endsAt, or occurrences for a recurring event',
+  // A one-off draft may be saved without dates (submission requires them);
+  // one date without the other is a slip, not a draft.
+  .refine((d) => d.occurrences !== undefined || Boolean(d.startsAt) === Boolean(d.endsAt), {
+    message: 'Provide both startsAt and endsAt, or neither for a draft',
   });
 
 const createTenantEventSchema = z
@@ -167,7 +171,7 @@ const createTenantEventSchema = z
     description: z.string().optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
-    tiers: tiersField,
+    tiers: createTiersField,
     questions: questionsField.optional(),
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
@@ -175,21 +179,21 @@ const createTenantEventSchema = z
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
-  .refine((d) => d.occurrences !== undefined || (d.startsAt && d.endsAt), {
-    message: 'Provide startsAt/endsAt, or occurrences for a recurring event',
+  .refine((d) => d.occurrences !== undefined || Boolean(d.startsAt) === Boolean(d.endsAt), {
+    message: 'Provide both startsAt and endsAt, or neither for a draft',
   })
-  // Exactly one scope: a venue OR a standalone address (never both, never neither).
-  .refine((d) => Boolean(d.venueId) !== Boolean(d.addressJson), {
-    message: 'Provide exactly one of venueId or addressJson',
+  // At most one scope: a venue OR a standalone address. Neither is allowed on
+  // a draft — submission for review asks for a location.
+  .refine((d) => !(d.venueId && d.addressJson), {
+    message: 'Provide at most one of venueId or addressJson',
   })
-  .refine((d) => Boolean(d.venueId) || Boolean(d.tzName), {
+  // A standalone address, when given, is a real one with a timezone.
+  .refine((d) => d.addressJson === undefined || Boolean(d.tzName), {
     message: 'Standalone events require tzName',
   })
-  // A standalone scope must carry a real address, not just `{}`.
-  .refine(
-    (d) => Boolean(d.venueId) || (d.addressJson != null && Object.keys(d.addressJson).length > 0),
-    { message: 'Standalone events require a non-empty address' },
-  );
+  .refine((d) => d.addressJson === undefined || Object.keys(d.addressJson).length > 0, {
+    message: 'Standalone events require a non-empty address',
+  });
 
 const updateEventSchema = z.object({
   name: eventNameField(200).optional(),
@@ -351,8 +355,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     }
     return createEvent(ctx, {
       ...base,
-      startsAt: new Date(parsed.data.startsAt!),
-      endsAt: new Date(parsed.data.endsAt!),
+      startsAt: parsed.data.startsAt ? new Date(parsed.data.startsAt) : null,
+      endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) : null,
     });
   });
 
@@ -428,8 +432,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     }
     return createEvent(ctx, {
       ...base,
-      startsAt: new Date(parsed.data.startsAt!),
-      endsAt: new Date(parsed.data.endsAt!),
+      startsAt: parsed.data.startsAt ? new Date(parsed.data.startsAt) : null,
+      endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) : null,
     });
   });
 

@@ -68,6 +68,7 @@ export interface TenantProfile {
  * may also `reject` them. Partners only view these here.
  */
 export type ListingStatus =
+  | 'draft'
   | 'pending_review'
   | 'active'
   | 'rejected'
@@ -618,10 +619,10 @@ export interface VenueEvent {
   tzName: string | null;
   name: string;
   description: string | null;
-  /** ISO-8601 */
-  startsAt: string;
-  /** ISO-8601 */
-  endsAt: string;
+  /** ISO-8601; null on a draft that has no dates yet. */
+  startsAt: string | null;
+  /** ISO-8601; null on a draft that has no dates yet. */
+  endsAt: string | null;
   pricePaise: number;
   capacity: number | null;
   /** Per-customer ticket cap for the whole event (all tiers); null = no limit. */
@@ -637,6 +638,8 @@ export interface VenueEvent {
   archivedAt: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
+  /** Detail read only: what a draft still lacks before review ('dates' | 'location' | 'tiers'); [] otherwise. */
+  missing?: ('dates' | 'location' | 'tiers')[];
   /** Registration questions consumers answer at booking. Present on the detail endpoint. */
   questions: EventQuestion[];
 }
@@ -752,7 +755,9 @@ export interface Membership {
   coverStorageKey?: string | null;
   /** Derived public artwork URL on partner list/cover responses (PR #110). */
   coverUrl?: string | null;
-  status: 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
+  status: 'draft' | 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
+  /** Detail read only: what a draft still lacks before review (['tiers'] or []). */
+  missing?: ('tiers')[];
   /** QR ticket rules for purchases of this plan; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   /** Plan tiers (min 1). Present on list + detail endpoints. */

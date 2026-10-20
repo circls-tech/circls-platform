@@ -11,7 +11,7 @@ Adding and editing venues and arenas — details, photos, QR ticket rules, and c
    - **Tags** (optional) — short descriptors like `indoor` or `floodlit`.
 3. Save. You'll be taken to the venue's detail page.
 
-New venues start in **pending review**. You can edit details, fill in the address and upload photos while you wait for approval.
+New venues start in **pending review** — or, if you click **Save as draft** instead of **Add venue**, as a **draft** that stays yours until you submit it. You can edit details, fill in the address and upload photos in either state. A draft venue's page has **Submit for review**: it opens the customer-site preview first, and you confirm from inside it.
 
 ## Editing a venue
 
@@ -65,6 +65,7 @@ Both venues and arenas move through the same set of statuses:
 
 | Status | What it means |
 | --- | --- |
+| **draft** | Saved but not yet submitted — yours alone. Not visible to consumers and not in the circls review queue. Submit it from its page when it's ready. |
 | **pending review** | New or recently edited listing awaiting the circls team's approval. Not yet visible to consumers. |
 | **active** | Approved and live. Visible and bookable by consumers. |
 | **closed** (suspended) | Taken off the consumer portal — see [Closing a venue](#closing-a-venue). Not bookable online while closed. |
