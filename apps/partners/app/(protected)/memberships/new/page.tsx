@@ -1,14 +1,16 @@
 'use client';
 
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useOrg } from '@/lib/org_context';
 import { useCreateMembership, useUploadMembershipCover } from '@/lib/api/memberships';
-import { useMyRole, useVenues } from '@/lib/api/queries';
+import { useMyRole, useTenantProfile, useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
 import { BackLink, Button, Card } from '@/lib/ui';
+import { brandOf, scratchMembership } from '@/lib/api/scratch_listing';
+import { ScratchPreview } from '@/components/ScratchPreview';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
 import {
@@ -27,12 +29,15 @@ import {
  */
 export default function NewMembershipPage() {
   const router = useRouter();
+  // The customer-site preview of the form as it stands (nothing saved).
+  const [previewOpen, setPreviewOpen] = useState(false);
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
   const { user } = useAuth();
   const authed = Boolean(user);
 
   const { data: venues } = useVenues(tenantId);
+  const { data: profile } = useTenantProfile(tenantId);
   const { currencyFor } = useVenueCurrencies();
   const createMembership = useCreateMembership(tenantId);
   const uploadCover = useUploadMembershipCover(tenantId);
@@ -42,6 +47,11 @@ export default function NewMembershipPage() {
   const cannotCreate = !roleLoading && !can('memberships.write');
 
   const [draft, setDraft] = useState<MembershipPlanDraft>(emptyPlanDraft);
+  // The page is meaningless without a name; the rest may be blank.
+  const canPreview = draft.name.trim().length > 0;
+  useEffect(() => {
+    if (!canPreview) setPreviewOpen(false);
+  }, [canPreview]);
   const [artwork, setArtwork] = useState<PendingPhoto[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
@@ -80,7 +90,7 @@ export default function NewMembershipPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={previewOpen ? 'flex flex-col gap-4 xl:pr-[var(--scratch-preview-w)]' : 'flex flex-col gap-4'}>
       <div>
         <BackLink href="/memberships">Memberships</BackLink>
         <h1 className="mt-3 font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
@@ -119,6 +129,16 @@ export default function NewMembershipPage() {
                 </Button>
               </Link>
               <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!tenantId || !canPreview}
+                title={canPreview ? undefined : 'Enter a plan name to preview'}
+                onClick={() => setPreviewOpen((v) => !v)}
+              >
+                {previewOpen ? 'Hide preview' : 'Preview'}
+              </Button>
+              <Button
                 type="submit"
                 size="sm"
                 petal="#F9B4D4"
@@ -131,6 +151,23 @@ export default function NewMembershipPage() {
           </form>
         </Card>
       )}
+      <ScratchPreview
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        tenantId={tenantId}
+        type="membership"
+        listing={scratchMembership({
+          tenantId,
+          brand: brandOf(tenantId, profile),
+          name: draft.name,
+          description: draft.description,
+          terms: draft.terms,
+          tiers: draft.tiers,
+          venue: draft.venueId ? venues?.find((v) => v.id === draft.venueId) : null,
+          tenantCountry: profile?.country ?? null,
+        })}
+        files={artwork.map((a) => a.file)}
+      />
     </div>
   );
 }

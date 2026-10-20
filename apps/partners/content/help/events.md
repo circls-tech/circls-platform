@@ -16,6 +16,8 @@ Creating and changing events — editing, submitting for review, publishing, end
    - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
 4. Click **Create event**.
 
+Before you do, **Preview** (next to **Create event**, available once the event has a name and a start) shows the event's page on the customer site exactly as the form stands — name, description, date, venue or address, photos and ticket tiers — and keeps up with every edit you make. Nothing is created until you press **Create event**; on a wide screen the preview sits beside the form, on a narrower one it opens over it and **Back to the form** returns you to editing. See [Previewing as a customer](#previewing-as-a-customer) for what the page shows.
+
 The event is created as a **draft** and you're returned to the Events list. Add ticket tiers next (see below) before submitting.
 
 ## Duplicating an event
@@ -196,7 +198,7 @@ passes customers already hold are never changed.
 
 Every event's detail page has a **Preview** button beside its status. It opens the event's page on the customer site — the real page, with your photos, tiers, prices and description laid out exactly as customers will see them — whatever the event's status, so you can check a draft before anyone else sees it. A banner at the top marks it as a preview; switch between **Phone** and **Desktop** to see it at either size, or use **Open in new tab** for a full-size look. Booking is turned off in the preview, and for a recurring event the other dates are shown but can't be opened from it.
 
-**Submit for review** opens the same preview first: look the page over, then confirm **Submit for review** from inside it (or **Back** to keep editing). The Circls team sees this same customer page when they review your event.
+**Submit for review** opens the same preview first — on the event's page and from the **Events** list alike: look the page over, then confirm **Submit for review** from inside it (or **Back** to keep editing). Submitting a whole series from the list previews its soonest date, which every date of the series shares its photos and description with. The Circls team sees this same customer page when they review your event.
 
 Preview is available to every member of your organisation, including Staff and Read-only. Preview links expire after an hour — open the preview again for a fresh one.
 

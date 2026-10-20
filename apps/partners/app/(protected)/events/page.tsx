@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/events';
 import type { VenueEventSummary } from '@/lib/api/types';
 import { Badge, Button, Card, StatusPill } from '@/lib/ui';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 
 /** Format an event start in a given zone. Each event's natural zone is its own
  *  `tzName`; the portal-wide viewing tz overrides it when set. */
@@ -72,6 +73,11 @@ function EventList({ tenantId }: { tenantId: string }) {
   const canWrite = useCan('events.write', tenantId);
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The row whose "Submit for review" is open: the customer-site preview comes
+  // first, as on the event's own page, and the submission is confirmed from
+  // inside it. A series previews its soonest date; the gallery and copy are
+  // shared, so that is what every date will look like.
+  const [submitting, setSubmitting] = useState<EventRow | null>(null);
 
   const rows = useMemo(() => groupRows(events ?? []), [events]);
 
@@ -85,6 +91,8 @@ function EventList({ tenantId }: { tenantId: string }) {
       }
     } catch (e) {
       setErrorMsg((e as Error).message);
+    } finally {
+      setSubmitting(null);
     }
   }
 
@@ -175,7 +183,7 @@ function EventList({ tenantId }: { tenantId: string }) {
                     petal="#A7E3BF"
                     size="sm"
                     loading={publish.isPending || publishSeries.isPending}
-                    onClick={() => handlePublish({ ev, seriesSize, seriesHasDraft })}
+                    onClick={() => setSubmitting({ ev, seriesSize, seriesHasDraft })}
                   >
                     {ev.seriesId ? 'Submit series for review' : 'Submit for review'}
                   </Button>
@@ -246,6 +254,20 @@ function EventList({ tenantId }: { tenantId: string }) {
           </li>
         ))}
       </ul>
+      {submitting && (
+        <ListingPreviewModal
+          open
+          onClose={() => setSubmitting(null)}
+          tenantId={tenantId}
+          type="event"
+          id={submitting.ev.id}
+          confirm={{
+            label: submitting.ev.seriesId ? 'Submit series for review' : 'Submit for review',
+            onConfirm: () => handlePublish(submitting),
+            loading: publish.isPending || publishSeries.isPending,
+          }}
+        />
+      )}
     </div>
   );
 }

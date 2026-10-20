@@ -8,6 +8,7 @@ import { BackLink, Button, Card, StatusPill } from '@/lib/ui';
 import { useState } from 'react';
 import { useTimezone } from '@/lib/timezone_context';
 import { useCan } from '@/lib/use_can';
+import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 
 function fmt(iso: string, tz: string) {
   return new Intl.DateTimeFormat('en-IN', {
@@ -30,6 +31,10 @@ export default function VenueEventsPage() {
   const currency = useCurrency({ venueId });
   const { resolveTz } = useTimezone();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The event whose "Submit for review" is open: the customer-site preview
+  // comes first, as on the event's own page, and the submission is confirmed
+  // from inside it.
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   async function handlePublish(id: string) {
     setErrorMsg(null);
@@ -37,6 +42,8 @@ export default function VenueEventsPage() {
       await publish.mutateAsync(id);
     } catch (e) {
       setErrorMsg((e as Error).message);
+    } finally {
+      setSubmittingId(null);
     }
   }
 
@@ -123,7 +130,7 @@ export default function VenueEventsPage() {
                           petal="#A7E3BF"
                           size="sm"
                           loading={publish.isPending}
-                          onClick={() => handlePublish(ev.id)}
+                          onClick={() => setSubmittingId(ev.id)}
                         >
                           Submit for review
                         </Button>
@@ -139,6 +146,20 @@ export default function VenueEventsPage() {
           </div>
         )}
       </Card>
+      {submittingId && (
+        <ListingPreviewModal
+          open
+          onClose={() => setSubmittingId(null)}
+          tenantId={tenantId}
+          type="event"
+          id={submittingId}
+          confirm={{
+            label: 'Submit for review',
+            onConfirm: () => handlePublish(submittingId),
+            loading: publish.isPending,
+          }}
+        />
+      )}
     </div>
   );
 }

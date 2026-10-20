@@ -12,6 +12,7 @@ import {
   createListingPreview,
   PREVIEW_TYPES,
   resolvePreviewTarget,
+  SCRATCH_ID,
 } from '../services/listing_preview_service.js';
 
 /**
@@ -26,12 +27,17 @@ import {
  *
  * The response carries the consumer-site URL with the token already on it, so
  * neither portal needs to know where the consumer site lives.
+ *
+ * A partner may also mint a SCRATCH preview (id `scratch`): the consumer page
+ * for a listing that is not saved yet, which renders what the create form
+ * posts to it. Nothing is looked up — there is nothing to look up — and the
+ * token opens no stored listing.
  */
 
 const partnerParams = z.object({
   tenantId: z.string().uuid(),
   type: z.enum(PREVIEW_TYPES),
-  id: z.string().uuid(),
+  id: z.union([z.string().uuid(), z.literal(SCRATCH_ID)]),
 });
 
 const adminParams = z.object({
@@ -59,6 +65,7 @@ export const listingPreviewRoutes: FastifyPluginAsync = async (app) => {
       const user = await currentUser(req);
       const ctx = await requireTenantMembership(user.id, tenantId);
       assertCap(ctx, READ_CAP[type]);
+      if (id === SCRATCH_ID) return createListingPreview({ type, id });
       const target = await resolvePreviewTarget(type, id);
       // Another organisation's listing reads as absent, not as forbidden:
       // ids must not be probeable across tenants.

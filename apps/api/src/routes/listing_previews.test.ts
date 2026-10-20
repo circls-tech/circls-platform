@@ -179,6 +179,44 @@ describe.skipIf(!runIntegration)('listing preview routes', () => {
     expect(other.statusCode).toBe(404);
   });
 
+  it('a partner mints a scratch preview, and the consumer verify read honours it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/tenants/${tenantAId}/listings/event/scratch/preview`,
+      headers: bearer('ownerA'),
+    });
+    expect(res.statusCode).toBe(200);
+    const p = res.json() as Preview;
+    expect(p.id).toBe('scratch');
+    const url = new URL(p.url);
+    expect(url.pathname).toBe('/events/scratch');
+    const token = url.searchParams.get('preview')!;
+
+    const ok = await app.inject({
+      method: 'GET',
+      url: '/v1/consumer/previews/scratch?type=event',
+      headers: { 'x-circls-preview': token },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect((ok.json() as { type: string }).type).toBe('event');
+
+    // Not for another type, not without a token, and never a real listing.
+    const wrongType = await app.inject({
+      method: 'GET',
+      url: '/v1/consumer/previews/scratch?type=membership',
+      headers: { 'x-circls-preview': token },
+    });
+    expect(wrongType.statusCode).toBe(401);
+    const none = await app.inject({ method: 'GET', url: '/v1/consumer/previews/scratch?type=event' });
+    expect(none.statusCode).toBe(401);
+    const real = await app.inject({
+      method: 'GET',
+      url: `/v1/consumer/events/${draftEventId}`,
+      headers: { 'x-circls-preview': token },
+    });
+    expect(real.statusCode).toBe(404);
+  });
+
   it('a read-only member can preview too', async () => {
     const res = await app.inject({
       method: 'POST',

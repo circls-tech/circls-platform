@@ -27,6 +27,16 @@ import { env } from '../config/env.js';
 export const PREVIEW_TYPES = ['venue', 'event', 'membership'] as const;
 export type PreviewType = (typeof PREVIEW_TYPES)[number];
 
+/**
+ * The "listing id" of a scratch preview: a listing that does not exist yet.
+ * A partner filling in a create form opens the consumer page at this id and
+ * the page renders what the form posts to it (postMessage), so they can see
+ * the customer page before anything is saved. The token proves a partner
+ * opened it — the consumer page accepts nothing without one — and, since no
+ * listing has this id, it can never unlock a real read.
+ */
+export const SCRATCH_ID = 'scratch';
+
 /** How long a minted preview link stays valid. Long enough to read a listing
  *  through and share the link across the desk; short enough that a leaked
  *  link is not a lasting back door to an unapproved listing. */
@@ -134,6 +144,11 @@ export interface ListingPreview {
   type: PreviewType;
   id: string;
   expiresAt: string;
+}
+
+/** Whether `token` is a valid scratch preview of this listing type. */
+export function scratchPreviewAllows(token: unknown, type: PreviewType): boolean {
+  return previewAllows(token, { type, id: SCRATCH_ID });
 }
 
 /** Mint a preview and build the consumer-site URL that carries it. */

@@ -1,5 +1,8 @@
 'use client';
 import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api/client';
 
 /**
  * Listing preview mode.
@@ -45,4 +48,92 @@ export function isPreviewDocument(): boolean {
   } catch {
     return false;
   }
+}
+
+// ── Scratch previews ─────────────────────────────────────────────────────────
+
+/**
+ * The "listing id" of a scratch preview: a listing that is not saved yet. A
+ * partner filling in a create form opens this page framed with a scratch
+ * token (minted by the API for the type), and the form posts the listing as
+ * it is being typed, so they see the real customer page before anything is
+ * created. The token is verified with the API first; without it the page
+ * renders nothing a parent frame sends.
+ */
+export const SCRATCH_ID = 'scratch';
+
+/** postMessage protocol between the partner portal (parent) and this page. */
+export const SCRATCH_READY_MESSAGE = 'circls:scratch-ready';
+export const SCRATCH_LISTING_MESSAGE = 'circls:scratch-listing';
+
+export interface ScratchListingMessage<T> {
+  type: typeof SCRATCH_LISTING_MESSAGE;
+  listing: T;
+  /** Photos picked on the form, not uploaded anywhere yet; shown via object URLs. */
+  images: File[];
+}
+
+export type ScratchStatus = 'verifying' | 'denied' | 'waiting' | 'ready';
+
+/** Only https images may be pointed at from a posted listing (a logo, say). */
+export function safeImageUrl(url: unknown): string | null {
+  return typeof url === 'string' && /^https:\/\//i.test(url) ? url : null;
+}
+
+/**
+ * Listen for the listing the parent frame posts, once the API confirms the
+ * token is a scratch preview of `type`. Messages are accepted from the parent
+ * frame only. Picked photos arrive as Files and are handed back as object
+ * URLs, revoked when replaced.
+ */
+export function useScratchListing<T>(
+  active: boolean,
+  token: string | null,
+  type: 'venue' | 'event' | 'membership',
+): { status: ScratchStatus; listing: T | null; imageUrls: string[] } {
+  const verify = useQuery({
+    queryKey: ['scratch-preview', type, token],
+    queryFn: () =>
+      apiFetch<{ type: string }>(`/v1/consumer/previews/scratch?type=${type}`, previewInit(token)),
+    enabled: active && Boolean(token),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const verified = verify.isSuccess;
+
+  const [listing, setListing] = useState<T | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!active || !verified || typeof window === 'undefined' || window.parent === window) return;
+    function onMessage(ev: MessageEvent) {
+      if (ev.source !== window.parent) return;
+      const data = ev.data as Partial<ScratchListingMessage<T>> | null;
+      if (!data || data.type !== SCRATCH_LISTING_MESSAGE || !data.listing) return;
+      setListing(data.listing);
+      const files = Array.isArray(data.images) ? data.images.filter((f) => f instanceof Blob) : [];
+      setImageUrls((prev) => {
+        prev.forEach((u) => URL.revokeObjectURL(u));
+        return files.map((f) => URL.createObjectURL(f));
+      });
+    }
+    window.addEventListener('message', onMessage);
+    // Tell the form we are listening: it sends the listing on this, and again
+    // on every edit. The reply carries no data, so any parent may hear it.
+    window.parent.postMessage({ type: SCRATCH_READY_MESSAGE }, '*');
+    return () => window.removeEventListener('message', onMessage);
+  }, [active, verified]);
+
+  useEffect(() => () => imageUrls.forEach((u) => URL.revokeObjectURL(u)), [imageUrls]);
+
+  const status: ScratchStatus = !active
+    ? 'waiting'
+    : verify.isError || !token
+      ? 'denied'
+      : !verified
+        ? 'verifying'
+        : listing
+          ? 'ready'
+          : 'waiting';
+  return { status, listing, imageUrls };
 }
