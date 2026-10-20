@@ -24,6 +24,8 @@ interface MatrixProps {
   /** Reception: omitted for a role that can't take bookings, hiding "Add booking". */
   onBook?: (slotIds: string[]) => void;
   onCancel?: (bookingId: string) => void;
+  /** Reception: move the selected booking to other slots. Same right as cancelling. */
+  onReschedule?: (bookingId: string) => void;
   /** Whether the price and block controls show (default true). Reception passes
    *  the viewer's role; the schedule builder edits a local draft and keeps both. */
   canSetPrice?: boolean;
@@ -203,6 +205,7 @@ interface InspectorProps {
   onBulk: MatrixProps['onBulk'];
   onBook?: MatrixProps['onBook'];
   onCancel?: MatrixProps['onCancel'];
+  onReschedule?: MatrixProps['onReschedule'];
   canSetPrice: boolean;
   canBlock: boolean;
 }
@@ -215,6 +218,7 @@ function Inspector({
   onBulk,
   onBook,
   onCancel,
+  onReschedule,
   canSetPrice,
   canBlock,
 }: InspectorProps) {
@@ -341,7 +345,22 @@ function Inspector({
           </div>
         )}
 
-        {/* Reception: Cancel booking (single booked slot) */}
+        {/* Reception: Reschedule / Cancel booking (single booked slot). A
+            booking that has started is not moved — the API refuses it. */}
+        {mode === 'reception' &&
+          onReschedule &&
+          n === 1 &&
+          selectedSlots[0]?.status === 'booked' &&
+          selectedSlots[0]?.bookingId &&
+          new Date(selectedSlots[0].startAt).getTime() > Date.now() && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onReschedule(selectedSlots[0]!.bookingId!)}
+            >
+              Reschedule
+            </Button>
+          )}
         {mode === 'reception' &&
           onCancel &&
           n === 1 &&
@@ -375,6 +394,7 @@ export function Matrix({
   onBulk,
   onBook,
   onCancel,
+  onReschedule,
   canSetPrice = true,
   canBlock = true,
   onPrevWeek,
@@ -649,6 +669,7 @@ export function Matrix({
           onBulk={onBulk}
           onBook={onBook}
           onCancel={onCancel}
+          onReschedule={onReschedule}
           canSetPrice={canSetPrice}
           canBlock={canBlock}
         />

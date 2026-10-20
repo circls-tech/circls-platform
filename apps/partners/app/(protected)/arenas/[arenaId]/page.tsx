@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Matrix } from '@/components/Matrix';
 import { AddBookingModal } from '@/components/AddBookingModal';
@@ -204,6 +204,14 @@ export default function ArenaReceptionPage() {
     setBookingOpen(true);
   }, []);
 
+  // Moving a booking has its own page (court, day and slot picker); the grid
+  // just takes you there.
+  const router = useRouter();
+  const handleReschedule = useCallback(
+    (bookingId: string) => router.push(`/bookings/${bookingId}/reschedule`),
+    [router],
+  );
+
   const handleCancel = useCallback((bookingId: string) => {
     setCancelBookingId(bookingId);
     setConfirmOpen(true);
@@ -330,6 +338,7 @@ export default function ArenaReceptionPage() {
           onBulk={handleBulk}
           onBook={canBook ? handleBook : undefined}
           onCancel={canCancel ? handleCancel : undefined}
+          onReschedule={canCancel ? handleReschedule : undefined}
           canSetPrice={can('pricing.write')}
           canBlock={canSchedule}
           onPrevWeek={handlePrevWeek}

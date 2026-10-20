@@ -75,7 +75,7 @@ Cancelling a booking from an arena's reception grid is the same cancellation wit
 
 A confirmed court booking can be **moved to other slots** at the same venue — another time, another day or another court — without refunding and rebooking. The booking keeps its reference, its customer and its payment; only the slots change. Owners, Managers and Staff can do it (the same right as cancelling); Read-only members can't. A booking that has already started can't be moved — mark it a no-show or refund it instead.
 
-1. From the booking detail, click **Reschedule**.
+1. From the booking detail, click **Reschedule** — or, on the arena's reception grid, select the booking's slot and click **Reschedule** next to **Cancel booking**.
 2. Pick a **court** and a **day** (the booking's own court and day open first), then tick the slots to move to. Only open slots that are still ahead are offered, plus the booking's own slots on that court, so shifting an hour along is a matter of re-ticking.
 3. The summary shows the new span, what the new slots add up to and how that compares with what was paid.
 4. Add a reason if you like (it goes in the audit log) and click **Move booking**.
