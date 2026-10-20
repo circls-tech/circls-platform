@@ -12,6 +12,8 @@ import {
   mintPreviewToken,
   previewAllows,
   PREVIEW_TTL_SEC,
+  SCRATCH_ID,
+  scratchPreviewAllows,
   verifyPreviewToken,
 } from './listing_preview_service.js';
 import {
@@ -25,6 +27,25 @@ import {
 
 const EVENT_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
+
+describe('scratch preview tokens', () => {
+  it('a scratch token is a scratch preview of its type only, and opens no listing', () => {
+    const { token } = mintPreviewToken({ type: 'event', id: SCRATCH_ID });
+    expect(scratchPreviewAllows(token, 'event')).toBe(true);
+    expect(scratchPreviewAllows(token, 'membership')).toBe(false);
+    expect(previewAllows(token, { type: 'event', id: EVENT_ID })).toBe(false);
+    // And a real listing's token is not a scratch preview.
+    const real = mintPreviewToken({ type: 'event', id: EVENT_ID }).token;
+    expect(scratchPreviewAllows(real, 'event')).toBe(false);
+    expect(scratchPreviewAllows(undefined, 'event')).toBe(false);
+  });
+
+  it('builds the consumer URL at the scratch path', () => {
+    const p = createListingPreview({ type: 'membership', id: SCRATCH_ID });
+    expect(new URL(p.url).pathname).toBe('/memberships/scratch');
+    expect(p.id).toBe(SCRATCH_ID);
+  });
+});
 
 describe('preview tokens', () => {
   it('round-trips the listing it was minted for', () => {

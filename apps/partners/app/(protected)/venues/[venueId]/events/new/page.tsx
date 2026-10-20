@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { isSeriesResult, useCreateEvent } from '@/lib/api/events';
-import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
+import { useMyRole, useVenues, uploadEventImageFile, useTenantProfile } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { useOrg } from '@/lib/org_context';
 import { TiersEditor, emptyTier, tiersToPayload, type TierDraft } from '@/components/TiersEditor';
@@ -30,6 +30,8 @@ import {
   type RecurrenceValue,
 } from '@/components/RecurrenceEditor';
 import { BackLink, Button, Card, Input } from '@/lib/ui';
+import { brandOf, scratchEvent } from '@/lib/api/scratch_listing';
+import { ScratchPreview } from '@/components/ScratchPreview';
 
 /**
  * Convert a `<input type="datetime-local">` value (interpreted as Asia/Kolkata
@@ -76,6 +78,13 @@ export default function NewEventPage() {
   const [description, setDescription] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
+  // The customer-site preview of the form as it stands (nothing saved).
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // The page is meaningless without a name and a start; the rest may be blank.
+  const canPreview = name.trim().length > 0 && startsAtLocal.length > 0;
+  useEffect(() => {
+    if (!canPreview) setPreviewOpen(false);
+  }, [canPreview]);
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   // null = no per-customer ticket limit; else the count input's string value.
@@ -93,6 +102,9 @@ export default function NewEventPage() {
   const tz = 'Asia/Kolkata';
   const busy = createEvent.isPending || uploadProgress !== null;
   const thisVenue = venues?.find((v) => v.id === venueId);
+  const { data: profile } = useTenantProfile(tenantId || activeTenantId || '');
+
+  const eventsHref = `/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -176,15 +188,13 @@ export default function NewEventPage() {
         }
         setUploadProgress(null);
       }
-      router.push(`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`);
+      router.push(eventsHref);
     } catch (e) {
       setErr((e as Error).message);
     }
   }
 
   // Only once the role is known, so Owners and Managers never see it flash up.
-  const eventsHref = `/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`;
-
   if (!roleLoading && !can('events.write')) {
     return (
       <div className="flex flex-col gap-6">
@@ -196,7 +206,7 @@ export default function NewEventPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className={previewOpen ? 'flex flex-col gap-6 xl:pr-[var(--scratch-preview-w)]' : 'flex flex-col gap-6'}>
       <BackLink href={eventsHref}>Events</BackLink>
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">New event</h1>
 
@@ -274,12 +284,40 @@ export default function NewEventPage() {
             >
               Cancel
             </Link>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!canPreview}
+              title={canPreview ? undefined : 'Enter a name and a start time to preview'}
+              onClick={() => setPreviewOpen((v) => !v)}
+            >
+              {previewOpen ? 'Hide preview' : 'Preview'}
+            </Button>
             <Button type="submit" loading={busy}>
               {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
             </Button>
           </div>
         </form>
       </Card>
+      <ScratchPreview
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        tenantId={tenantId || activeTenantId || ''}
+        type="event"
+        listing={scratchEvent({
+          tenantId: tenantId || activeTenantId || '',
+          brand: brandOf(tenantId || activeTenantId || '', profile),
+          name,
+          description,
+          startsAt: startsAtLocal ? localToVenueTzIso(startsAtLocal, tz) : '',
+          endsAt: endsAtLocal ? localToVenueTzIso(endsAtLocal, tz) : '',
+          tiers,
+          maxPerUser: maxPerUserToPayload(maxPerUser),
+          venue: thisVenue,
+          tz,
+        })}
+        files={photos.map((p) => p.file)}
+      />
     </div>
   );
 }

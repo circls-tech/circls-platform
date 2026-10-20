@@ -16,9 +16,10 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { usePreviewToken } from '@/lib/preview';
+import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import { useItemView } from '@/lib/activity/ActivityProvider';
-import type { MembershipBenefits, PublicMembershipTier } from '@/lib/api/types';
+import type { MembershipBenefits, PublicMembershipTier, PublicMembershipWithScope } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
 
 /** Render the typed benefits list (PR #110) as a "What's included" list: each
@@ -59,11 +60,19 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
   // Preview mode (lib/preview.ts): a partner or reviewer looking at an
   // unapproved plan as a customer will. Same page, buying turned off.
   const preview = usePreviewToken();
-  const membershipQ = useMembership(id, preview);
-  useItemView('membership', id, !preview);
+  // Scratch mode (lib/preview.ts): the plan is not saved yet — the partner's
+  // create form posts it here as they type, and nothing is fetched by id.
+  const scratch = id === SCRATCH_ID;
+  const scratchQ = useScratchListing<PublicMembershipWithScope>(scratch, preview, 'membership');
+  const membershipQ = useMembership(scratch ? '' : id, preview);
+  useItemView('membership', id, !preview && !scratch);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
-  const m = membershipQ.data;
+  const m: PublicMembershipWithScope | undefined = scratch
+    ? scratchQ.listing
+      ? { ...scratchQ.listing, artworkUrl: scratchQ.images[0]?.url ?? null }
+      : undefined
+    : membershipQ.data;
   // Enrich with the full org profile when we know the brand slug. Degrades to
   // the compact brand summary (name + logo) if this 404s or is still loading.
   const orgQ = usePublicOrg(m?.brand?.slug ?? '');
@@ -71,7 +80,7 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
   // Public offers on this plan (partner- and Circls-funded alike); tapping one
   // carries it into checkout pre-applied. Listed against the cheapest tier, so
   // a code is only offered when the smallest purchase can use it.
-  const offersQ = usePublicCoupons(m ? { itemType: 'membership', itemId: m.id } : null);
+  const offersQ = usePublicCoupons(m && !scratch ? { itemType: 'membership', itemId: m.id } : null);
   const offers = offersQ.data?.rows ?? [];
   const [offerCode, setOfferCode] = useState<string | null>(null);
 
@@ -120,7 +129,9 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
       {preview ? <PreviewBanner noun="membership" /> : <Header />}
       <main className={`mx-auto max-w-3xl px-4 pt-8${selectedTier ? ' pb-28' : ' pb-8'}`}>
         {!preview && <BackBar fallbackHref="/memberships" />}
-        {membershipQ.isLoading ? (
+        {scratch && scratchQ.status !== 'ready' ? (
+          <ScratchStatusNote status={scratchQ.status} />
+        ) : membershipQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading membership…</p>
         ) : membershipQ.isError ? (
           <p className="text-sm font-semibold text-petal-red">
@@ -154,7 +165,9 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
                         variant="inline"
                       />
                     )}
-                    <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" />
+                    {!scratch && (
+                      <LikeButton itemType="membership" itemId={m.id} name={m.name} variant="inline" />
+                    )}
                   </div>
                 </div>
                 <h1 className="mt-1 font-display text-4xl font-extrabold">{m.name}</h1>
@@ -170,7 +183,9 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
             <Card className="flex flex-col gap-5">
               {tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">
-                  This membership isn&apos;t available right now.
+                  {scratch
+                    ? 'Tiers you add on the form appear here.'
+                    : 'This membership isn’t available right now.'}
                 </p>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -235,9 +250,13 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
               )}
 
               {m.venueId && (
-                <Link href={`/venues/${m.venueId}`} className="text-sm font-semibold text-coral-deep underline">
-                  More at {m.scopeName}
-                </Link>
+                scratch ? (
+                  <span className="text-sm font-semibold text-coral-deep underline">More at {m.scopeName}</span>
+                ) : (
+                  <Link href={`/venues/${m.venueId}`} className="text-sm font-semibold text-coral-deep underline">
+                    More at {m.scopeName}
+                  </Link>
+                )
               )}
             </Card>
 

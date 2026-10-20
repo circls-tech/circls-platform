@@ -25,7 +25,7 @@ Creating and editing plans, activating and deactivating them, and their artwork 
 
 Artwork can also be added or changed later while editing the plan (see below).
 
-You land on the new plan's page, where it starts in **pending review** until Circls approves it. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
+**Preview** (next to **Create plan**, available once the plan has a name) shows the plan's page on the customer site exactly as the form stands — name, description, scope, artwork, tiers, benefits and terms — and follows your edits as you make them; nothing is saved until you press **Create plan**. You land on the new plan's page, where it starts in **pending review** until Circls approves it. The price shown in lists is the cheapest tier (e.g. *from ₹499*, or *from $49* for a US plan).
 
 ## The plans list
 

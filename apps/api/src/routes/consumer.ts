@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env.js';
-import { BadRequest, NotFound } from '../lib/errors.js';
+import { BadRequest, NotFound, Unauthorized } from '../lib/errors.js';
 import { checkoutGatewaysOf } from '../lib/gateway.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -38,7 +38,11 @@ import {
   SEARCH_TYPES,
   updateMyProfile,
 } from '../services/consumer_service.js';
-import { PREVIEW_HEADER } from '../services/listing_preview_service.js';
+import {
+  PREVIEW_HEADER,
+  PREVIEW_TYPES,
+  scratchPreviewAllows,
+} from '../services/listing_preview_service.js';
 import {
   addToWishlist,
   getWishlist,
@@ -105,6 +109,21 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     const value = Array.isArray(raw) ? raw[0] : raw;
     return typeof value === 'string' && value.length > 0 && value.length <= 1024 ? value : undefined;
   }
+  // ── GET /v1/consumer/previews/scratch?type= ─────────────────────────────
+  // The consumer page for a listing that is not saved yet (see SCRATCH_ID in
+  // the preview service) asks here whether the token it was opened with is a
+  // partner-minted scratch preview of that type, before it renders anything
+  // the parent frame posts to it. 401 otherwise: no token, or not that kind.
+  const scratchQuery = z.object({ type: z.enum(PREVIEW_TYPES) });
+  app.get('/v1/consumer/previews/scratch', { config: publicLimit }, async (req) => {
+    const q = scratchQuery.safeParse(req.query);
+    if (!q.success) throw new BadRequest('Invalid preview type', 'bad_request');
+    if (!scratchPreviewAllows(previewTokenOf(req), q.data.type)) {
+      throw new Unauthorized('Not a scratch preview', 'preview_invalid');
+    }
+    return { type: q.data.type };
+  });
+
   const venuesQuery = z.object({
     search: z.string().min(1).max(120).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

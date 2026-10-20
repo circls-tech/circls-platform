@@ -17,7 +17,9 @@ import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { usePreviewToken } from '@/lib/preview';
+import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
+import { ScratchStatusNote } from '@/components/ScratchStatusNote';
+import type { PublicEventWithVenue } from '@/lib/api/types';
 import { useItemView } from '@/lib/activity/ActivityProvider';
 import { Badge, Button, Card } from '@/lib/ui';
 import { AddressLink } from '@/components/AddressLink';
@@ -38,18 +40,26 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // Preview mode (lib/preview.ts): a partner or reviewer looking at an
   // unapproved event as a customer will. Same page, booking turned off.
   const preview = usePreviewToken();
-  const eventQ = useEvent(id, preview);
-  useItemView('event', id, !preview);
+  // Scratch mode (lib/preview.ts): the event is not saved yet — the partner's
+  // create form posts it here as they type, and nothing is fetched by id.
+  const scratch = id === SCRATCH_ID;
+  const scratchQ = useScratchListing<PublicEventWithVenue>(scratch, preview, 'event');
+  const eventQ = useEvent(scratch ? '' : id, preview);
+  useItemView('event', id, !preview && !scratch);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
-  const ev = eventQ.data;
+  const ev: PublicEventWithVenue | undefined = scratch
+    ? scratchQ.listing
+      ? { ...scratchQ.listing, images: scratchQ.images }
+      : undefined
+    : eventQ.data;
   // Owning-org profile for the "Organised by" block; degrades to the compact
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
   const [qty, setQty] = useState<Record<string, number>>({});
   // Public offers for this event (partner- and Circls-funded alike); tapping
   // one carries it into checkout pre-applied.
-  const offersQ = usePublicCoupons(ev ? { itemType: 'event', itemId: ev.id } : null);
+  const offersQ = usePublicCoupons(ev && !scratch ? { itemType: 'event', itemId: ev.id } : null);
   const offers = offersQ.data?.rows ?? [];
   const [offerCode, setOfferCode] = useState<string | null>(null);
   // Prices are denominated by the event's resolved location country.
@@ -109,7 +119,9 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
       {preview ? <PreviewBanner noun="event" /> : <Header />}
       <main className="mx-auto max-w-3xl px-4 pt-8 pb-28">
         {!preview && <BackBar fallbackHref="/events" />}
-        {eventQ.isLoading ? (
+        {scratch && scratchQ.status !== 'ready' ? (
+          <ScratchStatusNote status={scratchQ.status} />
+        ) : eventQ.isLoading ? (
           <p className="text-sm text-text-secondary">Loading event…</p>
         ) : eventQ.isError ? (
           <p className="text-sm font-semibold text-petal-red">
@@ -145,10 +157,14 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                         variant="inline"
                       />
                     )}
-                    <LikeButton itemType="event" itemId={ev.id} name={ev.name} variant="inline" />
+                    {!scratch && (
+                      <LikeButton itemType="event" itemId={ev.id} name={ev.name} variant="inline" />
+                    )}
                   </div>
                 </div>
-                <p className="mt-1 text-sm text-text-secondary">{formatDateTime(ev.startsAt)}</p>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {ev.startsAt ? formatDateTime(ev.startsAt) : 'Date and time to be set'}
+                </p>
                 {(ev.seriesOccurrences?.length ?? 0) > 1 && (
                   <div className="mt-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -198,10 +214,18 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{ev.locationName}</p>
                 <AddressLink addressJson={ev.locAddressJson} lat={ev.locLat} lng={ev.locLng} className="mt-2" />
+                {/* Not a link from a scratch preview: the frame would leave
+                    the posted listing behind. */}
                 {!ev.isStandalone && ev.venueId && (
-                  <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
-                    More at {ev.venueName}
-                  </Link>
+                  scratch ? (
+                    <span className="mt-1 block text-sm font-semibold text-coral-deep underline">
+                      More at {ev.venueName}
+                    </span>
+                  ) : (
+                    <Link href={`/venues/${ev.venueId}`} className="mt-1 block text-sm font-semibold text-coral-deep underline">
+                      More at {ev.venueName}
+                    </Link>
+                  )
                 )}
               </div>
             </div>
@@ -210,7 +234,11 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
               {ev.description && <p className="whitespace-pre-line text-sm text-text-secondary">{ev.description}</p>}
 
               {tiers.length === 0 ? (
-                <p className="text-sm text-text-secondary">Tickets aren’t available for this event.</p>
+                <p className="text-sm text-text-secondary">
+                  {scratch
+                    ? 'Ticket tiers you add on the form appear here.'
+                    : 'Tickets aren’t available for this event.'}
+                </p>
               ) : (
                 <div className="mt-2 flex flex-col gap-2.5">
                   {maxPerUser != null && (

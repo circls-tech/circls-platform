@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, Suspense, useState } from 'react';
+import { type FormEvent, Suspense, useEffect, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
-import { useMyRole, useVenues, uploadEventImageFile } from '@/lib/api/queries';
+import { useMyRole, useTenantProfile, useVenues, uploadEventImageFile } from '@/lib/api/queries';
 import {
   isSeriesResult,
   useCreateTenantEvent,
@@ -42,6 +42,8 @@ import {
 } from '@/components/PostBookingRedirectEditor';
 import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/types';
 import { BackLink, Button, Card, Input } from '@/lib/ui';
+import { brandOf, scratchEvent } from '@/lib/api/scratch_listing';
+import { ScratchPreview } from '@/components/ScratchPreview';
 
 /** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
 function localToTzIso(local: string, tz: string): string {
@@ -139,6 +141,7 @@ function NewTenantEventForm({
   source: VenueEvent | null;
 }) {
   const router = useRouter();
+  const { data: profile } = useTenantProfile(tenantId);
   const { data: venues } = useVenues(tenantId);
   const createEvent = useCreateTenantEvent(tenantId);
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
@@ -152,6 +155,13 @@ function NewTenantEventForm({
   const [description, setDescription] = useState(seed?.description ?? '');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
+  // The customer-site preview of the form as it stands (nothing saved).
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // The page is meaningless without a name and a start; the rest may be blank.
+  const canPreview = name.trim().length > 0 && startsAtLocal.length > 0;
+  useEffect(() => {
+    if (!canPreview) setPreviewOpen(false);
+  }, [canPreview]);
   const [tiers, setTiers] = useState<TierDraft[]>(seed?.tiers ?? [emptyTier()]);
   const [questions, setQuestions] = useState<QuestionDraft[]>(seed?.questions ?? []);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(seed?.qrConfig ?? null);
@@ -326,6 +336,7 @@ function NewTenantEventForm({
   }
 
   return (
+    <div className={previewOpen ? 'xl:pr-[var(--scratch-preview-w)]' : ''}>
     <Card title="Details" subtitle="Events are created as drafts. Submit for review when you're ready — Circls approves it before it goes live for consumers.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -452,11 +463,43 @@ function NewTenantEventForm({
             <Link href="/events" className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
               Cancel
             </Link>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!canPreview}
+              title={canPreview ? undefined : 'Enter a name and a start time to preview'}
+              onClick={() => setPreviewOpen((v) => !v)}
+            >
+              {previewOpen ? 'Hide preview' : 'Preview'}
+            </Button>
             <Button type="submit" loading={busy}>
               {recurrence.mode === 'weekly' ? 'Create recurring event' : 'Create event'}
             </Button>
           </div>
         </form>
       </Card>
+      <ScratchPreview
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        tenantId={tenantId}
+        type="event"
+        listing={scratchEvent({
+          tenantId,
+          brand: brandOf(tenantId, profile),
+          name,
+          description,
+          startsAt: startsAtLocal ? localToTzIso(startsAtLocal, effectiveTz) : '',
+          endsAt: endsAtLocal ? localToTzIso(endsAtLocal, effectiveTz) : '',
+          tiers,
+          maxPerUser: maxPerUserToPayload(maxPerUser),
+          venue: scope === 'venue' ? selectedVenue : null,
+          ...(scope === 'standalone'
+            ? { address: { line1, line2, city, state: stateRegion, pincode, country } }
+            : {}),
+          tz: effectiveTz,
+        })}
+        files={photos.map((p) => p.file)}
+      />
+    </div>
   );
 }
