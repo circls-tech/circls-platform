@@ -19,6 +19,8 @@ Go to **Coupons** in the sidebar and click **Create coupon**, then set:
 
 A new coupon is **active** immediately (subject to its validity window).
 
+If you leave the form before creating the coupon — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so; **Start over** on the note clears it. The copy is only on this browser and device, lasts a week, and is dropped when you create the coupon, press **Cancel** or sign out.
+
 ## How the discount is applied
 
 The discount reduces your **base price**. The customer then pays that reduced base plus the "Other charges" line (the payment-gateway charge and any configured platform fee). Only one coupon can be used per checkout. By default Circls bears the gateway charge, so the customer sees it struck through as **FREE** and pays exactly the reduced base; your Partner Agreement may instead have the customer pay it, or assign a share of it to your organisation, in which case that share is deducted from your settled revenue at payout time.

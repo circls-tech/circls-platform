@@ -13,6 +13,8 @@ import { brandOf, scratchMembership } from '@/lib/api/scratch_listing';
 import { ScratchPreview } from '@/components/ScratchPreview';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
+import { RestoredFormNotice } from '@/components/RestoredFormNotice';
+import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import {
   MembershipPlanFields,
   emptyPlanDraft,
@@ -28,11 +30,23 @@ import {
  * Mirrors /events/new.
  */
 export default function NewMembershipPage() {
+  const { activeTenantId } = useOrg();
+  // Keyed on the organisation: switching it opens that one's form, blank or
+  // as it was left.
+  return (
+    <FormAutosaveScope>
+      <NewMembershipForm key={activeTenantId ?? ''} />
+    </FormAutosaveScope>
+  );
+}
+
+function NewMembershipForm() {
   const router = useRouter();
   // The customer-site preview of the form as it stands (nothing saved).
   const [previewOpen, setPreviewOpen] = useState(false);
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  const autosave = useFormAutosave<MembershipPlanDraft>('plan-new', [tenantId]);
   const { user } = useAuth();
   const authed = Boolean(user);
 
@@ -46,7 +60,11 @@ export default function NewMembershipPage() {
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const cannotCreate = !roleLoading && !can('memberships.write');
 
-  const [draft, setDraft] = useState<MembershipPlanDraft>(emptyPlanDraft);
+  const [draft, setDraft] = useState<MembershipPlanDraft>(() => ({
+    ...emptyPlanDraft(),
+    ...autosave.restored,
+  }));
+  useAutosave(autosave, draft);
   // The page is meaningless without a name; the rest may be blank.
   const canPreview = draft.name.trim().length > 0;
   useEffect(() => {
@@ -84,6 +102,7 @@ export default function NewMembershipPage() {
         tiers: input.tiers,
         qrTicketConfig: input.qrTicketConfig,
       });
+      autosave.clear();
       if (artwork[0]) {
         try {
           await uploadCover.mutateAsync({ membershipId: plan.id, file: artwork[0].file });
@@ -117,6 +136,7 @@ export default function NewMembershipPage() {
       ) : (
         <Card subtitle="Circls reviews a new plan before it goes live.">
           <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-2.5">
+            <RestoredFormNotice autosave={autosave} unkept="The artwork isn’t kept — pick it again." />
             <MembershipPlanFields
               value={draft}
               onChange={setDraft}
@@ -137,7 +157,7 @@ export default function NewMembershipPage() {
             {err && <p className="text-sm text-red-600">{err}</p>}
 
             <div className="flex justify-end gap-2">
-              <Link href="/memberships">
+              <Link href="/memberships" onClick={autosave.clear}>
                 <Button type="button" variant="secondary" size="sm">
                   Cancel
                 </Button>

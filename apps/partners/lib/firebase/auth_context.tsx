@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
+import { clearSavedForms, localStore } from '@/lib/form_autosave';
 import { auth } from './client';
 
 /**
@@ -79,6 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await fbSendReset(auth, email.trim());
       },
       async signOut() {
+        // Half-typed forms stay on this browser until a save; a shared
+        // reception computer shouldn't hand them to whoever signs in next.
+        clearSavedForms(localStore());
         await fbSignOut(auth);
       },
     }),

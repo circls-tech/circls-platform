@@ -23,6 +23,8 @@ import {
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
+import { RestoredFormNotice } from '@/components/RestoredFormNotice';
+import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import {
   RecurrenceEditor,
   emptyRecurrence,
@@ -62,7 +64,29 @@ function localToVenueTzIso(local: string, tz: string): string {
   return new Date(asIfUtc.getTime() - offsetMs).toISOString();
 }
 
+/** What the form autosaves: every field but the photos, which are files. */
+interface VenueEventFields {
+  name: string;
+  description: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  tiers: TierDraft[];
+  questions: QuestionDraft[];
+  maxPerUser: string | null;
+  redirect: PostBookingRedirect | null;
+  recurrence: RecurrenceValue;
+}
+
 export default function NewEventPage() {
+  const { venueId } = useParams<{ venueId: string }>();
+  return (
+    <FormAutosaveScope>
+      <NewVenueEventForm key={venueId} />
+    </FormAutosaveScope>
+  );
+}
+
+function NewVenueEventForm() {
   const router = useRouter();
   const { venueId } = useParams<{ venueId: string }>();
   const tenantId = useSearchParams().get('tenantId') ?? '';
@@ -74,10 +98,13 @@ export default function NewEventPage() {
   const { activeTenantId } = useOrg();
   const { can, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [startsAtLocal, setStartsAtLocal] = useState('');
-  const [endsAtLocal, setEndsAtLocal] = useState('');
+  const autosave = useFormAutosave<VenueEventFields>('venue-event-new', [venueId]);
+  const saved = autosave.restored;
+
+  const [name, setName] = useState(saved?.name ?? '');
+  const [description, setDescription] = useState(saved?.description ?? '');
+  const [startsAtLocal, setStartsAtLocal] = useState(saved?.startsAtLocal ?? '');
+  const [endsAtLocal, setEndsAtLocal] = useState(saved?.endsAtLocal ?? '');
   // The customer-site preview of the form as it stands (nothing saved).
   const [previewOpen, setPreviewOpen] = useState(false);
   // The page is meaningless without a name and a start; the rest may be blank.
@@ -85,17 +112,28 @@ export default function NewEventPage() {
   useEffect(() => {
     if (!canPreview) setPreviewOpen(false);
   }, [canPreview]);
-  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
-  const [questions, setQuestions] = useState<QuestionDraft[]>([]);
+  const [tiers, setTiers] = useState<TierDraft[]>(() => saved?.tiers ?? [emptyTier()]);
+  const [questions, setQuestions] = useState<QuestionDraft[]>(saved?.questions ?? []);
   // null = no per-customer ticket limit; else the count input's string value.
-  const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
-  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(saved?.maxPerUser ?? null);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(saved?.redirect ?? null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
-  const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>(() => saved?.recurrence ?? emptyRecurrence());
   const [err, setErr] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+  useAutosave<VenueEventFields>(autosave, {
+    name,
+    description,
+    startsAtLocal,
+    endsAtLocal,
+    tiers,
+    questions,
+    maxPerUser,
+    redirect,
+    recurrence,
+  });
 
   // Best-effort tz; the venue row owns the source of truth but we keep this
   // page tz-pinned to IST for now (matches the rest of the app's IST UI).
@@ -175,6 +213,7 @@ export default function NewEventPage() {
         maxPerUser: maxPerUserToPayload(maxPerUser),
         postBookingRedirect: redirectToPayload(redirect),
       });
+      autosave.clear();
       // For a series, photos land on the first date — the other dates (and the
       // consumer pages) borrow that gallery.
       const anchor = isSeriesResult(result) ? result.events[0]! : result;
@@ -221,6 +260,7 @@ export default function NewEventPage() {
 
       <Card title="Details" subtitle="Only a name is needed to save a draft — dates and ticket tiers can follow. Submit for review from the event's page when it's complete; Circls approves it before it goes live.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
+          <RestoredFormNotice autosave={autosave} unkept="Photos aren’t kept — add them again." />
           <Input
             label="Name"
             value={name}
@@ -287,6 +327,7 @@ export default function NewEventPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Link
               href={`/venues/${venueId}/events${tenantId ? `?tenantId=${tenantId}` : ''}`}
+              onClick={autosave.clear}
               className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
             >
               Cancel
