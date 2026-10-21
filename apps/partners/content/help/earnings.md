@@ -26,7 +26,7 @@ Days are cut at midnight in the timezone shown under the buttons — the one pic
 
 Underneath it, the same figure split three ways:
 
-- **Events** — ticket sales, counted **per ticket**. A customer who books three tickets in one go is three sales here, which is what keeps the count in step with the money beside it. Whenever that count differs from the number of bookings, the bookings figure is shown alongside, so it still matches the length of the event's registrations list.
+- **Events** — ticket sales, counted **per ticket**. A customer who books three tickets in one go is three sales here, which is what keeps the count in step with the money beside it. Whenever that count differs from the number of bookings, the bookings figure is shown alongside, so it still matches the length of the event's registrations list. A refund lowers the money, not the count: the tickets were still sold, and a refund (including a part refund under your cancellation policy) comes off the net payout beside them.
 - **Memberships** — plan sign-ups and renewals, one per sign-up.
 - **Venues** — court and arena bookings, one per booking.
 

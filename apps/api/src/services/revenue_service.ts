@@ -6,6 +6,7 @@ import {
   paidOutPayment,
   settleableCharge,
 } from './settlement_credit.js';
+import { bookingUnitsSql } from './booking_units.js';
 
 /**
  * Revenue read models for the admin console.
@@ -85,6 +86,12 @@ export interface RevenueSlice {
    * with nothing to explain the gap.
    */
   bookings: number;
+  /**
+   * What those same bookings sold: tickets for an event, one otherwise (see
+   * `bookingUnitsSql`). Never below `bookings`. This is the "sales" figure to
+   * show beside the money — an event booking can hold several tickets.
+   */
+  units: number;
 }
 
 /** How {@link moneyRows} should be narrowed. */
@@ -169,7 +176,36 @@ function toSlice(r: Record<string, unknown>): RevenueSlice {
     commissionPaise: Number(r['commission'] ?? 0),
     refundsPaise: Number(r['refunds'] ?? 0),
     bookings: Number(r['bookings'] ?? 0),
+    units: Number(r['units'] ?? 0),
   };
+}
+
+/**
+ * Units sold per group, over the distinct charge bookings `net` counts — the
+ * same set as the `bookings` column, so the two never disagree about what
+ * sold. Grouped separately and joined back, because summing over `money`
+ * would count a twice-charged booking's tickets twice.
+ *
+ * @param keys The grouping columns, as SQL over the `money` CTE's columns.
+ *   Each comes back under the alias `k<n>` (k0, k1, …) for the join.
+ */
+function unitsByGroup(keys: SQL[]): SQL {
+  const selected = sql.join(
+    keys.map((k, i) => sql`${k} as ${sql.raw(`k${i}`)}`),
+    sql`, `,
+  );
+  const grouped = sql.join(
+    keys.map((_, i) => sql.raw(`k${i}`)),
+    sql`, `,
+  );
+  return sql`
+    select ${grouped},
+           sum(${bookingUnitsSql(sql`s.booking_id`, sql`s.item_type`)})::int as units
+      from (select distinct ${selected}, booking_id, item_type
+              from money
+             where kind = 'charge' and payout_basis) s
+     group by ${grouped}
+  `;
 }
 
 /**
@@ -181,19 +217,25 @@ function toSlice(r: Record<string, unknown>): RevenueSlice {
  */
 export async function getPlatformRevenue(from: string, to: string): Promise<RevenueSlice[]> {
   const raw = await db.execute<Record<string, unknown>>(sql`
-    with money as (${moneyRows(from, to)})
-    select item_type,
-           currency,
-           coalesce(sum(gross), 0)                                          as gross,
-           coalesce(sum(base) filter (where payout_basis), 0)
-             - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
-           coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
-           coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id)
-             filter (where kind = 'charge' and payout_basis)                 as bookings
-      from money
-     group by item_type, currency
-     order by item_type, currency
+    with money as (${moneyRows(from, to)}),
+    agg as (
+      select item_type,
+             currency,
+             coalesce(sum(gross), 0)                                          as gross,
+             coalesce(sum(base) filter (where payout_basis), 0)
+               - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
+             coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
+             coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
+             count(distinct booking_id)
+               filter (where kind = 'charge' and payout_basis)                 as bookings
+        from money
+       group by item_type, currency
+    ),
+    units as (${unitsByGroup([sql`item_type`, sql`currency`])})
+    select a.*, coalesce(u.units, 0) as units
+      from agg a
+      left join units u on u.k0 = a.item_type and u.k1 = a.currency
+     order by a.item_type, a.currency
   `);
   return (raw as unknown as Record<string, unknown>[]).map(toSlice);
 }
@@ -247,20 +289,29 @@ export async function getTenantItemRevenue(
   // Grouped including the unattributable, which come back with a null id
   // rather than being filtered away.
   const raw = await db.execute<Record<string, unknown>>(sql`
-    with money as (${moneyRows(from, to, { tenantId })})
-    select ${key}                                                           as item_id,
-           item_type,
-           currency,
-           coalesce(sum(gross), 0)                                          as gross,
-           coalesce(sum(base) filter (where payout_basis), 0)
-             - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
-           coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
-           coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
-           count(distinct booking_id)
-             filter (where kind = 'charge' and payout_basis)                 as bookings
-      from money
-     where item_type = ${wanted}
-     group by 1, 2, 3
+    with money as (
+      select * from (${moneyRows(from, to, { tenantId })}) m where item_type = ${wanted}
+    ),
+    agg as (
+      select ${key}                                                           as item_id,
+             item_type,
+             currency,
+             coalesce(sum(gross), 0)                                          as gross,
+             coalesce(sum(base) filter (where payout_basis), 0)
+               - coalesce(sum(commission) filter (where payout_basis), 0)     as net,
+             coalesce(sum(commission) filter (where payout_basis), 0)         as commission,
+             coalesce(-sum(gross) filter (where kind = 'refund'), 0)          as refunds,
+             count(distinct booking_id)
+               filter (where kind = 'charge' and payout_basis)                 as bookings
+        from money
+       group by 1, 2, 3
+    ),
+    units as (${unitsByGroup([key, sql`currency`])})
+    select a.*, coalesce(u.units, 0) as units
+      from agg a
+      -- is not distinct from: unattributed money has a null item id, and its
+      -- units must still find their row.
+      left join units u on u.k0 is not distinct from a.item_id and u.k1 = a.currency
   `);
 
   const items: ItemRevenue[] = [];

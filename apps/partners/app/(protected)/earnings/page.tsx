@@ -184,15 +184,18 @@ export default function EarningsPage() {
       STREAM_LABEL[i.stream],
       i.name ?? 'Unattributed',
       i.venueName ?? '',
-      i.units,
       i.bookings,
       i.currency,
       (i.netPaise / 100).toFixed(2),
       (i.paidPaise / 100).toFixed(2),
+      i.units,
     ]);
+    // Sales goes LAST, not beside Bookings: partners keep sheets that read this
+    // export by column position, and inserting a column mid-row would shift
+    // Currency and the money columns under their formulas.
     downloadCsv(
       toCsv(
-        ['Type', 'Name', 'Venue', 'Sales', 'Bookings', 'Currency', 'Net payout', 'Paid out'],
+        ['Type', 'Name', 'Venue', 'Bookings', 'Currency', 'Net payout', 'Paid out', 'Sales'],
         rows,
       ),
       `earnings-${dates.from}-to-${dates.to}.csv`,

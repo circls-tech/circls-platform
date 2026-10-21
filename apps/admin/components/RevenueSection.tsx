@@ -91,6 +91,7 @@ function byCurrency(slices: RevenueSlice[]): Map<string, RevenueSlice> {
     at.commissionPaise += s.commissionPaise;
     at.refundsPaise += s.refundsPaise;
     at.bookings += s.bookings;
+    at.units += s.units;
   }
   return out;
 }
@@ -111,7 +112,8 @@ function RevenueCard({
   const totals = [...byCurrency(slices).values()].sort((a, b) =>
     a.currency.localeCompare(b.currency),
   );
-  const bookings = totals.reduce((n, t) => n + t.bookings, 0);
+  // Units, not bookings: an event booking can hold several tickets.
+  const sales = totals.reduce((n, t) => n + t.units, 0);
 
   return (
     <div className="flex h-full flex-col gap-3 rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
@@ -119,7 +121,7 @@ function RevenueCard({
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
         {!loading && (
           <span className="text-xs tabular-nums text-slate-400">
-            {bookings} {bookings === 1 ? 'sale' : 'sales'}
+            {sales} {sales === 1 ? 'sale' : 'sales'}
           </span>
         )}
       </div>

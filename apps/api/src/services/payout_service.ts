@@ -20,6 +20,7 @@ import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
 import { creditableCharge } from './settlement_credit.js';
+import { bookingUnitsSql } from './booking_units.js';
 import { itemKeySql } from './item_key.js';
 import {
   allocatePayoutLines,
@@ -588,14 +589,17 @@ export interface PayoutBreakdownLine {
   advanceRecoupedPaise: number;
   /** gross − refunds − commission + advances − recouped, for this line. */
   netPaise: number;
-  /** Distinct bookings behind the line. */
+  /**
+   * Distinct bookings whose charge settles in THIS payout — the sales it pays
+   * for. A booking whose only money here is a refund or an advance tranche is
+   * on the line (its money is) but not in this count: its sale is counted in
+   * the payout its charge settles in, so each sale is counted exactly once.
+   */
   bookings: number;
   /**
    * What those bookings sold: tickets for an event booking, one for anything
-   * else. Never below `bookings`. It is the count to read beside the money —
-   * an event booking can carry several tickets, so the gross on a line can be
-   * many times its booking count without anything being wrong. A legacy event
-   * booking with no ticket lines counts as one.
+   * else (see bookingUnitsSql). Never below `bookings`. It is the count to read
+   * beside the gross — an event booking can carry several tickets.
    */
   units: number;
 }
@@ -716,6 +720,8 @@ interface AttributedRow {
   refunds: number;
   /** Refunds in the window the reconciler does not deduct — see CREDITABLE_CHARGE. */
   uncredited: number;
+  /** A charge on this booking settles in this payout, making it a sale here. */
+  settled: boolean;
 }
 
 function emptyLine(
@@ -795,7 +801,11 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
                   then coalesce(p.advance_paise, 0) else 0 end as advance_recouped,
              0::bigint as advances,
              0::bigint as refunds,
-             0::bigint as uncredited
+             0::bigint as uncredited,
+             -- The charge itself settles in this payout: the one row that makes
+             -- the booking a sale HERE. Advance and refund rows carry money for
+             -- a sale counted in another payout, so they must not count it again.
+             true      as settled
         from payments p
         join tenants t on t.id = p.tenant_id
        where p.tenant_id = ${tenantId}::uuid
@@ -806,7 +816,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
          and p.settlement_released_at <  ${end}::timestamptz
       union all
       select p.booking_id, 0::bigint, 0::bigint, 0::bigint,
-             coalesce(p.advance_paise, 0) as advances, 0::bigint, 0::bigint
+             coalesce(p.advance_paise, 0) as advances, 0::bigint, 0::bigint, false
         from payments p
        where p.tenant_id = ${tenantId}::uuid
          and p.currency = ${currency}
@@ -816,7 +826,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
          and p.advance_released_at <  ${end}::timestamptz
       union all
       select p.booking_id, 0::bigint, 0::bigint, 0::bigint, 0::bigint,
-             -coalesce(p.settle_base_paise, p.amount_paise) as refunds, 0::bigint
+             -coalesce(p.settle_base_paise, p.amount_paise) as refunds, 0::bigint, false
         from payments p
        where p.tenant_id = ${tenantId}::uuid
          and p.currency = ${currency}
@@ -830,7 +840,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       -- partner. Carried as a separate amount so the line still appears and
       -- says why, without touching any total.
       select p.booking_id, 0::bigint, 0::bigint, 0::bigint, 0::bigint, 0::bigint,
-             -coalesce(p.settle_base_paise, p.amount_paise) as uncredited
+             -coalesce(p.settle_base_paise, p.amount_paise) as uncredited, false
         from payments p
        where p.tenant_id = ${tenantId}::uuid
          and p.currency = ${currency}
@@ -856,21 +866,17 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
            b.customer_user_id,
            coalesce(u.display_name, b.customer_name)             as consumer_name,
            coalesce(u.phone_e164, u.email, b.customer_contact)   as consumer_contact,
-           -- Tickets on an event booking, one for anything else. A scalar per
-           -- booking (the group), so a booking with two charges in the window
-           -- cannot count its tickets twice.
-           case when b.item_type = 'event'
-                then coalesce((select sum(t.quantity)::int
-                                 from event_booking_tickets t
-                                where t.booking_id = b.id), 1)
-                when b.id is null then 0
-                else 1 end                                       as units,
+           -- A scalar per booking (the group), so a booking with two charges in
+           -- the window cannot count its tickets twice. Read only when the row
+           -- has a booking; see add().
+           ${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}        as units,
            sum(c.gross)::bigint            as gross,
            sum(c.commission)::bigint       as commission,
            sum(c.advances)::bigint         as advances,
            sum(c.advance_recouped)::bigint as advance_recouped,
            sum(c.refunds)::bigint          as refunds,
-           sum(c.uncredited)::bigint       as uncredited
+           sum(c.uncredited)::bigint       as uncredited,
+           bool_or(c.settled)              as settled
       from contrib c
       left join bookings b   on b.id = c.booking_id
       left join venues v     on v.id = b.venue_id
@@ -900,6 +906,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     advanceRecouped: Number(r['advance_recouped'] ?? 0),
     refunds: Number(r['refunds'] ?? 0),
     uncredited: Number(r['uncredited'] ?? 0),
+    settled: r['settled'] === true,
   }));
 
   const byItem = new Map<string, PayoutBreakdownLine>();
@@ -917,7 +924,11 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       line.commissionPaise +
       line.advancesPaise -
       line.advanceRecoupedPaise;
-    if (r.bookingId) {
+    // A sale counts once, in the payout its charge settles in. A row that only
+    // carries a refund (often clawing back a charge paid out weeks ago) or an
+    // advance tranche brings money for a sale counted elsewhere; counting it
+    // here put "5 sales" beside the gross for 3.
+    if (r.bookingId && r.settled) {
       line.bookings += 1;
       line.units += r.units;
     }

@@ -417,4 +417,60 @@ describe.skipIf(!runIntegration)('revenue_service', () => {
       });
     });
   });
+
+  // The admin tenant tabs and dashboard cards print this as "Sales" beside the
+  // money. The prod report: 14 event bookings holding 15 tickets read as
+  // "14 sales" beside ₹1,800. Units must count tickets, once per booking.
+  describe('units sold', () => {
+    it('counts event tickets once per booking, attributed or not', async () => {
+      const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+      const [t] = (await db.execute<Record<string, unknown>>(sql`
+        insert into tenants (name, slug, commission_bps)
+        values (${`UnitCo ${stamp}`}, ${`unitco-${stamp}`}, 1000) returning id
+      `)) as unknown as Record<string, unknown>[];
+      const tid = t!['id'] as string;
+      const [ev] = (await db.execute<Record<string, unknown>>(sql`
+        insert into events (tenant_id, name, starts_at, ends_at)
+        values (${tid}::uuid, 'Unit Night', ${AT(41)}::timestamptz, ${AT(42)}::timestamptz)
+        returning id
+      `)) as unknown as Record<string, unknown>[];
+      const evId = ev!['id'] as string;
+      const [tier] = (await db.execute<Record<string, unknown>>(sql`
+        insert into event_ticket_tiers (event_id, tenant_id, name, price_paise, sort_order)
+        values (${evId}::uuid, ${tid}::uuid, 'Entry', 12000, 0) returning id
+      `)) as unknown as Record<string, unknown>[];
+      const tickets = (booking: string, quantity: number) =>
+        db.execute(sql`
+          insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+          values (${booking}::uuid, ${tier!['id'] as string}::uuid, ${quantity}, 12000)
+        `);
+      const charge = (booking: string, amount: number) =>
+        insertPayment({ booking, tenant: tid, kind: 'charge', amount, base: amount, commission: amount / 10, at: AT(40) });
+
+      // Two tickets in one booking.
+      const pair = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, at: AT(40) });
+      await tickets(pair, 2);
+      await charge(pair, 24000);
+      // One ticket, charged twice (a retried payment): still one ticket.
+      const retried = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, at: AT(40) });
+      await tickets(retried, 1);
+      await charge(retried, 12000);
+      await charge(retried, 12000);
+      // Three tickets on a booking with no event recorded: unattributed.
+      const orphan = await insertBooking({ tenant: tid, itemType: 'event', itemData: {}, at: AT(40) });
+      await tickets(orphan, 3);
+      await charge(orphan, 36000);
+
+      const { items, unattributed } = await getTenantItemRevenue(tid, 'event', AT(40), AT(41));
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ itemId: evId, bookings: 2, units: 3 });
+      expect(unattributed).toHaveLength(1);
+      expect(unattributed[0]).toMatchObject({ bookings: 1, units: 3 });
+
+      // The platform slice for that day is the same bookings, summed.
+      const day = await getPlatformRevenue(AT(40), AT(41));
+      const events = day.find((s) => s.itemType === 'event' && s.currency === 'INR');
+      expect(events).toMatchObject({ bookings: 3, units: 6 });
+    });
+  });
 });

@@ -69,6 +69,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { logger } from '../lib/logger.js';
+import { bookingUnitsSql } from './booking_units.js';
 import { itemKeySql } from './item_key.js';
 import { moneyRows } from './revenue_service.js';
 
@@ -109,6 +110,9 @@ export interface EarningsTotal {
    * ₹1,800 — and a page showing "14 sales" next to it reads as wrong. An
    * event booking with no ticket lines (sold before tiers existed) counts as
    * one.
+   *
+   * A refund lowers the money, not this count, exactly as it leaves
+   * `bookings` alone: refunds are amounts, not tickets (see bookingUnitsSql).
    */
   units: number;
 }
@@ -224,11 +228,7 @@ export async function getTenantEarnings(
       select s.item_type,
              s.item_id,
              s.currency,
-             sum(case when s.item_type = 'event'
-                      then coalesce((select sum(t.quantity)
-                                       from event_booking_tickets t
-                                      where t.booking_id = s.booking_id), 1)
-                      else 1 end)::int                                as units
+             sum(${bookingUnitsSql(sql`s.booking_id`, sql`s.item_type`)})::int as units
         from sold s
        group by 1, 2, 3
     )
