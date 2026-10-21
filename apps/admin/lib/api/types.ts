@@ -878,6 +878,11 @@ export interface RevenueSlice {
   commissionPaise: number;
   refundsPaise: number;
   bookings: number;
+  /**
+   * What those bookings sold: tickets for events, one per booking otherwise.
+   * Never below `bookings`. The "sales" figure to show beside the money.
+   */
+  units: number;
 }
 
 export interface PlatformRevenue {

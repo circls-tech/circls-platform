@@ -360,25 +360,36 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     const legacy = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, venue: vid, at: AT(26) });
     await insertPayment({ booking: legacy, tenant: tid, kind: 'charge', amount: 12000, base: 12000, commission: 1200, at: AT(26) });
 
+    // …three tickets on a booking with no event recorded, which lands on the
+    // unattributed row (a null item id) and must still carry its units…
+    const orphan = await insertBooking({ tenant: tid, itemType: 'event', itemData: {}, venue: vid, at: AT(26) });
+    await db.execute(sql`
+      insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      values (${orphan}::uuid, ${tierId}::uuid, 3, 12000)
+    `);
+    await insertPayment({ booking: orphan, tenant: tid, kind: 'charge', amount: 36000, base: 36000, commission: 3600, at: AT(26) });
+
     // …and a court, which is one unit however many slots it spans.
     const court = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(26) });
     await insertPayment({ booking: court, tenant: tid, kind: 'charge', amount: 50000, base: 45000, commission: 4500, at: AT(26) });
 
     const e = await getTenantEarnings(tid, FROM, TO);
 
-    const events = e.byStream.find((s) => s.stream === 'event' && s.currency === 'INR');
-    expect(events?.bookings).toBe(3);
+    const quiz = e.items.find((i) => i.stream === 'event' && i.id === evId);
     // 2 + 1 + 1 (the legacy booking counts as one ticket).
-    expect(events?.units).toBe(4);
+    expect(quiz).toMatchObject({ bookings: 3, units: 4 });
 
-    const quiz = e.items.find((i) => i.stream === 'event');
-    expect(quiz).toMatchObject({ id: evId, bookings: 3, units: 4 });
+    const orphanRow = e.items.find((i) => i.stream === 'event' && i.id === null);
+    expect(orphanRow).toMatchObject({ bookings: 1, units: 3 });
+
+    const events = e.byStream.find((s) => s.stream === 'event' && s.currency === 'INR');
+    expect(events).toMatchObject({ bookings: 4, units: 7 });
 
     const venue = e.byStream.find((s) => s.stream === 'venue' && s.currency === 'INR');
     expect(venue).toMatchObject({ bookings: 1, units: 1 });
 
     const total = e.total.find((c) => c.currency === 'INR');
-    expect(total).toMatchObject({ bookings: 4, units: 5 });
+    expect(total).toMatchObject({ bookings: 5, units: 8 });
   });
   /**
    * `paidPaise` answers "how much of this has actually reached me?". A payout

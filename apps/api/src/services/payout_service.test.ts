@@ -630,11 +630,18 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
       });
       expect(line('Pair Buyer')).toMatchObject({ detail: '2× Gold', grossPaise: 280000 });
 
-      // The event line counts tickets beside its bookings: every event booking
-      // here is one ticket except the pair, so units run one ahead. A
+      // The event line counts the sales this payout pays for: Yugal, Sharvaree,
+      // the pair and the twice-charged booking, whose charges settle here.
+      // Himanshu's line is a refund of a sale paid out last week and the late
+      // UPI payer's charge never reached the partner, so neither is a sale
+      // here. Tickets run one ahead of bookings because of the pair. A
       // membership is one unit per booking.
       const eventLine = bd.byItem.find((l) => l.kind === 'event')!;
-      expect(eventLine.units).toBe(eventLine.bookings + 1);
+      expect(eventLine).toMatchObject({ bookings: 4, units: 5 });
+      // The refund-only customer still has a line (the money is real) but no
+      // sale on it.
+      const refundOnly = bd.byConsumer.find((l) => l.label === 'Himanshu Pazare')!;
+      expect(refundOnly).toMatchObject({ bookings: 0, units: 0, refundsPaise: 61417 });
       expect(bd.byItem.find((l) => l.kind === 'membership')).toMatchObject({
         bookings: 1,
         units: 1,

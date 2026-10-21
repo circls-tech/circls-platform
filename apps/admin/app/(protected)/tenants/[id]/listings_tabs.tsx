@@ -179,10 +179,21 @@ function SalesCells({ money }: { money: ItemRevenue[] | undefined }) {
     );
   }
   const sorted = [...money].sort((a, b) => a.currency.localeCompare(b.currency));
-  const sales = sorted.reduce((n, m) => n + m.bookings, 0);
+  // Units, not bookings: an event booking can hold several tickets, and a
+  // booking count beside ticket money reads as a mismatch. The booking count
+  // sits underneath whenever the two differ.
+  const sales = sorted.reduce((n, m) => n + m.units, 0);
+  const bookings = sorted.reduce((n, m) => n + m.bookings, 0);
   return (
     <>
-      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">{sales}</td>
+      <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-600">
+        {sales}
+        {sales !== bookings && (
+          <span className="block text-[10px] text-slate-400">
+            {bookings} booking{bookings === 1 ? '' : 's'}
+          </span>
+        )}
+      </td>
       <td className="px-4 py-2.5 text-right text-xs tabular-nums text-slate-800">
         {sorted.map((m) => (
           <span key={m.currency} className="block first:mt-0 mt-1">
@@ -228,7 +239,7 @@ function UnattributedNote({ slices, noun }: { slices: RevenueSlice[]; noun: stri
     <p className="text-xs text-amber-700">
       Not in the rows above:{' '}
       {real
-        .map((s) => `${formatTotal(s.grossPaise, s.currency as CurrencyCode)} from ${s.bookings} ${s.bookings === 1 ? 'sale' : 'sales'}`)
+        .map((s) => `${formatTotal(s.grossPaise, s.currency as CurrencyCode)} from ${s.units} ${s.units === 1 ? 'sale' : 'sales'}`)
         .join(', ')}{' '}
       with no {noun} recorded. Counted in the dashboard totals.
     </p>
