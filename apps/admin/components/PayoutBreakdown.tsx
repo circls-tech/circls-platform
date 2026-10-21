@@ -38,7 +38,7 @@ function LineTable({
         <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2 font-medium">{showContact ? 'Customer' : 'What'}</th>
-            <th className="px-4 py-2 text-right font-medium">Bookings</th>
+            <th className="px-4 py-2 text-right font-medium">Sales</th>
             <th className="px-4 py-2 text-right font-medium">Gross</th>
             <th className="px-4 py-2 text-right font-medium">Refunds</th>
             <th className="px-4 py-2 text-right font-medium">Commission</th>
@@ -56,7 +56,18 @@ function LineTable({
                     : [KIND_LABEL[l.kind] ?? l.kind, l.venueName].filter(Boolean).join(' · ')}
                 </span>
               </td>
-              <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{l.bookings}</td>
+              {/* Tickets for event bookings, one per booking otherwise — the
+                  count the gross is made of. The booking count sits
+                  underneath when it differs, so a line is never read as
+                  "14 sales" beside the takings from 15 tickets. */}
+              <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                {l.units}
+                {l.units !== l.bookings && (
+                  <span className="block text-xs text-slate-400">
+                    {l.bookings} booking{l.bookings === 1 ? '' : 's'}
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                 {fmtMinor(l.grossPaise)}
               </td>

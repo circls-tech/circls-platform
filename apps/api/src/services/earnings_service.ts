@@ -100,6 +100,17 @@ export interface EarningsTotal {
   paidPaise: number;
   /** Distinct bookings that took money in the window. */
   bookings: number;
+  /**
+   * What was sold, counted the way a partner counts it: tickets for an event,
+   * one per booking for a membership or a venue slot. Never below `bookings`.
+   *
+   * This is the figure to put beside the money. An event booking can carry
+   * several tickets, so 14 bookings at ₹120 a ticket can honestly total
+   * ₹1,800 — and a page showing "14 sales" next to it reads as wrong. An
+   * event booking with no ticket lines (sold before tiers existed) counts as
+   * one.
+   */
+  units: number;
 }
 
 /** What was sold. 'venue' covers court/arena slot bookings. */
@@ -195,6 +206,31 @@ export async function getTenantEarnings(
         from money m
        where m.payout_basis
        group by 1, 2, 3
+    ),
+    -- Units sold per item: the tickets on an event booking, one for anything
+    -- else. Summed over DISTINCT charge bookings rather than over money rows,
+    -- because a booking that carries two charges (a retried payment) appears
+    -- twice there and would count its tickets twice. The same bookings the
+    -- bookings count above picks, so the two never disagree about what sold.
+    sold as (
+      select distinct m.item_type         as item_type,
+                      ${itemKeySql('m')}  as item_id,
+                      m.currency          as currency,
+                      m.booking_id        as booking_id
+        from money m
+       where m.kind = 'charge' and m.payout_basis
+    ),
+    units as (
+      select s.item_type,
+             s.item_id,
+             s.currency,
+             sum(case when s.item_type = 'event'
+                      then coalesce((select sum(t.quantity)
+                                       from event_booking_tickets t
+                                      where t.booking_id = s.booking_id), 1)
+                      else 1 end)::int                                as units
+        from sold s
+       group by 1, 2, 3
     )
     select a.item_type,
            a.item_id,
@@ -202,9 +238,13 @@ export async function getTenantEarnings(
            a.net,
            a.paid,
            a.bookings,
+           coalesce(u.units, 0)                                       as units,
            coalesce(ev.name, mem.name, v.name)                        as item_name,
            coalesce(evv.name, memv.name)                              as venue_name
       from agg a
+      left join units u on u.item_type = a.item_type
+                       and u.item_id is not distinct from a.item_id
+                       and u.currency = a.currency
       left join events      ev   on a.item_type = 'event'      and ev.id  = a.item_id
       left join memberships mem  on a.item_type = 'membership'  and mem.id = a.item_id
       left join venues      v    on a.item_type = 'slot'        and v.id   = a.item_id
@@ -239,6 +279,7 @@ export async function getTenantEarnings(
       netPaise: Number(r['net'] ?? 0),
       paidPaise: Number(r['paid'] ?? 0),
       bookings: Number(r['bookings'] ?? 0),
+      units: Number(r['units'] ?? 0),
     });
   }
 
@@ -287,12 +328,13 @@ function totalsByCurrency(items: EarningsItem[]): EarningsTotal[] {
   for (const item of items) {
     let row = byCurrency.get(item.currency);
     if (!row) {
-      row = { currency: item.currency, netPaise: 0, paidPaise: 0, bookings: 0 };
+      row = { currency: item.currency, netPaise: 0, paidPaise: 0, bookings: 0, units: 0 };
       byCurrency.set(item.currency, row);
     }
     row.netPaise += item.netPaise;
     row.paidPaise += item.paidPaise;
     row.bookings += item.bookings;
+    row.units += item.units;
   }
   return [...byCurrency.values()].sort((a, b) => a.currency.localeCompare(b.currency));
 }
@@ -303,12 +345,20 @@ function totalsByStream(items: EarningsItem[]): EarningsStreamTotal[] {
     const key = `${item.stream}|${item.currency}`;
     let row = byKey.get(key);
     if (!row) {
-      row = { stream: item.stream, currency: item.currency, netPaise: 0, paidPaise: 0, bookings: 0 };
+      row = {
+        stream: item.stream,
+        currency: item.currency,
+        netPaise: 0,
+        paidPaise: 0,
+        bookings: 0,
+        units: 0,
+      };
       byKey.set(key, row);
     }
     row.netPaise += item.netPaise;
     row.paidPaise += item.paidPaise;
     row.bookings += item.bookings;
+    row.units += item.units;
   }
   return [...byKey.values()].sort(
     (a, b) => a.stream.localeCompare(b.stream) || a.currency.localeCompare(b.currency),

@@ -590,6 +590,14 @@ export interface PayoutBreakdownLine {
   netPaise: number;
   /** Distinct bookings behind the line. */
   bookings: number;
+  /**
+   * What those bookings sold: tickets for an event booking, one for anything
+   * else. Never below `bookings`. It is the count to read beside the money —
+   * an event booking can carry several tickets, so the gross on a line can be
+   * many times its booking count without anything being wrong. A legacy event
+   * booking with no ticket lines counts as one.
+   */
+  units: number;
 }
 
 export interface PayoutBreakdown {
@@ -699,6 +707,8 @@ interface AttributedRow {
   consumerId: string | null;
   consumerName: string | null;
   consumerContact: string | null;
+  /** Tickets on an event booking, one otherwise; 0 when there is no booking. */
+  units: number;
   gross: number;
   commission: number;
   advances: number;
@@ -728,6 +738,7 @@ function emptyLine(
     advanceRecoupedPaise: 0,
     netPaise: 0,
     bookings: 0,
+    units: 0,
   };
 }
 
@@ -845,6 +856,15 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
            b.customer_user_id,
            coalesce(u.display_name, b.customer_name)             as consumer_name,
            coalesce(u.phone_e164, u.email, b.customer_contact)   as consumer_contact,
+           -- Tickets on an event booking, one for anything else. A scalar per
+           -- booking (the group), so a booking with two charges in the window
+           -- cannot count its tickets twice.
+           case when b.item_type = 'event'
+                then coalesce((select sum(t.quantity)::int
+                                 from event_booking_tickets t
+                                where t.booking_id = b.id), 1)
+                when b.id is null then 0
+                else 1 end                                       as units,
            sum(c.gross)::bigint            as gross,
            sum(c.commission)::bigint       as commission,
            sum(c.advances)::bigint         as advances,
@@ -859,7 +879,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
                            and ev.id = (b.item_data->>'eventId')::uuid
       left join memberships mem on b.item_type = 'membership'
                            and mem.id = (b.item_data->>'membershipId')::uuid
-     group by c.booking_id, b.item_type, b.item_data, b.venue_id, ev.name, mem.name, v.name,
+     group by c.booking_id, b.id, b.item_type, b.item_data, b.venue_id, ev.name, mem.name, v.name,
               b.customer_user_id, u.display_name, b.customer_name,
               u.phone_e164, u.email, b.customer_contact
   `);
@@ -873,6 +893,7 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
     consumerId: (r['customer_user_id'] as string | null) ?? null,
     consumerName: (r['consumer_name'] as string | null) ?? null,
     consumerContact: (r['consumer_contact'] as string | null) ?? null,
+    units: Number(r['units'] ?? 0),
     gross: Number(r['gross'] ?? 0),
     commission: Number(r['commission'] ?? 0),
     advances: Number(r['advances'] ?? 0),
@@ -896,7 +917,10 @@ export async function getPayoutBreakdown(payoutId: string): Promise<PayoutBreakd
       line.commissionPaise +
       line.advancesPaise -
       line.advanceRecoupedPaise;
-    if (r.bookingId) line.bookings += 1;
+    if (r.bookingId) {
+      line.bookings += 1;
+      line.units += r.units;
+    }
   }
 
   for (const r of rows) {

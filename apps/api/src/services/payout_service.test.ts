@@ -532,6 +532,14 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
       `);
       await charge(sharvaree, 140000, 140000, RELEASED_IN_WINDOW);
 
+      // Two tickets in one booking: one booking, two units on the event line.
+      const pair = await booking('Pair Buyer', 'event', { eventId: ev!.id });
+      await db.execute(sql`
+        insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+        values (${pair}::uuid, ${gold!.id}::uuid, 2, 140000)
+      `);
+      await charge(pair, 280000, 280000, RELEASED_IN_WINDOW);
+
       // And a membership, whose tier comes from the member row.
       const [plan] = (await db.execute(sql`
         insert into memberships (tenant_id, name, duration_days) values (${tid}::uuid, 'Vine Club', 30)
@@ -620,6 +628,17 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
         itemName: 'Vine Club',
         detail: 'Monthly',
       });
+      expect(line('Pair Buyer')).toMatchObject({ detail: '2× Gold', grossPaise: 280000 });
+
+      // The event line counts tickets beside its bookings: every event booking
+      // here is one ticket except the pair, so units run one ahead. A
+      // membership is one unit per booking.
+      const eventLine = bd.byItem.find((l) => l.kind === 'event')!;
+      expect(eventLine.units).toBe(eventLine.bookings + 1);
+      expect(bd.byItem.find((l) => l.kind === 'membership')).toMatchObject({
+        bookings: 1,
+        units: 1,
+      });
 
       // The partner never had this sale, so its refund is not deducted — it is
       // shown for the record, named for what it is, with no fee against it.
@@ -655,7 +674,7 @@ describe.skipIf(!runIntegration)('reconcileWeeklyPayouts integration', () => {
 
       // Still reconciles to the penny, and one line per booking.
       expect(bd.unattributedPaise).toBe(0);
-      expect(bd.byBooking).toHaveLength(6);
+      expect(bd.byBooking).toHaveLength(7);
       expect(bd.byBooking.reduce((sum, l) => sum + l.netPaise, 0)).toBe(bd.amountPaise);
 
       // A payout reconciled before this fix deducted that refund. Its stored

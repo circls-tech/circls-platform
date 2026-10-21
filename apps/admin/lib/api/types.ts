@@ -220,6 +220,8 @@ export interface AdminPayoutBreakdownLine {
   advanceRecoupedPaise: number;
   netPaise: number;
   bookings: number;
+  /** Tickets for event bookings, one per booking otherwise. Never below `bookings`. */
+  units: number;
 }
 
 export interface AdminPayoutBreakdown {
@@ -921,6 +923,11 @@ export interface EarningsTotal {
   /** The slice of `netPaise` already transferred on a completed payout. */
   paidPaise: number;
   bookings: number;
+  /**
+   * What was sold: tickets for events, one per booking otherwise. Never below
+   * `bookings`. The count to show beside the money.
+   */
+  units: number;
 }
 
 export interface EarningsStreamTotal extends EarningsTotal {

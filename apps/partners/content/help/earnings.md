@@ -26,9 +26,9 @@ Days are cut at midnight in the timezone shown under the buttons — the one pic
 
 Underneath it, the same figure split three ways:
 
-- **Events** — ticket and registration sales.
-- **Memberships** — plan sign-ups and renewals.
-- **Venues** — court and arena bookings.
+- **Events** — ticket sales, counted **per ticket**. A customer who books three tickets in one go is three sales here, which is what keeps the count in step with the money beside it. Whenever that count differs from the number of bookings, the bookings figure is shown alongside, so it still matches the length of the event's registrations list.
+- **Memberships** — plan sign-ups and renewals, one per sign-up.
+- **Venues** — court and arena bookings, one per booking.
 
 Then **every event, plan and venue** listed individually with its own net figure, so you can see where the money came from. Use the **All / Events / Memberships / Venues** buttons to narrow the list, and **Export CSV** to take it into a spreadsheet.
 

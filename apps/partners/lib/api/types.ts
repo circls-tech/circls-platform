@@ -461,6 +461,12 @@ export interface EarningsTotal {
    */
   paidPaise: number;
   bookings: number;
+  /**
+   * What was sold: tickets for events, one per booking otherwise. Never below
+   * `bookings`. This is the count to show beside the money — an event booking
+   * can hold several tickets.
+   */
+  units: number;
 }
 
 export interface EarningsStreamTotal extends EarningsTotal {
