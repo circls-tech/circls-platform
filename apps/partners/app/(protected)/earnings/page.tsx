@@ -89,8 +89,12 @@ function presetDates(key: Exclude<RangeKey, 'custom'>, today: string): { from: s
 
 // ── Streams ───────────────────────────────────────────────────────────────────
 
+// The unit is what the money is counted in. For events that is TICKETS, not
+// bookings: one booking can hold several, so "14 registrations" beside the
+// takings from 15 tickets reads as a mismatch. Bookings are shown alongside
+// whenever the two differ.
 const STREAMS: { key: EarningsStream; label: string; unit: string; petal: string }[] = [
-  { key: 'event', label: 'Events', unit: 'registrations', petal: '#9CE0D4' },
+  { key: 'event', label: 'Events', unit: 'tickets', petal: '#9CE0D4' },
   { key: 'membership', label: 'Memberships', unit: 'sign-ups', petal: '#F9B4D4' },
   { key: 'venue', label: 'Venues', unit: 'bookings', petal: '#BCE3A0' },
 ];
@@ -110,9 +114,20 @@ function money(paise: number, currency: string): string {
   return formatMoney(paise, asCurrencyCode(currency), { decimals: 2 });
 }
 
-/** "3 registrations" / "1 registration". */
+/** "3 tickets" / "1 ticket". */
 function countLabel(n: number, unit: string): string {
   return `${n} ${n === 1 ? unit.replace(/s$/, '') : unit}`;
+}
+
+/**
+ * "15 tickets · 14 bookings", or just "14 bookings" when every booking was
+ * one unit. The bookings figure only earns its place when it differs — then
+ * it explains why the count beside the money is not the length of the
+ * registrations list.
+ */
+function unitsLabel(row: { units: number; bookings: number }, unit: string): string {
+  const units = countLabel(row.units, unit);
+  return row.units === row.bookings ? units : `${units} · ${countLabel(row.bookings, 'bookings')}`;
 }
 
 /** The currencies present in a response, in a stable order. */
@@ -169,6 +184,7 @@ export default function EarningsPage() {
       STREAM_LABEL[i.stream],
       i.name ?? 'Unattributed',
       i.venueName ?? '',
+      i.units,
       i.bookings,
       i.currency,
       (i.netPaise / 100).toFixed(2),
@@ -176,7 +192,7 @@ export default function EarningsPage() {
     ]);
     downloadCsv(
       toCsv(
-        ['Type', 'Name', 'Venue', 'Bookings', 'Currency', 'Net payout', 'Paid out'],
+        ['Type', 'Name', 'Venue', 'Sales', 'Bookings', 'Currency', 'Net payout', 'Paid out'],
         rows,
       ),
       `earnings-${dates.from}-to-${dates.to}.csv`,
@@ -390,7 +406,9 @@ function CurrencyBlock({ currency, data }: { currency: string; data: TenantEarni
           </div>
           {total && total.bookings > 0 && (
             <p className="text-sm text-slate-500">
-              from {countLabel(total.bookings, 'sales')} through Circls
+              from {countLabel(total.units, 'sales')}
+              {total.units !== total.bookings && ` across ${countLabel(total.bookings, 'bookings')}`}{' '}
+              through Circls
             </p>
           )}
         </div>
@@ -444,7 +462,9 @@ function CurrencyBlock({ currency, data }: { currency: string; data: TenantEarni
               <p className="mt-1 font-[family-name:var(--font-display)] text-xl font-extrabold text-[#17151D]">
                 {money(row?.netPaise ?? 0, currency)}
               </p>
-              <p className="mt-0.5 text-xs text-slate-500">{countLabel(row?.bookings ?? 0, s.unit)}</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {unitsLabel(row ?? { units: 0, bookings: 0 }, s.unit)}
+              </p>
             </Card>
           );
         })}
@@ -498,7 +518,18 @@ function ItemTable({ items }: { items: EarningsItem[] }) {
                 {i.venueName && <span className="block text-xs text-slate-500">{i.venueName}</span>}
               </td>
               <td className="px-2 py-2 text-slate-600">{STREAM_LABEL[i.stream]}</td>
-              <td className="px-2 py-2 text-right text-slate-600">{i.bookings}</td>
+              {/* Tickets for an event, bookings otherwise — the count the money
+                  is made of. When an event's bookings held more than one
+                  ticket, the booking count sits underneath so the row still
+                  reconciles with the registrations list. */}
+              <td className="px-2 py-2 text-right text-slate-600">
+                {i.units}
+                {i.units !== i.bookings && (
+                  <span className="block text-xs text-slate-400">
+                    {countLabel(i.bookings, 'bookings')}
+                  </span>
+                )}
+              </td>
               <td
                 className={`px-2 py-2 text-right font-medium ${
                   i.netPaise < 0 ? 'text-amber-700' : 'text-slate-800'

@@ -311,6 +311,75 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     expect(e.items).toHaveLength(1);
     expect(e.items[0]?.bookings).toBe(1);
   });
+
+  // The prod report this pins: 14 event bookings holding 15 tickets at ₹120
+  // read as "14 sales" beside ₹1,800, which looks wrong at a glance. The count
+  // beside the money has to be tickets, with bookings kept alongside.
+  it('counts event tickets as units, and one unit for anything else', async () => {
+    const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const [t] = (await db.execute<Record<string, unknown>>(sql`
+      insert into tenants (name, slug, commission_bps)
+      values (${`TicketCo ${stamp}`}, ${`ticketco-${stamp}`}, 1000) returning id
+    `)) as unknown as Record<string, unknown>[];
+    const tid = t!['id'] as string;
+    const [v] = (await db.execute<Record<string, unknown>>(sql`
+      insert into venues (tenant_id, name) values (${tid}::uuid, 'Ticket Venue') returning id
+    `)) as unknown as Record<string, unknown>[];
+    const vid = v!['id'] as string;
+    const [ev] = (await db.execute<Record<string, unknown>>(sql`
+      insert into events (tenant_id, venue_id, name, starts_at, ends_at)
+      values (${tid}::uuid, ${vid}::uuid, 'Quiz Night', ${AT(30)}::timestamptz, ${AT(31)}::timestamptz)
+      returning id
+    `)) as unknown as Record<string, unknown>[];
+    const evId = ev!['id'] as string;
+    const [tier] = (await db.execute<Record<string, unknown>>(sql`
+      insert into event_ticket_tiers (event_id, tenant_id, name, price_paise, sort_order)
+      values (${evId}::uuid, ${tid}::uuid, 'Entry', 12000, 0) returning id
+    `)) as unknown as Record<string, unknown>[];
+    const tierId = tier!['id'] as string;
+
+    // Two tickets in one booking…
+    const pair = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, venue: vid, at: AT(25) });
+    await db.execute(sql`
+      insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      values (${pair}::uuid, ${tierId}::uuid, 2, 12000)
+    `);
+    await insertPayment({ booking: pair, tenant: tid, kind: 'charge', amount: 24000, base: 24000, commission: 2400, at: AT(25) });
+
+    // …one ticket that was charged twice (a retried payment), which must not
+    // count its ticket twice…
+    const retried = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, venue: vid, at: AT(25) });
+    await db.execute(sql`
+      insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      values (${retried}::uuid, ${tierId}::uuid, 1, 12000)
+    `);
+    await insertPayment({ booking: retried, tenant: tid, kind: 'charge', amount: 12000, base: 12000, commission: 1200, at: AT(25) });
+    await insertPayment({ booking: retried, tenant: tid, kind: 'charge', amount: 12000, base: 12000, commission: 1200, at: AT(25) });
+
+    // …a booking from before ticket tiers existed, with no ticket lines at all…
+    const legacy = await insertBooking({ tenant: tid, itemType: 'event', itemData: { eventId: evId }, venue: vid, at: AT(26) });
+    await insertPayment({ booking: legacy, tenant: tid, kind: 'charge', amount: 12000, base: 12000, commission: 1200, at: AT(26) });
+
+    // …and a court, which is one unit however many slots it spans.
+    const court = await insertBooking({ tenant: tid, itemType: 'slot', venue: vid, at: AT(26) });
+    await insertPayment({ booking: court, tenant: tid, kind: 'charge', amount: 50000, base: 45000, commission: 4500, at: AT(26) });
+
+    const e = await getTenantEarnings(tid, FROM, TO);
+
+    const events = e.byStream.find((s) => s.stream === 'event' && s.currency === 'INR');
+    expect(events?.bookings).toBe(3);
+    // 2 + 1 + 1 (the legacy booking counts as one ticket).
+    expect(events?.units).toBe(4);
+
+    const quiz = e.items.find((i) => i.stream === 'event');
+    expect(quiz).toMatchObject({ id: evId, bookings: 3, units: 4 });
+
+    const venue = e.byStream.find((s) => s.stream === 'venue' && s.currency === 'INR');
+    expect(venue).toMatchObject({ bookings: 1, units: 1 });
+
+    const total = e.total.find((c) => c.currency === 'INR');
+    expect(total).toMatchObject({ bookings: 4, units: 5 });
+  });
   /**
    * `paidPaise` answers "how much of this has actually reached me?". A payout
    * stores no per-payment breakdown, so the figure is re-derived from the

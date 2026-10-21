@@ -87,8 +87,10 @@ function presetDates(key: Exclude<RangeKey, 'custom'>, today: string): { from: s
 
 // ── Streams ──────────────────────────────────────────────────────────────────
 
+// Events are counted in TICKETS, as on the partner's page: one booking can
+// hold several, and a booking count beside ticket money reads as a mismatch.
 const STREAMS: { key: EarningsStream; label: string; unit: string }[] = [
-  { key: 'event', label: 'Events', unit: 'registrations' },
+  { key: 'event', label: 'Events', unit: 'tickets' },
   { key: 'membership', label: 'Memberships', unit: 'sign-ups' },
   { key: 'venue', label: 'Venues', unit: 'bookings' },
 ];
@@ -106,6 +108,12 @@ function money(minor: number, currency: string): string {
 
 function countLabel(n: number, unit: string): string {
   return `${n} ${n === 1 ? unit.replace(/s$/, '') : unit}`;
+}
+
+/** "15 tickets · 14 bookings", or just the units when every booking was one. */
+function unitsLabel(row: { units: number; bookings: number }, unit: string): string {
+  const units = countLabel(row.units, unit);
+  return row.units === row.bookings ? units : `${units} · ${countLabel(row.bookings, 'bookings')}`;
 }
 
 /** The currencies present in a response, in a stable order. */
@@ -237,7 +245,7 @@ function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: stri
               <SummaryCard
                 label="Net payout"
                 value={money(total?.netPaise ?? 0, currency)}
-                sub={countLabel(total?.bookings ?? 0, 'sales')}
+                sub={unitsLabel(total ?? { units: 0, bookings: 0 }, 'sales')}
                 emphasis
               />
               {/* Paid can exceed net when a refund was raised after these
@@ -265,7 +273,7 @@ function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: stri
                     key={s.key}
                     label={s.label}
                     value={money(row.netPaise, currency)}
-                    sub={countLabel(row.bookings, s.unit)}
+                    sub={unitsLabel(row, s.unit)}
                   />
                 );
               })}
@@ -455,7 +463,16 @@ function ItemTable({
                     )}
                   </td>
                   <td className="px-2 py-2 text-slate-600">{STREAM_LABEL[i.stream]}</td>
-                  <td className="px-2 py-2 text-right text-slate-600">{i.bookings}</td>
+                  {/* Tickets for an event, bookings otherwise; the booking
+                      count sits underneath when the two differ. */}
+                  <td className="px-2 py-2 text-right text-slate-600">
+                    {i.units}
+                    {i.units !== i.bookings && (
+                      <span className="block text-xs text-slate-400">
+                        {countLabel(i.bookings, 'bookings')}
+                      </span>
+                    )}
+                  </td>
                   <td
                     className={`px-2 py-2 text-right font-medium ${
                       i.netPaise < 0 ? 'text-amber-700' : 'text-slate-800'
