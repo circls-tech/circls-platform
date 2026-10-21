@@ -19,7 +19,7 @@ Go to **Coupons** in the sidebar and click **Create coupon**, then set:
 
 A new coupon is **active** immediately (subject to its validity window).
 
-If you leave the form before creating the coupon — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so; **Start over** on the note clears it. The copy is only on this browser and device, lasts a week, and is dropped when you create the coupon, press **Cancel** or sign out.
+If you leave the form before creating the coupon — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so; **Start over** on the note clears it, after asking. A venue, event, plan or arena picked then and removed since is cleared, so pick again. The copy is only on this browser and device, lasts a week from your last change, and is dropped when you create the coupon, press **Cancel** or sign out.
 
 ## How the discount is applied
 

@@ -80,10 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await fbSendReset(auth, email.trim());
       },
       async signOut() {
+        await fbSignOut(auth);
         // Half-typed forms stay on this browser until a save; a shared
         // reception computer shouldn't hand them to whoever signs in next.
+        // Only once signed out: a failed sign-out leaves them in place.
         clearSavedForms(localStore());
-        await fbSignOut(auth);
       },
     }),
     [user, loading],

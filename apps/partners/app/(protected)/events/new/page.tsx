@@ -199,15 +199,14 @@ function NewTenantEventForm({
   const { data: venues } = useVenues(tenantId);
   const createEvent = useCreateTenantEvent(tenantId);
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
-  // A duplicate keeps its own copy, apart from the blank form's.
-  const autosave = useFormAutosave<EventFields>('event-new', [tenantId, source?.id]);
   // Seeded once, on mount — the route remounts this form whenever the source
   // changes, so there is no later patch to race the organiser's edits. What
-  // they typed on an earlier visit wins over the event being copied.
-  const [initial] = useState<EventFields>(() => ({
-    ...eventFieldsFrom(source ? duplicateDraftFromEvent(source) : null),
-    ...autosave.restored,
-  }));
+  // they typed on an earlier visit wins over the event being copied, and a
+  // duplicate keeps its own copy, apart from the blank form's.
+  const autosave = useFormAutosave('event-new', [tenantId, source?.id], () =>
+    eventFieldsFrom(source ? duplicateDraftFromEvent(source) : null),
+  );
+  const initial = autosave.initial;
 
   const [scope, setScope] = useState<Scope>(initial.scope);
   const [venueId, setVenueId] = useState(initial.venueId);
@@ -267,6 +266,13 @@ function NewTenantEventForm({
     tz,
     coords,
   });
+
+  // A restored copy (or the event being copied) can name a venue removed
+  // since: once the venues load, drop it rather than show "Select a venue…"
+  // and still send the old id.
+  useEffect(() => {
+    if (venueId && venues && !venues.some((v) => v.id === venueId)) setVenueId('');
+  }, [venues, venueId]);
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
   const effectiveTz = scope === 'venue' ? selectedVenue?.tzName ?? 'Asia/Kolkata' : tz;

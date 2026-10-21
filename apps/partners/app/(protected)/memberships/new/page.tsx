@@ -46,7 +46,7 @@ function NewMembershipForm() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
-  const autosave = useFormAutosave<MembershipPlanDraft>('plan-new', [tenantId]);
+  const autosave = useFormAutosave('plan-new', [tenantId], emptyPlanDraft);
   const { user } = useAuth();
   const authed = Boolean(user);
 
@@ -60,11 +60,15 @@ function NewMembershipForm() {
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const cannotCreate = !roleLoading && !can('memberships.write');
 
-  const [draft, setDraft] = useState<MembershipPlanDraft>(() => ({
-    ...emptyPlanDraft(),
-    ...autosave.restored,
-  }));
+  const [draft, setDraft] = useState<MembershipPlanDraft>(autosave.initial);
   useAutosave(autosave, draft);
+  // A restored copy can name a venue removed since: once the venues load,
+  // fall back to org-wide rather than send the old id.
+  useEffect(() => {
+    if (draft.venueId && venues && !venues.some((v) => v.id === draft.venueId)) {
+      setDraft((d) => ({ ...d, venueId: '' }));
+    }
+  }, [venues, draft.venueId]);
   // The page is meaningless without a name; the rest may be blank.
   const canPreview = draft.name.trim().length > 0;
   useEffect(() => {

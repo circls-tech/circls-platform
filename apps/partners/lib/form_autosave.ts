@@ -16,7 +16,7 @@
  *
  * A form whose fields change type should change its form name (`event-new`
  * → `event-new.2`), so a copy saved before the deploy is never read into the
- * new shape. Fields that are only added are fine: forms default each one.
+ * new shape. Fields that are only added are fine: the blank form fills them.
  */
 
 export const FORM_AUTOSAVE_PREFIX = 'circls.formAutosave:';
@@ -75,7 +75,7 @@ export function readSavedForm<T>(
   return null;
 }
 
-/** `valuesJson` is already serialised: the caller compares it to decide whether to write at all. */
+/** `valuesJson` is already serialised: the caller compares it to decide whether to write at all (`autosaveAction`). */
 export function writeSavedForm(
   store: Storage | null,
   key: string,
@@ -99,11 +99,25 @@ export function removeSavedForm(store: Storage | null, key: string): void {
   }
 }
 
-/** Every form's copy (on sign-out), or only those past their week. */
+/** The autosaves running in this page, so clearing every copy can stop them too. */
+const running = new Set<{ stopped: boolean }>();
+
+/** Registers a running autosave; returns its unregister. */
+export function trackAutosave(saver: { stopped: boolean }): () => void {
+  running.add(saver);
+  return () => running.delete(saver);
+}
+
+/**
+ * Every form's copy (on sign-out), or only those past their week. Clearing
+ * every copy also stops the autosaves running in this page, or a write still
+ * pending would put one back.
+ */
 export function clearSavedForms(
   store: Storage | null,
   opts: { expiredOnly?: boolean; now?: number } = {},
 ): void {
+  if (!opts.expiredOnly) for (const saver of running) saver.stopped = true;
   if (!store) return;
   const now = opts.now ?? Date.now();
   try {
@@ -120,6 +134,52 @@ export function clearSavedForms(
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * JSON with every object's keys sorted, so two values with the same fields
+ * compare equal however their objects were built.
+ */
+export function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, (v as Record<string, unknown>)[k]]),
+        )
+      : v,
+  );
+}
+
+/**
+ * The form's starting values from a saved copy: the blank form with the
+ * copy's fields laid over it (so a field added since it was saved still gets
+ * its default). Null when there is no copy, or `accept` turns it down
+ * (it names something no longer there).
+ */
+export function restoredValues<T extends object>(
+  blank: T,
+  saved: Partial<T> | null,
+  accept?: (values: T) => boolean,
+): T | null {
+  if (!saved) return null;
+  const values = { ...blank, ...saved };
+  return accept && !accept(values) ? null : values;
+}
+
+/**
+ * What an autosave flush does with the form as it stands (`json`), given what
+ * storage already holds (`lastWritten`) and the blank form (`blankJson`).
+ * Back to blank means nothing worth keeping.
+ */
+export function autosaveAction(
+  json: string,
+  lastWritten: string,
+  blankJson: string,
+): 'skip' | 'remove' | 'write' {
+  if (json === lastWritten) return 'skip';
+  return json === blankJson ? 'remove' : 'write';
 }
 
 /** "a moment ago", "5 minutes ago", "3 hours ago", "yesterday", "2 days ago". */

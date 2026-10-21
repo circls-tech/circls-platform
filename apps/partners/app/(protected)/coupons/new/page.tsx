@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useCreateCoupon, type CreateCouponInput, type CouponScopeType } from '@/lib/api/coupons';
 import { useMyRole, useVenues, useArenas } from '@/lib/api/queries';
@@ -16,7 +16,7 @@ import { BackLink, Button, Card, Input } from '@/lib/ui';
 const selectCls =
   'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300';
 
-/** What the form autosaves — every field. */
+/** What the form autosaves: every field. */
 interface CouponFields {
   code: string;
   description: string;
@@ -32,6 +32,25 @@ interface CouponFields {
   validUntilLocal: string;
   maxRedemptions: string;
   perUserLimit: string;
+}
+
+function blankCoupon(): CouponFields {
+  return {
+    code: '',
+    description: '',
+    scopeType: 'org',
+    venueId: '',
+    scopeRefId: '',
+    discountType: 'percent',
+    discountValue: '',
+    maxDiscountRupees: '',
+    minOrderRupees: '',
+    visibility: 'private',
+    validFromLocal: '',
+    validUntilLocal: '',
+    maxRedemptions: '',
+    perUserLimit: '',
+  };
 }
 
 export default function NewCouponPage() {
@@ -51,23 +70,23 @@ function NewCouponForm() {
   const tenantId = activeTenantId ?? '';
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const createCoupon = useCreateCoupon(tenantId);
-  const autosave = useFormAutosave<CouponFields>('coupon-new', [tenantId]);
-  const saved = autosave.restored;
+  const autosave = useFormAutosave('coupon-new', [tenantId], blankCoupon);
+  const init = autosave.initial;
 
-  const [code, setCode] = useState(saved?.code ?? '');
-  const [description, setDescription] = useState(saved?.description ?? '');
-  const [scopeType, setScopeType] = useState<CouponScopeType>(saved?.scopeType ?? 'org');
-  const [venueId, setVenueId] = useState(saved?.venueId ?? '');
-  const [scopeRefId, setScopeRefId] = useState(saved?.scopeRefId ?? '');
-  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>(saved?.discountType ?? 'percent');
-  const [discountValue, setDiscountValue] = useState(saved?.discountValue ?? '');
-  const [maxDiscountRupees, setMaxDiscountRupees] = useState(saved?.maxDiscountRupees ?? '');
-  const [minOrderRupees, setMinOrderRupees] = useState(saved?.minOrderRupees ?? '');
-  const [visibility, setVisibility] = useState<'public' | 'private'>(saved?.visibility ?? 'private');
-  const [validFromLocal, setValidFromLocal] = useState(saved?.validFromLocal ?? '');
-  const [validUntilLocal, setValidUntilLocal] = useState(saved?.validUntilLocal ?? '');
-  const [maxRedemptions, setMaxRedemptions] = useState(saved?.maxRedemptions ?? '');
-  const [perUserLimit, setPerUserLimit] = useState(saved?.perUserLimit ?? '');
+  const [code, setCode] = useState(init.code);
+  const [description, setDescription] = useState(init.description);
+  const [scopeType, setScopeType] = useState<CouponScopeType>(init.scopeType);
+  const [venueId, setVenueId] = useState(init.venueId);
+  const [scopeRefId, setScopeRefId] = useState(init.scopeRefId);
+  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>(init.discountType);
+  const [discountValue, setDiscountValue] = useState(init.discountValue);
+  const [maxDiscountRupees, setMaxDiscountRupees] = useState(init.maxDiscountRupees);
+  const [minOrderRupees, setMinOrderRupees] = useState(init.minOrderRupees);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(init.visibility);
+  const [validFromLocal, setValidFromLocal] = useState(init.validFromLocal);
+  const [validUntilLocal, setValidUntilLocal] = useState(init.validUntilLocal);
+  const [maxRedemptions, setMaxRedemptions] = useState(init.maxRedemptions);
+  const [perUserLimit, setPerUserLimit] = useState(init.perUserLimit);
   const [err, setErr] = useState<string | null>(null);
   useAutosave<CouponFields>(autosave, {
     code,
@@ -91,6 +110,18 @@ function NewCouponForm() {
   const { data: memberships } = useMemberships(tenantId);
   // useArenas has enabled: Boolean(venueId) — safe to call with '' when no venue selected
   const { data: arenas } = useArenas(scopeType === 'arena' ? venueId : '');
+
+  // A restored copy can name a venue, event, plan or arena removed since:
+  // once its list loads, drop the pick rather than show the placeholder and
+  // still send the old id.
+  useEffect(() => {
+    if (venueId && venues && !venues.some((v) => v.id === venueId)) setVenueId('');
+  }, [venues, venueId]);
+  useEffect(() => {
+    const options =
+      scopeType === 'event' ? events : scopeType === 'membership' ? memberships : scopeType === 'arena' ? arenas : undefined;
+    if (scopeRefId && options && !options.some((o) => o.id === scopeRefId)) setScopeRefId('');
+  }, [scopeType, scopeRefId, events, memberships, arenas]);
 
   // Currency follows the venue the coupon is scoped to (venue/arena scopes pick
   // a venue directly; event/membership scopes resolve via the target's venue),

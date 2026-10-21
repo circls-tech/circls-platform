@@ -20,7 +20,7 @@ Before you do, **Preview** (next to **Create event**, available once the event h
 
 The event is created as a **draft** and you're returned to the Events list. A draft is yours alone: customers never see it and the Circls team is not asked to review it until you submit. Open it to fill in what's missing — the event's page lists what is **still needed** (a start and end, a venue or address, at least one ticket tier) and **Submit for review** stays off until the list is empty.
 
-**Leaving the form before you save.** What you type is kept in your browser as you go, so going **Back**, following a link or reloading the page doesn't lose it. Open **Create event** again and the form is filled in as you left it, with a note saying so. Photos are the exception: add them again. **Start over** on that note clears the form. The copy is only on this browser and this device, lasts a week, and is dropped when you save the event, press **Cancel** or sign out. Each of your organisations, and each event you duplicate, keeps its own.
+**Leaving the form before you save.** What you type is kept in your browser as you go, so going **Back**, following a link or reloading the page doesn't lose it. Open **Create event** again and the form is filled in as you left it, with a note saying so. Photos are the exception: add them again. **Start over** on that note clears the form, after asking. A venue picked then and removed since is cleared, so pick again. The copy is only on this browser and this device, lasts a week from your last change, and is dropped when you save the event, press **Cancel** or sign out. Each of your organisations, and each event you duplicate, keeps its own.
 
 ## Duplicating an event
 

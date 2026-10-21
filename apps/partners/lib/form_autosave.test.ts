@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   FORM_AUTOSAVE_TTL_MS,
+  autosaveAction,
   clearSavedForms,
   formAutosaveKey,
   readSavedForm,
+  restoredValues,
   savedAgo,
+  stableJson,
+  trackAutosave,
   writeSavedForm,
 } from './form_autosave';
 
@@ -92,6 +96,17 @@ describe('form autosave storage', () => {
     expect(store.getItem(formAutosaveKey('u1', 'new', []))).not.toBeNull();
   });
 
+  it('stops the autosaves running in the page when every copy is cleared, not when pruning', () => {
+    const store = memoryStore();
+    const saver = { stopped: false };
+    const untrack = trackAutosave(saver);
+    clearSavedForms(store, { expiredOnly: true });
+    expect(saver.stopped).toBe(false);
+    clearSavedForms(store);
+    expect(saver.stopped).toBe(true);
+    untrack();
+  });
+
   it('says how long ago a copy was saved', () => {
     expect(savedAgo(T0, T0 + 30_000)).toBe('a moment ago');
     expect(savedAgo(T0, T0 + 60_000)).toBe('1 minute ago');
@@ -99,5 +114,44 @@ describe('form autosave storage', () => {
     expect(savedAgo(T0, T0 + 3 * 3_600_000)).toBe('3 hours ago');
     expect(savedAgo(T0, T0 + 30 * 3_600_000)).toBe('yesterday');
     expect(savedAgo(T0, T0 + 3 * 86_400_000)).toBe('3 days ago');
+  });
+});
+
+describe('form autosave decisions', () => {
+  const blank = { name: '', tiers: [{ name: '', priceRupees: '0' }], venueId: '' };
+
+  it('compares values however their objects were built', () => {
+    expect(stableJson({ b: 1, a: { d: 2, c: 3 } })).toBe(stableJson({ a: { c: 3, d: 2 }, b: 1 }));
+    expect(stableJson([{ b: 1, a: 2 }])).toBe('[{"a":2,"b":1}]');
+  });
+
+  it('writes a change, skips what storage already holds, and removes a form emptied back to blank', () => {
+    const blankJson = stableJson(blank);
+    const typed = stableJson({ ...blank, name: 'Cup' });
+    // A fresh form: nothing stored yet, so storage "holds" the blank form.
+    expect(autosaveAction(blankJson, blankJson, blankJson)).toBe('skip');
+    expect(autosaveAction(typed, blankJson, blankJson)).toBe('write');
+    expect(autosaveAction(typed, typed, blankJson)).toBe('skip');
+    // Restored, then every field emptied: the copy goes rather than greeting the next visit.
+    expect(autosaveAction(blankJson, typed, blankJson)).toBe('remove');
+  });
+
+  it('opens a restored form unchanged without rewriting it', () => {
+    const restored = restoredValues(blank, { name: 'Cup' });
+    const json = stableJson(restored);
+    // lastWritten starts as the restored copy, so its savedAt isn't bumped.
+    expect(autosaveAction(json, json, stableJson(blank))).toBe('skip');
+  });
+
+  it('lays a saved copy over the blank form, so fields added since get their default', () => {
+    expect(restoredValues(blank, { name: 'Cup' })).toEqual({ ...blank, name: 'Cup' });
+    expect(restoredValues(blank, null)).toBeNull();
+  });
+
+  it('turns down a copy that names something no longer there', () => {
+    const known = new Set(['v1']);
+    const accept = (v: typeof blank) => v.venueId === '' || known.has(v.venueId);
+    expect(restoredValues(blank, { venueId: 'v1' }, accept)?.venueId).toBe('v1');
+    expect(restoredValues(blank, { venueId: 'gone' }, accept)).toBeNull();
   });
 });

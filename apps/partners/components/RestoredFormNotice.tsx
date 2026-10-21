@@ -15,16 +15,21 @@ export function RestoredFormNotice({
   /** One sentence on what wasn't kept, for a form with a file picker (files can't be). */
   unkept?: string;
 }) {
-  if (!autosave.restored || autosave.savedAt === null) return null;
+  if (autosave.restoredAt === null) return null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-3 py-2 text-sm text-slate-600">
       <span>
-        Restored what you typed here {savedAgo(autosave.savedAt)}, kept in this browser until you save.
+        Restored what you typed here {savedAgo(autosave.restoredAt)}, kept in this browser until you save.
         {unkept && ` ${unkept}`}
       </span>
       <button
         type="button"
-        onClick={autosave.startOver}
+        onClick={() => {
+          // Nothing brings it back afterwards, so ask first.
+          if (confirm('Clear this form and start over? What you typed here will be lost.')) {
+            autosave.startOver();
+          }
+        }}
         className="font-medium text-slate-800 underline-offset-2 hover:underline"
       >
         Start over

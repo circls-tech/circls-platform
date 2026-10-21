@@ -27,7 +27,7 @@ Artwork can also be added or changed later while editing the plan (see below).
 
 **Preview** (next to **Create plan**, available once the plan has a name) shows the plan's page on the customer site exactly as the form stands — name, description, scope, artwork, tiers, benefits and terms — and follows your edits as you make them; nothing is saved until you press a button below it. **Create plan** sends it to review; **Save as draft** keeps it to yourself for now — a draft needs only a name, its tiers can follow. You land on the new plan's page: a submitted plan starts in **pending review** until Circls approves it; a draft stays a **draft** until you click **Submit for review** there, which needs at least one tier and opens the customer-site preview first.
 
-If you leave the form before pressing either button — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so. The artwork isn't kept: pick it again. **Start over** on the note clears the form. The copy is only on this browser and device, lasts a week, and is dropped when you create the plan, press **Cancel** or sign out.
+If you leave the form before pressing either button — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so. The artwork isn't kept: pick it again. **Start over** on the note clears the form, after asking. If the venue the plan was scoped to has been removed since, the plan falls back to org-wide. The copy is only on this browser and device, lasts a week from your last change, and is dropped when you create the plan, press **Cancel** or sign out.
 
 ## The plans list
 

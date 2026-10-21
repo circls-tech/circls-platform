@@ -10,15 +10,18 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { useAuth } from '@/lib/firebase/auth_context';
 import {
+  autosaveAction,
   clearSavedForms,
   formAutosaveKey,
   localStore,
   readSavedForm,
   removeSavedForm,
+  restoredValues,
+  stableJson,
+  trackAutosave,
   writeSavedForm,
 } from '@/lib/form_autosave';
 
@@ -26,13 +29,17 @@ import {
  * A create form autosaves in two calls, because the copy has to be read
  * before the fields' useState calls and written after them:
  *
- *   const autosave = useFormAutosave<CouponFields>('coupon-new', [tenantId]);
- *   const [code, setCode] = useState(autosave.restored?.code ?? '');
+ *   const autosave = useFormAutosave('coupon-new', [tenantId], blankCoupon);
+ *   const [code, setCode] = useState(autosave.initial.code);
  *   …
  *   useAutosave(autosave, { code, … });
  *
- * and sits inside a <FormAutosaveScope>, which "Start over" remounts blank.
+ * It sits inside a <FormAutosaveScope>, which "Start over" remounts blank,
+ * and calls `autosave.clear()` once the form is saved for real and on Cancel.
  */
+
+/** Typing is written at most this often; a pending write is flushed when the form unmounts or the page hides. */
+const WRITE_EVERY_MS = 500;
 
 const RestartContext = createContext<(() => void) | null>(null);
 
@@ -51,69 +58,152 @@ export function FormAutosaveScope({ children }: { children: ReactNode }) {
 }
 
 export interface FormAutosave<T> {
-  /** The copy saved on an earlier visit, read once as the form mounted. Seed each field from it. */
-  restored: T | null;
-  /** When that copy was saved (epoch ms). */
-  savedAt: number | null;
+  /** What each field starts as: the blank form, with the copy kept from an earlier visit laid over it. */
+  initial: T;
+  /** When the restored copy was last changed (epoch ms); null when nothing was restored. */
+  restoredAt: number | null;
   /** Forget the copy and stop saving: the form was submitted, or cancelled. */
   clear: () => void;
   /** Forget the copy and remount the form blank. */
   startOver: () => void;
-  key: string | null;
-  stopped: RefObject<boolean>;
 }
 
-export function useFormAutosave<T>(
+/** The autosave's own bookkeeping, kept off the public interface. */
+interface Saver {
+  key: string | null;
+  blankJson: string;
+  /** What storage holds for this form, as `stableJson`. */
+  lastWritten: string;
+  /** The form's values as of the last render. */
+  latest: unknown;
+  timer: ReturnType<typeof setTimeout> | null;
+  /** Set once the copy is cleared here, in another tab or by signing out: nothing more is written. */
+  stopped: boolean;
+}
+
+const SAVER = Symbol('saver');
+type Handle<T> = FormAutosave<T> & { [SAVER]: Saver };
+
+/** Expired copies are swept once per page load, not on every form. */
+let swept = false;
+
+function flush(s: Saver): void {
+  if (s.timer !== null) {
+    clearTimeout(s.timer);
+    s.timer = null;
+  }
+  if (!s.key || s.stopped || s.latest === undefined) return;
+  const json = stableJson(s.latest);
+  const action = autosaveAction(json, s.lastWritten, s.blankJson);
+  if (action === 'skip') return;
+  s.lastWritten = json;
+  if (action === 'remove') removeSavedForm(localStore(), s.key);
+  else writeSavedForm(localStore(), s.key, json);
+}
+
+export function useFormAutosave<T extends object>(
   form: string,
-  scope: ReadonlyArray<string | null | undefined> = [],
+  scope: ReadonlyArray<string | null | undefined>,
+  /** The form with nothing typed (or as seeded, e.g. from the event being duplicated). Called once. */
+  blank: () => T,
+  /** Turns down a saved copy that no longer makes sense (it names something since removed). */
+  accept?: (values: T) => boolean,
 ): FormAutosave<T> {
   const { user } = useAuth();
   const restart = useContext(RestartContext);
-  // Fixed at mount: the fields in state belong to what the form was opened
-  // for, so a later scope change must not file them under another key.
-  const [key] = useState(() => (user ? formAutosaveKey(user.uid, form, scope) : null));
-  const [saved] = useState(() => {
-    const store = localStore();
-    clearSavedForms(store, { expiredOnly: true });
-    return key ? readSavedForm<T>(store, key) : null;
+  // Read once, as the form mounts: the fields in state belong to what the
+  // form was opened for, so a later scope change must not file them under
+  // another key.
+  const [opened] = useState(() => {
+    const key = user ? formAutosaveKey(user.uid, form, scope) : null;
+    const blankValues = blank();
+    const saved = key ? readSavedForm<Partial<T>>(localStore(), key) : null;
+    const restored = restoredValues(blankValues, saved?.values ?? null, accept);
+    const blankJson = stableJson(blankValues);
+    const saver: Saver = {
+      key,
+      blankJson,
+      lastWritten: restored ? stableJson(restored) : blankJson,
+      latest: undefined,
+      timer: null,
+      stopped: false,
+    };
+    return {
+      initial: restored ?? blankValues,
+      restoredAt: restored && saved ? saved.savedAt : null,
+      rejected: Boolean(saved && !restored),
+      saver,
+    };
   });
-  const stopped = useRef(false);
+  const s = opened.saver;
+
+  useEffect(() => {
+    if (opened.rejected && s.key) removeSavedForm(localStore(), s.key);
+    if (!swept) {
+      swept = true;
+      clearSavedForms(localStore(), { expiredOnly: true });
+    }
+    return trackAutosave(s);
+  }, [opened, s]);
+
+  // Another tab ended this form (saved, cancelled, started over, signed
+  // out): carrying on here would write back a copy of something finished.
+  useEffect(() => {
+    if (!s.key) return;
+    function onStorage(e: StorageEvent) {
+      if (e.key === null || (e.key === s.key && e.newValue === null)) s.stopped = true;
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [s]);
 
   const clear = useCallback(() => {
-    stopped.current = true;
-    if (key) removeSavedForm(localStore(), key);
-  }, [key]);
+    s.stopped = true;
+    flush(s);
+    if (s.key) removeSavedForm(localStore(), s.key);
+  }, [s]);
 
   const startOver = useCallback(() => {
-    if (key) removeSavedForm(localStore(), key);
-    if (restart) restart();
-    else stopped.current = true;
-  }, [key, restart]);
+    if (!restart) throw new Error('startOver needs a <FormAutosaveScope> around the form');
+    clear();
+    restart();
+  }, [clear, restart]);
 
-  return useMemo(
+  return useMemo<Handle<T>>(
     () => ({
-      restored: saved?.values ?? null,
-      savedAt: saved?.savedAt ?? null,
+      initial: opened.initial,
+      restoredAt: opened.restoredAt,
       clear,
       startOver,
-      key,
-      stopped,
+      [SAVER]: s,
     }),
-    [saved, clear, startOver, key],
+    [opened, clear, startOver, s],
   );
 }
 
-/** Saves `values` (JSON-safe: no files) whenever they change. */
+/** Keeps `values` (JSON-safe: no files) saved as they change. */
 export function useAutosave<T>(autosave: FormAutosave<T>, values: T): void {
-  const json = JSON.stringify(values);
-  // What a blank form opened with. Getting back to it (every field emptied
-  // again) leaves nothing worth keeping, and opening a form without typing
-  // must not leave a copy that greets the next visit.
-  const [pristine] = useState(() => (autosave.restored ? null : json));
-  const { key, stopped } = autosave;
+  const s = (autosave as Handle<T>)[SAVER];
+  // Every render: note the values, and make sure a write is coming. The
+  // serialising happens in the write, at most every WRITE_EVERY_MS.
   useEffect(() => {
-    if (!key || stopped.current) return;
-    if (json === pristine) removeSavedForm(localStore(), key);
-    else writeSavedForm(localStore(), key, json);
-  }, [key, stopped, json, pristine]);
+    s.latest = values;
+    if (s.timer === null && !s.stopped) s.timer = setTimeout(() => flush(s), WRITE_EVERY_MS);
+  });
+  useEffect(() => {
+    function onHide() {
+      if (document.visibilityState === 'hidden') flush(s);
+    }
+    function onPageHide() {
+      flush(s);
+    }
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      // Leaving the page within a client navigation: write what's pending.
+      flush(s);
+    };
+  }, [s]);
 }

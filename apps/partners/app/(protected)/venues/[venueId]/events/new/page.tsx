@@ -77,6 +77,20 @@ interface VenueEventFields {
   recurrence: RecurrenceValue;
 }
 
+function blankVenueEvent(): VenueEventFields {
+  return {
+    name: '',
+    description: '',
+    startsAtLocal: '',
+    endsAtLocal: '',
+    tiers: [emptyTier()],
+    questions: [],
+    maxPerUser: null,
+    redirect: null,
+    recurrence: emptyRecurrence(),
+  };
+}
+
 export default function NewEventPage() {
   const { venueId } = useParams<{ venueId: string }>();
   return (
@@ -98,13 +112,13 @@ function NewVenueEventForm() {
   const { activeTenantId } = useOrg();
   const { can, isLoading: roleLoading } = useMyRole(tenantId || activeTenantId);
 
-  const autosave = useFormAutosave<VenueEventFields>('venue-event-new', [venueId]);
-  const saved = autosave.restored;
+  const autosave = useFormAutosave('venue-event-new', [venueId], blankVenueEvent);
+  const init = autosave.initial;
 
-  const [name, setName] = useState(saved?.name ?? '');
-  const [description, setDescription] = useState(saved?.description ?? '');
-  const [startsAtLocal, setStartsAtLocal] = useState(saved?.startsAtLocal ?? '');
-  const [endsAtLocal, setEndsAtLocal] = useState(saved?.endsAtLocal ?? '');
+  const [name, setName] = useState(init.name);
+  const [description, setDescription] = useState(init.description);
+  const [startsAtLocal, setStartsAtLocal] = useState(init.startsAtLocal);
+  const [endsAtLocal, setEndsAtLocal] = useState(init.endsAtLocal);
   // The customer-site preview of the form as it stands (nothing saved).
   const [previewOpen, setPreviewOpen] = useState(false);
   // The page is meaningless without a name and a start; the rest may be blank.
@@ -112,13 +126,13 @@ function NewVenueEventForm() {
   useEffect(() => {
     if (!canPreview) setPreviewOpen(false);
   }, [canPreview]);
-  const [tiers, setTiers] = useState<TierDraft[]>(() => saved?.tiers ?? [emptyTier()]);
-  const [questions, setQuestions] = useState<QuestionDraft[]>(saved?.questions ?? []);
+  const [tiers, setTiers] = useState<TierDraft[]>(init.tiers);
+  const [questions, setQuestions] = useState<QuestionDraft[]>(init.questions);
   // null = no per-customer ticket limit; else the count input's string value.
-  const [maxPerUser, setMaxPerUser] = useState<string | null>(saved?.maxPerUser ?? null);
-  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(saved?.redirect ?? null);
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(init.maxPerUser);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(init.redirect);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
-  const [recurrence, setRecurrence] = useState<RecurrenceValue>(() => saved?.recurrence ?? emptyRecurrence());
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>(init.recurrence);
   const [err, setErr] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
     null,

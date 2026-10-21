@@ -95,13 +95,17 @@ interface OrgFields {
   country: TermsCountry;
 }
 
+function blankOrg(): OrgFields {
+  return { name: '', slug: '', slugEdited: false, country: 'India' };
+}
+
 function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
-  const autosave = useFormAutosave<OrgFields>('onboarding-org');
-  const saved = autosave.restored;
-  const [name, setName] = useState(saved?.name ?? '');
-  const [slug, setSlug] = useState(saved?.slug ?? '');
-  const [slugEdited, setSlugEdited] = useState(saved?.slugEdited ?? false);
-  const [country, setCountry] = useState<TermsCountry>(saved?.country ?? 'India');
+  const autosave = useFormAutosave('onboarding-org', [], blankOrg);
+  const init = autosave.initial;
+  const [name, setName] = useState(init.name);
+  const [slug, setSlug] = useState(init.slug);
+  const [slugEdited, setSlugEdited] = useState(init.slugEdited);
+  const [country, setCountry] = useState<TermsCountry>(init.country);
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useAutosave<OrgFields>(autosave, { name, slug, slugEdited, country });
@@ -213,9 +217,12 @@ function Step2Venue({
   onDone: (venueId: string) => void;
   onSkip: () => void;
 }) {
-  const autosave = useFormAutosave<{ name: string; tags: string[] }>('onboarding-venue', [tenantId]);
-  const [name, setName] = useState(autosave.restored?.name ?? '');
-  const [tags, setTags] = useState<string[]>(autosave.restored?.tags ?? []);
+  const autosave = useFormAutosave('onboarding-venue', [tenantId], () => ({
+    name: '',
+    tags: [] as string[],
+  }));
+  const [name, setName] = useState(autosave.initial.name);
+  const [tags, setTags] = useState<string[]>(autosave.initial.tags);
   const [error, setError] = useState<string | null>(null);
   useAutosave(autosave, { name, tags });
   const createVenue = useCreateVenue(tenantId);
@@ -298,14 +305,15 @@ function Step3Arena({
   onDone: (arenaId: string) => void;
   onSkip: () => void;
 }) {
-  const autosave = useFormAutosave<{ name: string; sport: string; tags: string[] }>(
-    'onboarding-arena',
-    [venueId],
-  );
-  const saved = autosave.restored;
-  const [name, setName] = useState(saved?.name ?? '');
-  const [sport, setSport] = useState(saved?.sport ?? '');
-  const [tags, setTags] = useState<string[]>(saved?.tags ?? []);
+  const autosave = useFormAutosave('onboarding-arena', [venueId], () => ({
+    name: '',
+    sport: '',
+    tags: [] as string[],
+  }));
+  const init = autosave.initial;
+  const [name, setName] = useState(init.name);
+  const [sport, setSport] = useState(init.sport);
+  const [tags, setTags] = useState<string[]>(init.tags);
   const [error, setError] = useState<string | null>(null);
   useAutosave(autosave, { name, sport, tags });
   const createArena = useCreateArena(venueId ?? '');
@@ -485,17 +493,23 @@ interface WizardProgress {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
   // Where they had got to, so going Back to the wizard (from the schedule
   // builder, say) resumes it instead of offering to create the organisation
-  // again.
-  const progress = useFormAutosave<WizardProgress>('onboarding');
-  const resumed = progress.restored;
+  // again. Not for an organisation they no longer belong to: that starts over.
+  // (The layout only renders this once their organisations have loaded.)
+  const progress = useFormAutosave(
+    'onboarding',
+    [],
+    (): WizardProgress => ({ step: 0, tenantId: activeTenantId, venueId: null, arenaId: null }),
+    (p) => p.tenantId === null || tenants.some((t) => t.id === p.tenantId),
+  );
+  const resumed = progress.initial;
 
-  const [step, setStep] = useState(resumed?.step ?? 0);
-  const [tenantId, setTenantId] = useState<string | null>(resumed?.tenantId ?? activeTenantId);
-  const [venueId, setVenueId] = useState<string | null>(resumed?.venueId ?? null);
-  const [arenaId, setArenaId] = useState<string | null>(resumed?.arenaId ?? null);
+  const [step, setStep] = useState(resumed.step);
+  const [tenantId, setTenantId] = useState<string | null>(resumed.tenantId);
+  const [venueId, setVenueId] = useState<string | null>(resumed.venueId);
+  const [arenaId, setArenaId] = useState<string | null>(resumed.arenaId);
   useAutosave<WizardProgress>(progress, { step, tenantId, venueId, arenaId });
 
   // If the user already has an active tenant and somehow lands here, still let
