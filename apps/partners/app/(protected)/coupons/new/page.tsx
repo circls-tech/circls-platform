@@ -1,11 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useCreateCoupon, type CreateCouponInput, type CouponScopeType } from '@/lib/api/coupons';
 import { useMyRole, useVenues, useArenas } from '@/lib/api/queries';
 import { RoleNotice } from '@/components/RoleNotice';
+import { RestoredFormNotice } from '@/components/RestoredFormNotice';
+import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import { useTenantEvents } from '@/lib/api/events';
 import { useMemberships } from '@/lib/api/memberships';
 import { currencySymbol, useVenueCurrencies } from '@/lib/currency';
@@ -14,34 +16,112 @@ import { BackLink, Button, Card, Input } from '@/lib/ui';
 const selectCls =
   'w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] hover:border-slate-300';
 
+/** What the form autosaves: every field. */
+interface CouponFields {
+  code: string;
+  description: string;
+  scopeType: CouponScopeType;
+  venueId: string;
+  scopeRefId: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: string;
+  maxDiscountRupees: string;
+  minOrderRupees: string;
+  visibility: 'public' | 'private';
+  validFromLocal: string;
+  validUntilLocal: string;
+  maxRedemptions: string;
+  perUserLimit: string;
+}
+
+function blankCoupon(): CouponFields {
+  return {
+    code: '',
+    description: '',
+    scopeType: 'org',
+    venueId: '',
+    scopeRefId: '',
+    discountType: 'percent',
+    discountValue: '',
+    maxDiscountRupees: '',
+    minOrderRupees: '',
+    visibility: 'private',
+    validFromLocal: '',
+    validUntilLocal: '',
+    maxRedemptions: '',
+    perUserLimit: '',
+  };
+}
+
 export default function NewCouponPage() {
+  const { activeTenantId } = useOrg();
+  // Keyed on the organisation: switching it opens that one's form, blank or
+  // as it was left.
+  return (
+    <FormAutosaveScope>
+      <NewCouponForm key={activeTenantId ?? ''} />
+    </FormAutosaveScope>
+  );
+}
+
+function NewCouponForm() {
   const router = useRouter();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
   const createCoupon = useCreateCoupon(tenantId);
+  const autosave = useFormAutosave('coupon-new', [tenantId], blankCoupon);
+  const init = autosave.initial;
 
-  const [code, setCode] = useState('');
-  const [description, setDescription] = useState('');
-  const [scopeType, setScopeType] = useState<CouponScopeType>('org');
-  const [venueId, setVenueId] = useState('');
-  const [scopeRefId, setScopeRefId] = useState('');
-  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
-  const [discountValue, setDiscountValue] = useState('');
-  const [maxDiscountRupees, setMaxDiscountRupees] = useState('');
-  const [minOrderRupees, setMinOrderRupees] = useState('');
-  const [visibility, setVisibility] = useState<'public' | 'private'>('private');
-  const [validFromLocal, setValidFromLocal] = useState('');
-  const [validUntilLocal, setValidUntilLocal] = useState('');
-  const [maxRedemptions, setMaxRedemptions] = useState('');
-  const [perUserLimit, setPerUserLimit] = useState('');
+  const [code, setCode] = useState(init.code);
+  const [description, setDescription] = useState(init.description);
+  const [scopeType, setScopeType] = useState<CouponScopeType>(init.scopeType);
+  const [venueId, setVenueId] = useState(init.venueId);
+  const [scopeRefId, setScopeRefId] = useState(init.scopeRefId);
+  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>(init.discountType);
+  const [discountValue, setDiscountValue] = useState(init.discountValue);
+  const [maxDiscountRupees, setMaxDiscountRupees] = useState(init.maxDiscountRupees);
+  const [minOrderRupees, setMinOrderRupees] = useState(init.minOrderRupees);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(init.visibility);
+  const [validFromLocal, setValidFromLocal] = useState(init.validFromLocal);
+  const [validUntilLocal, setValidUntilLocal] = useState(init.validUntilLocal);
+  const [maxRedemptions, setMaxRedemptions] = useState(init.maxRedemptions);
+  const [perUserLimit, setPerUserLimit] = useState(init.perUserLimit);
   const [err, setErr] = useState<string | null>(null);
+  useAutosave<CouponFields>(autosave, {
+    code,
+    description,
+    scopeType,
+    venueId,
+    scopeRefId,
+    discountType,
+    discountValue,
+    maxDiscountRupees,
+    minOrderRupees,
+    visibility,
+    validFromLocal,
+    validUntilLocal,
+    maxRedemptions,
+    perUserLimit,
+  });
 
   const { data: venues } = useVenues(tenantId);
   const { data: events } = useTenantEvents(tenantId);
   const { data: memberships } = useMemberships(tenantId);
   // useArenas has enabled: Boolean(venueId) — safe to call with '' when no venue selected
   const { data: arenas } = useArenas(scopeType === 'arena' ? venueId : '');
+
+  // A restored copy can name a venue, event, plan or arena removed since:
+  // once its list loads, drop the pick rather than show the placeholder and
+  // still send the old id.
+  useEffect(() => {
+    if (venueId && venues && !venues.some((v) => v.id === venueId)) setVenueId('');
+  }, [venues, venueId]);
+  useEffect(() => {
+    const options =
+      scopeType === 'event' ? events : scopeType === 'membership' ? memberships : scopeType === 'arena' ? arenas : undefined;
+    if (scopeRefId && options && !options.some((o) => o.id === scopeRefId)) setScopeRefId('');
+  }, [scopeType, scopeRefId, events, memberships, arenas]);
 
   // Currency follows the venue the coupon is scoped to (venue/arena scopes pick
   // a venue directly; event/membership scopes resolve via the target's venue),
@@ -95,6 +175,7 @@ export default function NewCouponPage() {
     };
     try {
       await createCoupon.mutateAsync(input);
+      autosave.clear();
       router.push('/coupons');
     } catch (e) {
       setErr((e as Error).message);
@@ -125,6 +206,7 @@ export default function NewCouponPage() {
       {header}
       <Card title="Details">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
+          <RestoredFormNotice autosave={autosave} />
           <Input label="Code" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="SUMMER10" hint="Stored uppercase. Unique within your org." />
           <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Summer sale 10% off" />
 
@@ -201,7 +283,7 @@ export default function NewCouponPage() {
 
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => router.push('/coupons')}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => { autosave.clear(); router.push('/coupons'); }}>Cancel</Button>
             <Button type="submit" loading={createCoupon.isPending}>Create coupon</Button>
           </div>
         </form>

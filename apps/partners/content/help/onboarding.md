@@ -6,6 +6,8 @@ You'll need a circls Partner account. If a colleague invited you, follow your in
 
 When you sign up with an email and password we send a **verification link** to that address. You can use the portal right away, but until you click the link a banner reminds you, and your email isn't shown to teammates or used to match your account (for example when someone invites that address). If it didn't arrive, check your spam or junk folder first, then use **Resend email** in the banner. Each resend replaces the previous link, so always open the **newest** email — an older link shows "expired or already used". Once you've clicked the link, come back to the portal tab and the banner clears on its own (or press **I've verified**).
 
+If you step away mid-way — **Back**, a link, a reload — the wizard keeps your place and what you'd typed in the current step, so coming back picks up where you were (a note says so; **Start over** clears that step's form after asking). The Terms box is the one thing you tick again. All of it is kept only in this browser, for a week after your last change. Your place is dropped when you leave the wizard for the dashboard or sign out; leaving for the schedule builder keeps it, so **Back** returns you to the last step. If you're no longer a member of the organisation you were setting up, the wizard starts from the beginning.
+
 ## Step 1 — Create your organisation
 
 Your **organisation** is the top-level account that owns all of your venues, events, bookings and team members.

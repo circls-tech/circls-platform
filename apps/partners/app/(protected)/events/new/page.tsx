@@ -24,7 +24,9 @@ import {
   questionsToPayload,
   type QuestionDraft,
 } from '@/lib/events/questions';
-import { duplicateDraftFromEvent } from '@/lib/events/duplicate';
+import { duplicateDraftFromEvent, type DuplicateDraft } from '@/lib/events/duplicate';
+import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
+import { RestoredFormNotice } from '@/components/RestoredFormNotice';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
@@ -66,6 +68,56 @@ function localToTzIso(local: string, tz: string): string {
 }
 
 type Scope = 'venue' | 'standalone';
+
+/** What the form autosaves: every field but the photos, which are files. */
+interface EventFields {
+  scope: Scope;
+  venueId: string;
+  name: string;
+  description: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  tiers: TierDraft[];
+  questions: QuestionDraft[];
+  qrConfig: QrTicketConfig | null;
+  maxPerUser: string | null;
+  redirect: PostBookingRedirect | null;
+  recurrence: RecurrenceValue;
+  line1: string;
+  line2: string;
+  city: string;
+  stateRegion: string;
+  pincode: string;
+  country: string;
+  tz: string;
+  coords: { lat: number; lng: number } | null;
+}
+
+/** A blank form, or one seeded from the event being duplicated. */
+function eventFieldsFrom(seed: DuplicateDraft | null): EventFields {
+  return {
+    scope: seed?.scope ?? 'venue',
+    venueId: seed?.venueId ?? '',
+    name: seed?.name ?? '',
+    description: seed?.description ?? '',
+    startsAtLocal: '',
+    endsAtLocal: '',
+    tiers: seed?.tiers ?? [emptyTier()],
+    questions: seed?.questions ?? [],
+    qrConfig: seed?.qrConfig ?? null,
+    maxPerUser: seed?.maxPerUser ?? null,
+    redirect: seed?.redirect ?? null,
+    recurrence: emptyRecurrence(),
+    line1: seed?.address.line1 ?? '',
+    line2: seed?.address.line2 ?? '',
+    city: seed?.address.city ?? '',
+    stateRegion: seed?.address.state ?? '',
+    pincode: seed?.address.pincode ?? '',
+    country: seed?.address.country ?? '',
+    tz: seed?.address.tz ?? 'Asia/Kolkata',
+    coords: seed?.address.coords ?? null,
+  };
+}
 
 export default function NewTenantEventPage() {
   // useSearchParams needs a Suspense boundary on a statically-rendered route.
@@ -122,11 +174,13 @@ function NewTenantEventRoute() {
       )}
 
       {!sourcePending && (
-        <NewTenantEventForm
-          key={`${tenantId}:${source?.id ?? 'blank'}`}
-          tenantId={tenantId}
-          source={source ?? null}
-        />
+        <FormAutosaveScope>
+          <NewTenantEventForm
+            key={`${tenantId}:${source?.id ?? 'blank'}`}
+            tenantId={tenantId}
+            source={source ?? null}
+          />
+        </FormAutosaveScope>
       )}
     </div>
   );
@@ -146,15 +200,20 @@ function NewTenantEventForm({
   const createEvent = useCreateTenantEvent(tenantId);
   const { can, isLoading: roleLoading } = useMyRole(tenantId);
   // Seeded once, on mount — the route remounts this form whenever the source
-  // changes, so there is no later patch to race the organiser's edits.
-  const [seed] = useState(() => (source ? duplicateDraftFromEvent(source) : null));
+  // changes, so there is no later patch to race the organiser's edits. What
+  // they typed on an earlier visit wins over the event being copied, and a
+  // duplicate keeps its own copy, apart from the blank form's.
+  const autosave = useFormAutosave('event-new', [tenantId, source?.id], () =>
+    eventFieldsFrom(source ? duplicateDraftFromEvent(source) : null),
+  );
+  const initial = autosave.initial;
 
-  const [scope, setScope] = useState<Scope>(seed?.scope ?? 'venue');
-  const [venueId, setVenueId] = useState(seed?.venueId ?? '');
-  const [name, setName] = useState(seed?.name ?? '');
-  const [description, setDescription] = useState(seed?.description ?? '');
-  const [startsAtLocal, setStartsAtLocal] = useState('');
-  const [endsAtLocal, setEndsAtLocal] = useState('');
+  const [scope, setScope] = useState<Scope>(initial.scope);
+  const [venueId, setVenueId] = useState(initial.venueId);
+  const [name, setName] = useState(initial.name);
+  const [description, setDescription] = useState(initial.description);
+  const [startsAtLocal, setStartsAtLocal] = useState(initial.startsAtLocal);
+  const [endsAtLocal, setEndsAtLocal] = useState(initial.endsAtLocal);
   // The customer-site preview of the form as it stands (nothing saved).
   const [previewOpen, setPreviewOpen] = useState(false);
   // The page is meaningless without a name and a start; the rest may be blank.
@@ -162,31 +221,58 @@ function NewTenantEventForm({
   useEffect(() => {
     if (!canPreview) setPreviewOpen(false);
   }, [canPreview]);
-  const [tiers, setTiers] = useState<TierDraft[]>(seed?.tiers ?? [emptyTier()]);
-  const [questions, setQuestions] = useState<QuestionDraft[]>(seed?.questions ?? []);
-  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(seed?.qrConfig ?? null);
+  const [tiers, setTiers] = useState<TierDraft[]>(initial.tiers);
+  const [questions, setQuestions] = useState<QuestionDraft[]>(initial.questions);
+  const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(initial.qrConfig);
   // null = no per-customer ticket limit; else the count input's string value.
-  const [maxPerUser, setMaxPerUser] = useState<string | null>(seed?.maxPerUser ?? null);
-  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(seed?.redirect ?? null);
+  const [maxPerUser, setMaxPerUser] = useState<string | null>(initial.maxPerUser);
+  const [redirect, setRedirect] = useState<PostBookingRedirect | null>(initial.redirect);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
-  const [recurrence, setRecurrence] = useState<RecurrenceValue>(emptyRecurrence());
+  const [recurrence, setRecurrence] = useState<RecurrenceValue>(initial.recurrence);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  const [line1, setLine1] = useState(seed?.address.line1 ?? '');
-  const [line2, setLine2] = useState(seed?.address.line2 ?? '');
-  const [city, setCity] = useState(seed?.address.city ?? '');
-  const [stateRegion, setStateRegion] = useState(seed?.address.state ?? '');
-  const [pincode, setPincode] = useState(seed?.address.pincode ?? '');
-  const [country, setCountry] = useState(seed?.address.country ?? '');
-  const [tz, setTz] = useState(seed?.address.tz ?? 'Asia/Kolkata');
+  const [line1, setLine1] = useState(initial.line1);
+  const [line2, setLine2] = useState(initial.line2);
+  const [city, setCity] = useState(initial.city);
+  const [stateRegion, setStateRegion] = useState(initial.stateRegion);
+  const [pincode, setPincode] = useState(initial.pincode);
+  const [country, setCountry] = useState(initial.country);
+  const [tz, setTz] = useState(initial.tz);
   // Coordinates are held here (never shown) — set from an autocomplete pick and
   // cleared on any manual address edit so the server geocodes from the typed
   // address on create. Organisers never enter lat/lng by hand.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
-    seed?.address.coords ?? null,
-  );
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(initial.coords);
   const [err, setErr] = useState<string | null>(null);
+  useAutosave<EventFields>(autosave, {
+    scope,
+    venueId,
+    name,
+    description,
+    startsAtLocal,
+    endsAtLocal,
+    tiers,
+    questions,
+    qrConfig,
+    maxPerUser,
+    redirect,
+    recurrence,
+    line1,
+    line2,
+    city,
+    stateRegion,
+    pincode,
+    country,
+    tz,
+    coords,
+  });
+
+  // A restored copy (or the event being copied) can name a venue removed
+  // since: once the venues load, drop it rather than show "Select a venue…"
+  // and still send the old id.
+  useEffect(() => {
+    if (venueId && venues && !venues.some((v) => v.id === venueId)) setVenueId('');
+  }, [venues, venueId]);
 
   const selectedVenue = venues?.find((v) => v.id === venueId);
   const effectiveTz = scope === 'venue' ? selectedVenue?.tzName ?? 'Asia/Kolkata' : tz;
@@ -310,6 +396,7 @@ function NewTenantEventForm({
 
     try {
       const result = await createEvent.mutateAsync(input);
+      autosave.clear();
       // For a series, photos land on the first date — the other dates (and the
       // consumer pages) borrow that gallery.
       const anchor = isSeriesResult(result) ? result.events[0]! : result;
@@ -345,6 +432,7 @@ function NewTenantEventForm({
     <div className={previewOpen ? 'xl:pr-[var(--scratch-preview-w)]' : ''}>
     <Card title="Details" subtitle="Only a name is needed to save a draft — dates, location and ticket tiers can follow. Submit for review from the event's page when it's complete; Circls approves it before it goes live.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
+          <RestoredFormNotice autosave={autosave} unkept="Photos aren’t kept — add them again." />
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase tracking-wide text-[#475569]">Where</label>
             <div className="inline-flex w-fit rounded-md border border-slate-200 bg-white p-0.5">
@@ -466,7 +554,7 @@ function NewTenantEventForm({
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <Link href="/events" className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+            <Link href="/events" onClick={autosave.clear} className="rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
               Cancel
             </Link>
             <Button

@@ -8,6 +8,8 @@ import { useOrg } from '@/lib/org_context';
 import { Badge, Button, Card, Input, TagsInput } from '@/lib/ui';
 import type { Tenant } from '@/lib/api/types';
 import { TermsAcceptance } from '@/components/TermsAcceptance';
+import { RestoredFormNotice } from '@/components/RestoredFormNotice';
+import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import { CURRENT_TERMS_VERSION, type TermsCountry } from '@/lib/terms/constants';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -85,13 +87,28 @@ function StepperHeader({ current }: { current: number }) {
 
 // ─── Step 1: Create Organisation ─────────────────────────────────────────────
 
+/** Autosaved; the terms box isn't — accepting them is ticked afresh. */
+interface OrgFields {
+  name: string;
+  slug: string;
+  slugEdited: boolean;
+  country: TermsCountry;
+}
+
+function blankOrg(): OrgFields {
+  return { name: '', slug: '', slugEdited: false, country: 'India' };
+}
+
 function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugEdited, setSlugEdited] = useState(false);
-  const [country, setCountry] = useState<TermsCountry>('India');
+  const autosave = useFormAutosave('onboarding-org', [], blankOrg);
+  const init = autosave.initial;
+  const [name, setName] = useState(init.name);
+  const [slug, setSlug] = useState(init.slug);
+  const [slugEdited, setSlugEdited] = useState(init.slugEdited);
+  const [country, setCountry] = useState<TermsCountry>(init.country);
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useAutosave<OrgFields>(autosave, { name, slug, slugEdited, country });
   const createTenant = useCreateTenant();
   const { setActiveTenantId } = useOrg();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -125,6 +142,7 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
         // The text shown is this bundle's copy of the current version.
         documentVersion: CURRENT_TERMS_VERSION,
       });
+      autosave.clear();
       setActiveTenantId(tenant.id);
       onDone(tenant);
     } catch (err) {
@@ -141,6 +159,8 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
           This is the business that owns your venues. You can update it later in Settings.
         </p>
       </div>
+
+      <RestoredFormNotice autosave={autosave} />
 
       <Input
         ref={nameRef}
@@ -197,9 +217,14 @@ function Step2Venue({
   onDone: (venueId: string) => void;
   onSkip: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
+  const autosave = useFormAutosave('onboarding-venue', [tenantId], () => ({
+    name: '',
+    tags: [] as string[],
+  }));
+  const [name, setName] = useState(autosave.initial.name);
+  const [tags, setTags] = useState<string[]>(autosave.initial.tags);
   const [error, setError] = useState<string | null>(null);
+  useAutosave(autosave, { name, tags });
   const createVenue = useCreateVenue(tenantId);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -213,6 +238,7 @@ function Step2Venue({
     if (!name.trim()) { setError('Venue name is required.'); return; }
     try {
       const venue = await createVenue.mutateAsync({ name: name.trim(), tags });
+      autosave.clear();
       onDone(venue.id);
     } catch (err) {
       setError((err as Error).message ?? 'Could not create venue.');
@@ -227,6 +253,8 @@ function Step2Venue({
           A venue is a physical location that contains one or more arenas (courts, pitches, etc.).
         </p>
       </div>
+
+      <RestoredFormNotice autosave={autosave} />
 
       <Input
         ref={nameRef}
@@ -245,7 +273,7 @@ function Step2Venue({
       />
 
       <div className="flex items-center justify-between pt-2">
-        <Button type="button" variant="ghost" onClick={onSkip}>
+        <Button type="button" variant="ghost" onClick={() => { autosave.clear(); onSkip(); }}>
           Skip for now
         </Button>
         <Button
@@ -277,10 +305,17 @@ function Step3Arena({
   onDone: (arenaId: string) => void;
   onSkip: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [sport, setSport] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
+  const autosave = useFormAutosave('onboarding-arena', [venueId], () => ({
+    name: '',
+    sport: '',
+    tags: [] as string[],
+  }));
+  const init = autosave.initial;
+  const [name, setName] = useState(init.name);
+  const [sport, setSport] = useState(init.sport);
+  const [tags, setTags] = useState<string[]>(init.tags);
   const [error, setError] = useState<string | null>(null);
+  useAutosave(autosave, { name, sport, tags });
   const createArena = useCreateArena(venueId ?? '');
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -314,6 +349,7 @@ function Step3Arena({
         sport: sport.trim() || undefined,
         tags,
       });
+      autosave.clear();
       onDone(arena.id);
     } catch (err) {
       setError((err as Error).message ?? 'Could not create arena.');
@@ -328,6 +364,8 @@ function Step3Arena({
           An arena is a bookable court, pitch, or lane inside your venue.
         </p>
       </div>
+
+      <RestoredFormNotice autosave={autosave} />
 
       <Input
         ref={nameRef}
@@ -368,7 +406,7 @@ function Step3Arena({
       )}
 
       <div className="flex items-center justify-between pt-2">
-        <Button type="button" variant="ghost" onClick={onSkip}>
+        <Button type="button" variant="ghost" onClick={() => { autosave.clear(); onSkip(); }}>
           Skip for now
         </Button>
         <Button
@@ -446,14 +484,33 @@ function Step4Schedule({
 
 // ─── Main wizard ──────────────────────────────────────────────────────────────
 
+interface WizardProgress {
+  step: number;
+  tenantId: string | null;
+  venueId: string | null;
+  arenaId: string | null;
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
+  // Where they had got to, so going Back to the wizard (from the schedule
+  // builder, say) resumes it instead of offering to create the organisation
+  // again. Not for an organisation they no longer belong to: that starts over.
+  // (The layout only renders this once their organisations have loaded.)
+  const progress = useFormAutosave(
+    'onboarding',
+    [],
+    (): WizardProgress => ({ step: 0, tenantId: activeTenantId, venueId: null, arenaId: null }),
+    (p) => p.tenantId === null || tenants.some((t) => t.id === p.tenantId),
+  );
+  const resumed = progress.initial;
 
-  const [step, setStep] = useState(0);
-  const [tenantId, setTenantId] = useState<string | null>(activeTenantId);
-  const [venueId, setVenueId] = useState<string | null>(null);
-  const [arenaId, setArenaId] = useState<string | null>(null);
+  const [step, setStep] = useState(resumed.step);
+  const [tenantId, setTenantId] = useState<string | null>(resumed.tenantId);
+  const [venueId, setVenueId] = useState<string | null>(resumed.venueId);
+  const [arenaId, setArenaId] = useState<string | null>(resumed.arenaId);
+  useAutosave<WizardProgress>(progress, { step, tenantId, venueId, arenaId });
 
   // If the user already has an active tenant and somehow lands here, still let
   // them proceed (they can add more venues/arenas). Only step 1 guards exit.
@@ -475,6 +532,7 @@ export default function OnboardingPage() {
   }
 
   function handleFinish() {
+    progress.clear();
     router.push('/dashboard');
   }
 
@@ -496,20 +554,28 @@ export default function OnboardingPage() {
 
       {/* Step card */}
       <Card>
-        {step === 0 && <Step1Org onDone={handleOrgDone} />}
+        {step === 0 && (
+          <FormAutosaveScope>
+            <Step1Org onDone={handleOrgDone} />
+          </FormAutosaveScope>
+        )}
         {step === 1 && tenantId && (
-          <Step2Venue
-            tenantId={tenantId}
-            onDone={handleVenueDone}
-            onSkip={() => setStep(2)}
-          />
+          <FormAutosaveScope>
+            <Step2Venue
+              tenantId={tenantId}
+              onDone={handleVenueDone}
+              onSkip={() => setStep(2)}
+            />
+          </FormAutosaveScope>
         )}
         {step === 2 && (
-          <Step3Arena
-            venueId={venueId}
-            onDone={handleArenaDone}
-            onSkip={() => setStep(3)}
-          />
+          <FormAutosaveScope>
+            <Step3Arena
+              venueId={venueId}
+              onDone={handleArenaDone}
+              onSkip={() => setStep(3)}
+            />
+          </FormAutosaveScope>
         )}
         {step === 3 && (
           <Step4Schedule arenaId={arenaId} onFinish={handleFinish} />
