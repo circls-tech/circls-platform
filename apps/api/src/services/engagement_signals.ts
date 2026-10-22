@@ -17,9 +17,11 @@ import { sql, type SQL } from 'drizzle-orm';
  *
  * SHARES. Both clients log a `share` on every tap of the share button, with
  * `props.outcome`: `shared` (sent through the share sheet), `copied` (link
- * copied, where there is no sheet), `dismissed` (sheet closed) or
- * `unavailable` / `failed` (nothing happened). Only the first two put a link
- * in someone's hands, so only they count as shares.
+ * copied, where there is no sheet), `dismissed` (sheet closed),
+ * `unavailable` / `failed` (nothing happened), or, from the mobile app,
+ * `unknown` (the sheet opened but the platform could not say what the person
+ * did with it). Only the first two are known to have put a link in someone's
+ * hands, so only they count as shares.
  *
  * LIKES are not here: they are read from `wishlist_items`, which both clients
  * write through the wishlist API, rather than from `like` / `unlike` activity
