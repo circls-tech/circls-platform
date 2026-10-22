@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import type { Brand, ImageRef } from '@/lib/api/types';
+import { trustedParentOrigin } from '@/lib/preview_origin';
 
 /**
  * Listing preview mode.
@@ -83,10 +84,12 @@ export function safeImageUrl(url: unknown): string | null {
 
 /**
  * Listen for the listing the parent frame posts, once the API confirms the
- * token is a scratch preview of `type`. Messages are accepted from the parent
- * frame only. The listing comes back with its brand's logo URL sanitised;
- * picked photos arrive as Files and are handed back as image refs on object
- * URLs, revoked when replaced and on unmount.
+ * token is a scratch preview of `type`. Messages are accepted only from the
+ * parent frame, and only when that frame is the partner portal (the origin
+ * the API names), so a token framed on any other site renders nothing. The
+ * listing comes back with its brand's logo URL sanitised; picked photos
+ * arrive as Files and are handed back as image refs on object URLs, revoked
+ * when replaced and on unmount.
  */
 export function useScratchListing<T extends { brand: Brand }>(
   active: boolean,
@@ -96,20 +99,24 @@ export function useScratchListing<T extends { brand: Brand }>(
   const verify = useQuery({
     queryKey: ['scratch-preview', type, token],
     queryFn: () =>
-      apiFetch<{ type: string }>(`/v1/consumer/previews/scratch?type=${type}`, previewInit(token)),
+      apiFetch<{ type: string; parentOrigin?: string }>(
+        `/v1/consumer/previews/scratch?type=${type}`,
+        previewInit(token),
+      ),
     enabled: active && Boolean(token),
     retry: false,
     staleTime: Infinity,
   });
-  const verified = verify.isSuccess;
+  const parentOrigin = verify.isSuccess ? trustedParentOrigin(verify.data.parentOrigin) : null;
+  const verified = parentOrigin !== null;
 
   const [listing, setListing] = useState<T | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!active || !verified || typeof window === 'undefined' || window.parent === window) return;
+    if (!active || !parentOrigin || typeof window === 'undefined' || window.parent === window) return;
     function onMessage(ev: MessageEvent) {
-      if (ev.source !== window.parent) return;
+      if (ev.source !== window.parent || ev.origin !== parentOrigin) return;
       const data = ev.data as Partial<ScratchListingMessage<T>> | null;
       if (!data || data.type !== SCRATCH_LISTING_MESSAGE || !data.listing) return;
       const posted = data.listing;
@@ -122,10 +129,10 @@ export function useScratchListing<T extends { brand: Brand }>(
     }
     window.addEventListener('message', onMessage);
     // Tell the form we are listening: it sends the listing on this, and again
-    // on every edit. The reply carries no data, so any parent may hear it.
-    window.parent.postMessage({ type: SCRATCH_READY_MESSAGE }, '*');
+    // on every edit.
+    window.parent.postMessage({ type: SCRATCH_READY_MESSAGE }, parentOrigin);
     return () => window.removeEventListener('message', onMessage);
-  }, [active, verified]);
+  }, [active, parentOrigin]);
 
   // Revoke whatever is current on unmount only; replacements are revoked by
   // the setter above, so this never pulls a URL out from under a render.
@@ -144,7 +151,7 @@ export function useScratchListing<T extends { brand: Brand }>(
 
   const status: ScratchStatus = !active
     ? 'waiting'
-    : verify.isError || !token
+    : verify.isError || !token || (verify.isSuccess && !parentOrigin)
       ? 'denied'
       : !verified
         ? 'verifying'
