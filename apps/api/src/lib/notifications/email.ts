@@ -94,7 +94,7 @@ class Msg91Email implements EmailProvider {
 
 /**
  * MSG91 Email when its from address and template are set (with the shared
- * MSG91_AUTH_KEY). The auth key alone means SMS only. Setting one email var
+ * MSG91_AUTH_KEY). The auth key alone sends no email. Setting one email var
  * without the rest is an operator mistake: warn in dev, fail the boot in prod.
  */
 function resolveMsg91Email(): EmailProvider | null {

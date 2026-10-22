@@ -101,7 +101,7 @@ export const envSchema = z
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
   // MSG91 Email (same account and MSG91_AUTH_KEY as SMS). When configured it
-  // sends ALL email in place of Resend; MSG91_AUTH_KEY alone means SMS only.
+  // sends ALL email in place of Resend; MSG91_AUTH_KEY alone sends no email.
   // Sender on a domain verified in MSG91 → Email, e.g. "Circls <no-reply@event.circls.app>".
   MSG91_EMAIL_FROM: z.string().optional(),
   // The MSG91-registered (DKIM) domain; defaults to the from address's domain.
