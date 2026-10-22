@@ -91,8 +91,25 @@ export const envSchema = z
   // Notifications. Phase 13. SMS = MSG91, email = Resend, WA = AiSensy/Gupshup.
   MSG91_AUTH_KEY: z.string().optional(),
   MSG91_SENDER_ID: z.string().optional(),
+  // Real SMS through MSG91 only when 'true'. The auth key is shared with MSG91
+  // Email, so it alone must not start SMS; leave this off until the SMS flows
+  // (DLT templates) exist in MSG91. Off ⇒ SMS stays in stub mode.
+  MSG91_SMS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
+  // MSG91 Email (same account and MSG91_AUTH_KEY as SMS). When configured it
+  // sends ALL email in place of Resend; MSG91_AUTH_KEY alone sends no email.
+  // Sender on a domain verified in MSG91 → Email, e.g. "Circls <no-reply@event.circls.app>".
+  MSG91_EMAIL_FROM: z.string().optional(),
+  // The MSG91-registered (DKIM) domain; defaults to the from address's domain.
+  MSG91_EMAIL_DOMAIN: z.string().optional(),
+  // SLUG (not the numeric id) of the approved generic template every email
+  // goes through, e.g. circls_transactional. Subject
+  // `Circls: {{VAR1}}`, body `{{VAR2}}` in a <pre> (docs/EMAIL_SETUP.md).
+  MSG91_EMAIL_TEMPLATE_ID: z.string().optional(),
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 

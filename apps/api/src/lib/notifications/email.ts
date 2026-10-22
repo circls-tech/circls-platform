@@ -5,8 +5,119 @@ import { renderTemplate } from './templates.js';
 import type { ProviderSendInput, ProviderSendResult } from './types.js';
 
 export interface EmailProvider {
-  readonly mode: 'stub' | 'resend' | 'smtp';
+  readonly mode: 'stub' | 'resend' | 'smtp' | 'msg91';
   send(input: ProviderSendInput): Promise<ProviderSendResult>;
+}
+
+/** Outbound HTTP ceiling: the dispatch worker must never hang on a provider. */
+const HTTP_TIMEOUT_MS = 15_000;
+
+/** `"Circls <no-reply@circls.app>"` → `{ name, address }`; a bare address → `{ address }`. */
+export function parseFromAddress(from: string): { address: string; name?: string } {
+  const m = /^\s*(.*?)\s*<([^<>]+)>\s*$/.exec(from);
+  if (m && m[2]) {
+    const name = m[1]?.replace(/^"|"$/g, '').trim();
+    return name ? { address: m[2].trim(), name } : { address: m[2].trim() };
+  }
+  return { address: from.trim() };
+}
+
+/**
+ * MSG91 Email. https://docs.msg91.com/email/send-email
+ *
+ * MSG91 only sends through templates stored (and approved) in its dashboard,
+ * so one generic transactional template carries every email: subject
+ * `Circls: {{VAR1}}`, body `{{VAR2}}` inside a <pre> (docs/EMAIL_SETUP.md).
+ * We render our plain-text template as usual and send it as those two
+ * variables — also as `subject`/`body`, for a template that renamed them.
+ *
+ * POST https://control.msg91.com/api/v5/email/send with `authkey: <key>`:
+ *   { recipients: [{ to: [{ email }], variables }], from: { email, name },
+ *     domain, template_id }
+ * Returns `{ status: 'success', hasError: false, data: { unique_id } }`; a
+ * rejected request answers with `hasError: true` (sometimes still HTTP 200).
+ */
+class Msg91Email implements EmailProvider {
+  readonly mode = 'msg91' as const;
+  private readonly from: { address: string; name?: string };
+
+  constructor(
+    private readonly authKey: string,
+    from: string,
+    private readonly domain: string,
+    private readonly templateId: string,
+  ) {
+    this.from = parseFromAddress(from);
+  }
+
+  async send(input: ProviderSendInput): Promise<ProviderSendResult> {
+    const rendered = renderTemplate('email', input.templateKey, input.payload);
+    const subject = rendered.subject ?? '(no subject)';
+
+    const res = await fetch('https://control.msg91.com/api/v5/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        authkey: this.authKey,
+      },
+      body: JSON.stringify({
+        recipients: [
+          {
+            to: [{ email: input.recipient }],
+            variables: { VAR1: subject, VAR2: rendered.body, subject, body: rendered.body },
+          },
+        ],
+        from: { email: this.from.address, ...(this.from.name ? { name: this.from.name } : {}) },
+        domain: this.domain,
+        template_id: this.templateId,
+      }),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      throw new Error(`msg91_email_send_failed:${res.status}:${text.slice(0, 200)}`);
+    }
+    let json: { hasError?: boolean; data?: { unique_id?: string } } = {};
+    try {
+      json = JSON.parse(text) as typeof json;
+    } catch {
+      // Non-JSON 200 — treat as accepted without an id.
+    }
+    if (json.hasError) {
+      throw new Error(`msg91_email_send_failed:${res.status}:${text.slice(0, 200)}`);
+    }
+    return { providerMessageId: json.data?.unique_id ?? undefined };
+  }
+}
+
+/**
+ * MSG91 Email when its from address and template are set (with the shared
+ * MSG91_AUTH_KEY). The auth key alone sends no email. Setting one email var
+ * without the rest is an operator mistake: warn in dev, fail the boot in prod.
+ */
+function resolveMsg91Email(): EmailProvider | null {
+  const { MSG91_AUTH_KEY, MSG91_EMAIL_FROM, MSG91_EMAIL_TEMPLATE_ID, MSG91_EMAIL_DOMAIN } = env;
+  if (!MSG91_EMAIL_FROM && !MSG91_EMAIL_TEMPLATE_ID) return null;
+  if (MSG91_AUTH_KEY && MSG91_EMAIL_FROM && MSG91_EMAIL_TEMPLATE_ID) {
+    const domain = MSG91_EMAIL_DOMAIN ?? parseFromAddress(MSG91_EMAIL_FROM).address.split('@')[1] ?? '';
+    return new Msg91Email(MSG91_AUTH_KEY, MSG91_EMAIL_FROM, domain, MSG91_EMAIL_TEMPLATE_ID);
+  }
+  logger.warn(
+    {
+      hasAuthKey: Boolean(MSG91_AUTH_KEY),
+      hasFrom: Boolean(MSG91_EMAIL_FROM),
+      hasTemplate: Boolean(MSG91_EMAIL_TEMPLATE_ID),
+    },
+    'msg91_email_partial_config — set MSG91_AUTH_KEY, MSG91_EMAIL_FROM and MSG91_EMAIL_TEMPLATE_ID to send email through MSG91',
+  );
+  if (env.NODE_ENV === 'production') {
+    throw new Error(
+      'msg91_email_partial_config: MSG91_AUTH_KEY, MSG91_EMAIL_FROM and MSG91_EMAIL_TEMPLATE_ID are all required in production',
+    );
+  }
+  return null;
 }
 
 class StubEmail implements EmailProvider {
@@ -101,6 +212,10 @@ export function getEmailProvider(): EmailProvider {
   if (env.SANDBOX_SMTP_HOST) {
     return new SmtpEmail(env.SANDBOX_SMTP_HOST, env.SANDBOX_SMTP_PORT, env.RESEND_FROM ?? 'Circls Sandbox <no-reply@sandbox.local>');
   }
+
+  // MSG91 Email, when configured, sends everything; Resend stays the fallback.
+  const msg91 = resolveMsg91Email();
+  if (msg91) return msg91;
 
   const { RESEND_API_KEY, RESEND_FROM } = env;
 

@@ -1,17 +1,59 @@
-# Email setup (Resend)
+# Email setup (MSG91, Resend)
 
 The API sends transactional email (team invitations, booking confirmed/cancelled)
-through the notifications dispatcher. The email channel has two providers behind
-one port (`apps/api/src/lib/notifications/email.ts`):
+through the notifications dispatcher. The email channel has these providers behind
+one port (`apps/api/src/lib/notifications/email.ts`), picked in this order:
 
-- **`stub`** — default. Writes a `notifications` row and logs `email_stub`, but
-  **never delivers**. This is why email "doesn't work" out of the box.
-- **`resend`** — real delivery via [Resend](https://resend.com). Selected only
-  when **both** `RESEND_API_KEY` and `RESEND_FROM` are set.
+- **`smtp`** — local sandbox only (`SANDBOX_SMTP_HOST`): everything lands in Mailpit.
+- **`msg91`** — real delivery via MSG91 Email. Selected when `MSG91_AUTH_KEY`,
+  `MSG91_EMAIL_FROM` and `MSG91_EMAIL_TEMPLATE_ID` are **all** set; it then
+  sends **all** email, and Resend is not used. See [MSG91](#msg91) below.
+- **`resend`** — real delivery via [Resend](https://resend.com), when MSG91
+  email isn't configured. Selected only when **both** `RESEND_API_KEY` and
+  `RESEND_FROM` are set.
+- **`stub`** — nothing configured. Writes a `notifications` row and logs
+  `email_stub`, but **never delivers**. This is why email "doesn't work" out of
+  the box.
 
 At boot the API logs `notification_providers` with each channel's mode, e.g.
-`{ sms: 'stub', email: 'resend', whatsapp: 'stub' }`. Check that line first when
+`{ sms: 'stub', email: 'msg91', whatsapp: 'stub' }`. Check that line first when
 debugging delivery.
+
+## MSG91
+
+MSG91 sends only through templates approved in its dashboard, so one generic
+transactional template carries every email. We render our plain-text email as
+usual and send it as two variables.
+
+1. **Verify the sending domain** (MSG91 → Email → Domains) — the TXT and MX
+   records it shows, in DNS. Until it's verified MSG91 only delivers to the
+   account's own address.
+2. **The generic template** (Email → Templates), HTML source:
+   - Subject: `Circls: {{VAR1}}` (MSG91 wants some fixed text in a subject).
+   - Body: a `<pre style="white-space:pre-wrap;font-family:Arial,Helvetica,sans-serif">{{VAR2}}</pre>`
+     inside a simple Circls header/footer. The `<pre>` keeps our line breaks.
+   - Submit for approval. Its **slug** (e.g. `circls_transactional`, not the numeric id) goes in `MSG91_EMAIL_TEMPLATE_ID`. (Renamed the
+     variables `subject`/`body`? That works too — both names are sent.)
+3. **Auth key** — the account auth key (profile → Authkey), the same
+   `MSG91_AUTH_KEY` SMS uses, with Email allowed in its rule. Only the account
+   **owner** can create or edit auth keys. Setting the key does **not** turn
+   on SMS: that needs `MSG91_SMS_ENABLED=true` as well, once the SMS flows
+   exist in MSG91.
+4. **Env (Coolify → api)** — `MSG91_AUTH_KEY`, `MSG91_EMAIL_FROM` (on the
+   verified domain, e.g. `Circls <no-reply@event.circls.app>`),
+   `MSG91_EMAIL_TEMPLATE_ID`; `MSG91_EMAIL_DOMAIN` only if the registered domain
+   isn't the from address's. Setting only some of the three email vars fails
+   the boot in production. Redeploy, then check the boot log for
+   `email: 'msg91'`.
+
+Failures show as `notification_send_failed` with `msg91_email_send_failed:<status>:…`:
+401 is the auth key; `template_id … is not registered` means the numeric id was used instead of the slug, or the template is unknown or unapproved
+(e.g. still awaiting approval); a `domain` error is an unverified domain or a from address off it.
+MSG91 → Email → **Logs** shows each send by its `unique_id` (stored as the
+notification's `provider_message_id`).
+
+The Resend steps below still apply while Resend is the sender, or as the
+fallback.
 
 ## One-time provisioning (do this once)
 

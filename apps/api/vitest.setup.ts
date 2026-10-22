@@ -25,6 +25,11 @@ for (const key of [
   'CASHFREE_CLIENT_SECRET',
   'CASHFREE_ENV',
   'INR_PAYMENT_GATEWAY',
+  // Likewise never send real SMS or email from a test run.
+  'MSG91_AUTH_KEY',
+  'MSG91_EMAIL_FROM',
+  'MSG91_EMAIL_TEMPLATE_ID',
+  'RESEND_API_KEY',
 ]) {
   delete process.env[key];
 }
