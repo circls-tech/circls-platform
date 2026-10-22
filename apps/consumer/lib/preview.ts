@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import type { Brand, ImageRef } from '@/lib/api/types';
-import { trustedParentOrigin } from '@/lib/preview_origin';
+import { scratchMessageVerdict, trustedParentOrigin } from '@/lib/preview_origin';
 
 /**
  * Listing preview mode.
@@ -75,7 +75,10 @@ export interface ScratchListingMessage<T> {
   images: File[];
 }
 
-export type ScratchStatus = 'verifying' | 'denied' | 'waiting' | 'ready';
+/** `unavailable`: the token is good but the page cannot take the form's
+ *  listing (the API named no partner portal origin, or the parent frame
+ *  posted from another origin). */
+export type ScratchStatus = 'verifying' | 'denied' | 'unavailable' | 'waiting' | 'ready';
 
 /** Only https images may be pointed at from a posted listing (a logo, say). */
 export function safeImageUrl(url: unknown): string | null {
@@ -84,12 +87,12 @@ export function safeImageUrl(url: unknown): string | null {
 
 /**
  * Listen for the listing the parent frame posts, once the API confirms the
- * token is a scratch preview of `type`. Messages are accepted only from the
+ * token is a scratch preview of `type`. A listing is taken only from the
  * parent frame, and only when that frame is the partner portal (the origin
- * the API names), so a token framed on any other site renders nothing. The
- * listing comes back with its brand's logo URL sanitised; picked photos
- * arrive as Files and are handed back as image refs on object URLs, revoked
- * when replaced and on unmount.
+ * the API names); one posted from any other origin is refused and the page
+ * says the preview is unavailable. The listing comes back with its brand's
+ * logo URL sanitised; picked photos arrive as Files and are handed back as
+ * image refs on object URLs, revoked when replaced and on unmount.
  */
 export function useScratchListing<T extends { brand: Brand }>(
   active: boolean,
@@ -108,15 +111,18 @@ export function useScratchListing<T extends { brand: Brand }>(
     staleTime: Infinity,
   });
   const parentOrigin = verify.isSuccess ? trustedParentOrigin(verify.data.parentOrigin) : null;
-  const verified = parentOrigin !== null;
 
   const [listing, setListing] = useState<T | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [refused, setRefused] = useState(false);
 
   useEffect(() => {
     if (!active || !parentOrigin || typeof window === 'undefined' || window.parent === window) return;
+    const origin = parentOrigin;
     function onMessage(ev: MessageEvent) {
-      if (ev.source !== window.parent || ev.origin !== parentOrigin) return;
+      const verdict = scratchMessageVerdict(ev, window.parent, origin);
+      if (verdict === 'refuse') setRefused(true);
+      if (verdict !== 'accept') return;
       const data = ev.data as Partial<ScratchListingMessage<T>> | null;
       if (!data || data.type !== SCRATCH_LISTING_MESSAGE || !data.listing) return;
       const posted = data.listing;
@@ -129,8 +135,10 @@ export function useScratchListing<T extends { brand: Brand }>(
     }
     window.addEventListener('message', onMessage);
     // Tell the form we are listening: it sends the listing on this, and again
-    // on every edit.
-    window.parent.postMessage({ type: SCRATCH_READY_MESSAGE }, parentOrigin);
+    // on every edit. The ping carries no data, so any parent may hear it; a
+    // parent on the wrong origin then posts, is refused, and the page says
+    // so instead of waiting for a listing that never comes.
+    window.parent.postMessage({ type: SCRATCH_READY_MESSAGE }, '*');
     return () => window.removeEventListener('message', onMessage);
   }, [active, parentOrigin]);
 
@@ -151,12 +159,14 @@ export function useScratchListing<T extends { brand: Brand }>(
 
   const status: ScratchStatus = !active
     ? 'waiting'
-    : verify.isError || !token || (verify.isSuccess && !parentOrigin)
+    : verify.isError || !token
       ? 'denied'
-      : !verified
+      : verify.isPending
         ? 'verifying'
-        : listing
-          ? 'ready'
-          : 'waiting';
+        : !parentOrigin || refused
+          ? 'unavailable'
+          : listing
+            ? 'ready'
+            : 'waiting';
   return { status, listing, images };
 }
