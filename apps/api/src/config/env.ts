@@ -91,6 +91,13 @@ export const envSchema = z
   // Notifications. Phase 13. SMS = MSG91, email = Resend, WA = AiSensy/Gupshup.
   MSG91_AUTH_KEY: z.string().optional(),
   MSG91_SENDER_ID: z.string().optional(),
+  // Real SMS through MSG91 only when 'true'. The auth key is shared with MSG91
+  // Email, so it alone must not start SMS; leave this off until the SMS flows
+  // (DLT templates) exist in MSG91. Off ⇒ SMS stays in stub mode.
+  MSG91_SMS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
   // MSG91 Email (same account and MSG91_AUTH_KEY as SMS). When configured it

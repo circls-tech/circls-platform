@@ -36,7 +36,9 @@ usual and send it as two variables.
      variables `subject`/`body`? That works too — both names are sent.)
 3. **Auth key** — the account auth key (profile → Authkey), the same
    `MSG91_AUTH_KEY` SMS uses, with Email allowed in its rule. Only the account
-   **owner** can create or edit auth keys.
+   **owner** can create or edit auth keys. Setting the key does **not** turn
+   on SMS: that needs `MSG91_SMS_ENABLED=true` as well, once the SMS flows
+   exist in MSG91.
 4. **Env (Coolify → api)** — `MSG91_AUTH_KEY`, `MSG91_EMAIL_FROM` (on the
    verified domain, e.g. `Circls <no-reply@event.circls.app>`),
    `MSG91_EMAIL_TEMPLATE_ID`; `MSG91_EMAIL_DOMAIN` only if the registered domain

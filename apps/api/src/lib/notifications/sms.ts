@@ -82,7 +82,19 @@ class Msg91Sms implements SmsProvider {
   }
 }
 
+/**
+ * Real SMS only when switched on explicitly. MSG91_AUTH_KEY is shared with
+ * MSG91 Email, so the key alone must not start sending SMS: until the SMS
+ * flows (DLT templates) exist in MSG91, every attempt would be refused and
+ * logged as a failed notification. With MSG91_SMS_ENABLED unset, SMS stays in
+ * stub mode (ledger row + `sms_stub` log, nothing sent).
+ */
 export function getSmsProvider(): SmsProvider {
-  if (env.MSG91_AUTH_KEY) return new Msg91Sms(env.MSG91_AUTH_KEY, env.MSG91_SENDER_ID);
+  if (env.MSG91_SMS_ENABLED && env.MSG91_AUTH_KEY) {
+    return new Msg91Sms(env.MSG91_AUTH_KEY, env.MSG91_SENDER_ID);
+  }
+  if (env.MSG91_SMS_ENABLED) {
+    logger.warn('msg91_sms_enabled_without_key — set MSG91_AUTH_KEY; SMS stays in stub mode');
+  }
   return new StubSms();
 }
