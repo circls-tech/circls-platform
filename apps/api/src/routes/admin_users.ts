@@ -9,6 +9,7 @@ import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
+import { isShareSql, isViewSql } from '../services/engagement_signals.js';
 
 /**
  * Platform-admin user reports. Mounted under /v1/admin/users/*. Platform
@@ -17,8 +18,8 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
  *
  * Two datasets:
  *  - consumers: one row per user account, with booking/activity/login rollups
- *    (events booked, events opened, minutes in app from consumer_activity
- *    session spans, interests, last login).
+ *    (events booked, events opened, listings liked and shared, minutes in app
+ *    from consumer_activity session spans, interests, last login).
  *  - partners: one row per tenant membership on a non-platform tenant, with
  *    the member's contact info and tenant rollups.
  *
@@ -48,6 +49,10 @@ interface AdminConsumerUserRow {
   eventsBooked: number;
   totalBookings: number;
   eventsOpened: number;
+  /** Events, venues and plans on the wishlist now. */
+  likes: number;
+  /** Shares that reached someone (sent or link copied); see engagement_signals. */
+  shares: number;
   sessionCount: number;
   minutesInApp: number;
   lastActiveAt: string | null;
@@ -148,7 +153,12 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
           (SELECT count(DISTINCT ca.item_id) FROM consumer_activity ca
              WHERE ca.user_id = u.id
                AND ca.item_type = 'event'
-               AND ca.item_id IS NOT NULL)                                                AS events_opened,
+               AND ca.item_id IS NOT NULL
+               AND ${isViewSql('ca')})                                                    AS events_opened,
+          (SELECT count(*) FROM wishlist_items w
+             WHERE w.user_id = u.id)                                                      AS likes,
+          (SELECT count(*) FROM consumer_activity ca
+             WHERE ca.user_id = u.id AND ${isShareSql('ca')})                             AS shares,
           (SELECT count(DISTINCT ca.session_id) FROM consumer_activity ca
              WHERE ca.user_id = u.id AND ca.session_id IS NOT NULL)                       AS session_count,
           (SELECT coalesce(round(sum(s.dur) / 60.0), 0) FROM (
@@ -183,6 +193,8 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
         eventsBooked: Number(r['events_booked'] ?? 0),
         totalBookings: Number(r['total_bookings'] ?? 0),
         eventsOpened: Number(r['events_opened'] ?? 0),
+        likes: Number(r['likes'] ?? 0),
+        shares: Number(r['shares'] ?? 0),
         sessionCount: Number(r['session_count'] ?? 0),
         minutesInApp: Number(r['minutes_in_app'] ?? 0),
         lastActiveAt: isoOrNull(r['last_active_at']),
@@ -193,11 +205,12 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
       if (wantCsv) {
         const csv = csvDocument(
           ['User ID', 'Name', 'Email', 'Phone', 'Interests', 'Status', 'Signed up',
-           'Events booked', 'Total bookings', 'Events opened', 'Sessions',
+           'Events booked', 'Total bookings', 'Events opened', 'Likes', 'Shares', 'Sessions',
            'Minutes in app', 'Last active', 'Logins', 'Last login'],
           items.map((u) => [
             u.id, u.displayName, u.email, u.phoneE164, u.interests.join('; '),
             u.status, u.createdAt, u.eventsBooked, u.totalBookings, u.eventsOpened,
+            u.likes, u.shares,
             u.sessionCount, u.minutesInApp, u.lastActiveAt, u.loginCount, u.lastLoginAt,
           ]),
         );

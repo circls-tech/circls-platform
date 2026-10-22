@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useActivity } from '@/lib/activity/ActivityProvider';
+import type { WishlistItemType } from '@/lib/api/types';
 import { shareLink, type ShareOutcome } from '@/lib/share';
 import { inlinePillClass, overlayChipClass } from '@/components/chips';
 
@@ -44,6 +46,13 @@ function CheckIcon({ className = '' }: { className?: string }) {
 
 const NOTE_MS = 2500;
 
+/** Where each kind of listing lives on circls.app. */
+const LISTING_ROOT: Record<WishlistItemType, string> = {
+  event: '/events',
+  venue: '/venues',
+  membership: '/memberships',
+};
+
 /**
  * One tap to share a listing: the device's share sheet where there is one
  * (phones, Safari, Chrome and Edge on Windows and macOS), a copied link
@@ -61,16 +70,22 @@ const NOTE_MS = 2500;
  * phone-width card. If neither sharing nor the clipboard is allowed, the
  * button says so in its tooltip and to screen readers.
  *
- * `path` is the listing's canonical path (e.g. `/events/<id>`); the origin is
- * added at click time so the link points at whichever host served the page
- * and never carries the current URL's query string (a preview token, say).
- * Pages in preview mode should not render this at all: the listing is not
- * public yet, so the link would 404 for everyone it is sent to.
+ * The link is the listing's canonical path (e.g. `/events/<id>`) on whichever
+ * host served the page, built at click time so it never carries the current
+ * URL's query string (a preview token, say). Pages in preview mode should not
+ * render this at all: the listing is not public yet, so the link would 404
+ * for everyone it is sent to.
+ *
+ * Every tap is logged as a `share` activity event with its outcome, so the
+ * admin reports can count shares per listing and per consumer. A dismissed
+ * sheet is logged too (it was a tap), but the reports only count `shared`
+ * and `copied` as shares.
  */
 export function ShareButton({
   title,
   text,
-  path,
+  itemType,
+  itemId,
   variant = 'overlay',
   className = '',
 }: {
@@ -78,12 +93,14 @@ export function ShareButton({
   title: string;
   /** An optional line under the title (date, venue). */
   text?: string;
-  path: string;
+  itemType: WishlistItemType;
+  itemId: string;
   variant?: 'overlay' | 'inline';
   className?: string;
 }) {
   const [outcome, setOutcome] = useState<ShareOutcome | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activity = useActivity();
 
   useEffect(() => {
     return () => {
@@ -94,8 +111,9 @@ export function ShareButton({
   async function onClick(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${path}`;
+    const url = `${window.location.origin}${LISTING_ROOT[itemType]}/${itemId}`;
     const result = await shareLink({ title, text, url });
+    activity.log('share', { itemType, itemId, props: { outcome: result } });
     // The sheet is its own confirmation; only the quieter outcomes need a note.
     if (result === 'shared' || result === 'dismissed') return;
     setOutcome(result);

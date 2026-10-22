@@ -9,6 +9,8 @@ import type {
   AdminChangeRequestListResponse,
   AdminConsumerUsersPage,
   AdminCouponStats,
+  AdminEngagementPage,
+  AdminEngagementType,
   AdminListingDetail,
   AdminListingListResponse,
   AdminListingPreview,
@@ -313,6 +315,26 @@ export function useAdminPartnerUsers(filters: AdminUserReportFilters) {
       apiFetch<AdminPartnerUsersPage>(
         `/v1/admin/users/partners${qs({ limit: 50, cursor: pageParam, ...filters })}`,
       ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export interface AdminEngagementFilters {
+  type: AdminEngagementType;
+  /** Listing or organiser name. */
+  q?: string;
+  /** ISO instant; count only activity at/after it. */
+  since?: string;
+}
+
+export function useAdminEngagement(filters: AdminEngagementFilters) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'engagement', filters],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminEngagementPage>(`/v1/admin/engagement${qs({ limit: 50, cursor: pageParam, ...filters })}`),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }

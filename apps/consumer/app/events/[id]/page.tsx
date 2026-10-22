@@ -153,7 +153,8 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                       <ShareButton
                         title={ev.name}
                         text={`${formatDateTime(ev.startsAt)} · ${ev.locationName}`}
-                        path={`/events/${ev.id}`}
+                        itemType="event"
+                        itemId={ev.id}
                         variant="inline"
                       />
                     )}

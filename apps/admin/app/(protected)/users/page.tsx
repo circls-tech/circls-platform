@@ -102,7 +102,7 @@ export default function ConsumerUsersPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Consumers</h1>
           <p className="text-sm text-slate-500">
-            Every consumer account with booking, activity and login rollups.
+            Every consumer account with booking, activity, like, share and login rollups.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -140,7 +140,7 @@ export default function ConsumerUsersPage() {
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
       <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
-        <table className="w-full min-w-[1100px] text-sm">
+        <table className="w-full min-w-[1250px] text-sm">
           <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">User</th>
@@ -149,6 +149,12 @@ export default function ConsumerUsersPage() {
               <th className="px-4 py-2 text-right font-medium">Events booked</th>
               <th className="px-4 py-2 text-right font-medium">Bookings</th>
               <th className="px-4 py-2 text-right font-medium">Events opened</th>
+              <th className="px-4 py-2 text-right font-medium" title="Events, venues and plans on their wishlist now">
+                Likes
+              </th>
+              <th className="px-4 py-2 text-right font-medium" title="Listings shared through the share sheet or by copying the link">
+                Shares
+              </th>
               <th className="px-4 py-2 text-right font-medium">Sessions</th>
               <th className="px-4 py-2 text-right font-medium">Min in app</th>
               <th className="px-4 py-2 text-right font-medium">Logins</th>
@@ -160,14 +166,14 @@ export default function ConsumerUsersPage() {
           <tbody className="divide-y divide-slate-100">
             {isLoading && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={14} className="px-4 py-8 text-center text-sm text-slate-400">
                   Loading…
                 </td>
               </tr>
             )}
             {isError && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-sm text-red-600">
+                <td colSpan={14} className="px-4 py-8 text-center text-sm text-red-600">
                   {/* The reports carry contact details: Owners and Managers only. */}
                   {error instanceof ApiError && error.code === 'forbidden_capability'
                     ? 'Only platform Owners and Managers can see user reports.'
@@ -177,7 +183,7 @@ export default function ConsumerUsersPage() {
             )}
             {!isLoading && !isError && rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={14} className="px-4 py-8 text-center text-sm text-slate-400">
                   No users found.
                 </td>
               </tr>
@@ -197,6 +203,8 @@ export default function ConsumerUsersPage() {
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.eventsBooked}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.totalBookings}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.eventsOpened}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.likes}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.shares}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.sessionCount}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.minutesInApp}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{u.loginCount}</td>

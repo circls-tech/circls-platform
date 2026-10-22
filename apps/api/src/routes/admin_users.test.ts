@@ -29,6 +29,8 @@ interface ConsumerRow {
   eventsBooked: number;
   totalBookings: number;
   eventsOpened: number;
+  likes: number;
+  shares: number;
   sessionCount: number;
   minutesInApp: number;
   loginCount: number;
@@ -110,6 +112,18 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
         (${consumerUserId}::uuid, 's1', 'item_view', 'event', ${tenantAId}::uuid, now(), now() - interval '10 minutes'),
         (${consumerUserId}::uuid, 's1', 'item_view', 'event', ${tenantAId}::uuid, now(), now())
     `);
+    // Two share taps on another event inside the same session: one sent, one
+    // dismissed. Neither is a view, so neither may count as an event opened.
+    await db.execute(sql`
+      INSERT INTO consumer_activity (user_id, session_id, event_type, item_type, item_id, props, client_ts, created_at)
+      VALUES
+        (${consumerUserId}::uuid, 's1', 'share', 'event', gen_random_uuid(), '{"outcome":"shared"}'::jsonb, now(), now() - interval '5 minutes'),
+        (${consumerUserId}::uuid, 's1', 'share', 'event', gen_random_uuid(), '{"outcome":"dismissed"}'::jsonb, now(), now() - interval '5 minutes')
+    `);
+    await db.execute(sql`
+      INSERT INTO wishlist_items (user_id, item_type, item_id)
+      VALUES (${consumerUserId}::uuid, 'event', gen_random_uuid()), (${consumerUserId}::uuid, 'venue', gen_random_uuid())
+    `);
     const login = await app.inject({
       method: 'POST',
       url: '/v1/me/login',
@@ -125,6 +139,7 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
     if (consumerUserId) {
       await db.execute(sql`DELETE FROM login_events WHERE user_id = ${consumerUserId}::uuid`);
       await db.execute(sql`DELETE FROM consumer_activity WHERE user_id = ${consumerUserId}::uuid`);
+      await db.execute(sql`DELETE FROM wishlist_items WHERE user_id = ${consumerUserId}::uuid`);
       await db.execute(sql`DELETE FROM bookings WHERE customer_user_id = ${consumerUserId}::uuid`);
     }
     if (platformTenantId) {
@@ -150,7 +165,9 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
     expect(row!.interests).toEqual(['tennis', 'music']);
     expect(row!.eventsBooked).toBe(1); // cancelled event booking excluded
     expect(row!.totalBookings).toBe(2);
-    expect(row!.eventsOpened).toBe(1); // same event viewed twice → 1 distinct
+    expect(row!.eventsOpened).toBe(1); // same event viewed twice → 1 distinct; shares aren't views
+    expect(row!.likes).toBe(2);
+    expect(row!.shares).toBe(1); // the dismissed sheet is not a share
     expect(row!.sessionCount).toBe(1);
     expect(row!.minutesInApp).toBe(10);
     expect(row!.loginCount).toBeGreaterThanOrEqual(1);
