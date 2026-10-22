@@ -6,11 +6,14 @@ import { sql, type SQL } from 'drizzle-orm';
  * Engagement report). Both must agree, or a listing and the people who looked
  * at it would tell different stories.
  *
- * VIEWS. The two clients name a listing view differently: circls.app logs
- * `item_view` with the listing's type in `item_type`; the Flutter app logs
- * `event_view` / `venue_view` / `membership_view`. Either way `item_type` and
- * `item_id` name the listing. Likes and shares carry `item_type` too, so
- * filtering on `item_type` alone would count a share from a card as a view.
+ * VIEWS are `item_view` rows, with the listing in `item_type` / `item_id`.
+ * The web app logs that name; the Flutter app names its views after the
+ * listing (`event_view`, `venue_view`, `membership_view`). The ingest rewrites
+ * any `<item_type>_view` to `item_view` (normalizeActivityEventType), and
+ * migration 0069 rewrote the rows stored before it, so readers only ever see
+ * one name and a new per-type view name from either client is counted without
+ * a change here. Likes and shares carry `item_type` too, so filtering on
+ * `item_type` alone would count a share from a card as a view.
  *
  * SHARES. Both clients log a `share` on every tap of the share button, with
  * `props.outcome`: `shared` (sent through the share sheet), `copied` (link
@@ -22,14 +25,22 @@ import { sql, type SQL } from 'drizzle-orm';
  * write through the wishlist API, rather than from `like` / `unlike` activity
  * rows (which only say when a heart was tapped, not what is liked now).
  */
-export const VIEW_EVENT_TYPES = ['item_view', 'event_view', 'venue_view', 'membership_view'] as const;
 export const COMPLETED_SHARE_OUTCOMES = ['shared', 'copied'] as const;
+
+/**
+ * The event type an incoming activity event is stored under: a view named
+ * after its item type (`event_view` with item type `event`) becomes
+ * `item_view`; everything else is kept as sent.
+ */
+export function normalizeActivityEventType(eventType: string, itemType: string | null | undefined): string {
+  return itemType && eventType === `${itemType}_view` ? 'item_view' : eventType;
+}
 
 const list = (values: readonly string[]) => sql.join(values.map((v) => sql`${v}`), sql`, `);
 
 /** `<alias>` is a listing view. */
 export function isViewSql(alias: string): SQL {
-  return sql`${sql.raw(alias)}.event_type IN (${list(VIEW_EVENT_TYPES)})`;
+  return sql`${sql.raw(alias)}.event_type = 'item_view'`;
 }
 
 /** `<alias>` is a share that reached someone (sent or copied). */

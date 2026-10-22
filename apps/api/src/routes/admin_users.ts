@@ -150,29 +150,40 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
           (SELECT count(*) FROM bookings b
              WHERE b.customer_user_id = u.id
                AND b.status <> 'cancelled')                                               AS total_bookings,
-          (SELECT count(DISTINCT ca.item_id) FROM consumer_activity ca
-             WHERE ca.user_id = u.id
-               AND ca.item_type = 'event'
-               AND ca.item_id IS NOT NULL
-               AND ${isViewSql('ca')})                                                    AS events_opened,
+          act.events_opened,
           (SELECT count(*) FROM wishlist_items w
              WHERE w.user_id = u.id)                                                      AS likes,
-          (SELECT count(*) FROM consumer_activity ca
-             WHERE ca.user_id = u.id AND ${isShareSql('ca')})                             AS shares,
-          (SELECT count(DISTINCT ca.session_id) FROM consumer_activity ca
-             WHERE ca.user_id = u.id AND ca.session_id IS NOT NULL)                       AS session_count,
-          (SELECT coalesce(round(sum(s.dur) / 60.0), 0) FROM (
-             SELECT extract(epoch FROM max(ca.created_at) - min(ca.created_at)) AS dur
-               FROM consumer_activity ca
-              WHERE ca.user_id = u.id AND ca.session_id IS NOT NULL
-              GROUP BY ca.session_id) s)                                                  AS minutes_in_app,
-          (SELECT max(ca.created_at) FROM consumer_activity ca
-             WHERE ca.user_id = u.id)                                                     AS last_active_at,
+          act.shares,
+          act.session_count,
+          act.minutes_in_app,
+          act.last_active_at,
           (SELECT count(*) FROM login_events le
              WHERE le.user_id = u.id AND le.source = 'consumer')                          AS login_count,
           (SELECT max(le.created_at) FROM login_events le
              WHERE le.user_id = u.id AND le.source = 'consumer')                          AS last_login_at
         FROM users u
+        -- Every activity rollup in one read of the person's rows (heartbeats
+        -- make them many). A session's span (last row minus first) is put on
+        -- its first row only, so summing spans counts each session once.
+        LEFT JOIN LATERAL (
+          SELECT count(DISTINCT x.item_id) FILTER (WHERE x.event_view)                   AS events_opened,
+                 count(*) FILTER (WHERE x.share)                                          AS shares,
+                 count(DISTINCT x.session_id)                                             AS session_count,
+                 coalesce(round(sum(x.span) / 60.0), 0)                                   AS minutes_in_app,
+                 max(x.created_at)                                                        AS last_active_at
+            FROM (
+              SELECT ca.item_id, ca.session_id, ca.created_at,
+                     (ca.item_type = 'event' AND ${isViewSql('ca')})                      AS event_view,
+                     ${isShareSql('ca')}                                                  AS share,
+                     CASE WHEN ca.session_id IS NOT NULL
+                           AND row_number() OVER (PARTITION BY ca.session_id ORDER BY ca.created_at) = 1
+                          THEN extract(epoch FROM max(ca.created_at) OVER (PARTITION BY ca.session_id)
+                                                - min(ca.created_at) OVER (PARTITION BY ca.session_id))
+                     END                                                                  AS span
+                FROM consumer_activity ca
+               WHERE ca.user_id = u.id
+            ) x
+        ) act ON TRUE
         WHERE ${whereClause}
         ORDER BY u.created_at DESC, u.id DESC
         LIMIT ${fetchLimit}
@@ -203,15 +214,17 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
       }));
 
       if (wantCsv) {
+        // Columns added later go at the end, so sheets that read this export
+        // by position keep working.
         const csv = csvDocument(
           ['User ID', 'Name', 'Email', 'Phone', 'Interests', 'Status', 'Signed up',
-           'Events booked', 'Total bookings', 'Events opened', 'Likes', 'Shares', 'Sessions',
-           'Minutes in app', 'Last active', 'Logins', 'Last login'],
+           'Events booked', 'Total bookings', 'Events opened', 'Sessions',
+           'Minutes in app', 'Last active', 'Logins', 'Last login', 'Likes', 'Shares'],
           items.map((u) => [
             u.id, u.displayName, u.email, u.phoneE164, u.interests.join('; '),
             u.status, u.createdAt, u.eventsBooked, u.totalBookings, u.eventsOpened,
-            u.likes, u.shares,
             u.sessionCount, u.minutesInApp, u.lastActiveAt, u.loginCount, u.lastLoginAt,
+            u.likes, u.shares,
           ]),
         );
         return reply

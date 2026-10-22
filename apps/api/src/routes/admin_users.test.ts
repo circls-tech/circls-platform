@@ -219,6 +219,8 @@ describe.skipIf(!runIntegration)('admin user report endpoints', () => {
     const body = res.body;
     expect(body.charCodeAt(0)).toBe(0xfeff);
     expect(body).toContain('"User ID","Name","Email"');
+    // Columns added later sit at the end, so positional readers keep working.
+    expect(body.split('\r\n')[0]).toMatch(/"Last login","Likes","Shares"$/);
     expect(body).toContain('consumer_au@x.com');
     expect(body).toContain('tennis; music');
   });

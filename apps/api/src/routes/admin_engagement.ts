@@ -30,13 +30,21 @@ import { itemKeySql } from '../services/item_key.js';
  *     through (confirmed, completed or no-show): the end of the funnel that
  *     starts with a view. A court booking counts against its venue.
  *
+ * A RECURRING EVENT IS ONE ROW. Every date of a series is its own events row,
+ * and the consumer site shows the series as one card linking to whichever date
+ * is next, so its views, likes and shares land on different dates over time.
+ * The dates are counted together (viewers and likes by distinct person) under
+ * the date that stands for the series: the next live one, else the latest.
+ * `dates` says how many there are; `seriesId` is null for a one-off.
+ *
  * `since` narrows every count to what happened at or after it (a like counts
  * from when it was made). Drafts are left out: nobody outside the partner
- * could see them. Rows are ordered by views, then likes, shares, bookings and
- * name; the order is computed, so `cursor` is simply the offset of the next
- * page. Every row also carries the totals across all matching listings, for
- * the summary tiles. `format=csv` returns every matching row, capped at
- * CSV_MAX_ROWS.
+ * could see them. The name filter is applied before anything is counted, so
+ * a search only aggregates the listings it matched. Rows are ordered by
+ * views, then likes, shares, bookings and name; the order is computed, so
+ * `cursor` is simply the offset of the next page. Every row also carries the
+ * totals across all matching listings, for the summary tiles. `format=csv`
+ * returns every matching row, capped at CSV_MAX_ROWS.
  */
 
 const CSV_MAX_ROWS = 10_000;
@@ -55,14 +63,37 @@ const querySchema = z.object({
   format: z.enum(['json', 'csv']).optional(),
 });
 
-/** The listing table behind each type, minus drafts. Events add their start. */
+/**
+ * Every non-draft listing of a type, with the group it is counted under
+ * (`grp`), whether it stands for that group (`pick = 1`) and how many listings
+ * the group has. Only events group: by series, with the date that stands for
+ * it ordered live before cancelled, upcoming before past, then nearest to now.
+ * An event's time zone is its own (standalone events) or its venue's.
+ */
 const LISTINGS: Record<EngagementType, SQL> = {
-  event: sql`SELECT e.id, e.name, e.tenant_id, e.status::text AS status, e.starts_at
-               FROM events e WHERE e.status <> 'draft'`,
-  venue: sql`SELECT v.id, v.name, v.tenant_id, v.status::text AS status, NULL::timestamptz AS starts_at
-               FROM venues v WHERE v.status <> 'draft'`,
-  membership: sql`SELECT m.id, m.name, m.tenant_id, m.status::text AS status, NULL::timestamptz AS starts_at
-                    FROM memberships m WHERE m.status <> 'draft'`,
+  event: sql`
+    SELECT e.id AS item_id, coalesce(e.series_id, e.id) AS grp, e.series_id,
+           e.name, e.tenant_id, e.status::text AS status, e.starts_at,
+           coalesce(e.tz_name, v.tz_name) AS tz_name,
+           row_number() OVER (PARTITION BY coalesce(e.series_id, e.id)
+                              ORDER BY e.status = 'cancelled', e.starts_at < now(),
+                                       abs(extract(epoch FROM e.starts_at - now()))) AS pick,
+           count(*) OVER (PARTITION BY coalesce(e.series_id, e.id)) AS dates
+      FROM events e
+      LEFT JOIN venues v ON v.id = e.venue_id
+     WHERE e.status <> 'draft'`,
+  venue: sql`
+    SELECT v.id AS item_id, v.id AS grp, NULL::uuid AS series_id,
+           v.name, v.tenant_id, v.status::text AS status, NULL::timestamptz AS starts_at,
+           NULL::text AS tz_name, 1 AS pick, 1 AS dates
+      FROM venues v
+     WHERE v.status <> 'draft'`,
+  membership: sql`
+    SELECT m.id AS item_id, m.id AS grp, NULL::uuid AS series_id,
+           m.name, m.tenant_id, m.status::text AS status, NULL::timestamptz AS starts_at,
+           NULL::text AS tz_name, 1 AS pick, 1 AS dates
+      FROM memberships m
+     WHERE m.status <> 'draft'`,
 };
 
 /** The bookings.item_type a listing type sells: a venue sells court slots. */
@@ -74,11 +105,18 @@ const BOOKING_ITEM_TYPE: Record<EngagementType, string> = {
 
 export interface AdminEngagementRow {
   itemType: EngagementType;
+  /** The listing, or for a recurring event the date that stands for it. */
   itemId: string;
+  /** Recurring events only. */
+  seriesId: string | null;
+  /** How many dates a recurring event has; 1 otherwise. */
+  dates: number;
   name: string;
   status: string;
   /** Events only. */
   startsAt: string | null;
+  /** IANA zone the event's date reads in. Events only. */
+  timeZone: string | null;
   tenantId: string;
   tenantName: string;
   views: number;
@@ -116,59 +154,69 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
     const activitySince = since ? sql`AND ca.created_at >= ${since}::timestamptz` : sql``;
     const likesSince = since ? sql`AND w.created_at >= ${since}::timestamptz` : sql``;
     const bookingsSince = since ? sql`AND b.created_at >= ${since}::timestamptz` : sql``;
-    const nameFilter = parsed.data.q
-      ? sql`WHERE lower(l.name) LIKE ${`%${parsed.data.q.toLowerCase()}%`}
-               OR lower(t.name) LIKE ${`%${parsed.data.q.toLowerCase()}%`}`
-      : sql``;
+    const like = parsed.data.q ? `%${parsed.data.q.toLowerCase()}%` : null;
+    const nameFilter = like ? sql`AND (lower(o.name) LIKE ${like} OR lower(t.name) LIKE ${like})` : sql``;
 
     const raw = await db.execute<Record<string, unknown>>(sql`
-      WITH listing AS (${LISTINGS[type]}),
+      WITH occ AS (${LISTINGS[type]}),
+      listing AS (
+        SELECT o.grp, o.item_id, o.series_id, o.dates, o.name, o.status, o.starts_at, o.tz_name,
+               t.id AS tenant_id, t.name AS tenant_name
+          FROM occ o
+          JOIN tenants t ON t.id = o.tenant_id
+         WHERE o.pick = 1 ${nameFilter}
+      ),
+      -- Every listing counted under a matched row: a recurring event's dates.
+      member AS (
+        SELECT o.item_id, o.grp FROM occ o JOIN listing l ON l.grp = o.grp
+      ),
       act AS (
-        SELECT ca.item_id,
+        SELECT m.grp,
                count(*) FILTER (WHERE ${isViewSql('ca')})                 AS views,
                count(DISTINCT ca.user_id) FILTER (WHERE ${isViewSql('ca')}) AS viewers,
                count(*) FILTER (WHERE ${isShareSql('ca')})                AS shares
           FROM consumer_activity ca
-         WHERE ca.item_type = ${type} AND ca.item_id IS NOT NULL ${activitySince}
-         GROUP BY ca.item_id
+          JOIN member m ON m.item_id = ca.item_id
+         WHERE ca.item_type = ${type} ${activitySince}
+         GROUP BY m.grp
       ),
       liked AS (
-        SELECT w.item_id, count(*) AS likes
+        SELECT m.grp, count(DISTINCT w.user_id) AS likes
           FROM wishlist_items w
+          JOIN member m ON m.item_id = w.item_id
          WHERE w.item_type = ${type}::wishlist_item_type ${likesSince}
-         GROUP BY w.item_id
+         GROUP BY m.grp
       ),
       booked AS (
-        SELECT ${itemKeySql('b')} AS item_id, count(*) AS bookings
+        SELECT m.grp, count(*) AS bookings
           FROM bookings b
+          JOIN member m ON m.item_id = ${itemKeySql('b')}
          WHERE b.item_type = ${BOOKING_ITEM_TYPE[type]}::booking_item_type
            AND b.channel = 'circls'
            AND b.status IN ('confirmed', 'completed', 'no_show')
            ${bookingsSince}
-         GROUP BY 1
+         GROUP BY m.grp
       ),
       rows AS (
-        SELECT l.id, l.name, l.status, l.starts_at, t.id AS tenant_id, t.name AS tenant_name,
-               coalesce(a.views, 0)    AS views,
-               coalesce(a.viewers, 0)  AS viewers,
-               coalesce(lk.likes, 0)   AS likes,
-               coalesce(a.shares, 0)   AS shares,
+        SELECT l.*,
+               coalesce(a.views, 0)     AS views,
+               coalesce(a.viewers, 0)   AS viewers,
+               coalesce(lk.likes, 0)    AS likes,
+               coalesce(a.shares, 0)    AS shares,
                coalesce(bk.bookings, 0) AS bookings
           FROM listing l
-          JOIN tenants t ON t.id = l.tenant_id
-          LEFT JOIN act a     ON a.item_id = l.id
-          LEFT JOIN liked lk  ON lk.item_id = l.id
-          LEFT JOIN booked bk ON bk.item_id = l.id
-          ${nameFilter}
+          LEFT JOIN act a     ON a.grp = l.grp
+          LEFT JOIN liked lk  ON lk.grp = l.grp
+          LEFT JOIN booked bk ON bk.grp = l.grp
       )
       SELECT r.*,
-             count(*)       OVER () AS total_listings,
-             sum(r.views)   OVER () AS total_views,
-             sum(r.likes)   OVER () AS total_likes,
-             sum(r.shares)  OVER () AS total_shares,
+             count(*)        OVER () AS total_listings,
+             sum(r.views)    OVER () AS total_views,
+             sum(r.likes)    OVER () AS total_likes,
+             sum(r.shares)   OVER () AS total_shares,
              sum(r.bookings) OVER () AS total_bookings
         FROM rows r
-       ORDER BY r.views DESC, r.likes DESC, r.shares DESC, r.bookings DESC, r.name, r.id
+       ORDER BY r.views DESC, r.likes DESC, r.shares DESC, r.bookings DESC, r.name, r.grp
        LIMIT ${limit + 1} OFFSET ${offset}
     `);
 
@@ -178,10 +226,13 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
 
     const rows: AdminEngagementRow[] = pageRows.map((r) => ({
       itemType: type,
-      itemId: r['id'] as string,
+      itemId: r['item_id'] as string,
+      seriesId: (r['series_id'] as string | null) ?? null,
+      dates: Number(r['dates'] ?? 1),
       name: r['name'] as string,
       status: r['status'] as string,
       startsAt: r['starts_at'] == null ? null : new Date(r['starts_at'] as string).toISOString(),
+      timeZone: (r['tz_name'] as string | null) ?? null,
       tenantId: r['tenant_id'] as string,
       tenantName: r['tenant_name'] as string,
       views: Number(r['views'] ?? 0),
@@ -193,11 +244,11 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
 
     if (wantCsv) {
       const csv = csvDocument(
-        ['Listing ID', 'Type', 'Name', 'Status', 'Starts', 'Organiser', 'Organiser ID',
-         'Views', 'Viewers', 'Likes', 'Shares', 'Bookings'],
+        ['Listing ID', 'Series ID', 'Type', 'Name', 'Dates', 'Status', 'Starts', 'Time zone',
+         'Organiser', 'Organiser ID', 'Views', 'Viewers', 'Likes', 'Shares', 'Bookings'],
         rows.map((r) => [
-          r.itemId, r.itemType, r.name, r.status, r.startsAt, r.tenantName, r.tenantId,
-          r.views, r.viewers, r.likes, r.shares, r.bookings,
+          r.itemId, r.seriesId, r.itemType, r.name, r.dates, r.status, r.startsAt, r.timeZone,
+          r.tenantName, r.tenantId, r.views, r.viewers, r.likes, r.shares, r.bookings,
         ]),
       );
       return reply

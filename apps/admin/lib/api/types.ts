@@ -542,11 +542,18 @@ export type AdminEngagementType = 'event' | 'venue' | 'membership';
 /** One listing on the Engagement report (GET /v1/admin/engagement). */
 export interface AdminEngagementRow {
   itemType: AdminEngagementType;
+  /** The listing, or for a recurring event the date that stands for it. */
   itemId: string;
+  /** Recurring events only: all their dates are counted in this one row. */
+  seriesId: string | null;
+  /** How many dates a recurring event has; 1 otherwise. */
+  dates: number;
   name: string;
   status: string;
   /** Events only. */
   startsAt: string | null;
+  /** IANA zone the event's date reads in. Events only. */
+  timeZone: string | null;
   tenantId: string;
   tenantName: string;
   /** Listing views from the web and mobile apps. */

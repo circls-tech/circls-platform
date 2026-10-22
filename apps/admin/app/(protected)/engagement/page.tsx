@@ -26,12 +26,15 @@ function sinceForRange(range: RangeKey): string | undefined {
   return new Date(Date.now() - hours * 3_600_000).toISOString();
 }
 
-const IST_DATE = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-});
+/** An event's date as it reads where the event is (a Boston evening stays on its own day). */
+function eventDate(startsAt: string, timeZone: string | null): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: timeZone ?? 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+  }).format(new Date(startsAt));
+}
 
 const NUMBER = new Intl.NumberFormat('en-IN');
 
@@ -222,7 +225,15 @@ export default function EngagementPage() {
               <tr key={r.itemId}>
                 <td className="px-4 py-2.5">
                   <div className="font-medium text-slate-900">{r.name}</div>
-                  {r.startsAt && <div className="text-xs text-slate-400">{IST_DATE.format(new Date(r.startsAt))}</div>}
+                  {r.startsAt && (
+                    <div className="text-xs text-slate-400">
+                      {/* The API stands a series by its next date, or its last once all have passed. */}
+                      {r.dates > 1
+                        ? `${r.dates} dates · ${new Date(r.startsAt).getTime() >= Date.now() ? 'next' : 'last'} `
+                        : ''}
+                      {eventDate(r.startsAt, r.timeZone)}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-600">
                   <Link href={`/tenants/${r.tenantId}`} className="hover:underline">
