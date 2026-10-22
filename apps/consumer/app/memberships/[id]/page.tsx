@@ -161,7 +161,8 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
                       <ShareButton
                         title={m.name}
                         text={scope.brandWide ? m.brand?.name : scope.label}
-                        path={`/memberships/${m.id}`}
+                        itemType="membership"
+                        itemId={m.id}
                         variant="inline"
                       />
                     )}

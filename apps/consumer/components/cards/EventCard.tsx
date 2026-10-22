@@ -54,7 +54,8 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
         <ShareButton
           title={event.name}
           text={`${formatDateTime(event.startsAt)} · ${event.locationName}`}
-          path={`/events/${event.id}`}
+          itemType="event"
+          itemId={event.id}
         />
         <LikeButton itemType="event" itemId={event.id} name={event.name} />
       </div>

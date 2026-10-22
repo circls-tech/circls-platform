@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard', petal: '#FFB0A3', icon: 'dashboard' },
   { href: '/tenants', label: 'Tenants', petal: '#FCE38A', icon: 'tenants' },
   { href: '/users', label: 'Consumers', petal: '#BCE3A0', icon: 'consumers' },
+  { href: '/engagement', label: 'Engagement', petal: '#FFD2A1', icon: 'engagement' },
   { href: '/partner-users', label: 'Partner users', petal: '#9CE0D4', icon: 'partner-users' },
   { href: '/payouts', label: 'Payouts', petal: '#F9B4D4', icon: 'payouts' },
   { href: '/payments', label: 'Payments', petal: '#CDBBF7', icon: 'payments' },
@@ -65,6 +66,15 @@ function NavIcon({ name }: { name: NavIconName }) {
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case 'engagement':
+      return (
+        <svg {...common}>
+          <path d="M3 3v18h18" />
+          <path d="M8 17v-4" />
+          <path d="M13 17V9" />
+          <path d="M18 17V6" />
         </svg>
       );
     case 'partner-users':

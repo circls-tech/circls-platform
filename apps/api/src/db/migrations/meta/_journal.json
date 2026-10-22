@@ -470,6 +470,20 @@
       "when": 1784500000000,
       "tag": "0067_listing_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1784580000000,
+      "tag": "0068_consumer_activity_item_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1784660000000,
+      "tag": "0069_normalize_view_events",
+      "breakpoints": true
     }
   ]
 }

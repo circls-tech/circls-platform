@@ -46,7 +46,7 @@ export function VenueCard({ venue, className = '' }: { venue: PublicVenue; class
     </Link>
       {/* Share and save sit outside the link; see chips.ts. */}
       <div className={cardChipRowClass}>
-        <ShareButton title={venue.name} text={city ?? undefined} path={`/venues/${venue.id}`} />
+        <ShareButton title={venue.name} text={city ?? undefined} itemType="venue" itemId={venue.id} />
         <LikeButton itemType="venue" itemId={venue.id} name={venue.name} />
       </div>
     </div>

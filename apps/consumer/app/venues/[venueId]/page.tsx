@@ -174,7 +174,8 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
                       <ShareButton
                         title={venueQ.data.venue.name}
                         text={cityOf(venueQ.data.venue.addressJson) ?? undefined}
-                        path={`/venues/${venueQ.data.venue.id}`}
+                        itemType="venue"
+                        itemId={venueQ.data.venue.id}
                         variant="inline"
                       />
                     )}
@@ -674,7 +675,7 @@ function EventCard({
         <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
         <div className="flex shrink-0 items-center gap-2">
           {!preview && (
-            <ShareButton title={event.name} text={formatDateTime(event.startsAt)} path={`/events/${event.id}`} />
+            <ShareButton title={event.name} text={formatDateTime(event.startsAt)} itemType="event" itemId={event.id} />
           )}
           <LikeButton itemType="event" itemId={event.id} name={event.name} />
         </div>

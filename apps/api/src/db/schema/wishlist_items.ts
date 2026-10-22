@@ -8,9 +8,11 @@ export type WishlistItemType = (typeof wishlistItemType.enumValues)[number];
 /**
  * A consumer's "liked" listings — the wishlist behind the heart on event,
  * membership and venue cards (consumer web, `/me/wishlist`). Personal and
- * private: nobody but the owner reads it, and a like never surfaces to the
- * partner. One row per (user, item); liking twice is a no-op, unliking a row
- * that isn't there is too.
+ * private: only the owner sees what they liked, and a like never surfaces to
+ * the partner. The one other reader is the circls admin console, which counts
+ * likes per listing (Engagement report) and per consumer (consumer report).
+ * One row per (user, item); liking twice is a no-op, unliking a row that
+ * isn't there is too.
  *
  * `item_id` is deliberately not a foreign key: the three item types live in
  * three tables, and a listing that is later deleted or unpublished simply

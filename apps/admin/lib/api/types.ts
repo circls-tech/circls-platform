@@ -519,6 +519,10 @@ export interface AdminConsumerUserRow {
   totalBookings: number;
   /** Distinct events viewed, from consumer_activity telemetry. */
   eventsOpened: number;
+  /** Events, venues and plans on their wishlist now. */
+  likes: number;
+  /** Shares that reached someone (sent through the share sheet or link copied). */
+  shares: number;
   sessionCount: number;
   /** Sum of per-session activity spans, in whole minutes. */
   minutesInApp: number;
@@ -530,6 +534,52 @@ export interface AdminConsumerUserRow {
 
 export interface AdminConsumerUsersPage {
   rows: AdminConsumerUserRow[];
+  nextCursor: string | null;
+}
+
+export type AdminEngagementType = 'event' | 'venue' | 'membership';
+
+/** One listing on the Engagement report (GET /v1/admin/engagement). */
+export interface AdminEngagementRow {
+  itemType: AdminEngagementType;
+  /** The listing, or for a recurring event the date that stands for it. */
+  itemId: string;
+  /** Recurring events only: all their dates are counted in this one row. */
+  seriesId: string | null;
+  /** How many dates a recurring event has; 1 otherwise. */
+  dates: number;
+  name: string;
+  status: string;
+  /** Events only. */
+  startsAt: string | null;
+  /** IANA zone the event's date reads in. Events only. */
+  timeZone: string | null;
+  tenantId: string;
+  tenantName: string;
+  /** Listing views from the web and mobile apps. */
+  views: number;
+  /** Distinct signed-in people behind those views. */
+  viewers: number;
+  /** People with it on their wishlist now. */
+  likes: number;
+  /** Share taps that sent or copied the link. */
+  shares: number;
+  /** App bookings that went through (confirmed, completed or no-show). */
+  bookings: number;
+}
+
+export interface AdminEngagementTotals {
+  listings: number;
+  views: number;
+  likes: number;
+  shares: number;
+  bookings: number;
+}
+
+export interface AdminEngagementPage {
+  rows: AdminEngagementRow[];
+  /** Across every matching listing, not just this page. */
+  totals: AdminEngagementTotals;
   nextCursor: string | null;
 }
 

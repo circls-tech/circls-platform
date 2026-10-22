@@ -43,6 +43,7 @@ import type {
   CouponPricing,
 } from './booking_service.js';
 import { priceItem, resolveCouponForCheckout } from './coupon_service.js';
+import { normalizeActivityEventType } from './engagement_signals.js';
 import { listTiersWithRemaining, type TierWithRemaining } from './event_tiers_service.js';
 import { listQuestions, type RegistrationAnswerInput } from './event_registration_questions_service.js';
 import type {
@@ -1653,7 +1654,9 @@ const ACTIVITY_UUID_RE =
  * Append-only ingest of consumer behavioral telemetry. Best-effort: a non-uuid
  * `itemId` is stored as null rather than failing the row (the column is uuid).
  * `user_id` is the caller's id (stamped by the route), never client-supplied.
- * Returns the number of rows inserted.
+ * A view named after its item type (the Flutter app's `event_view`) is stored
+ * as `item_view`, the web app's name, so readers count one name (see
+ * engagement_signals.ts). Returns the number of rows inserted.
  */
 export async function logConsumerActivity(
   userId: string,
@@ -1665,7 +1668,7 @@ export async function logConsumerActivity(
     userId,
     sessionId: e.sessionId ?? null,
     app,
-    eventType: e.eventType,
+    eventType: normalizeActivityEventType(e.eventType, e.itemType),
     itemType: e.itemType ?? null,
     itemId: e.itemId && ACTIVITY_UUID_RE.test(e.itemId) ? e.itemId : null,
     props: e.props ?? null,

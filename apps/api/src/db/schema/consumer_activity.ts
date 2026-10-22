@@ -7,7 +7,8 @@ import { createdAt, uuidPk } from './_columns.js';
  * Seeds the future recommendation engine. `event_type`/`item_type` are plain
  * text (no enum) on purpose so the client can add new signals without a
  * migration. `client_ts` is the device clock (untrusted); `created_at` is the
- * server truth.
+ * server truth. A listing view is always stored as `item_view`, whichever
+ * client sent it (see engagement_signals.ts).
  */
 export const consumerActivity = pgTable('consumer_activity', {
   id: uuidPk(),

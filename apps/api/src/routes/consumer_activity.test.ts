@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { activityBatchBody } from './consumer.js';
+import { normalizeActivityEventType } from '../services/engagement_signals.js';
+
+// Both clients' listing views are stored under the one name the reports count.
+describe('activity event type normalization', () => {
+  it('stores a view named after its item type as item_view', () => {
+    expect(normalizeActivityEventType('event_view', 'event')).toBe('item_view');
+    expect(normalizeActivityEventType('venue_view', 'venue')).toBe('item_view');
+    expect(normalizeActivityEventType('membership_view', 'membership')).toBe('item_view');
+  });
+
+  it('keeps everything else as sent', () => {
+    expect(normalizeActivityEventType('item_view', 'event')).toBe('item_view');
+    expect(normalizeActivityEventType('event_view', 'venue')).toBe('event_view');
+    expect(normalizeActivityEventType('event_view', undefined)).toBe('event_view');
+    expect(normalizeActivityEventType('share', 'event')).toBe('share');
+    expect(normalizeActivityEventType('screen_view', null)).toBe('screen_view');
+  });
+});
 
 // Pure validation tests (no DB) for the POST /v1/consumer/activity batch body.
 describe('activity batch validation', () => {
