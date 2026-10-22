@@ -93,6 +93,16 @@ export const envSchema = z
   MSG91_SENDER_ID: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
+  // MSG91 Email (same account and MSG91_AUTH_KEY as SMS). When configured it
+  // sends ALL email in place of Resend; MSG91_AUTH_KEY alone means SMS only.
+  // Sender on a domain verified in MSG91 → Email, e.g. "Circls <no-reply@event.circls.app>".
+  MSG91_EMAIL_FROM: z.string().optional(),
+  // The MSG91-registered (DKIM) domain; defaults to the from address's domain.
+  MSG91_EMAIL_DOMAIN: z.string().optional(),
+  // SLUG (not the numeric id) of the approved generic template every email
+  // goes through, e.g. circls_transactional. Subject
+  // `Circls: {{VAR1}}`, body `{{VAR2}}` in a <pre> (docs/EMAIL_SETUP.md).
+  MSG91_EMAIL_TEMPLATE_ID: z.string().optional(),
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 

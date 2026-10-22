@@ -163,7 +163,8 @@ const TEMPLATES: Record<string, TemplateDef> = {
 
   'tenant.invitation': {
     email: {
-      subject: "You've been invited to {{tenantName}} on Circls",
+      // MSG91's generic template prefixes "Circls: " — don't repeat the name here.
+      subject: "You've been invited to join {{tenantName}}",
       body:
         'Hello,\n\n' +
         '{{inviterName}} has invited you to join {{tenantName}} on Circls as {{role}}.\n\n' +

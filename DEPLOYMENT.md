@@ -50,6 +50,9 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `NODE_ENV` | no | development | set `production` in prod |
 | `RESEND_API_KEY` | for email | — | Resend server key (`re_…`). Unset ⇒ email runs in stub mode. See `docs/EMAIL_SETUP.md`. |
 | `RESEND_FROM` | with key | — | verified sender, e.g. `Circls <no-reply@circls.app>`. Required alongside the key. |
+| `MSG91_EMAIL_FROM` | for MSG91 email | — | Sender on the domain verified in MSG91 → Email, e.g. `Circls <no-reply@event.circls.app>`. With the two below, **all email goes through MSG91** instead of Resend. |
+| `MSG91_EMAIL_TEMPLATE_ID` | with from | — | **Slug** (not the numeric id) of the approved generic MSG91 template, e.g. `circls_transactional` (subject `Circls: {{VAR1}}`, body `{{VAR2}}`). Uses the shared `MSG91_AUTH_KEY`; setting only some of the three fails the boot in production. |
+| `MSG91_EMAIL_DOMAIN` | no | domain of `MSG91_EMAIL_FROM` | The MSG91-registered (DKIM) domain, when it differs from the from address's. |
 | `R2_ACCOUNT_ID` | for media | — | Cloudflare R2 account id (hex prefix of the S3 endpoint). Unset ⇒ storage stub mode. |
 | `R2_ACCESS_KEY_ID` | for media | — | R2 API token S3 access key id. |
 | `R2_SECRET_ACCESS_KEY` | for media | — | R2 API token S3 secret. |
