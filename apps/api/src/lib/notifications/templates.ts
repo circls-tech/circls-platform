@@ -41,10 +41,10 @@ interface TemplateDef {
  * becomes a DB-backed lookup; the call site doesn't change.
  *
  * Variable contract (what the dispatcher passes in `payload`):
- *   booking.confirmed  → venueName, arenaName, when, totalRupees, bookingId
- *   booking.cancelled  → venueName, when, refundRupees? (omit when free)
- *   booking.rescheduled → venueName, arenaName, when (the NEW time), bookingId
- *   booking.reminder_* → venueName, arenaName, when
+ *   booking.*          → itemName ("Venue · Arena", the event, the plan), when,
+ *                        details (pre-rendered lines: event/venue, where, when,
+ *                        tickets, total — no empty rows), bookingId, customerName
+ *                        (see bookingSummary in services/notification_service.ts)
  *   otp.login          → code
  *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
  *   question.asked     → subjectName, excerpt, visibility, portalUrl
@@ -53,77 +53,71 @@ interface TemplateDef {
 const TEMPLATES: Record<string, TemplateDef> = {
   'booking.confirmed': {
     sms: {
-      body: 'Circls: Your booking at {{venueName}} ({{arenaName}}) for {{when}} is confirmed. Ref {{bookingId}}.',
+      body: 'Circls: Your booking for {{itemName}} on {{when}} is confirmed. Ref {{bookingId}}.',
     },
     email: {
-      subject: 'Booking confirmed — {{venueName}}',
+      subject: 'Booking confirmed — {{itemName}}',
       body:
         'Hi {{customerName}},\n\n' +
         'Your booking is confirmed.\n\n' +
-        'Venue: {{venueName}}\n' +
-        'Arena: {{arenaName}}\n' +
-        'When: {{when}}\n' +
-        'Total: Rs {{totalRupees}}\n' +
+        '{{details}}\n' +
         'Booking ref: {{bookingId}}\n\n' +
         'See you there!\n— Circls',
     },
     whatsapp: {
-      body:
-        'Booking confirmed at *{{venueName}}* ({{arenaName}}) for {{when}}. ' +
-        'Ref: {{bookingId}}.',
+      body: 'Booking confirmed: *{{itemName}}* — {{when}}. Ref: {{bookingId}}.',
     },
   },
 
   'booking.cancelled': {
     sms: {
-      body: 'Circls: Your booking at {{venueName}} on {{when}} has been cancelled. Ref {{bookingId}}.',
+      body: 'Circls: Your booking for {{itemName}} on {{when}} has been cancelled. Ref {{bookingId}}.',
     },
     email: {
-      subject: 'Booking cancelled — {{venueName}}',
+      subject: 'Booking cancelled — {{itemName}}',
       body:
         'Hi {{customerName}},\n\n' +
-        'Your booking at {{venueName}} on {{when}} has been cancelled.\n\n' +
+        'Your booking has been cancelled.\n\n' +
+        '{{details}}\n' +
         'Booking ref: {{bookingId}}\n\n' +
         '— Circls',
     },
   },
 
+  // Rescheduling moves court slots, so these name the venue and arena.
   'booking.rescheduled': {
     sms: {
-      body: 'Circls: Your booking at {{venueName}} has moved to {{when}} ({{arenaName}}). Ref {{bookingId}}.',
+      body: 'Circls: Your booking for {{itemName}} has moved to {{when}}. Ref {{bookingId}}.',
     },
     email: {
-      subject: 'Booking moved — {{venueName}}',
+      subject: 'Booking moved — {{itemName}}',
       body:
         'Hi {{customerName}},\n\n' +
-        'Your booking at {{venueName}} has been moved.\n\n' +
-        'New time: {{when}}\n' +
-        'Arena: {{arenaName}}\n' +
+        'Your booking has been moved. Here are the new details.\n\n' +
+        '{{details}}\n' +
         'Booking ref: {{bookingId}}\n\n' +
         'If this time does not suit you, reply to the venue or cancel from your bookings.\n— Circls',
     },
     whatsapp: {
-      body:
-        'Your booking at *{{venueName}}* has moved to {{when}} ({{arenaName}}). ' +
-        'Ref: {{bookingId}}.',
+      body: 'Your booking for *{{itemName}}* has moved to {{when}}. Ref: {{bookingId}}.',
     },
   },
 
   'booking.reminder_t24h': {
     sms: {
-      body: 'Circls reminder: You have a booking tomorrow at {{venueName}} ({{arenaName}}) — {{when}}.',
+      body: 'Circls reminder: Your booking for {{itemName}} is tomorrow — {{when}}.',
     },
     whatsapp: {
-      body: 'Reminder: Your booking at *{{venueName}}* ({{arenaName}}) is tomorrow — {{when}}.',
+      body: 'Reminder: Your booking for *{{itemName}}* is tomorrow — {{when}}.',
     },
   },
 
   'booking.reminder_t1h': {
     sms: {
-      body: 'Circls reminder: Your booking at {{venueName}} ({{arenaName}}) starts in an hour — {{when}}.',
+      body: 'Circls reminder: Your booking for {{itemName}} starts in an hour — {{when}}.',
     },
     whatsapp: {
-      body: 'Starting in 1 hour: *{{venueName}}* ({{arenaName}}) — {{when}}.',
+      body: 'Starting in 1 hour: *{{itemName}}* — {{when}}.',
     },
   },
 

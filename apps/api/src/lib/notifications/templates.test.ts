@@ -4,16 +4,13 @@ import { renderTemplate, templateSupportsChannel } from './templates.js';
 describe('renderTemplate (pure)', () => {
   it('renders booking.confirmed SMS with substitutions', () => {
     const out = renderTemplate('sms', 'booking.confirmed', {
-      venueName: 'Tigers Arena',
-      arenaName: 'Court 1',
-      when: '04 Jul 2026, 18:00',
-      totalRupees: '500.00',
+      itemName: 'Tigers Arena · Court 1',
+      when: 'Sat 4 Jul, 6:00–7:00 PM',
       bookingId: 'abc-123',
     });
     expect(out.subject).toBeUndefined();
-    expect(out.body).toContain('Tigers Arena');
-    expect(out.body).toContain('Court 1');
-    expect(out.body).toContain('04 Jul 2026, 18:00');
+    expect(out.body).toContain('Tigers Arena · Court 1');
+    expect(out.body).toContain('Sat 4 Jul, 6:00–7:00 PM');
     expect(out.body).toContain('abc-123');
     // SMS template should not contain unresolved {{ markers
     expect(out.body).not.toMatch(/\{\{[^}]+\}\}/);
@@ -22,14 +19,14 @@ describe('renderTemplate (pure)', () => {
   it('renders booking.rescheduled with the new time on every channel', () => {
     const payload = {
       customerName: 'Asha',
-      venueName: 'Tigers Arena',
-      arenaName: 'Court 2',
-      when: '05 Jul 2026, 19:00',
+      itemName: 'Tigers Arena · Court 2',
+      when: 'Sun 5 Jul, 7:00–8:00 PM',
+      details: 'Venue: Tigers Arena\nArena: Court 2\nWhen: Sun 5 Jul, 7:00–8:00 PM\nTotal: ₹500',
       bookingId: 'abc-123',
     };
     for (const channel of ['sms', 'email', 'whatsapp'] as const) {
       const out = renderTemplate(channel, 'booking.rescheduled', payload);
-      expect(out.body).toContain('05 Jul 2026, 19:00');
+      expect(out.body).toContain('Sun 5 Jul, 7:00–8:00 PM');
       expect(out.body).toContain('Court 2');
       expect(out.body).toContain('abc-123');
       expect(out.body).not.toMatch(/\{\{[^}]+\}\}/);
@@ -37,18 +34,18 @@ describe('renderTemplate (pure)', () => {
     expect(renderTemplate('email', 'booking.rescheduled', payload).subject).toContain('Tigers Arena');
   });
 
-  it('renders booking.confirmed email with subject + body', () => {
+  it('renders booking.confirmed email with subject + the detail lines', () => {
     const out = renderTemplate('email', 'booking.confirmed', {
-      customerName: 'Asha',
-      venueName: 'Tigers Arena',
-      arenaName: 'Court 1',
-      when: '04 Jul 2026, 18:00',
-      totalRupees: '500.00',
+      customerName: 'Shivam',
+      itemName: 'Coffee Tasting',
+      details: 'Event: Coffee Tasting\nWhere: Tan Coffee\nWhen: Sat 25 Oct, 5:00 PM\nTickets: 1 × General\nTotal: Free',
       bookingId: 'abc-123',
     });
-    expect(out.subject).toBe('Booking confirmed — Tigers Arena');
-    expect(out.body).toContain('Hi Asha,');
-    expect(out.body).toContain('Rs 500.00');
+    expect(out.subject).toBe('Booking confirmed — Coffee Tasting');
+    expect(out.body).toContain('Hi Shivam,');
+    expect(out.body).toContain('When: Sat 25 Oct, 5:00 PM');
+    expect(out.body).toContain('Total: Free');
+    expect(out.body).not.toContain('Arena');
     expect(out.body).toContain('abc-123');
   });
 

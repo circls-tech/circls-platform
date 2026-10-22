@@ -31,6 +31,12 @@ import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { getNotifications, type DispatchInput } from '../lib/notifications/index.js';
 import type { NotificationChannel } from '../lib/notifications/templates.js';
+import {
+  DEFAULT_TZ,
+  formatDayWithYear,
+  formatMoney,
+  formatWhen,
+} from '../lib/notifications/email_format.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
@@ -52,29 +58,42 @@ export async function processPendingNotifications(): Promise<number> {
 
 // ── Booking notification helpers ──────────────────────────────────────────────
 
-interface BookingNotifyContext {
+export interface BookingNotifyContext {
   bookingId: string;
   tenantId: string;
   customerName: string;
   customerUserId: string | null;
   phone: string | null;
   email: string | null;
+  /** 'slot' | 'event' | 'membership'. */
+  itemType: string;
   venueName: string;
   arenaName: string;
+  /** When it starts — slots and events only (memberships get no reminders). */
   startAt: Date | null;
+  endAt: Date | null;
+  /** Time zone the times are shown in: the venue's, else the event's. */
+  tz: string;
+  currency: string;
+  totalPaise: number;
   totalRupees: string;
+  eventName: string | null;
+  /** Where an event happens: its venue's name, else its own address. */
+  eventWhere: string | null;
+  /** "2 × General, 1 × VIP". */
+  tickets: string | null;
+  membershipName: string | null;
+  membershipTier: string | null;
+  membershipStartsAt: Date | null;
+  membershipEndsAt: Date | null;
   whenText: string;
 }
 
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
+/** `item_data->>key` as a uuid, or NULL when it isn't one (never a cast error). */
+const itemUuid = (key: string) =>
+  sql.raw(
+    `(case when b.item_data->>'${key}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (b.item_data->>'${key}')::uuid end)`,
+  );
 
 function isEmail(s: string): boolean {
   return /.+@.+\..+/.test(s);
@@ -131,9 +150,21 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
            b.customer_contact_json    as customer_contact_json,
            b.customer_user_id         as customer_user_id,
            b.total_paise              as total_paise,
+           b.currency                 as currency,
+           b.item_type                as item_type,
            lower(b.time_range)        as booking_start_at,
+           upper(b.time_range)        as booking_end_at,
            v.name                     as venue_name,
+           v.tz_name                  as venue_tz,
            ab_fallback.name           as fallback_arena_name,
+           e.name                     as event_name,
+           e.starts_at                as event_starts_at,
+           coalesce(e.tz_name, ev.tz_name) as event_tz,
+           coalesce(ev.name, e.address_json->>'line1', e.address_json->>'city') as event_where,
+           m.name                     as membership_name,
+           mt.name                    as membership_tier,
+           um.starts_at               as membership_starts_at,
+           um.ends_at                 as membership_ends_at,
            u.phone_e164               as user_phone,
            u.email                    as user_email,
            u.display_name             as user_display_name,
@@ -141,6 +172,11 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
       from bookings b
       left join venues v           on v.id = b.venue_id
       left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
+      left join events e           on b.item_type = 'event' and e.id = ${itemUuid('eventId')}
+      left join venues ev          on ev.id = e.venue_id
+      left join memberships m      on b.item_type = 'membership' and m.id = ${itemUuid('membershipId')}
+      left join user_memberships um on um.id = ${itemUuid('userMembershipId')}
+      left join membership_tiers mt on mt.id = um.membership_tier_id
       left join users u            on u.id = b.customer_user_id
      where b.id = ${bookingId}
      limit 1
@@ -152,6 +188,7 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
   // Slot-side: aggregate min(start_at) + take any matching arena name.
   const slotRows = await db.execute<Record<string, unknown>>(sql`
     select min(lower(s.time_range)) as slot_start_at,
+           max(upper(s.time_range)) as slot_end_at,
            max(a.name)               as slot_arena_name
       from slots s
       left join arenas a on a.id = s.arena_id
@@ -160,6 +197,18 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
   `);
   const slotArr = slotRows as unknown as Record<string, unknown>[];
   const slotAgg = slotArr[0] ?? {};
+
+  const itemType = (r['item_type'] as string | null) ?? 'slot';
+  let tickets: string | null = null;
+  if (itemType === 'event') {
+    const ticketRows = (await db.execute<Record<string, unknown>>(sql`
+      select string_agg(ebt.quantity || ' × ' || tt.name, ', ' order by tt.name) as tickets
+        from event_booking_tickets ebt
+        join event_ticket_tiers tt on tt.id = ebt.tier_id
+       where ebt.booking_id = ${bookingId}
+    `)) as unknown as Record<string, unknown>[];
+    tickets = (ticketRows[0]?.['tickets'] as string | null) ?? null;
+  }
 
   const { phone, email } = extractContacts(
     (r['customer_contact_json'] as Record<string, unknown> | null) ?? null,
@@ -186,11 +235,20 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
     : (email ?? (userEmail && isEmail(userEmail) ? userEmail : null));
 
   const totalPaise = Number(r['total_paise'] ?? 0);
-  const startAtRaw =
-    (slotAgg['slot_start_at'] as string | null) ??
-    (r['booking_start_at'] as string | null) ??
-    null;
-  const startAt = startAtRaw ? new Date(startAtRaw) : null;
+  const toDate = (v: unknown): Date | null => (v ? new Date(String(v)) : null);
+  // Events have no slots: their time is the event's own. Memberships have a
+  // validity window, not a start time (and so no reminders).
+  const startAt =
+    itemType === 'event'
+      ? toDate(r['event_starts_at'])
+      : itemType === 'membership'
+        ? null
+        : (toDate(slotAgg['slot_start_at']) ?? toDate(r['booking_start_at']));
+  const endAt =
+    itemType === 'slot' ? (toDate(slotAgg['slot_end_at']) ?? toDate(r['booking_end_at'])) : null;
+  const tz = (r['venue_tz'] as string | null) ?? (r['event_tz'] as string | null) ?? DEFAULT_TZ;
+  const membershipStartsAt = toDate(r['membership_starts_at']);
+  const membershipEndsAt = toDate(r['membership_ends_at']);
   const arenaName =
     (slotAgg['slot_arena_name'] as string | null) ??
     (r['fallback_arena_name'] as string | null) ??
@@ -206,15 +264,68 @@ async function loadBookingContext(bookingId: string): Promise<BookingNotifyConte
     customerUserId: (r['customer_user_id'] as string | null) ?? null,
     phone: resolvedPhone,
     email: resolvedEmail,
+    itemType,
     venueName: (r['venue_name'] as string | null) ?? 'the venue',
     arenaName,
     startAt,
+    endAt,
+    tz,
+    currency: (r['currency'] as string | null) ?? 'INR',
+    totalPaise,
     totalRupees: (totalPaise / 100).toFixed(2),
-    whenText: startAt ? IST_FMT.format(startAt) : 'your booked time',
+    eventName: (r['event_name'] as string | null) ?? null,
+    eventWhere: (r['event_where'] as string | null) ?? null,
+    tickets,
+    membershipName: (r['membership_name'] as string | null) ?? null,
+    membershipTier: (r['membership_tier'] as string | null) ?? null,
+    membershipStartsAt,
+    membershipEndsAt,
+    whenText: startAt
+      ? formatWhen(startAt, endAt, tz)
+      : membershipStartsAt && membershipEndsAt
+        ? `${formatDayWithYear(membershipStartsAt, tz)} – ${formatDayWithYear(membershipEndsAt, tz)}`
+        : 'your booked time',
   };
 }
 
+/**
+ * How a booking reads in a message, whatever was booked:
+ *   itemName — one line naming it ("Tan Coffee · Court 1", the event's
+ *              name, the membership plan);
+ *   details  — its detail lines for the emails, with no empty rows (an event
+ *              has no arena, a membership no start time).
+ */
+export function bookingSummary(ctx: BookingNotifyContext): { itemName: string; details: string; total: string } {
+  const total = ctx.totalPaise > 0 ? formatMoney(ctx.totalPaise, ctx.currency) : 'Free';
+  const lines: Array<[string, string | null]> = [];
+  let itemName: string;
+  if (ctx.itemType === 'event') {
+    itemName = ctx.eventName ?? 'your event';
+    lines.push(
+      ['Event', itemName],
+      ['Where', ctx.eventWhere],
+      ['When', ctx.startAt ? ctx.whenText : 'Date to be announced'],
+      ['Tickets', ctx.tickets],
+    );
+  } else if (ctx.itemType === 'membership') {
+    itemName = [ctx.membershipName, ctx.membershipTier].filter(Boolean).join(' · ') || 'your membership';
+    // whenText is the validity window for a membership.
+    const valid = ctx.membershipStartsAt && ctx.membershipEndsAt ? ctx.whenText : null;
+    lines.push(['Plan', itemName], ['Valid', valid]);
+  } else {
+    itemName = [ctx.venueName, ctx.arenaName].filter(Boolean).join(' · ');
+    lines.push(['Venue', ctx.venueName], ['Arena', ctx.arenaName || null], ['When', ctx.whenText]);
+  }
+  lines.push(['Total', total]);
+  const details = lines
+    .filter((l): l is [string, string] => Boolean(l[1]))
+    .map(([label, value]) => `${label}: ${value}`)
+    .join('\n');
+  return { itemName, details, total };
+}
+
 function basePayload(ctx: BookingNotifyContext): Record<string, unknown> {
+  const summary = bookingSummary(ctx);
   return {
     bookingId: ctx.bookingId,
     customerName: ctx.customerName,
@@ -222,6 +333,9 @@ function basePayload(ctx: BookingNotifyContext): Record<string, unknown> {
     arenaName: ctx.arenaName,
     when: ctx.whenText,
     totalRupees: ctx.totalRupees,
+    itemName: summary.itemName,
+    details: summary.details,
+    total: summary.total,
   };
 }
 
