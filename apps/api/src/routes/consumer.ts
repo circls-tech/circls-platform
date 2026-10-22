@@ -114,14 +114,18 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   // the preview service) asks here whether the token it was opened with is a
   // partner-minted scratch preview of that type, before it renders anything
   // the parent frame posts to it. 401 otherwise: no token, or not that kind.
+  // `parentOrigin` is the partner portal's origin. The page still loads in any
+  // frame, but it takes a posted listing only from a parent on this origin,
+  // so another site framing a token cannot fill the page with its own content.
   const scratchQuery = z.object({ type: z.enum(PREVIEW_TYPES) });
+  const partnersOrigin = new URL(env.PARTNERS_BASE_URL).origin;
   app.get('/v1/consumer/previews/scratch', { config: publicLimit }, async (req) => {
     const q = scratchQuery.safeParse(req.query);
     if (!q.success) throw new BadRequest('Invalid preview type', 'bad_request');
     if (!scratchPreviewAllows(previewTokenOf(req), q.data.type)) {
       throw new Unauthorized('Not a scratch preview', 'preview_invalid');
     }
-    return { type: q.data.type };
+    return { type: q.data.type, parentOrigin: partnersOrigin };
   });
 
   const venuesQuery = z.object({

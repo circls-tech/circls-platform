@@ -19,6 +19,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
 const { __resetPlatformTenantCacheForTesting } = await import('../lib/authz/platform_tenant.js');
+const { env } = await import('../config/env.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -198,7 +199,10 @@ describe.skipIf(!runIntegration)('listing preview routes', () => {
       headers: { 'x-circls-preview': token },
     });
     expect(ok.statusCode).toBe(200);
-    expect((ok.json() as { type: string }).type).toBe('event');
+    const verified = ok.json() as { type: string; parentOrigin: string };
+    expect(verified.type).toBe('event');
+    // The page takes posted listings from the partner portal's frame only.
+    expect(verified.parentOrigin).toBe(new URL(env.PARTNERS_BASE_URL).origin);
 
     // Not for another type, not without a token, and never a real listing.
     const wrongType = await app.inject({
