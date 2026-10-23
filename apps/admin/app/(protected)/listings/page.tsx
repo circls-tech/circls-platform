@@ -1035,8 +1035,9 @@ export default function ListingsPage() {
   }
 
   function onReject(row: AdminListingRow) {
+    // The partner's email lists these as "What to fix" bullets, one per ";".
     const reason = window.prompt(
-      `Reason for rejecting "${row.name}" (optional):`,
+      `What should the partner fix in "${row.name}"? Separate fixes with ";" — each becomes a bullet in their email. (Optional)`,
     );
     if (reason == null) return; // cancelled
     const trimmed = reason.trim();

@@ -1,110 +1,129 @@
-# Email setup (MSG91, Resend)
+# Email setup (MSG91 + Resend)
 
-The API sends transactional email (team invitations, booking confirmed/cancelled)
-through the notifications dispatcher. The email channel has these providers behind
-one port (`apps/api/src/lib/notifications/email.ts`), picked in this order:
+The API sends email through the notifications dispatcher
+(`apps/api/src/lib/notifications/`). Two senders, picked per email by its
+template key:
 
-- **`smtp`** — local sandbox only (`SANDBOX_SMTP_HOST`): everything lands in Mailpit.
-- **`msg91`** — real delivery via MSG91 Email. Selected when `MSG91_AUTH_KEY`,
-  `MSG91_EMAIL_FROM` and `MSG91_EMAIL_TEMPLATE_ID` are **all** set; it then
-  sends **all** email, and Resend is not used. See [MSG91](#msg91) below.
-- **`resend`** — real delivery via [Resend](https://resend.com), when MSG91
-  email isn't configured. Selected only when **both** `RESEND_API_KEY` and
-  `RESEND_FROM` are set.
-- **`stub`** — nothing configured. Writes a `notifications` row and logs
-  `email_stub`, but **never delivers**. This is why email "doesn't work" out of
-  the box.
+| Audience | Emails | Sender |
+|---|---|---|
+| **Customers** | booking confirmed, booking cancelled (incl. a cancelled event), refund, booking moved, question replies | **MSG91 Email** |
+| **Partners** (org contact email, else its owners) | new booking, listing approved, listing needs changes, new question, team invitation | **MSG91 Email** |
+| **Circls admin team** (`ADMIN_TEAM_EMAILS`) | listing submitted for review, new organiser, payout reminders (Tue + Wed 9:00 IST), daily summary (08:00 IST) | **Resend** |
 
-At boot the API logs `notification_providers` with each channel's mode, e.g.
-`{ sms: 'stub', email: 'msg91', whatsapp: 'stub' }`. Check that line first when
-debugging delivery.
+Each sender carries the other's mail while only one is configured (with a boot
+warning). With neither, email runs in **stub** mode: a `notifications` row is
+written and `email_stub` logged, nothing delivered. Half-configuring a sender
+fails the boot in production. In the sandbox (`SANDBOX_SMTP_HOST`) everything
+goes to Mailpit, admin mail included (`ADMIN_TEAM_EMAILS=ops@sandbox.local`).
 
-## MSG91
+The boot log line `notification_providers` shows the senders, e.g.
+`{ sms: 'stub', email: 'msg91', emailInternal: 'resend', whatsapp: 'stub' }`
+(`email` = customer/partner, `emailInternal` = admin). Check it first.
 
-MSG91 sends only through templates approved in its dashboard, so one generic
-transactional template carries every email. We render our plain-text email as
-usual and send it as two variables.
+## Designed emails
 
-1. **Verify the sending domain** (MSG91 → Email → Domains) — the TXT and MX
-   records it shows, in DNS. Until it's verified MSG91 only delivers to the
-   account's own address.
-2. **The generic template** (Email → Templates), HTML source:
-   - Subject: `Circls: {{VAR1}}` (MSG91 wants some fixed text in a subject).
-   - Body: a `<pre style="white-space:pre-wrap;font-family:Arial,Helvetica,sans-serif">{{VAR2}}</pre>`
-     inside a simple Circls header/footer. The `<pre>` keeps our line breaks.
-   - Submit for approval. Its **slug** (e.g. `circls_transactional`, not the numeric id) goes in `MSG91_EMAIL_TEMPLATE_ID`. (Renamed the
-     variables `subject`/`body`? That works too — both names are sent.)
-3. **Auth key** — the account auth key (profile → Authkey), the same
-   `MSG91_AUTH_KEY` SMS uses, with Email allowed in its rule. Only the account
-   **owner** can create or edit auth keys. Setting the key does **not** turn
-   on SMS: that needs `MSG91_SMS_ENABLED=true` as well, once the SMS flows
-   exist in MSG91.
-4. **Env (Coolify → api)** — `MSG91_AUTH_KEY`, `MSG91_EMAIL_FROM` (on the
-   verified domain, e.g. `Circls <no-reply@event.circls.app>`),
-   `MSG91_EMAIL_TEMPLATE_ID`; `MSG91_EMAIL_DOMAIN` only if the registered domain
-   isn't the from address's. Setting only some of the three email vars fails
-   the boot in production. Redeploy, then check the boot log for
-   `email: 'msg91'`.
+Nine emails have a branded HTML design (`lib/notifications/email_designs/`):
+booking confirmed / cancelled / refunded, partner new booking, listing approved,
+listing needs changes, and the three admin emails. The rest are plain text.
 
-Failures show as `notification_send_failed` with `msg91_email_send_failed:<status>:…`:
-401 is the auth key; `template_id … is not registered` means the numeric id was used instead of the slug, or the template is unknown or unapproved
-(e.g. still awaiting approval); a `domain` error is an unverified domain or a from address off it.
-MSG91 → Email → **Logs** shows each send by its `unique_id` (stored as the
-notification's `provider_message_id`).
+- **Resend** (admin) and **Mailpit** get the HTML rendered by the API.
+- **MSG91** sends only through templates stored in its dashboard and renders
+  them itself (Handlebars). The six customer/partner designs each have their
+  own MSG91 template, named by its slug (`circls_booking_confirmed`, …). A
+  design uses its template only once **switched on** in
+  `MSG91_EMAIL_DESIGNS`; until then it goes through the generic template as
+  plain text, so nothing fails while a template awaits approval.
+- Emails without a design always use the generic template.
 
-The Resend steps below still apply while Resend is the sender, or as the
-fallback.
+Preview every design with sample data:
+`pnpm --filter @circls/api email:preview -- email-previews.html`.
 
-## One-time provisioning (do this once)
+## MSG91 (customer + partner email)
 
-You don't have a Resend account yet — follow these steps to create one.
+1. **Sending domain** — MSG91 → Email → Domains: add it (Circls uses
+   `event.circls.app`), put the TXT and MX records in DNS, verify. Until it's
+   verified MSG91 only delivers to the account's own address.
+2. **Auth key** — only the account **owner** can create one (profile →
+   Authkey). Its rule needs Email → Templates (view; add/edit to create
+   templates by script) and Logs. "Outbound Mails → Send" is "Coming soon" and
+   isn't needed. The same key serves SMS, but SMS stays off unless
+   `MSG91_SMS_ENABLED=true`.
+3. **Generic template** — `circls_transactional`, approved. Subject
+   `Circls: {{{VAR1}}}` (three braces, so "&" and apostrophes in a subject
+   aren't HTML-escaped; MSG91 wants some fixed text in a subject), body
+   `<pre style="white-space:pre-wrap;font-family:Arial,Helvetica,sans-serif">{{VAR2}}</pre>`
+   inside a simple header/footer. `MSG91_EMAIL_TEMPLATE_ID` is its **slug**,
+   not its numeric id (the number fails with "… is not registered").
+4. **Design templates** — create all six through the API (no pasting):
+   ```bash
+   pnpm --filter @circls/api email:msg91-templates create
+   pnpm --filter @circls/api email:msg91-templates list
+   ```
+   `list` shows each template's newest version (`pending`, `approved` or
+   `rejected`) and which version is active. MSG91 names the slug after the
+   template's name, so keep each design's name and `msg91Slug` in step (a
+   test checks). If a template ends up with another slug, map it with
+   `MSG91_EMAIL_TEMPLATES=booking.confirmed=that-slug`.
+5. **Changing a design later** — never create a new template; add a version
+   to the existing one, so the slug (and the code) stay the same:
+   ```bash
+   pnpm --filter @circls/api email:msg91-templates update booking.confirmed
+   ```
+   The new version is pending review and inactive; the previous one keeps
+   sending until the new one is approved and active. (Or `export <dir>` and
+   paste into the dashboard's source editor — the left pane; the rich editor
+   mangles pasted code.)
+6. **Switch approved designs on** — `MSG91_EMAIL_DESIGNS=all`, or a list of
+   keys as they're approved, e.g.
+   `booking.confirmed,booking.cancelled,booking.refunded`. Redeploy.
 
-1. **Sign up** at https://resend.com (free tier covers early volume — 3k
-   emails/mo, 100/day). Log in.
-2. **Add your sending domain.** Dashboard → **Domains → Add Domain** →
-   `circls.app` (or a subdomain like `mail.circls.app` to keep DNS isolated
-   from the apex).
-3. **Add the DNS records Resend shows you** to wherever `circls.app` DNS lives
-   (same place you manage `api.circls.app` / `partners.circls.app`):
-   - an **MX** record (for the `send.` / bounce subdomain),
-   - a **TXT SPF** record,
-   - **DKIM** `CNAME`/`TXT` records,
-   - (recommended) a **DMARC** TXT record at `_dmarc`.
-   Then click **Verify** in Resend. Propagation is usually minutes.
-4. **Create an API key.** Dashboard → **API Keys → Create** → scope **Sending
-   access**. Copy the `re_…` value — it's shown only once.
-5. **Pick your `RESEND_FROM`.** Must be on the verified domain. We left the exact
-   address as a deploy-time decision; a good default is:
-   `Circls <no-reply@circls.app>`.
+## Resend (admin email)
 
-## Wire the credentials
+Verified sending domain, an API key with sending access, `RESEND_FROM` on that
+domain, and `ADMIN_TEAM_EMAILS` (comma-separated). Free tier: 3k/month,
+100/day — plenty for admin mail once customer mail is on MSG91.
 
-**Local dev** — create `apps/api/.env` (gitignored) from the example and fill in:
+## Settings (Coolify → `api`)
 
 ```bash
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
-RESEND_FROM=Circls <no-reply@circls.app>
+MSG91_AUTH_KEY=…                                   # owner-created key
+MSG91_EMAIL_FROM=Circls <no-reply@event.circls.app>
+MSG91_EMAIL_TEMPLATE_ID=circls_transactional       # slug of the generic template
+MSG91_EMAIL_DESIGNS=all                            # once the six are approved
+RESEND_API_KEY=re_…
+RESEND_FROM=Circls Ops <ops@circls.app>
+ADMIN_TEAM_EMAILS=founders@circls.app,ops@circls.app
+EMAIL_REPLY_TO=support@circls.app                  # optional; enables "just reply" lines
 ```
 
-**Production (Coolify)** — Coolify dashboard → the `api` application →
-**Environment Variables** → add `RESEND_API_KEY` and `RESEND_FROM` → redeploy.
-Store the key in `~/circls-secrets.md` too so it isn't lost.
+Optional: `MSG91_EMAIL_DOMAIN` (when the registered domain isn't the from
+address's), `MSG91_EMAIL_TEMPLATES` (slug overrides), `MSG91_SMS_ENABLED`.
+Local runs read the same names from `apps/api/.env` (gitignored).
 
-## Verify it works
+## Verify
 
-After setting both vars, restart the API and confirm the boot log shows
-`email: 'resend'`. Then trigger a real send and watch the logs:
-
-- **Invitation:** from the partners portal, invite a teammate to your tenant —
-  or `POST /v1/tenants/:id/invitations`. A `notification_send_failed` log line
-  (instead of a silent `email_stub`) means the key/domain is wrong.
-- Check the **Resend dashboard → Emails** tab for delivery + bounce status.
+- **One real email per template**, outside the app (sample data, no DB):
+  ```bash
+  pnpm --filter @circls/api email:test -- you@example.com booking.confirmed
+  pnpm --filter @circls/api email:test -- you@example.com admin.org_signup
+  ```
+  It prints which sender and template it used, and the provider's message id.
+- **In the app** — the partner portal's Settings → Notifications lists every
+  email with its status; failures show the provider's error. MSG91 → Email →
+  Logs shows delivery by the `unique_id` stored as the row's
+  `provider_message_id`; Resend → Emails likewise.
 
 ## Common failure modes
 
 | Symptom | Cause |
 |---|---|
-| Boot log shows `email: 'stub'` | One of `RESEND_API_KEY` / `RESEND_FROM` is unset. |
-| `resend_send_failed:403` | API key invalid or lacks sending scope. |
-| `resend_send_failed:422 …domain is not verified` | DNS not verified, or `RESEND_FROM` domain ≠ verified domain. |
-| Emails sent but land in spam | Add the DMARC record; warm up volume gradually. |
+| Boot log `email: 'stub'` | No MSG91 email (or Resend) configured. |
+| Boot log `email: 'resend'` | MSG91 email unset — customer mail is using the Resend quota. |
+| `msg91_email_send_failed:401` | Wrong auth key, or its rule lacks Email. |
+| `… template_id … is not registered` | Numeric id instead of the slug, a design switched on before its template exists/is approved, or a template under another slug (map it with `MSG91_EMAIL_TEMPLATES`). |
+| `msg91_email_send_failed:… domain …` | From address not on a verified domain, or `MSG91_EMAIL_DOMAIN` wrong. |
+| Subject shows `&amp;` or `&#x27;` | The template subject uses `{{…}}`; use `{{{…}}}`. |
+| Designed email arrives as plain text | Its key isn't in `MSG91_EMAIL_DESIGNS` yet. |
+| `resend_send_failed:403` / `422 …domain…` | Resend key or domain. |
+| No admin mail at all | `ADMIN_TEAM_EMAILS` unset. |
+| Logo missing in a designed email | It is the consumer site's icon, `https://circls.app/apple-icon.png`; check that URL loads (and that the mail client shows images). |

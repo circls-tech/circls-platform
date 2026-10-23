@@ -35,6 +35,7 @@ import {
   type GeoPoint,
 } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
+import { onEventCancelled, onListingSubmitted } from './notification_hooks.js';
 import {
   applyLiveTiers,
   listTiersWithRemaining,
@@ -476,7 +477,7 @@ export async function listSeriesEvents(tenantId: string, seriesId: string): Prom
  * rejected.
  */
 export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promise<Event[]> {
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(events)
@@ -488,6 +489,9 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
     }
     return submitSeriesDates(tx, ctx, seriesId, drafts);
   });
+  // A series is reviewed as one unit: one alert for the batch.
+  if (submitted[0]) await onListingSubmitted('event', submitted[0].id);
+  return submitted;
 }
 
 type SubmittableEvent = Event & { status: SubmittableStatus };
@@ -525,7 +529,7 @@ async function submitSeriesDates(
  * published → cancelled) in one transaction, revoking QR tickets per event.
  */
 export async function cancelEventSeries(ctx: AuditCtx, seriesId: string): Promise<Event[]> {
-  return db.transaction(async (tx) => {
+  const cancelled = await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(events)
@@ -559,6 +563,9 @@ export async function cancelEventSeries(ctx: AuditCtx, seriesId: string): Promis
     }
     return updated;
   });
+  // Tell everyone holding tickets for any of the dates, once committed.
+  await onEventCancelled(cancelled.map((e) => e.id));
+  return cancelled;
 }
 
 export interface UpdateEventPatch {
@@ -910,7 +917,7 @@ export async function applyApprovedChangePatch(
  * approve pending_review → published via the admin listings workflow.)
  */
 export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(events)
@@ -934,6 +941,8 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
     // A draft may be saved with gaps; review needs the whole thing.
     return submitForReview(tx, ctx, 'event', eventId, existing.status, await eventMissing(tx, existing));
   });
+  await onListingSubmitted('event', submitted.id);
+  return submitted;
 }
 
 /**
@@ -941,7 +950,7 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
  * cancelled/rejected events are rejected with a 409.
  */
 export async function cancelEvent(ctx: AuditCtx, eventId: string): Promise<Event> {
-  return db.transaction(async (tx) => {
+  const cancelled = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(events)
@@ -966,6 +975,9 @@ export async function cancelEvent(ctx: AuditCtx, eventId: string): Promise<Event
 
     return updated!;
   });
+  // Tell everyone holding tickets, once committed.
+  await onEventCancelled([eventId]);
+  return cancelled;
 }
 
 /**

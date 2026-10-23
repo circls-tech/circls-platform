@@ -66,6 +66,8 @@ import {
 import { GatewayHttpError } from '../lib/gateway_http.js';
 import { isCashfreeFailoverActive, recordCashfreeOutage } from '../lib/inr_failover.js';
 import { notifyBookingConfirmed } from './notification_service.js';
+import { onBookingRefunded } from './notification_hooks.js';
+import type { BookingRefundedInput } from './notification_service.js';
 import { issueQrTicketsForBooking } from './qr_ticket_service.js';
 import { getInrPaymentGateway } from './payment_settings_service.js';
 import { issueRefund } from './refund_service.js';
@@ -609,6 +611,10 @@ export interface CaptureArgs {
 
 export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
   const { provider, orderId, providerPaymentId, eventId } = args;
+  // An automatic refund below is told to the customer only once this
+  // transaction commits: a rollback (and the gateway's redelivery) must not
+  // leave them with a receipt for a refund that wasn't recorded.
+  let refundNotice: { bookingId: string; refund: BookingRefundedInput } | null = null;
 
   await db.transaction(async (tx) => {
     const [pay] = await tx
@@ -764,7 +770,7 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         'payment_captured_after_cancellation_auto_refunding',
       );
       await auditCapture({ bookingStatus: 'cancelled', autoRefund: true });
-      await issueRefund(
+      const lateRefund = await issueRefund(
         {
           bookingId: pay.bookingId,
           amountPaise: Number(pay.amountPaise),
@@ -774,6 +780,15 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         },
         tx,
       );
+      refundNotice = {
+        bookingId: pay.bookingId,
+        refund: {
+          amountPaise: Number(pay.amountPaise),
+          status: lateRefund.status,
+          refundPaymentId: lateRefund.paymentId,
+          reason: { kind: 'late_capture' },
+        },
+      };
       return;
     }
 
@@ -817,7 +832,7 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         })
         .where(eq(payments.id, pay.id));
       await auditCapture({ duplicateOf: otherPaid.id, autoRefund: true });
-      await issueRefund(
+      const dupRefund = await issueRefund(
         {
           bookingId: pay.bookingId,
           amountPaise: Number(pay.amountPaise),
@@ -828,6 +843,15 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         },
         tx,
       );
+      refundNotice = {
+        bookingId: pay.bookingId,
+        refund: {
+          amountPaise: Number(pay.amountPaise),
+          status: dupRefund.status,
+          refundPaymentId: dupRefund.paymentId,
+          reason: { kind: 'duplicate' },
+        },
+      };
       return;
     }
 
@@ -837,6 +861,11 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
     await releaseAdvance();
     await auditCapture({ bookingStatus: bk?.status ?? null });
   });
+
+  // Typed through a cast: TS narrows the `let` to null, not seeing the
+  // assignments inside the transaction callback.
+  const notice = refundNotice as { bookingId: string; refund: BookingRefundedInput } | null;
+  if (notice) await onBookingRefunded(notice.bookingId, notice.refund);
 }
 
 interface FailureArgs {

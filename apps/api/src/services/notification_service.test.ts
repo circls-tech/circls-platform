@@ -221,7 +221,8 @@ describe.skipIf(!runIntegration)('notification_service integration', () => {
       .map((r) => `${r.channel}`)
       .sort();
     expect(confirmKeys).toEqual(['email', 'sms']);
-    const emailRow = rows.find((r) => r.channel === 'email')!;
+    // The org gets a partner.booking_confirmed email too; check the customer's.
+    const emailRow = rows.find((r) => r.channel === 'email' && r.templateKey === 'booking.confirmed')!;
     expect(emailRow.recipient).toBe(consumer!.email);
   });
 

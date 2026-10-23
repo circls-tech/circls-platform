@@ -250,7 +250,13 @@ function OrgProfileForm({
 
       <Card title="Contact & links">
         <div className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-          <Input label="Contact email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+          <Input
+            label="Contact email"
+            type="email"
+            value={contactEmail}
+            onChange={(e) => setContactEmail(e.target.value)}
+            hint="Also where circls sends your booking and review emails. Leave blank to send them to your Owners."
+          />
           <Input label="Contact phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
           <Input label="Website" placeholder="https://…" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} />
           <Input label="Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} />
