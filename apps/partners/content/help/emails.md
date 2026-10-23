@@ -1,6 +1,6 @@
 # Emails circls sends you
 
-circls emails your organisation about the things that need a person: a new booking, the outcome of a listing review, a customer question, a team invitation. Nothing here needs setting up — but **where** the emails go is up to you.
+circls emails your organisation about the things that need a person: a new booking, the outcome of a listing review, a customer question, a team invitation. Nothing here needs setting up — but **where** the emails go, and which of them you get, is up to you.
 
 ## Where the emails go
 
@@ -8,6 +8,15 @@ circls emails your organisation about the things that need a person: a new booki
 - If it's empty, the emails go to the account email of each **Owner** on your team.
 
 So: set a contact email if you'd rather a shared inbox (front desk, bookings@…) got them than the owners' personal addresses.
+
+## Choosing which emails you get
+
+In **Settings → Notifications**, Owners and Managers can switch off:
+
+- **New bookings** — the email for each booking.
+- **Listing reviews** — the "listing approved" and "listing needs changes" emails.
+
+Each switch saves straight away and applies to everyone who'd get that email. Bookings still appear in the portal and the review outcome still shows on the listing — only the email stops. Customer questions and team invitations always send, and your customers' own emails aren't affected. Every change is recorded in the [activity log](/help/activity).
 
 ## What you'll receive
 

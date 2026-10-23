@@ -98,6 +98,17 @@ const updateTenantProfileSchema = z.object({
   state: nullableTrimmed(120),
   postalCode: nullableTrimmed(20),
   country: nullableTrimmed(120),
+  // Settings → Notifications: switch a kind of org email on or off.
+  emailPrefs: z
+    .object({ booking: z.boolean().optional(), listing: z.boolean().optional() })
+    .strict()
+    .transform((v) => {
+      const out: { booking?: boolean; listing?: boolean } = {};
+      if (v.booking !== undefined) out.booking = v.booking;
+      if (v.listing !== undefined) out.listing = v.listing;
+      return out;
+    })
+    .optional(),
 });
 
 const logoPresignSchema = z.object({ contentType: z.string().min(1).max(100) });
@@ -183,8 +194,9 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
       ...(p.state !== undefined && { state: p.state }),
       ...(p.postalCode !== undefined && { postalCode: p.postalCode }),
       ...(p.country !== undefined && { country: p.country }),
+      ...(p.emailPrefs !== undefined && { emailPrefs: p.emailPrefs }),
     };
-    return updateTenantProfile(id, input);
+    return updateTenantProfile(id, input, user.id);
   });
 
   // Partner: org logo upload (presign → PUT → finalize), owner/manager only.

@@ -144,7 +144,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Emails circls sends you',
     category: 'Support',
     summary:
-      'Which emails your organisation receives — new bookings, listing review outcomes, customer questions, invitations — where they go (contact email or owners), and what your customers are sent: confirmations, cancellations (including a cancelled event) and refunds.',
+      'Which emails your organisation receives — new bookings, listing review outcomes, customer questions, invitations — where they go (contact email or owners), switching booking and review emails off in Settings → Notifications, and what your customers are sent: confirmations, cancellations (including a cancelled event) and refunds.',
     order: 17,
   },
   {

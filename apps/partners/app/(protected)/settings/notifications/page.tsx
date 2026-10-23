@@ -1,11 +1,109 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
-import { useNotifications } from '@/lib/api/queries';
-import type { NotificationItem, NotificationChannel, NotificationStatus } from '@/lib/api/types';
+import { useMyRole, useNotifications, useTenantProfile, useUpdateTenantProfile } from '@/lib/api/queries';
+import type {
+  NotificationItem,
+  NotificationChannel,
+  NotificationStatus,
+  TenantEmailPrefs,
+} from '@/lib/api/types';
 import { BackLink, Badge, Button, Card } from '@/lib/ui';
+
+/** The kinds of org email a partner can switch off, in display order. */
+const EMAIL_KINDS: Array<{ key: keyof TenantEmailPrefs; label: string; detail: string }> = [
+  {
+    key: 'booking',
+    label: 'New bookings',
+    detail: 'An email for each booking customers make through circls. Bookings your team enters at the desk never send one.',
+  },
+  {
+    key: 'listing',
+    label: 'Listing reviews',
+    detail: 'When circls approves a venue, arena, event or plan you submitted — or needs changes before it can go live.',
+  },
+];
+
+/**
+ * Settings → Notifications: which kinds of email the organisation gets.
+ * Each switch saves on its own. Owners and Managers change them; everyone
+ * else sees them read-only.
+ */
+function EmailPreferences({ tenantId }: { tenantId: string }) {
+  const { data: profile, isLoading } = useTenantProfile(tenantId);
+  const update = useUpdateTenantProfile(tenantId);
+  const { can, isLoading: roleLoading } = useMyRole(tenantId);
+  const readOnly = roleLoading || !can('tenant.update');
+  const [saving, setSaving] = useState<keyof TenantEmailPrefs | null>(null);
+
+  async function toggle(key: keyof TenantEmailPrefs, on: boolean) {
+    setSaving(key);
+    try {
+      await update.mutateAsync({ emailPrefs: { [key]: on } });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <Card
+      title="Emails to your organisation"
+      subtitle="Choose which emails circls sends you. Customers' own emails (confirmations, cancellations, refunds) aren't affected."
+    >
+      {isLoading && <p className="py-2 text-sm text-slate-400">Loading&hellip;</p>}
+      {profile && (
+        <div className="flex max-w-2xl flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            {profile.contactEmail ? (
+              <>
+                They go to <span className="font-semibold text-[#17151D]">{profile.contactEmail}</span>, your
+                organisation&rsquo;s contact email.
+              </>
+            ) : (
+              <>They go to the account email of each Owner, since your organisation has no contact email.</>
+            )}{' '}
+            <Link href="/settings/organization" className="font-semibold text-[#17151D] underline underline-offset-2">
+              Change this in your organisation profile
+            </Link>
+            .
+          </p>
+          <div className="flex flex-col divide-y divide-[#f1f5f9] rounded-[var(--radius)] border border-[#e5e7eb]">
+            {EMAIL_KINDS.map((k) => (
+              <label
+                key={k.key}
+                className={`flex items-start gap-3 px-4 py-3 ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-[#EE5C2B]"
+                  checked={profile.emailPrefs[k.key]}
+                  disabled={readOnly || saving !== null}
+                  onChange={(e) => void toggle(k.key, e.target.checked)}
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-sm font-semibold text-[#17151D]">
+                    {k.label}
+                    {saving === k.key && <span className="ml-2 text-xs font-normal text-slate-400">Saving&hellip;</span>}
+                  </span>
+                  <span className="text-xs text-slate-500">{k.detail}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {update.isError && (
+            <p className="text-sm text-red-600">Couldn&rsquo;t save that change. Please try again.</p>
+          )}
+          {!roleLoading && readOnly && (
+            <p className="text-xs text-slate-500">Only Owners and Managers can change these.</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function statusTone(s: NotificationStatus): 'success' | 'warning' | 'open' | 'neutral' {
   if (s === 'sent')    return 'success';
@@ -65,6 +163,8 @@ export default function NotificationsPage() {
         <BackLink href="/settings">Settings</BackLink>
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Notifications</h1>
       </div>
+
+      {activeTenantId && <EmailPreferences tenantId={activeTenantId} />}
 
       <Card title="Filters">
         <div className="flex flex-wrap gap-3">

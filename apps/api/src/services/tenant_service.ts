@@ -1,9 +1,17 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
-import { type Tenant, type TenantSocials, tenantMembers, tenants } from '../db/schema/index.js';
+import {
+  resolveEmailPrefs,
+  type Tenant,
+  type TenantEmailPrefs,
+  type TenantSocials,
+  tenantMembers,
+  tenants,
+} from '../db/schema/index.js';
 import type { TenantRole } from '../db/schema/tenant_members.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
+import { writeAudit } from '../lib/audit.js';
 import { getStorage } from '../lib/storage.js';
 import { CURRENT_TERMS_VERSION, type TermsRegion, termsRegionForCountry } from '../lib/terms.js';
 import { onOrgCreated } from './notification_hooks.js';
@@ -126,6 +134,8 @@ export interface TenantProfileDTO {
   termsVersion: string | null;
   termsRegion: TermsRegion | null;
   termsAcceptedAt: string | null;
+  /** Which kinds of email the org gets (Settings → Notifications). */
+  emailPrefs: Required<TenantEmailPrefs>;
 }
 
 function toTenantProfile(t: Tenant): TenantProfileDTO {
@@ -150,6 +160,7 @@ function toTenantProfile(t: Tenant): TenantProfileDTO {
     termsVersion: t.termsVersion,
     termsRegion: t.termsRegion,
     termsAcceptedAt: t.termsAcceptedAt ? t.termsAcceptedAt.toISOString() : null,
+    emailPrefs: resolveEmailPrefs(t.emailPrefs),
   };
 }
 
@@ -242,11 +253,18 @@ export interface UpdateTenantProfileInput {
   state?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  /** Merged into the stored preferences: only the kinds given change. */
+  emailPrefs?: TenantEmailPrefs;
 }
 
+/**
+ * `actorUserId` attributes the audit entry written when the email preferences
+ * change (who switched an org's emails off is worth knowing later).
+ */
 export async function updateTenantProfile(
   tenantId: string,
   input: UpdateTenantProfileInput,
+  actorUserId?: string,
 ): Promise<TenantProfileDTO> {
   const set: Partial<typeof tenants.$inferInsert> = {};
   if (input.name !== undefined) set.name = input.name;
@@ -261,10 +279,31 @@ export async function updateTenantProfile(
   if (input.state !== undefined) set.state = input.state;
   if (input.postalCode !== undefined) set.postalCode = input.postalCode;
   if (input.country !== undefined) set.country = input.country;
+  const prefsPatch = input.emailPrefs;
+  const hasPrefs = prefsPatch !== undefined && Object.keys(prefsPatch).length > 0;
 
-  if (Object.keys(set).length === 0) return getTenantProfile(tenantId);
-  const [row] = await db.update(tenants).set(set).where(eq(tenants.id, tenantId)).returning();
-  if (!row) throw new NotFound('Tenant not found', 'tenant_not_found');
+  if (Object.keys(set).length === 0 && !hasPrefs) return getTenantProfile(tenantId);
+  const row = await db.transaction(async (tx) => {
+    let before: Required<TenantEmailPrefs> | null = null;
+    if (hasPrefs) {
+      const [cur] = await tx
+        .select({ emailPrefs: tenants.emailPrefs })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .for('update')
+        .limit(1);
+      if (!cur) throw new NotFound('Tenant not found', 'tenant_not_found');
+      before = resolveEmailPrefs(cur.emailPrefs);
+      set.emailPrefs = { ...(cur.emailPrefs ?? {}), ...prefsPatch };
+    }
+    const [updated] = await tx.update(tenants).set(set).where(eq(tenants.id, tenantId)).returning();
+    if (!updated) throw new NotFound('Tenant not found', 'tenant_not_found');
+    const after = resolveEmailPrefs(updated.emailPrefs);
+    if (before && actorUserId && (before.booking !== after.booking || before.listing !== after.listing)) {
+      await writeAudit(tx, { tenantId, actorUserId }, 'tenant.email_prefs_updated', 'tenant', tenantId, before, after);
+    }
+    return updated;
+  });
   return toTenantProfile(row);
 }
 

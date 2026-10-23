@@ -60,6 +60,16 @@ export interface TenantProfile {
   termsVersion: string | null;
   termsRegion: 'US' | 'IN' | null;
   termsAcceptedAt: string | null;
+  /** Which kinds of email circls sends the org (Settings → Notifications). */
+  emailPrefs: TenantEmailPrefs;
+}
+
+/** One switch per kind of org email; every kind defaults to on. */
+export interface TenantEmailPrefs {
+  /** New-booking emails. */
+  booking: boolean;
+  /** Listing approved / changes needed. */
+  listing: boolean;
 }
 
 /**

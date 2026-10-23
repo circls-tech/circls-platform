@@ -27,6 +27,23 @@ export interface TenantSocials {
   youtube?: string;
 }
 
+/**
+ * Which kinds of email the org wants from circls. A missing key means "on",
+ * so a new kind starts switched on for every org with no migration. See
+ * services/notification_service.ts (partnerEmailKind).
+ */
+export interface TenantEmailPrefs {
+  /** New-booking emails (partner.booking_confirmed). */
+  booking?: boolean;
+  /** Listing review outcomes (listing.approved / listing.rejected). */
+  listing?: boolean;
+}
+
+/** The org's email preferences with every kind filled in (missing = on). */
+export function resolveEmailPrefs(p: TenantEmailPrefs | null | undefined): Required<TenantEmailPrefs> {
+  return { booking: p?.booking !== false, listing: p?.listing !== false };
+}
+
 export const tenants = pgTable('tenants', {
   id: uuidPk(),
   name: text('name').notNull(),
@@ -96,6 +113,8 @@ export const tenants = pgTable('tenants', {
    * (PATCH /v1/admin/tenants/:id/catalog).
    */
   hiddenFromCatalog: boolean('hidden_from_catalog').notNull().default(false),
+  /** Partner email preferences (Settings → Notifications). Owner/Manager-edited. */
+  emailPrefs: jsonb('email_prefs').$type<TenantEmailPrefs>().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

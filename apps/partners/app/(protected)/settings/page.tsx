@@ -51,13 +51,13 @@ export default function SettingsPage() {
       </Card>
       <Card
         title="Notifications"
-        subtitle="Outbound SMS, email and WhatsApp messages dispatched for this organization."
+        subtitle="Choose which emails circls sends your organisation, and see every SMS, email and WhatsApp message sent for it."
       >
         <Link
           href="/settings/notifications"
           className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border-2 border-[#17151D] bg-[#FFB0A3] px-3 py-1.5 text-xs font-bold text-[#17151D] shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5"
         >
-          View notifications &rarr;
+          Manage notifications &rarr;
         </Link>
       </Card>
       <Card

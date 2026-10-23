@@ -26,6 +26,7 @@ import type {
   Tenant,
   TenantEarnings,
   TenantInvitation,
+  TenantEmailPrefs,
   TenantProfile,
   TenantRole,
   TenantSocials,
@@ -107,6 +108,8 @@ export interface UpdateTenantProfileInput {
   state?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  /** Only the kinds given change. */
+  emailPrefs?: Partial<TenantEmailPrefs>;
 }
 
 export function useTenantProfile(tenantId: string) {

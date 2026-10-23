@@ -27,8 +27,27 @@ import {
   notifyListingReviewed,
   notifyListingSubmitted,
   notifyOrgCreated,
+  partnerEmailKind,
   partnerRecipients,
 } from './notification_service.js';
+import { updateTenantProfile } from './tenant_service.js';
+import { resolveEmailPrefs } from '../db/schema/tenants.js';
+
+describe('partner email preferences (unit)', () => {
+  it('treats a missing kind as on', () => {
+    expect(resolveEmailPrefs(null)).toEqual({ booking: true, listing: true });
+    expect(resolveEmailPrefs({ listing: false })).toEqual({ booking: true, listing: false });
+  });
+
+  it('maps each partner email to the switch that governs it', () => {
+    expect(partnerEmailKind('partner.booking_confirmed')).toBe('booking');
+    expect(partnerEmailKind('listing.approved')).toBe('listing');
+    expect(partnerEmailKind('listing.rejected')).toBe('listing');
+    // Not switchable: always sent.
+    expect(partnerEmailKind('question.asked')).toBeNull();
+    expect(partnerEmailKind('tenant.invitation')).toBeNull();
+  });
+});
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -64,6 +83,7 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
 
   afterAll(async () => {
     await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from arenas where id = ${arenaId}`);
     await db.execute(sql`delete from venues where id = ${venueId}`);
@@ -206,6 +226,35 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
     expect(rejected).toHaveLength(1);
     expect(rejected[0]!.payload['fixes']).toEqual(['Photos are missing', 'Add opening hours']);
     expect(rejected[0]!.payload['ctaLabel']).toBe('Add it again');
+  });
+
+  it('an org that switched a kind of email off stops getting it; the customer still does', async () => {
+    const profile = await updateTenantProfile(tenantId, { emailPrefs: { booking: false, listing: false } }, ownerUserId);
+    expect(profile.emailPrefs).toEqual({ booking: false, listing: false });
+    // Only the kinds given change.
+    expect((await updateTenantProfile(tenantId, { emailPrefs: { listing: true } }, ownerUserId)).emailPrefs).toEqual({
+      booking: false,
+      listing: true,
+    });
+    await updateTenantProfile(tenantId, { emailPrefs: { listing: false } }, ownerUserId);
+    // Each real change is in the activity log, with who made it.
+    const audits = await db.execute<Record<string, unknown>>(
+      sql`select actor_user_id from audit_log where tenant_id = ${tenantId} and action = 'tenant.email_prefs_updated'`,
+    );
+    expect(audits).toHaveLength(3);
+    expect((audits as unknown as Array<Record<string, unknown>>)[0]!['actor_user_id']).toBe(ownerUserId);
+
+    const booking = await insertBooking('circls', 'Quiet Quinn');
+    await notifyBookingConfirmed(booking);
+    expect(await rowsFor('partner.booking_confirmed', sql`payload->>'bookingId' = ${booking}`)).toHaveLength(0);
+    const customerRows = await rowsFor('booking.confirmed', sql`payload->>'bookingId' = ${booking}`);
+    expect(customerRows.map((r) => r.channel).sort()).toEqual(['email', 'sms']);
+
+    const before = (await rowsFor('listing.approved')).length;
+    await notifyListingReviewed('venue', venueId, 'approved');
+    expect(await rowsFor('listing.approved')).toHaveLength(before);
+
+    await updateTenantProfile(tenantId, { emailPrefs: { booking: true, listing: true } }, ownerUserId);
   });
 
   it('notifyOrgCreated tells the admin team who signed up', async () => {

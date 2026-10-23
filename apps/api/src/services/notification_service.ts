@@ -52,7 +52,7 @@ import {
 } from './notification_payloads.js';
 export type { CancellationMode, ListingNotifyType, RefundReason } from './notification_payloads.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
-import { tenants } from '../db/schema/tenants.js';
+import { resolveEmailPrefs, tenants, type TenantEmailPrefs } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
 
 /** Generic passthrough — kept thin so route handlers can call it. */
@@ -122,6 +122,28 @@ export interface PartnerRecipient {
 }
 
 /**
+ * Which preference (Settings → Notifications) governs a partner email. Keys
+ * not listed here are always sent.
+ */
+export function partnerEmailKind(templateKey: string): keyof TenantEmailPrefs | null {
+  if (templateKey === 'partner.booking_confirmed') return 'booking';
+  if (templateKey === 'listing.approved' || templateKey === 'listing.rejected') return 'listing';
+  return null;
+}
+
+/** False when the org switched this kind of email off. */
+export async function partnerWantsEmail(tenantId: string, templateKey: string): Promise<boolean> {
+  const kind = partnerEmailKind(templateKey);
+  if (!kind) return true;
+  const [row] = await db
+    .select({ emailPrefs: tenants.emailPrefs })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+  return resolveEmailPrefs(row?.emailPrefs)[kind];
+}
+
+/**
  * Where an org's email goes: its `contact_email` when set (the same address
  * the question alerts use), else the account email of every owner. Deleted
  * accounts are skipped. Empty ⇒ nothing is sent.
@@ -150,14 +172,17 @@ export async function partnerRecipients(tenantId: string): Promise<PartnerRecipi
   return [...owners.values()];
 }
 
-/** Email every partner recipient of a tenant, each greeted by name. Returns
- *  how many were addressed. */
+/** Email every partner recipient of a tenant, each greeted by name, unless
+ *  the org switched this kind of email off. Returns how many were addressed. */
 async function notifyPartner(
   tenantId: string,
   templateKey: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | (() => Promise<Record<string, unknown>>),
 ): Promise<number> {
+  if (!(await partnerWantsEmail(tenantId, templateKey))) return 0;
   const recipients = await partnerRecipients(tenantId);
+  if (recipients.length === 0) return 0;
+  const body = typeof payload === 'function' ? await payload() : payload;
   for (const r of recipients) {
     await safeDispatch({
       tenantId,
@@ -165,7 +190,7 @@ async function notifyPartner(
       channel: 'email' as NotificationChannel,
       recipient: r.email,
       templateKey,
-      payload: { ...payload, greetingName: r.greetingName },
+      payload: { ...body, greetingName: r.greetingName },
     });
   }
   return recipients.length;
@@ -215,7 +240,8 @@ export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
   }
   // Desk (walk-in) bookings are the org's own doing, so those don't echo back.
   if (ctx.channel !== 'walkin') {
-    await notifyPartner(ctx.tenantId, 'partner.booking_confirmed', await partnerBookingPayload(ctx));
+    // Built only when it will be sent (it may query the event's capacity).
+    await notifyPartner(ctx.tenantId, 'partner.booking_confirmed', () => partnerBookingPayload(ctx));
   }
 
   await scheduleReminders(ctx, common);
