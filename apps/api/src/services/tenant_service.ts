@@ -6,6 +6,7 @@ import type { TenantRole } from '../db/schema/tenant_members.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
 import { getStorage } from '../lib/storage.js';
 import { CURRENT_TERMS_VERSION, type TermsRegion, termsRegionForCountry } from '../lib/terms.js';
+import { onOrgCreated } from './notification_hooks.js';
 
 export interface CreateTenantInput {
   name: string;
@@ -43,7 +44,7 @@ function assertShownCurrentTerms(documentVersion: string | undefined): void {
 export async function createTenant(ownerUserId: string, input: CreateTenantInput): Promise<Tenant> {
   if (input.documentVersion !== undefined) assertShownCurrentTerms(input.documentVersion);
   try {
-    return await db.transaction(async (tx) => {
+    const created = await db.transaction(async (tx) => {
       const [tenant] = await tx
         .insert(tenants)
         .values({
@@ -62,6 +63,9 @@ export async function createTenant(ownerUserId: string, input: CreateTenantInput
         .values({ userId: ownerUserId, tenantId: tenant.id, role: 'owner' });
       return tenant;
     });
+    // The admin team hears about every new org, once it's committed.
+    await onOrgCreated(created.id);
+    return created;
   } catch (err) {
     if (isUniqueViolation(err)) throw new Conflict('Slug already taken', 'slug_taken');
     throw err;

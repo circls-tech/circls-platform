@@ -31,6 +31,26 @@ import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { getNotifications, type DispatchInput } from '../lib/notifications/index.js';
 import type { NotificationChannel } from '../lib/notifications/templates.js';
+import { firstName } from '../lib/notifications/email_format.js';
+import {
+  basePayload,
+  cancelledPayload,
+  customerConfirmedPayload,
+  isEmail,
+  listingApprovedPayload,
+  listingRejectedPayload,
+  listingSubmittedPayload,
+  loadBookingContext,
+  loadListingDetail,
+  orgSignupPayload,
+  partnerBookingPayload,
+  refundedPayload,
+  type BookingNotifyContext,
+  type CancellationMode,
+  type ListingNotifyType,
+  type RefundReason,
+} from './notification_payloads.js';
+export type { CancellationMode, ListingNotifyType, RefundReason } from './notification_payloads.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
 import { tenants } from '../db/schema/tenants.js';
 import { users } from '../db/schema/users.js';
@@ -52,179 +72,6 @@ export async function processPendingNotifications(): Promise<number> {
 
 // ── Booking notification helpers ──────────────────────────────────────────────
 
-interface BookingNotifyContext {
-  bookingId: string;
-  tenantId: string;
-  customerName: string;
-  customerUserId: string | null;
-  phone: string | null;
-  email: string | null;
-  venueName: string;
-  arenaName: string;
-  startAt: Date | null;
-  totalRupees: string;
-  whenText: string;
-}
-
-const IST_FMT = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
-function isEmail(s: string): boolean {
-  return /.+@.+\..+/.test(s);
-}
-
-function isPhone(s: string): boolean {
-  // E.164-ish or local: starts with + or digit, mostly digits
-  return /^\+?\d[\d\-\s]{6,}$/.test(s);
-}
-
-/**
- * Extract contact channels from a booking row. `customer_contact_json` is the
- * preferred source (structured `{ phone, email }`); we fall back to sniffing
- * the legacy `customer_contact` string.
- */
-function extractContacts(
-  customerContactJson: Record<string, unknown> | null,
-  customerContact: string | null,
-): { phone: string | null; email: string | null } {
-  let phone: string | null = null;
-  let email: string | null = null;
-
-  if (customerContactJson && typeof customerContactJson === 'object') {
-    const p = customerContactJson['phone'];
-    const e = customerContactJson['email'];
-    if (typeof p === 'string' && isPhone(p)) phone = p;
-    if (typeof e === 'string' && isEmail(e)) email = e;
-  }
-
-  if (customerContact) {
-    if (!phone && isPhone(customerContact)) phone = customerContact;
-    if (!email && isEmail(customerContact)) email = customerContact;
-  }
-
-  return { phone, email };
-}
-
-/**
- * Load a booking + venue + arena + customer contact for a notification.
- * Returns null if the booking isn't found — callers no-op in that case.
- *
- * Why two queries: the slot-side data (start_at, arena name) is 1:N to the
- * booking when slots haven't been released, so we aggregate separately to
- * avoid GROUP BY gymnastics. The fallback arena name comes from the
- * booking's `slot_arena_id` snapshot when slots have been released
- * (cancelled-booking case).
- */
-async function loadBookingContext(bookingId: string): Promise<BookingNotifyContext | null> {
-  const bookingRows = await db.execute<Record<string, unknown>>(sql`
-    select b.id                       as id,
-           b.tenant_id                as tenant_id,
-           b.customer_name            as customer_name,
-           b.customer_contact         as customer_contact,
-           b.customer_contact_json    as customer_contact_json,
-           b.customer_user_id         as customer_user_id,
-           b.total_paise              as total_paise,
-           lower(b.time_range)        as booking_start_at,
-           v.name                     as venue_name,
-           ab_fallback.name           as fallback_arena_name,
-           u.phone_e164               as user_phone,
-           u.email                    as user_email,
-           u.display_name             as user_display_name,
-           u.deleted_at               as user_deleted_at
-      from bookings b
-      left join venues v           on v.id = b.venue_id
-      left join arenas ab_fallback on ab_fallback.id = b.slot_arena_id
-      left join users u            on u.id = b.customer_user_id
-     where b.id = ${bookingId}
-     limit 1
-  `);
-  const arr = bookingRows as unknown as Record<string, unknown>[];
-  const r = arr[0];
-  if (!r) return null;
-
-  // Slot-side: aggregate min(start_at) + take any matching arena name.
-  const slotRows = await db.execute<Record<string, unknown>>(sql`
-    select min(lower(s.time_range)) as slot_start_at,
-           max(a.name)               as slot_arena_name
-      from slots s
-      left join arenas a on a.id = s.arena_id
-     where s.booking_id = ${bookingId}
-       and s.deleted_at is null
-  `);
-  const slotArr = slotRows as unknown as Record<string, unknown>[];
-  const slotAgg = slotArr[0] ?? {};
-
-  const { phone, email } = extractContacts(
-    (r['customer_contact_json'] as Record<string, unknown> | null) ?? null,
-    (r['customer_contact'] as string | null) ?? null,
-  );
-
-  // The booking row usually carries a single contact string (consumer flows
-  // send the phone). Fill whichever channel is missing from the customer's own
-  // user profile so a confirmation reaches both mobile and email.
-  const userPhone = (r['user_phone'] as string | null) ?? null;
-  const userEmail = (r['user_email'] as string | null) ?? null;
-  // A deleted account must never be contacted again. The users join is already
-  // anonymised, but `bookings.customer_contact` is RETAINED as part of the
-  // financial record and is preferred above — so without this the venue
-  // cancelling an event months later would still text someone who deleted their
-  // account. Dropping both channels here is the single chokepoint: every
-  // dispatch below is guarded by `if (ctx.phone)` / `if (ctx.email)`.
-  const accountDeleted = r['user_deleted_at'] != null;
-  const resolvedPhone = accountDeleted
-    ? null
-    : (phone ?? (userPhone && isPhone(userPhone) ? userPhone : null));
-  const resolvedEmail = accountDeleted
-    ? null
-    : (email ?? (userEmail && isEmail(userEmail) ? userEmail : null));
-
-  const totalPaise = Number(r['total_paise'] ?? 0);
-  const startAtRaw =
-    (slotAgg['slot_start_at'] as string | null) ??
-    (r['booking_start_at'] as string | null) ??
-    null;
-  const startAt = startAtRaw ? new Date(startAtRaw) : null;
-  const arenaName =
-    (slotAgg['slot_arena_name'] as string | null) ??
-    (r['fallback_arena_name'] as string | null) ??
-    '';
-
-  return {
-    bookingId: r['id'] as string,
-    tenantId: r['tenant_id'] as string,
-    customerName:
-      (r['customer_name'] as string | null) ??
-      (r['user_display_name'] as string | null) ??
-      'Guest',
-    customerUserId: (r['customer_user_id'] as string | null) ?? null,
-    phone: resolvedPhone,
-    email: resolvedEmail,
-    venueName: (r['venue_name'] as string | null) ?? 'the venue',
-    arenaName,
-    startAt,
-    totalRupees: (totalPaise / 100).toFixed(2),
-    whenText: startAt ? IST_FMT.format(startAt) : 'your booked time',
-  };
-}
-
-function basePayload(ctx: BookingNotifyContext): Record<string, unknown> {
-  return {
-    bookingId: ctx.bookingId,
-    customerName: ctx.customerName,
-    venueName: ctx.venueName,
-    arenaName: ctx.arenaName,
-    when: ctx.whenText,
-    totalRupees: ctx.totalRupees,
-  };
-}
-
 /** Fan out a single dispatch — swallow errors per-channel so one bad provider
  *  doesn't sink the others. */
 async function safeDispatch(input: DispatchInput): Promise<void> {
@@ -239,8 +86,95 @@ function whatsappEnabled(): boolean {
   return Boolean(env.WHATSAPP_PROVIDER && env.WHATSAPP_API_KEY);
 }
 
+// ── Circls admin team ─────────────────────────────────────────────────────────
+
+/**
+ * Email every address in ADMIN_TEAM_EMAILS with an `admin.*` template (those go
+ * through the internal sender — Resend). A no-op when the list is unset, so a
+ * sandbox or a deploy without it writes no rows. One ledger row per recipient,
+ * like any other dispatch; failures are per-recipient and never throw.
+ */
+export async function notifyAdminTeam(
+  templateKey: `admin.${string}`,
+  payload: Record<string, unknown>,
+  tenantId: string | null = null,
+): Promise<number> {
+  const recipients = env.ADMIN_TEAM_EMAILS;
+  for (const recipient of recipients) {
+    await safeDispatch({
+      tenantId,
+      userId: null,
+      channel: 'email' as NotificationChannel,
+      recipient,
+      templateKey,
+      payload,
+    });
+  }
+  return recipients.length;
+}
+
+// ── Partners (the org that owns the venue / listing) ─────────────────────────
+
+export interface PartnerRecipient {
+  email: string;
+  /** "Hi …" — the owner's first name, or the org's name for its shared inbox. */
+  greetingName: string;
+}
+
+/**
+ * Where an org's email goes: its `contact_email` when set (the same address
+ * the question alerts use), else the account email of every owner. Deleted
+ * accounts are skipped. Empty ⇒ nothing is sent.
+ */
+export async function partnerRecipients(tenantId: string): Promise<PartnerRecipient[]> {
+  const rows = (await db.execute<Record<string, unknown>>(sql`
+    select tn.name          as tenant_name,
+           tn.contact_email as contact_email,
+           u.email          as owner_email,
+           u.display_name   as owner_name
+      from tenants tn
+      left join tenant_members tm on tm.tenant_id = tn.id and tm.role = 'owner'
+      left join users u on u.id = tm.user_id and u.deleted_at is null
+     where tn.id = ${tenantId}
+  `)) as unknown as Record<string, unknown>[];
+  const tenantName = (rows[0]?.['tenant_name'] as string | null) ?? 'there';
+  const contact = (rows[0]?.['contact_email'] as string | null) ?? null;
+  if (contact && isEmail(contact)) return [{ email: contact, greetingName: tenantName }];
+  const owners = new Map<string, PartnerRecipient>();
+  for (const r of rows) {
+    const e = (r['owner_email'] as string | null) ?? null;
+    if (e && isEmail(e) && !owners.has(e)) {
+      owners.set(e, { email: e, greetingName: firstName(r['owner_name'] as string | null, tenantName) });
+    }
+  }
+  return [...owners.values()];
+}
+
+/** Email every partner recipient of a tenant, each greeted by name. Returns
+ *  how many were addressed. */
+async function notifyPartner(
+  tenantId: string,
+  templateKey: string,
+  payload: Record<string, unknown>,
+): Promise<number> {
+  const recipients = await partnerRecipients(tenantId);
+  for (const r of recipients) {
+    await safeDispatch({
+      tenantId,
+      userId: null,
+      channel: 'email' as NotificationChannel,
+      recipient: r.email,
+      templateKey,
+      payload: { ...payload, greetingName: r.greetingName },
+    });
+  }
+  return recipients.length;
+}
+
 /** Called from booking confirmation flow. Phase-12/14 services call this after
- *  flipping a booking to `confirmed`. */
+ *  flipping a booking to `confirmed`. Tells the customer (SMS, WhatsApp,
+ *  email), the org (email, unless the org entered it at the desk), and queues
+ *  the reminders. */
 export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
   const ctx = await loadBookingContext(bookingId);
   if (!ctx) {
@@ -273,10 +207,15 @@ export async function notifyBookingConfirmed(bookingId: string): Promise<void> {
   if (ctx.email) {
     await safeDispatch({
       ...common,
+      payload: customerConfirmedPayload(ctx),
       channel: 'email' as NotificationChannel,
       recipient: ctx.email,
       templateKey: 'booking.confirmed',
     });
+  }
+  // Desk (walk-in) bookings are the org's own doing, so those don't echo back.
+  if (ctx.channel !== 'walkin') {
+    await notifyPartner(ctx.tenantId, 'partner.booking_confirmed', await partnerBookingPayload(ctx));
   }
 
   await scheduleReminders(ctx, common);
@@ -288,7 +227,7 @@ async function scheduleReminders(
   ctx: BookingNotifyContext,
   common: { tenantId: string; userId: string | null; payload: Record<string, unknown> },
 ): Promise<void> {
-  if (ctx.startAt && ctx.phone) {
+  if (ctx.startAt && ctx.phone && ctx.itemType !== 'membership') {
     const now = Date.now();
     const t24 = new Date(ctx.startAt.getTime() - 24 * 60 * 60 * 1000);
     const t1 = new Date(ctx.startAt.getTime() - 60 * 60 * 1000);
@@ -317,6 +256,20 @@ async function scheduleReminders(
   }
 }
 
+/** Drop reminders still waiting for a booking that moved or was called off. */
+async function skipPendingReminders(bookingId: string, why: string): Promise<void> {
+  await db
+    .update(notifications)
+    .set({ status: 'skipped', error: why })
+    .where(
+      and(
+        eq(notifications.status, 'pending'),
+        sql`${notifications.templateKey} like 'booking.reminder_%'`,
+        sql`${notifications.payload}->>'bookingId' = ${bookingId}`,
+      ),
+    );
+}
+
 /**
  * Called after reschedule_service moves a booking's slots. The reminders
  * queued at confirmation point at the old time, so they are dropped and
@@ -329,16 +282,7 @@ export async function notifyBookingRescheduled(bookingId: string): Promise<void>
     return;
   }
   // Reminders still waiting for the old time: skipped, not sent.
-  await db
-    .update(notifications)
-    .set({ status: 'skipped', error: 'booking rescheduled' })
-    .where(
-      and(
-        eq(notifications.status, 'pending'),
-        sql`${notifications.templateKey} like 'booking.reminder_%'`,
-        sql`${notifications.payload}->>'bookingId' = ${bookingId}`,
-      ),
-    );
+  await skipPendingReminders(bookingId, 'booking rescheduled');
 
   const payload = basePayload(ctx);
   const common = {
@@ -373,18 +317,30 @@ export async function notifyBookingRescheduled(bookingId: string): Promise<void>
   await scheduleReminders(ctx, common);
 }
 
-/** Called from cancellation/refund flow. */
-export async function notifyBookingCancelled(bookingId: string): Promise<void> {
+export interface BookingCancelledOptions {
+  /** Who called it off: the event's organizer (whole event), the customer, or
+   *  the venue/org (this booking). Defaults to the venue. */
+  mode?: CancellationMode;
+  /** Refund issued with the cancellation, minor units. */
+  refundPaise?: number;
+}
+
+/** Called after a cancellation commits. Tells the customer (SMS + email); the
+ *  email says whether money is coming back. */
+export async function notifyBookingCancelled(
+  bookingId: string,
+  opts: BookingCancelledOptions = {},
+): Promise<void> {
   const ctx = await loadBookingContext(bookingId);
   if (!ctx) {
     logger.warn({ bookingId }, 'notify_booking_cancelled_missing');
     return;
   }
-  const payload = basePayload(ctx);
+  await skipPendingReminders(bookingId, 'booking cancelled');
   const common = {
     tenantId: ctx.tenantId,
     userId: ctx.customerUserId,
-    payload,
+    payload: basePayload(ctx),
   };
 
   if (ctx.phone) {
@@ -398,11 +354,116 @@ export async function notifyBookingCancelled(bookingId: string): Promise<void> {
   if (ctx.email) {
     await safeDispatch({
       ...common,
+      payload: cancelledPayload(ctx, {
+        mode: opts.mode ?? 'venue',
+        ...(opts.refundPaise !== undefined ? { refundPaise: opts.refundPaise } : {}),
+      }),
       channel: 'email' as NotificationChannel,
       recipient: ctx.email,
       templateKey: 'booking.cancelled',
     });
   }
+}
+
+/**
+ * Called after an event (or an occurrence of a series) is cancelled. Every
+ * customer still holding a confirmed booking for it hears about it. The
+ * bookings themselves are not cancelled or refunded here — that stays the
+ * organizer's call — so the email says the refund comes from them.
+ */
+export async function notifyEventCancelled(eventId: string): Promise<number> {
+  const rows = (await db.execute<Record<string, unknown>>(sql`
+    select id from bookings
+     where item_type = 'event'
+       and status = 'confirmed'
+       and item_data->>'eventId' = ${eventId}
+  `)) as unknown as Array<{ id: string }>;
+  for (const r of rows) {
+    await notifyBookingCancelled(r.id, { mode: 'event' });
+  }
+  return rows.length;
+}
+
+export interface BookingRefundedInput {
+  amountPaise: number;
+  status: 'pending' | 'processed' | 'failed';
+  /** The refund's own payments row — shown as the refund reference. */
+  refundPaymentId?: string | undefined;
+  reason: RefundReason;
+}
+
+/**
+ * Called after a refund against the booking's charge is recorded. Tells the
+ * customer the amount, why, and when to expect it.
+ */
+export async function notifyBookingRefunded(bookingId: string, refund: BookingRefundedInput): Promise<void> {
+  if (refund.status === 'failed') return;
+  const ctx = await loadBookingContext(bookingId);
+  if (!ctx) {
+    logger.warn({ bookingId }, 'notify_booking_refunded_missing');
+    return;
+  }
+  const payload = refundedPayload(ctx, refund);
+  const common = { tenantId: ctx.tenantId, userId: ctx.customerUserId, payload };
+  if (ctx.phone) {
+    await safeDispatch({
+      ...common,
+      channel: 'sms' as NotificationChannel,
+      recipient: ctx.phone,
+      templateKey: 'booking.refunded',
+    });
+  }
+  if (ctx.email) {
+    await safeDispatch({
+      ...common,
+      channel: 'email' as NotificationChannel,
+      recipient: ctx.email,
+      templateKey: 'booking.refunded',
+    });
+  }
+}
+
+// ── Listing review + org sign-up ─────────────────────────────────────────────
+
+/** A listing entered `pending_review` — the admin team has something to do. */
+export async function notifyListingSubmitted(type: ListingNotifyType, id: string): Promise<void> {
+  if (env.ADMIN_TEAM_EMAILS.length === 0) return;
+  const l = await loadListingDetail(type, id);
+  if (!l) {
+    logger.warn({ type, id }, 'notify_listing_submitted_missing');
+    return;
+  }
+  await notifyAdminTeam('admin.listing_submitted', await listingSubmittedPayload(l), l.tenantId);
+}
+
+/** An admin approved or rejected a listing — tell the org. */
+export async function notifyListingReviewed(
+  type: ListingNotifyType,
+  id: string,
+  decision: 'approved' | 'rejected',
+  reason?: string,
+): Promise<void> {
+  const l = await loadListingDetail(type, id);
+  if (!l) {
+    logger.warn({ type, id, decision }, 'notify_listing_reviewed_missing');
+    return;
+  }
+  if (decision === 'approved') {
+    await notifyPartner(l.tenantId, 'listing.approved', listingApprovedPayload(l));
+  } else {
+    await notifyPartner(l.tenantId, 'listing.rejected', listingRejectedPayload(l, reason));
+  }
+}
+
+/** A partner organisation was created — tell the admin team who signed up. */
+export async function notifyOrgCreated(tenantId: string): Promise<void> {
+  if (env.ADMIN_TEAM_EMAILS.length === 0) return;
+  const payload = await orgSignupPayload(tenantId);
+  if (!payload) {
+    logger.warn({ tenantId }, 'notify_org_created_missing');
+    return;
+  }
+  await notifyAdminTeam('admin.org_signup', payload, tenantId);
 }
 
 // ── Questions threads (design doc 2026-07-18) ────────────────────────────────

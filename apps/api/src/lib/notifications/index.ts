@@ -186,10 +186,19 @@ export function getNotifications(): NotificationsAdapter {
  * at startup (`notification_providers`) so "email doesn't work" is answerable
  * from the first lines of the log — a `stub` mode means no real delivery.
  */
-export function notificationModes(): { sms: string; email: string; whatsapp: string } {
+export function notificationModes(): {
+  sms: string;
+  /** Customer/partner email sender (MSG91 when configured). */
+  email: string;
+  /** Admin-team email sender (Resend when configured) — `admin.*` templates. */
+  emailInternal: string;
+  whatsapp: string;
+} {
+  const email = getEmailProvider();
   return {
     sms: getSmsProvider().mode,
-    email: getEmailProvider().mode,
+    email: email.external.mode,
+    emailInternal: email.internal.mode,
     whatsapp: getWhatsappProvider().mode,
   };
 }

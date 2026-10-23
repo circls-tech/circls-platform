@@ -38,6 +38,7 @@ import {
   sumPriorRefunds,
 } from './refund_service.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
+import { onBookingCancelled, onBookingRefunded } from './notification_hooks.js';
 
 export interface CancelInput {
   bookingId: string;
@@ -195,6 +196,7 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
   // Gateway orders to void after commit: every never-captured charge of the
   // cancelled booking (see below).
   let ordersToCancel: { provider: PaymentProviderId; orderId: string }[] = [];
+  let refundStatus: 'pending' | 'processed' | 'failed' | undefined;
 
   const result = await db.transaction(async (tx) => {
     const inputs = await loadCancellationInputs(tx as RefundExec, input.bookingId, true);
@@ -265,6 +267,7 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
         tx as RefundExec,
       );
       refundId = refund.paymentId;
+      refundStatus = refund.status;
     }
 
     const ctx: AuditCtx = { tenantId: booking.tenantId, actorUserId: input.actorUserId };
@@ -307,5 +310,18 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
     }),
   );
 
+  // The customer hears about the cancellation, then the money, once committed.
+  await onBookingCancelled(input.bookingId, {
+    mode: input.bySelf ? 'customer' : 'venue',
+    refundPaise: result.refundId !== undefined && refundStatus !== 'failed' ? result.refundPaise : 0,
+  });
+  if (result.refundId !== undefined && refundStatus !== undefined) {
+    await onBookingRefunded(input.bookingId, {
+      amountPaise: result.refundPaise,
+      status: refundStatus,
+      refundPaymentId: result.refundId,
+      reason: { kind: 'cancellation', bySelf: input.bySelf },
+    });
+  }
   return result;
 }

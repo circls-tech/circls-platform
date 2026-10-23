@@ -51,6 +51,7 @@ import {
   resolveBillingConfig,
 } from './billing_config.js';
 import { recordRedemption } from './coupon_service.js';
+import { onListingSubmitted } from './notification_hooks.js';
 import type { CouponPricing } from './booking_service.js';
 import {
   listTiersWithRemaining,
@@ -253,7 +254,7 @@ export async function createMembership(
   const cheapest = tiers.length
     ? tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a))
     : { pricePaise: 0, durationDays: 30, benefits: { items: [] } as MembershipBenefits };
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(memberships)
       .values({
@@ -298,6 +299,9 @@ export async function createMembership(
       tiers: liveTiers.map((t) => ({ ...t, sold: 0, remaining: t.capacity })),
     };
   });
+  // A draft isn't in review yet; it alerts the team when it's submitted.
+  if (created.status === 'pending_review') await onListingSubmitted('membership', created.id);
+  return created;
 }
 
 export interface UpdateMembershipPatch {
@@ -323,7 +327,7 @@ export async function submitMembershipForReview(
   ctx: { tenantId: string; actorUserId: string },
   membershipId: string,
 ): Promise<Membership> {
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(memberships)
@@ -342,6 +346,8 @@ export async function submitMembershipForReview(
       .where(eq(membershipTiers.membershipId, membershipId));
     return submitDraftForReview(tx, ctx, 'membership', membershipId, membershipMissing(Number(tierCount?.n ?? 0)));
   });
+  await onListingSubmitted('membership', membershipId);
+  return submitted;
 }
 
 /** What a draft plan still lacks before review: a tier. */

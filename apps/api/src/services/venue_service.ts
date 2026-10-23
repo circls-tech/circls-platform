@@ -6,6 +6,7 @@ import { submitDraftForReview } from './draft_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
+import { onListingSubmitted } from './notification_hooks.js';
 
 /** Trust-metadata fields shared by create + update (PR #109). */
 export interface VenueMetadataInput {
@@ -150,6 +151,8 @@ export async function createVenue(tenantId: string, input: CreateVenueInput): Pr
   );
   const [v] = await db.insert(venues).values(values).returning();
   if (!v) throw new Error('venue insert returned no row');
+  // A draft isn't in review yet; it alerts the team when it's submitted.
+  if (v.status === 'pending_review') await onListingSubmitted('venue', v.id);
   return v;
 }
 
@@ -236,7 +239,7 @@ export async function updateVenue(
  * waits, as they always could), so there is nothing else to check here.
  */
 export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Promise<Venue> {
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(venues)
@@ -251,6 +254,8 @@ export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Prom
     }
     return submitDraftForReview(tx, ctx, 'venue', venueId, []);
   });
+  await onListingSubmitted('venue', venueId);
+  return submitted;
 }
 
 export async function closeVenue(ctx: AuditCtx, venueId: string): Promise<Venue> {

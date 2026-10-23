@@ -66,6 +66,7 @@ import {
 import { GatewayHttpError } from '../lib/gateway_http.js';
 import { isCashfreeFailoverActive, recordCashfreeOutage } from '../lib/inr_failover.js';
 import { notifyBookingConfirmed } from './notification_service.js';
+import { onBookingRefunded } from './notification_hooks.js';
 import { issueQrTicketsForBooking } from './qr_ticket_service.js';
 import { getInrPaymentGateway } from './payment_settings_service.js';
 import { issueRefund } from './refund_service.js';
@@ -764,7 +765,7 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         'payment_captured_after_cancellation_auto_refunding',
       );
       await auditCapture({ bookingStatus: 'cancelled', autoRefund: true });
-      await issueRefund(
+      const lateRefund = await issueRefund(
         {
           bookingId: pay.bookingId,
           amountPaise: Number(pay.amountPaise),
@@ -774,6 +775,12 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         },
         tx,
       );
+      await onBookingRefunded(pay.bookingId, {
+        amountPaise: Number(pay.amountPaise),
+        status: lateRefund.status,
+        refundPaymentId: lateRefund.paymentId,
+        reason: { kind: 'late_capture' },
+      });
       return;
     }
 
@@ -817,7 +824,7 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         })
         .where(eq(payments.id, pay.id));
       await auditCapture({ duplicateOf: otherPaid.id, autoRefund: true });
-      await issueRefund(
+      const dupRefund = await issueRefund(
         {
           bookingId: pay.bookingId,
           amountPaise: Number(pay.amountPaise),
@@ -828,6 +835,12 @@ export async function applyPaymentCaptured(args: CaptureArgs): Promise<void> {
         },
         tx,
       );
+      await onBookingRefunded(pay.bookingId, {
+        amountPaise: Number(pay.amountPaise),
+        status: dupRefund.status,
+        refundPaymentId: dupRefund.paymentId,
+        reason: { kind: 'duplicate' },
+      });
       return;
     }
 

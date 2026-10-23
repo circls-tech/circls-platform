@@ -140,6 +140,14 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 11,
   },
   {
+    slug: 'emails',
+    title: 'Emails circls sends you',
+    category: 'Support',
+    summary:
+      'Which emails your organisation receives — new bookings, listing review outcomes, customer questions, invitations — where they go (contact email or owners), and what your customers are sent: confirmations, cancellations (including a cancelled event) and refunds.',
+    order: 17,
+  },
+  {
     slug: 'questions',
     title: 'Answering customer questions',
     category: 'Support',

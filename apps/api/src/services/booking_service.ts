@@ -16,7 +16,7 @@ import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
 import { createPaymentOrder, resolvePaymentContext } from './payments_service.js';
 import * as paymentsService from './payments_service.js';
-import { onBookingConfirmed } from './notification_hooks.js';
+import { onBookingCancelled, onBookingConfirmed } from './notification_hooks.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
 import { computeCheckout } from './checkout_pricing.js';
 import {
@@ -503,7 +503,7 @@ export async function prepareOnlineBookingWithPayment(
 }
 
 export async function cancelBooking(ctx: AuditCtx, bookingId: string): Promise<Booking> {
-  return db.transaction(async (tx) => {
+  const cancelled = await db.transaction(async (tx) => {
     const [b] = await tx
       .update(bookings)
       .set({ status: 'cancelled' })
@@ -525,6 +525,9 @@ export async function cancelBooking(ctx: AuditCtx, bookingId: string): Promise<B
 
     return b;
   });
+  // Tell the customer once the cancellation is committed (never throws).
+  await onBookingCancelled(bookingId, { mode: 'venue' });
+  return cancelled;
 }
 
 // ── Event bookings (Phase 15) ───────────────────────────────────────────────

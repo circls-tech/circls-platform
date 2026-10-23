@@ -27,6 +27,7 @@ import { listTiers as listEventTiers } from './event_tiers_service.js';
 import { listTiers as listMembershipTiers } from './membership_tiers_service.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
+import { onListingReviewed } from './notification_hooks.js';
 
 export const LISTING_TYPES = ['venue', 'arena', 'event', 'membership'] as const;
 export type ListingType = (typeof LISTING_TYPES)[number];
@@ -83,7 +84,7 @@ async function transitionListing(
   // Each listing table shares the shape we need: id, tenant linkage, status.
   // We resolve the owning tenantId (arenas reach it through their venue) so the
   // capability check upstream + the audit row are tenant-scoped.
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const row = await loadListing(tx, type, id);
     if (!row) throw new NotFound(`${type} not found`, 'listing_not_found');
     if (row.status !== opts.from) {
@@ -155,6 +156,10 @@ async function transitionListing(
 
     return { id, status: opts.to };
   });
+  // Tell the org once the decision is committed. A series is reviewed as one
+  // unit, so one email for the decision, not one per cascaded occurrence.
+  await onListingReviewed(type, id, opts.to === 'rejected' ? 'rejected' : 'approved', opts.reason);
+  return result;
 }
 
 interface LoadedListing {
