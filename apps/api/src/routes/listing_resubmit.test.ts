@@ -209,6 +209,32 @@ describe.skipIf(!runIntegration)('resubmitting rejected listings', () => {
     expect((sent.json() as { count: number }).count).toBe(3);
     const rows = await db.select({ status: events.status }).from(events).where(eq(events.seriesId, seriesId));
     expect(rows.every((r) => r.status === 'pending_review')).toBe(true);
+
+    // Sending one date again from its own page takes the whole series with it,
+    // so an approval can't leave the other dates rejected.
+    await reject('event', dates[1]!.id, 'Still the wrong city.');
+    const one = await call('owner', 'POST', `/v1/tenants/${tenantId}/events/${dates[2]!.id}/publish`);
+    expect(one.statusCode).toBe(200);
+    expect((one.json() as { id: string; status: string })).toMatchObject({ id: dates[2]!.id, status: 'pending_review' });
+    const after = await db.select({ status: events.status }).from(events).where(eq(events.seriesId, seriesId));
+    expect(after.every((r) => r.status === 'pending_review')).toBe(true);
+  });
+
+  it('submitting an archived rejected event records that it left the archive', async () => {
+    const id = await pendingEvent('Shelved Social');
+    await reject('event', id);
+    expect((await call('owner', 'POST', `/v1/tenants/${tenantId}/events/${id}/archive`)).statusCode).toBe(200);
+    expect((await call('owner', 'POST', `/v1/tenants/${tenantId}/events/${id}/publish`)).statusCode).toBe(200);
+    const [row] = await db.select({ archivedAt: events.archivedAt }).from(events).where(eq(events.id, id));
+    expect(row?.archivedAt).toBeNull();
+    const [audit] = await db
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, id), eq(auditLog.action, 'event.submitted_for_review')))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1);
+    expect(audit?.before).toEqual({ status: 'rejected', archived: true });
+    expect(audit?.after).toEqual({ status: 'pending_review', archived: false });
   });
 
   it('a rejected venue is sent again; reopening still does not get round review', async () => {
@@ -285,6 +311,15 @@ describe.skipIf(!runIntegration)('resubmitting rejected listings', () => {
     expect(created.statusCode).toBe(200);
     const id = (created.json() as { id: string }).id;
 
+    // A client sending the whole arena, unchanged, with new QR rules is fine.
+    const whole = await call('owner', 'PATCH', `/v1/arenas/${id}`, {
+      name: 'Court X',
+      sport: 'tennis',
+      tags: [],
+      qrTicketConfig: { enabled: true, multiUse: false },
+    });
+    expect(whole.statusCode).toBe(200);
+
     // In review: the details Circls is looking at can't change underneath it.
     const early = await call('owner', 'PATCH', `/v1/arenas/${id}`, { name: 'Court Y' });
     expect(early.statusCode).toBe(409);
@@ -302,6 +337,10 @@ describe.skipIf(!runIntegration)('resubmitting rejected listings', () => {
     const edited = await call('manager', 'PATCH', `/v1/arenas/${id}`, { sport: 'badminton', capacity: 4 });
     expect(edited.statusCode).toBe(200);
     expect(edited.json()).toMatchObject({ sport: 'badminton', capacity: 4, status: 'rejected' });
+    // A cleared sport falls back to the tags', as on create.
+    const cleared = await call('owner', 'PATCH', `/v1/arenas/${id}`, { sport: null, tags: ['badminton'] });
+    expect(cleared.statusCode).toBe(200);
+    expect((cleared.json() as { sport: string | null }).sport).toBe('badminton');
 
     expect((await call('staff', 'POST', `/v1/arenas/${id}/submit`)).statusCode).toBe(403);
     const sent = await call('manager', 'POST', `/v1/arenas/${id}/submit`);

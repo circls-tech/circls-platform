@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
-import { isSubmittable, submitDraftForReview } from './draft_review.js';
+import { isSubmittable, submitForReview } from './listing_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
@@ -250,7 +250,7 @@ export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Prom
         status: existing.status,
       });
     }
-    return submitDraftForReview(tx, ctx, 'venue', venueId, existing.status, []);
+    return submitForReview(tx, ctx, 'venue', venueId, existing.status, []);
   });
 }
 

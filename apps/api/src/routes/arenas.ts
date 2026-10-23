@@ -14,7 +14,7 @@ import {
   updateArenaDetails,
   updateArenaQrTicketConfig,
 } from '../services/arena_service.js';
-import { latestRejection } from '../services/draft_review.js';
+import { latestRejection } from '../services/listing_review.js';
 import type { Capability } from '../lib/authz/capabilities.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
@@ -78,6 +78,7 @@ const rolloverSchema = z.object({
 /**
  * Resolve an arena → its venue's tenant and assert the caller is a member.
  * Writes pass the capability they need; reads are open to any member.
+ * Returns the arena and the audit context (its tenant, the caller).
  */
 async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capability) {
   const arena = await getArenaById(arenaId);
@@ -87,7 +88,7 @@ async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capabi
   const user = await currentUser(req);
   const ctx = await requireTenantMembership(user.id, venue.tenantId);
   if (cap) assertCap(ctx, cap);
-  return arena;
+  return { arena, auditCtx: { tenantId: venue.tenantId, actorUserId: user.id } };
 }
 
 export const arenaRoutes: FastifyPluginAsync = async (app) => {
@@ -125,13 +126,11 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) {
       throw new BadRequest('Invalid arena patch', 'bad_request', { issues: parsed.error.issues });
     }
-    const arena = await authorizeArena(req, arenaId, 'arenas.write');
+    const { arena, auditCtx } = await authorizeArena(req, arenaId, 'arenas.write');
     const { qrTicketConfig, ...details } = parsed.data;
     let result = arena;
     if (Object.values(details).some((v) => v !== undefined)) {
-      const venue = await getVenueById(arena.venueId);
-      const user = await currentUser(req);
-      result = await updateArenaDetails({ tenantId: venue!.tenantId, actorUserId: user.id }, arenaId, {
+      result = await updateArenaDetails(auditCtx, arenaId, {
         ...(details.name !== undefined ? { name: details.name } : {}),
         ...(details.sport !== undefined ? { sport: details.sport } : {}),
         ...(details.capacity !== undefined ? { capacity: details.capacity } : {}),
@@ -148,10 +147,8 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
   // ── POST /v1/arenas/:arenaId/submit — a rejected arena goes back to review ─
   app.post('/v1/arenas/:arenaId/submit', { preHandler: requireAuth }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
-    const arena = await authorizeArena(req, arenaId, 'arenas.write');
-    const venue = await getVenueById(arena.venueId);
-    const user = await currentUser(req);
-    return submitArenaForReview({ tenantId: venue!.tenantId, actorUserId: user.id }, arenaId);
+    const { auditCtx } = await authorizeArena(req, arenaId, 'arenas.write');
+    return submitArenaForReview(auditCtx, arenaId);
   });
 
   // ── Close / reopen ─────────────────────────────────────────────────────────
@@ -221,7 +218,7 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/arenas/:arenaId', { preHandler: requireAuth }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
-    const arena = await authorizeArena(req, arenaId);
+    const { arena } = await authorizeArena(req, arenaId);
     // A rejected arena carries why, so the partner knows what to fix.
     return arena.status === 'rejected'
       ? { ...arena, rejection: await latestRejection('arena', arenaId) }

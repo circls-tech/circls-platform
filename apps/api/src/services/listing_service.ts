@@ -7,7 +7,7 @@
  *   event:                  draft → pending_review → published (approved); or rejected; cancelled
  *
  * A rejected listing is not a dead end: the partner edits it in place and
- * sends it again (rejected → pending_review, see draft_review.ts), and it
+ * sends it again (rejected → pending_review, see listing_review.ts), and it
  * comes back into this queue like any other pending item, flagged
  * `resubmitted` so the reviewer knows to check what they asked for.
  *
@@ -32,7 +32,7 @@ import { listTiers as listEventTiers } from './event_tiers_service.js';
 import { listTiers as listMembershipTiers } from './membership_tiers_service.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
-import { latestRejection, type ListingRejection } from './draft_review.js';
+import { latestRejection, type ListingRejection } from './listing_review.js';
 
 export const LISTING_TYPES = ['venue', 'arena', 'event', 'membership'] as const;
 export type ListingType = (typeof LISTING_TYPES)[number];

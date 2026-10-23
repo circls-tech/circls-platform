@@ -15,7 +15,13 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
-import { isSubmittable, latestRejection, type ListingRejection, submitDraftForReview } from './draft_review.js';
+import {
+  isSubmittable,
+  latestRejection,
+  type ListingRejection,
+  submitForReview,
+  type SubmittableStatus,
+} from './listing_review.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
@@ -476,30 +482,42 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
       .from(events)
       .where(and(eq(events.tenantId, ctx.tenantId), eq(events.seriesId, seriesId)));
     if (existing.length === 0) throw new NotFound('Series not found', 'series_not_found');
-    const drafts = existing.filter((e) => isSubmittable(e.status));
+    const drafts = existing.filter(isSubmittableEvent);
     if (drafts.length === 0) {
       throw new Conflict('No draft or rejected occurrences left to submit', 'event_not_draft');
     }
-    // Every date goes to review at once, so every date must be complete.
-    const missingById = await eventMissingMany(tx, drafts);
-    for (const ev of drafts) {
-      const missing = missingById.get(ev.id) ?? [];
-      if (missing.length > 0) {
-        throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
-          eventId: ev.id,
-          missing,
-        });
-      }
-    }
-
-    const updated: Event[] = [];
-    for (const ev of drafts) {
-      updated.push(
-        await submitDraftForReview(tx, ctx, 'event', ev.id, ev.status as 'draft' | 'rejected', [], { seriesId }),
-      );
-    }
-    return updated;
+    return submitSeriesDates(tx, ctx, seriesId, drafts);
   });
+}
+
+type SubmittableEvent = Event & { status: SubmittableStatus };
+
+function isSubmittableEvent(e: Event): e is SubmittableEvent {
+  return isSubmittable(e.status);
+}
+
+/** Send these dates of a series to review together; every one must be complete. */
+async function submitSeriesDates(
+  tx: Tx,
+  ctx: AuditCtx,
+  seriesId: string,
+  dates: SubmittableEvent[],
+): Promise<Event[]> {
+  const missingById = await eventMissingMany(tx, dates);
+  for (const ev of dates) {
+    const missing = missingById.get(ev.id) ?? [];
+    if (missing.length > 0) {
+      throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
+        eventId: ev.id,
+        missing,
+      });
+    }
+  }
+  const updated: Event[] = [];
+  for (const ev of dates) {
+    updated.push(await submitForReview(tx, ctx, 'event', ev.id, ev.status, [], { seriesId }));
+  }
+  return updated;
 }
 
 /**
@@ -899,11 +917,22 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
       .limit(1);
     if (!existing) throw new NotFound('Event not found', 'event_not_found');
-    if (!isSubmittable(existing.status)) {
+    if (!isSubmittableEvent(existing)) {
       throw new Conflict('Only draft or rejected events can be submitted for review', 'event_not_draft');
     }
+    // Circls rejects a series as one unit, so one date sent again takes its
+    // rejected siblings with it — otherwise an approval (which cascades only
+    // to dates in review) would leave the rest rejected.
+    if (existing.status === 'rejected' && existing.seriesId) {
+      const siblings = await tx
+        .select()
+        .from(events)
+        .where(and(eq(events.seriesId, existing.seriesId), eq(events.tenantId, ctx.tenantId), eq(events.status, 'rejected')));
+      const sent = await submitSeriesDates(tx, ctx, existing.seriesId, siblings.filter(isSubmittableEvent));
+      return sent.find((e) => e.id === eventId)!;
+    }
     // A draft may be saved with gaps; review needs the whole thing.
-    return submitDraftForReview(tx, ctx, 'event', eventId, existing.status, await eventMissing(tx, existing));
+    return submitForReview(tx, ctx, 'event', eventId, existing.status, await eventMissing(tx, existing));
   });
 }
 

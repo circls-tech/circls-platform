@@ -5,7 +5,7 @@ import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { inferSport } from '../lib/sport_inference.js';
-import { submitDraftForReview } from './draft_review.js';
+import { submitForReview } from './listing_review.js';
 
 export interface CreateArenaInput {
   name: string;
@@ -68,7 +68,10 @@ export interface UpdateArenaDetailsInput {
  * default slot length and tags — while it is rejected, so the partner can fix
  * it in place and send it back with {@link submitArenaForReview}. Arenas have
  * no draft stage, so rejected is the only state these are open in: once in
- * review or live they are what Circls approved.
+ * review or live they are what Circls approved. Fields sent unchanged are
+ * ignored, so a client that sends the whole arena (with new QR rules, say)
+ * still works on a live one. A cleared sport falls back to the tags, as on
+ * create.
  */
 export async function updateArenaDetails(
   ctx: AuditCtx,
@@ -78,18 +81,22 @@ export async function updateArenaDetails(
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(arenas).where(eq(arenas.id, arenaId)).limit(1).for('update');
     if (!existing) throw new NotFound('Arena not found', 'arena_not_found');
+    const tags = patch.tags ?? existing.tags;
+    const sport = patch.sport === undefined ? undefined : (patch.sport ?? inferSport(tags) ?? null);
+    const set: Partial<typeof arenas.$inferInsert> = {};
+    if (patch.name !== undefined && patch.name !== existing.name) set.name = patch.name;
+    if (sport !== undefined && sport !== existing.sport) set.sport = sport;
+    if (patch.capacity !== undefined && patch.capacity !== existing.capacity) set.capacity = patch.capacity;
+    if (patch.slotDurationMin !== undefined && patch.slotDurationMin !== existing.slotDurationMin) {
+      set.slotDurationMin = patch.slotDurationMin;
+    }
+    if (patch.tags !== undefined && JSON.stringify(patch.tags) !== JSON.stringify(existing.tags)) set.tags = patch.tags;
+    if (Object.keys(set).length === 0) return existing;
     if (existing.status !== 'rejected') {
       throw new Conflict('Only a rejected arena’s details can be edited', 'arena_not_editable', {
         status: existing.status,
       });
     }
-    const set: Partial<typeof arenas.$inferInsert> = {};
-    if (patch.name !== undefined) set.name = patch.name;
-    if (patch.sport !== undefined) set.sport = patch.sport;
-    if (patch.capacity !== undefined) set.capacity = patch.capacity;
-    if (patch.slotDurationMin !== undefined) set.slotDurationMin = patch.slotDurationMin;
-    if (patch.tags !== undefined) set.tags = patch.tags;
-    if (Object.keys(set).length === 0) return existing;
     const [updated] = await tx.update(arenas).set(set).where(eq(arenas.id, arenaId)).returning();
     const before = Object.fromEntries(Object.keys(set).map((k) => [k, existing[k as keyof Arena]]));
     await writeAudit(tx, ctx, 'arena.updated', 'arena', arenaId, before, set);
@@ -110,7 +117,7 @@ export async function submitArenaForReview(ctx: AuditCtx, arenaId: string): Prom
         status: existing.status,
       });
     }
-    return submitDraftForReview(tx, ctx, 'arena', arenaId, 'rejected', []);
+    return submitForReview(tx, ctx, 'arena', arenaId, 'rejected', []);
   });
 }
 

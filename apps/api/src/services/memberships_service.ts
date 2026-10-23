@@ -31,7 +31,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
-import { isSubmittable, latestRejection, type ListingRejection, submitDraftForReview } from './draft_review.js';
+import { isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -349,7 +349,7 @@ export async function submitMembershipForReview(
       .select({ n: sql<number>`count(*)::int` })
       .from(membershipTiers)
       .where(eq(membershipTiers.membershipId, membershipId));
-    return submitDraftForReview(
+    return submitForReview(
       tx,
       ctx,
       'membership',

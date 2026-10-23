@@ -9,7 +9,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { suggestCity } from '../lib/geocoding/gazetteer.js';
-import { latestRejection } from '../services/draft_review.js';
+import { latestRejection } from '../services/listing_review.js';
 import {
   closeVenue,
   submitVenueForReview,

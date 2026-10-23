@@ -27,27 +27,35 @@ export function RejectedArenaFix({ arena, canWrite }: { arena: Arena; canWrite: 
 
   const inferredSport = !sport ? inferSport(tags) : null;
 
+  // A cleared sport is sent as null; the API falls back to the tags' sport.
+  const saveDetails = () =>
+    update.mutateAsync({
+      name: name.trim(),
+      sport: sport.trim() || null,
+      capacity: capacity.trim() ? Number(capacity) : null,
+      slotDurationMin: Number(slotMin),
+      tags,
+    });
+
   async function onSave(e: FormEvent) {
     e.preventDefault();
     setErr(null);
     setSaved(false);
     try {
-      await update.mutateAsync({
-        name: name.trim(),
-        sport: sport.trim() || null,
-        capacity: capacity.trim() ? Number(capacity) : null,
-        slotDurationMin: Number(slotMin),
-        tags,
-      });
+      await saveDetails();
       setSaved(true);
     } catch (e2) {
       setErr((e2 as Error).message);
     }
   }
 
-  async function onSubmitAgain() {
+  // What is on the form is what goes to review: save it first (unchanged
+  // fields are a no-op), so unsaved edits are never left behind.
+  async function onSubmitAgain(form: HTMLFormElement | null) {
     setErr(null);
+    if (form && !form.reportValidity()) return;
     try {
+      await saveDetails();
       await submit.mutateAsync();
     } catch (e2) {
       setErr((e2 as Error).message);
@@ -58,7 +66,7 @@ export function RejectedArenaFix({ arena, canWrite }: { arena: Arena; canWrite: 
     <div className="flex flex-col gap-4">
       <RejectionNotice rejection={arena.rejection} noun="arena" canWrite={canWrite} />
       {canWrite && (
-        <Card title="Fix this arena" subtitle="Save your changes, then submit the arena again.">
+        <Card title="Fix this arena" subtitle="Make your changes, then submit the arena again.">
           <form onSubmit={onSave} className="flex max-w-md flex-col gap-3">
             <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
             <Input
@@ -100,7 +108,7 @@ export function RejectedArenaFix({ arena, canWrite }: { arena: Arena; canWrite: 
                 size="sm"
                 loading={submit.isPending}
                 disabled={update.isPending}
-                onClick={() => void onSubmitAgain()}
+                onClick={(e) => void onSubmitAgain(e.currentTarget.form)}
               >
                 Submit again
               </Button>
