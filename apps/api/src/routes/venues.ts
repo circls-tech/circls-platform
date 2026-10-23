@@ -9,6 +9,7 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { suggestCity } from '../lib/geocoding/gazetteer.js';
+import { latestRejection } from '../services/listing_review.js';
 import {
   closeVenue,
   submitVenueForReview,
@@ -158,7 +159,11 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
     const user = await currentUser(req);
     await requireTenantMembership(user.id, venue.tenantId);
-    return venue;
+    // A rejected venue carries why, so the partner knows what to fix before
+    // sending it again (POST …/submit).
+    return venue.status === 'rejected'
+      ? { ...venue, rejection: await latestRejection('venue', id) }
+      : venue;
   });
 
   app.patch('/v1/venues/:id', { preHandler: requireAuth }, async (req) => {
@@ -219,7 +224,8 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     return getCloseImpact(venue.tenantId, id, arenaId);
   });
 
-  // ── POST /v1/venues/:id/submit — a draft goes to Circls review ────────────
+  // ── POST /v1/venues/:id/submit — a draft, or a rejected venue the partner
+  // has fixed, goes to Circls review ──────────────────────────────────────────
   app.post('/v1/venues/:id/submit', { preHandler: requireAuth }, async (req) => {
     const { id } = req.params as { id: string };
     const venue = await getVenueById(id);

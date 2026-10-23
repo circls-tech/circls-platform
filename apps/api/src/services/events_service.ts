@@ -15,7 +15,13 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { events, type Event, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
-import { submitDraftForReview } from './draft_review.js';
+import {
+  isSubmittable,
+  latestRejection,
+  type ListingRejection,
+  submitForReview,
+  type SubmittableStatus,
+} from './listing_review.js';
 import type { PostBookingRedirect } from '../db/schema/post_booking_redirect.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { revokeQrTicketsForEvent } from './qr_ticket_service.js';
@@ -174,6 +180,8 @@ export async function getEvent(
       tiers: Awaited<ReturnType<typeof listTiersWithRemaining>>;
       questions: Awaited<ReturnType<typeof listQuestions>>;
       missing: EventMissing[];
+      /** Why Circls rejected it; set only on a rejected event. */
+      rejection: ListingRejection | null;
     })
   | null
 > {
@@ -185,10 +193,12 @@ export async function getEvent(
   if (!row) return null;
   const tiers = await listTiersWithRemaining(db, eventId);
   const questions = await listQuestions(db, eventId);
-  // What a draft still lacks before review, as submission will judge it, so
-  // the portal shows the same list it would be refused with. [] otherwise.
-  const missing = row.status === 'draft' ? eventMissingFrom(row, tiers.length) : [];
-  return { ...row, tiers, questions, missing };
+  // What a draft (or a rejected event being fixed) still lacks before review,
+  // as submission will judge it, so the portal shows the same list it would be
+  // refused with. [] otherwise.
+  const missing = isSubmittable(row.status) ? eventMissingFrom(row, tiers.length) : [];
+  const rejection = row.status === 'rejected' ? await latestRejection('event', row.id) : null;
+  return { ...row, tiers, questions, missing, rejection };
 }
 
 /** Unscoped lookup — callers must then assert tenant membership on event.tenantId. */
@@ -460,9 +470,11 @@ export async function listSeriesEvents(tenantId: string, seriesId: string): Prom
 }
 
 /**
- * Submit every draft occurrence of a series for review (draft → pending_review)
- * in one transaction. 404 if the tenant owns no such series; 409 if none of its
- * occurrences are still drafts.
+ * Submit every draft or rejected occurrence of a series for review (→
+ * pending_review) in one transaction. Circls reviews a series as one unit and
+ * a rejection covers every date, so sending it again re-submits them all.
+ * 404 if the tenant owns no such series; 409 if no occurrence is a draft or
+ * rejected.
  */
 export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promise<Event[]> {
   const submitted = await db.transaction(async (tx) => {
@@ -471,31 +483,45 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
       .from(events)
       .where(and(eq(events.tenantId, ctx.tenantId), eq(events.seriesId, seriesId)));
     if (existing.length === 0) throw new NotFound('Series not found', 'series_not_found');
-    const drafts = existing.filter((e) => e.status === 'draft');
+    const drafts = existing.filter(isSubmittableEvent);
     if (drafts.length === 0) {
-      throw new Conflict('No draft occurrences left to submit', 'event_not_draft');
+      throw new Conflict('No draft or rejected occurrences left to submit', 'event_not_draft');
     }
-    // Every date goes to review at once, so every date must be complete.
-    const missingById = await eventMissingMany(tx, drafts);
-    for (const ev of drafts) {
-      const missing = missingById.get(ev.id) ?? [];
-      if (missing.length > 0) {
-        throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
-          eventId: ev.id,
-          missing,
-        });
-      }
-    }
-
-    const updated: Event[] = [];
-    for (const ev of drafts) {
-      updated.push(await submitDraftForReview(tx, ctx, 'event', ev.id, [], { seriesId }));
-    }
-    return updated;
+    return submitSeriesDates(tx, ctx, seriesId, drafts);
   });
   // A series is reviewed as one unit: one alert for the batch.
   if (submitted[0]) await onListingSubmitted('event', submitted[0].id);
   return submitted;
+}
+
+type SubmittableEvent = Event & { status: SubmittableStatus };
+
+function isSubmittableEvent(e: Event): e is SubmittableEvent {
+  return isSubmittable(e.status);
+}
+
+/** Send these dates of a series to review together; every one must be complete. */
+async function submitSeriesDates(
+  tx: Tx,
+  ctx: AuditCtx,
+  seriesId: string,
+  dates: SubmittableEvent[],
+): Promise<Event[]> {
+  const missingById = await eventMissingMany(tx, dates);
+  for (const ev of dates) {
+    const missing = missingById.get(ev.id) ?? [];
+    if (missing.length > 0) {
+      throw new Conflict('A date of this series is not complete yet', 'event_incomplete', {
+        eventId: ev.id,
+        missing,
+      });
+    }
+  }
+  const updated: Event[] = [];
+  for (const ev of dates) {
+    updated.push(await submitForReview(tx, ctx, 'event', ev.id, ev.status, [], { seriesId }));
+  }
+  return updated;
 }
 
 /**
@@ -825,10 +851,12 @@ async function applyEventPatchTx(
 }
 
 /**
- * Update an Event. Drafts are fully editable. Published events accept ONLY the
- * live settings (per-customer ticket limit, increase-only tier capacity,
- * description, QR config, registration questions) via {@link applyLiveSettings};
- * pending_review/cancelled/rejected stay immutable. Published events change
+ * Update an Event. Drafts are fully editable, and so are rejected events: the
+ * partner fixes what Circls asked for in place and sends it back with
+ * {@link publishEvent}. Published events accept ONLY the live settings
+ * (per-customer ticket limit, increase-only tier capacity, description, QR
+ * config, registration questions) via {@link applyLiveSettings};
+ * pending_review/cancelled/completed stay immutable. Published events change
  * their approval-gated fields (name/window/location/tiers) through
  * {@link applyApprovedChangePatch} instead, driven by the change-request flow.
  */
@@ -849,8 +877,8 @@ export async function updateEvent(
     if (existing.status === 'published') {
       return applyLiveSettings(tx, ctx, existing, patch);
     }
-    if (existing.status !== 'draft') {
-      throw new Conflict('Only draft events can be edited', 'event_not_draft');
+    if (!isSubmittable(existing.status)) {
+      throw new Conflict('Only draft or rejected events can be edited', 'event_not_draft');
     }
     if (patch.tierCapacities !== undefined) {
       // Draft tiers are replace-all via `tiers`; the by-id path is live-only.
@@ -883,7 +911,8 @@ export async function applyApprovedChangePatch(
 }
 
 /**
- * Submit a draft event for Circls review: draft → pending_review. (Listing
+ * Submit an event for Circls review: draft → pending_review, or rejected →
+ * pending_review once the partner has fixed what Circls asked for. (Listing
  * approval, subproject B — the partner's "publish" action hands off to ops, who
  * approve pending_review → published via the admin listings workflow.)
  */
@@ -895,11 +924,22 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
       .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId)))
       .limit(1);
     if (!existing) throw new NotFound('Event not found', 'event_not_found');
-    if (existing.status !== 'draft') {
-      throw new Conflict('Only draft events can be submitted for review', 'event_not_draft');
+    if (!isSubmittableEvent(existing)) {
+      throw new Conflict('Only draft or rejected events can be submitted for review', 'event_not_draft');
+    }
+    // Circls rejects a series as one unit, so one date sent again takes its
+    // rejected siblings with it — otherwise an approval (which cascades only
+    // to dates in review) would leave the rest rejected.
+    if (existing.status === 'rejected' && existing.seriesId) {
+      const siblings = await tx
+        .select()
+        .from(events)
+        .where(and(eq(events.seriesId, existing.seriesId), eq(events.tenantId, ctx.tenantId), eq(events.status, 'rejected')));
+      const sent = await submitSeriesDates(tx, ctx, existing.seriesId, siblings.filter(isSubmittableEvent));
+      return sent.find((e) => e.id === eventId)!;
     }
     // A draft may be saved with gaps; review needs the whole thing.
-    return submitDraftForReview(tx, ctx, 'event', eventId, await eventMissing(tx, existing));
+    return submitForReview(tx, ctx, 'event', eventId, existing.status, await eventMissing(tx, existing));
   });
   await onListingSubmitted('event', submitted.id);
   return submitted;

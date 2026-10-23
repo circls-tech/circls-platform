@@ -42,6 +42,7 @@ import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { RejectionNotice } from '@/components/RejectionNotice';
 import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
@@ -135,9 +136,13 @@ export default function EventDetailPage() {
   // The customer-site preview. 'submit' is the preview that stands between
   // "Submit for review" and the submission itself, with the confirm inside it.
   const [preview, setPreview] = useState<'closed' | 'look' | 'submit'>('closed');
-  // What the API says a draft still lacks before review (the same list it
+  // A draft, and an event Circls rejected, are the partner's to edit and
+  // (re)submit; a rejected one goes back to review with "Submit again".
+  const fixable = ev?.status === 'draft' || ev?.status === 'rejected';
+  const submitLabel = ev?.status === 'rejected' ? 'Submit again' : 'Submit for review';
+  // What the API says the event still lacks before review (the same list it
   // would refuse submission with), so the button can say so instead of failing.
-  const stillNeeded = missingCopy(ev?.status === 'draft' ? ev.missing : []);
+  const stillNeeded = missingCopy(fixable ? ev?.missing : []);
 
   // Edit form state.
   const [name, setName] = useState('');
@@ -285,13 +290,17 @@ export default function EventDetailPage() {
             {...(preview === 'submit'
               ? {
                   confirm: {
-                    label: 'Submit for review',
+                    label: submitLabel,
                     onConfirm: handlePublish,
                     loading: publish.isPending,
                   },
                 }
               : {})}
           />
+
+          {ev.status === 'rejected' && (
+            <RejectionNotice rejection={ev.rejection} noun="event" canWrite={canWrite} />
+          )}
 
           {!editing && (
             <Card title="Details">
@@ -341,13 +350,14 @@ export default function EventDetailPage() {
                 </div>
               </dl>
 
-              {/* A draft offers only Owner/Manager actions: no divider for anyone else. */}
+              {/* A draft or rejected event offers only Owner/Manager actions:
+                  no divider for anyone else. */}
               <div
                 className={`mt-6 flex flex-wrap items-center gap-2 ${
-                  canWrite || ev.status !== 'draft' ? 'border-t border-[#f1f5f9] pt-4' : ''
+                  canWrite || !fixable ? 'border-t border-[#f1f5f9] pt-4' : ''
                 }`}
               >
-                {canWrite && ev.status === 'draft' && (
+                {canWrite && fixable && (
                   <>
                     <Button variant="secondary" size="sm" disabled={!authed} onClick={startEdit}>
                       Edit
@@ -362,22 +372,25 @@ export default function EventDetailPage() {
                       title={stillNeeded ? `Still needed: ${stillNeeded}` : undefined}
                       onClick={() => setPreview('submit')}
                     >
-                      Submit for review
+                      {submitLabel}
                     </Button>
                     {stillNeeded && (
                       <span className="text-xs text-slate-500">
                         Still needed before review: {stillNeeded}.
                       </span>
                     )}
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      loading={cancel.isPending}
-                      disabled={!authed}
-                      onClick={handleCancel}
-                    >
-                      Cancel
-                    </Button>
+                    {/* A rejected event was never on sale: nothing to cancel. */}
+                    {ev.status === 'draft' && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={cancel.isPending}
+                        disabled={!authed}
+                        onClick={handleCancel}
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </>
                 )}
                 {(ev.status === 'pending_review' || ev.status === 'published') && (
@@ -404,11 +417,8 @@ export default function EventDetailPage() {
                     </span>
                   </>
                 )}
-                {(ev.status === 'cancelled' || ev.status === 'rejected') && (
-                  <span className="text-xs text-slate-400">
-                    This event is {ev.status === 'cancelled' ? 'cancelled' : 'rejected'} and is
-                    read-only.
-                  </span>
+                {ev.status === 'cancelled' && (
+                  <span className="text-xs text-slate-400">This event is cancelled and is read-only.</span>
                 )}
               </div>
             </Card>
@@ -434,10 +444,14 @@ export default function EventDetailPage() {
             </>
           )}
 
-          {editing && ev.status === 'draft' && (
+          {editing && fixable && (
             <Card
               title="Edit event"
-              subtitle="Only drafts can be edited. Submit for review when you're ready."
+              subtitle={
+                ev.status === 'rejected'
+                  ? 'Fix what Circls asked for, save, then press Submit again.'
+                  : "Only drafts can be edited. Submit for review when you're ready."
+              }
             >
               <form onSubmit={onSubmitEdit} className="flex max-w-2xl flex-col gap-4">
                 <Input

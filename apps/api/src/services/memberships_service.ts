@@ -31,7 +31,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
-import { submitDraftForReview } from './draft_review.js';
+import { isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -69,9 +69,12 @@ export interface PartnerMembership extends Membership {
 /** Partner-facing membership with its live plan tiers attached. */
 export type PartnerMembershipWithTiers = PartnerMembership & {
   tiers: MembershipTierWithRemaining[];
-  /** On the detail read: what a draft still lacks before review ([] on a
-   *  complete draft and on every other status). Absent on write results. */
+  /** On the detail read: what a draft or rejected plan still lacks before
+   *  review ([] when complete, and on every other status). Absent on write
+   *  results. */
   missing?: ('tiers')[];
+  /** On the detail read of a rejected plan: why Circls rejected it. */
+  rejection?: ListingRejection | null;
 };
 
 function withCoverUrl(m: Membership): PartnerMembership {
@@ -97,9 +100,11 @@ export async function getMembership(
     .limit(1);
   if (!row) return null;
   const tiers = await listTiersWithRemaining(db, membershipId);
-  // What a draft still lacks before review, as submission will judge it.
-  const missing = row.status === 'draft' ? membershipMissing(tiers.length) : [];
-  return { ...withCoverUrl(row), tiers, missing };
+  // What a draft or rejected plan still lacks before review, as submission
+  // will judge it; and, once rejected, what Circls asked to change.
+  const missing = isSubmittable(row.status) ? membershipMissing(tiers.length) : [];
+  const rejection = row.status === 'rejected' ? await latestRejection('membership', row.id) : null;
+  return { ...withCoverUrl(row), tiers, missing, rejection };
 }
 
 export interface MembershipPurchaseRow {
@@ -304,6 +309,9 @@ export async function createMembership(
   return created;
 }
 
+/** The statuses in which no buyer can see the plan, so it may be edited freely. */
+const EDITABLE_PLAN_STATUSES = new Set(['draft', 'pending_review', 'rejected', 'inactive']);
+
 export interface UpdateMembershipPatch {
   name?: string;
   description?: string | null;
@@ -320,8 +328,9 @@ export interface UpdateMembershipPatch {
 
 
 /**
- * Send a draft plan to Circls review: draft → pending_review. A plan is sold
- * by its tiers, so it needs at least one; everything else may follow.
+ * Send a plan to Circls review: draft → pending_review, or rejected →
+ * pending_review once the partner has fixed what Circls asked for. A plan is
+ * sold by its tiers, so it needs at least one; everything else may follow.
  */
 export async function submitMembershipForReview(
   ctx: { tenantId: string; actorUserId: string },
@@ -335,8 +344,8 @@ export async function submitMembershipForReview(
       .limit(1)
       .for('update');
     if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
-    if (existing.status !== 'draft') {
-      throw new Conflict('Only a draft plan can be submitted for review', 'membership_not_draft', {
+    if (!isSubmittable(existing.status)) {
+      throw new Conflict('Only a draft or rejected plan can be submitted for review', 'membership_not_draft', {
         status: existing.status,
       });
     }
@@ -344,21 +353,30 @@ export async function submitMembershipForReview(
       .select({ n: sql<number>`count(*)::int` })
       .from(membershipTiers)
       .where(eq(membershipTiers.membershipId, membershipId));
-    return submitDraftForReview(tx, ctx, 'membership', membershipId, membershipMissing(Number(tierCount?.n ?? 0)));
+    return submitForReview(
+      tx,
+      ctx,
+      'membership',
+      membershipId,
+      existing.status,
+      membershipMissing(Number(tierCount?.n ?? 0)),
+    );
   });
   await onListingSubmitted('membership', membershipId);
   return submitted;
 }
 
-/** What a draft plan still lacks before review: a tier. */
+/** What a draft (or rejected) plan still lacks before review: a tier. */
 export function membershipMissing(tierCount: number): ('tiers')[] {
   return tierCount === 0 ? ['tiers'] : [];
 }
 
 /**
  * Edit a membership's fields. Allowed only when it's not consumer-live
- * (pending_review or inactive) — a live (`active`) one must be deactivated
- * first, so its public price/terms don't change underneath buyers.
+ * (draft, pending_review, rejected or inactive) — a live (`active`) one must be
+ * deactivated first, so its public price/terms don't change underneath buyers.
+ * A rejected plan is fixed here and then sent back through
+ * {@link submitMembershipForReview}.
  */
 export async function updateMembership(
   ctx: { tenantId: string; actorUserId: string },
@@ -372,7 +390,7 @@ export async function updateMembership(
       .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
       .limit(1);
     if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
-    if (existing.status !== 'draft' && existing.status !== 'pending_review' && existing.status !== 'inactive') {
+    if (!EDITABLE_PLAN_STATUSES.has(existing.status)) {
       throw new Conflict(
         `A ${existing.status} membership can't be edited — deactivate it first`,
         'membership_not_editable',

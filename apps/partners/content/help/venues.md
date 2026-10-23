@@ -69,9 +69,18 @@ Both venues and arenas move through the same set of statuses:
 | **pending review** | New or recently edited listing awaiting the circls team's approval. Not yet visible to consumers. |
 | **active** | Approved and live. Visible and bookable by consumers. |
 | **closed** (suspended) | Taken off the consumer portal — see [Closing a venue](#closing-a-venue). Not bookable online while closed. |
-| **rejected** | The listing was not approved. Review the feedback, make changes, and it can be re-reviewed. |
+| **rejected** | Circls asked for changes. Still yours to fix: edit it, then **Submit again** to send it back for review. Not visible to consumers meanwhile. |
 
 Consumers only ever see **active** arenas inside **active** venues. If something isn't showing up publicly, check its status here first.
+
+## Fixing a rejected venue or arena
+
+A rejection isn't a dead end — you don't need to add the venue or arena again. Its page shows **Circls asked for changes**, with the reviewer's reason (when they gave one) and the date.
+
+- **Venue** — click **Edit details**, change what was asked (address, description, photos, anything on the details page), then click **Submit again** on the venue's page. The customer-site preview opens first, and you confirm from inside it.
+- **Arena** — open it from the **Closed & rejected** tab of its venue's arena list (**Fix & submit again**). Its reception page has a **Fix this arena** card where its name, sport, capacity, default slot length and tags can be changed; **Save changes**, then **Submit again**. These details are only editable while the arena is rejected — once it is back in review or live, they are what Circls approved.
+
+Either goes back to **pending review** and into the Circls review queue, marked as a resubmission so the reviewer checks what they asked for. It stays off the customer site until Circls approves it. Fixing and resubmitting is for Owners and Managers.
 
 The **Venues** page has two tabs. **Active** holds your live venues and any awaiting review; **Closed & rejected** holds the ones that aren't on the consumer portal, so they don't crowd the venues you're running. A venue's arena list is split the same way, with a count on each tab.
 

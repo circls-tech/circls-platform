@@ -89,6 +89,14 @@ export type ListingStatus =
  *  array = closed that day; times are venue-local "HH:MM". */
 export type OpeningHours = Record<string, { open: string; close: string }[]>;
 
+/** Why Circls rejected a listing, from its review. Detail reads of a
+ *  rejected venue / arena / event / plan carry it as `rejection`. */
+export interface ListingRejection {
+  /** What Circls asked to change; null when no reason was given. */
+  reason: string | null;
+  rejectedAt: string;
+}
+
 export interface Venue {
   id: string;
   tenantId: string;
@@ -113,6 +121,8 @@ export interface Venue {
   state?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  /** GET /v1/venues/:id of a rejected venue: why. */
+  rejection?: ListingRejection | null;
 }
 
 // ── QR tickets ────────────────────────────────────────────────────────────────
@@ -237,6 +247,10 @@ export interface Arena {
   /** What the arena was before its partner closed it; reopening restores it. */
   statusBeforeClose?: ListingStatus | null;
   tags: string[];
+  /** Seats per slot; null = not set. */
+  capacity?: number | null;
+  /** GET /v1/arenas/:id of a rejected arena: why. */
+  rejection?: ListingRejection | null;
 }
 
 /** A venue photo. `url` is the public, CDN-cacheable R2 URL to render. */
@@ -654,8 +668,10 @@ export interface VenueEvent {
   archivedAt: string | null;
   /** Ticket tiers for the event (min 1). Present on the detail endpoint. */
   tiers: EventTier[];
-  /** Detail read only: what a draft still lacks before review ('dates' | 'location' | 'tiers'); [] otherwise. */
+  /** Detail read only: what a draft or rejected event still lacks before review ('dates' | 'location' | 'tiers'); [] otherwise. */
   missing?: ('dates' | 'location' | 'tiers')[];
+  /** Detail read of a rejected event: why Circls rejected it. */
+  rejection?: ListingRejection | null;
   /** Registration questions consumers answer at booking. Present on the detail endpoint. */
   questions: EventQuestion[];
 }
@@ -772,8 +788,10 @@ export interface Membership {
   /** Derived public artwork URL on partner list/cover responses (PR #110). */
   coverUrl?: string | null;
   status: 'draft' | 'pending_review' | 'active' | 'rejected' | 'inactive' | 'suspended';
-  /** Detail read only: what a draft still lacks before review (['tiers'] or []). */
+  /** Detail read only: what a draft or rejected plan still lacks before review (['tiers'] or []). */
   missing?: ('tiers')[];
+  /** Detail read of a rejected plan: why Circls rejected it. */
+  rejection?: ListingRejection | null;
   /** QR ticket rules for purchases of this plan; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   /** Plan tiers (min 1). Present on list + detail endpoints. */

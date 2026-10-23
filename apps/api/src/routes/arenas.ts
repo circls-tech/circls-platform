@@ -10,8 +10,11 @@ import {
   getArenaById,
   listArenas,
   reopenArena,
+  submitArenaForReview,
+  updateArenaDetails,
   updateArenaQrTicketConfig,
 } from '../services/arena_service.js';
+import { latestRejection } from '../services/listing_review.js';
 import type { Capability } from '../lib/authz/capabilities.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { qrTicketConfigSchema, toQrTicketConfig } from '../lib/qr_ticket_config_schema.js';
@@ -27,9 +30,17 @@ const createArenaSchema = z.object({
   tags: z.array(z.string().min(1).max(40)).max(20).optional(),
   qrTicketConfig: qrTicketConfigSchema.optional(),
 });
-const patchArenaSchema = z.object({
-  qrTicketConfig: qrTicketConfigSchema,
-});
+// QR rules may change in any state; the reviewed details (name, sport, …)
+// only while the arena is rejected — see updateArenaDetails.
+const patchArenaSchema = createArenaSchema
+  .omit({ qrTicketConfig: true })
+  .partial()
+  .extend({
+    sport: z.string().max(80).nullable().optional(),
+    capacity: z.number().int().positive().nullable().optional(),
+    qrTicketConfig: qrTicketConfigSchema.optional(),
+  })
+  .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'Nothing to update' });
 const timeRe = /^\d{2}:\d{2}(:\d{2})?$/;
 const scheduleSchema = z.object({
   rows: z.array(
@@ -67,6 +78,7 @@ const rolloverSchema = z.object({
 /**
  * Resolve an arena → its venue's tenant and assert the caller is a member.
  * Writes pass the capability they need; reads are open to any member.
+ * Returns the arena and the audit context (its tenant, the caller).
  */
 async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capability) {
   const arena = await getArenaById(arenaId);
@@ -76,7 +88,7 @@ async function authorizeArena(req: FastifyRequest, arenaId: string, cap?: Capabi
   const user = await currentUser(req);
   const ctx = await requireTenantMembership(user.id, venue.tenantId);
   if (cap) assertCap(ctx, cap);
-  return arena;
+  return { arena, auditCtx: { tenantId: venue.tenantId, actorUserId: user.id } };
 }
 
 export const arenaRoutes: FastifyPluginAsync = async (app) => {
@@ -104,16 +116,39 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  // QR-ticket rules are the one arena field editable after creation (config
-  // changes only affect future bookings; issued tickets keep frozen rules).
+  // QR-ticket rules are editable at any time (config changes only affect
+  // future bookings; issued tickets keep frozen rules). Name, sport, capacity,
+  // slot length and tags are what Circls reviewed, so they open up only while
+  // the arena is rejected — fixed here, then sent back with /submit.
   app.patch('/v1/arenas/:arenaId', { preHandler: requireAuth }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
     const parsed = patchArenaSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new BadRequest('Invalid arena patch', 'bad_request', { issues: parsed.error.issues });
     }
-    await authorizeArena(req, arenaId, 'arenas.write');
-    return updateArenaQrTicketConfig(arenaId, toQrTicketConfig(parsed.data.qrTicketConfig));
+    const { arena, auditCtx } = await authorizeArena(req, arenaId, 'arenas.write');
+    const { qrTicketConfig, ...details } = parsed.data;
+    let result = arena;
+    if (Object.values(details).some((v) => v !== undefined)) {
+      result = await updateArenaDetails(auditCtx, arenaId, {
+        ...(details.name !== undefined ? { name: details.name } : {}),
+        ...(details.sport !== undefined ? { sport: details.sport } : {}),
+        ...(details.capacity !== undefined ? { capacity: details.capacity } : {}),
+        ...(details.slotDurationMin !== undefined ? { slotDurationMin: details.slotDurationMin } : {}),
+        ...(details.tags !== undefined ? { tags: details.tags } : {}),
+      });
+    }
+    if (qrTicketConfig !== undefined) {
+      result = await updateArenaQrTicketConfig(arenaId, toQrTicketConfig(qrTicketConfig));
+    }
+    return result;
+  });
+
+  // ── POST /v1/arenas/:arenaId/submit — a rejected arena goes back to review ─
+  app.post('/v1/arenas/:arenaId/submit', { preHandler: requireAuth }, async (req) => {
+    const { arenaId } = req.params as { arenaId: string };
+    const { auditCtx } = await authorizeArena(req, arenaId, 'arenas.write');
+    return submitArenaForReview(auditCtx, arenaId);
   });
 
   // ── Close / reopen ─────────────────────────────────────────────────────────
@@ -183,7 +218,11 @@ export const arenaRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/v1/arenas/:arenaId', { preHandler: requireAuth }, async (req) => {
     const { arenaId } = req.params as { arenaId: string };
-    return authorizeArena(req, arenaId);
+    const { arena } = await authorizeArena(req, arenaId);
+    // A rejected arena carries why, so the partner knows what to fix.
+    return arena.status === 'rejected'
+      ? { ...arena, rejection: await latestRejection('arena', arenaId) }
+      : arena;
   });
 
   app.put('/v1/arenas/:arenaId/schedule', { preHandler: requireAuth }, async (req) => {

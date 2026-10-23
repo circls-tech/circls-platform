@@ -43,7 +43,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Managing venues and arenas',
     category: 'Venues',
     summary:
-      'How to add, edit and update your venues and arenas, upload photos (choosing the cover and its listing crop), and manage their listing status.',
+      'How to add, edit and update your venues and arenas, upload photos (choosing the cover and its listing crop), manage their listing status, and fix and resubmit one Circls rejected.',
     order: 2,
   },
   {
@@ -96,7 +96,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Creating and publishing events',
     category: 'Events',
     summary:
-      'How to create one-off or weekly recurring events, duplicate a past one, add photos (choosing the cover and its listing crop), define ticket tiers (name, price, capacity), and get them approved for the consumer portal.',
+      'How to create one-off or weekly recurring events, duplicate a past one, add photos (choosing the cover and its listing crop), define ticket tiers (name, price, capacity), get them approved for the consumer portal, and fix and resubmit one Circls rejected.',
     order: 5,
   },
   {
@@ -104,7 +104,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up membership plans',
     category: 'Memberships',
     summary:
-      'How to create membership plans with tiers (price, duration, benefits and capacity per tier), define artwork and terms, and manage active member subscriptions.',
+      'How to create membership plans with tiers (price, duration, benefits and capacity per tier), define artwork and terms, fix and resubmit a plan Circls rejected, and manage active member subscriptions.',
     order: 6,
   },
   {

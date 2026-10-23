@@ -238,7 +238,8 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
     const rejected = await rowsFor('listing.rejected');
     expect(rejected).toHaveLength(1);
     expect(rejected[0]!.payload['fixes']).toEqual(['Photos are missing', 'Add opening hours']);
-    expect(rejected[0]!.payload['ctaLabel']).toBe('Add it again');
+    expect(rejected[0]!.payload['ctaLabel']).toBe('Edit & resubmit');
+    expect(String(rejected[0]!.payload['ctaUrl'])).toContain(`/venues/${venueId}`);
   });
 
   it('an org that switched a kind of email off stops getting it; the customer still does', async () => {

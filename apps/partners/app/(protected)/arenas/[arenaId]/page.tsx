@@ -8,6 +8,7 @@ import { AddBookingModal } from '@/components/AddBookingModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
+import { RejectedArenaFix } from '@/components/RejectedArenaFix';
 import {
   useArena,
   useArenas,
@@ -268,6 +269,11 @@ export default function ArenaReceptionPage() {
           )}
         </div>
       </div>
+
+      {/* Circls rejected it: what to change, and the way back to review. */}
+      {arena?.status === 'rejected' && (
+        <RejectedArenaFix key={arena.id} arena={arena} canWrite={canEditArena} />
+      )}
 
       {/* Arena switcher: the venue's live desks, when there is more than one. */}
       {showSwitcher && (

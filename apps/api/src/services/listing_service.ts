@@ -6,6 +6,11 @@
  *   venue/arena/membership: pending_review → active (approved) ⇄ suspended/inactive; or rejected
  *   event:                  draft → pending_review → published (approved); or rejected; cancelled
  *
+ * A rejected listing is not a dead end: the partner edits it in place and
+ * sends it again (rejected → pending_review, see listing_review.ts), and it
+ * comes back into this queue like any other pending item, flagged
+ * `resubmitted` so the reviewer knows to check what they asked for.
+ *
  * Consumer visibility (decision 4): a listing is public iff it is in its
  * approved state AND the owning tenant is not suspended — see `tenantActiveFilter`.
  */
@@ -27,6 +32,7 @@ import { listTiers as listEventTiers } from './event_tiers_service.js';
 import { listTiers as listMembershipTiers } from './membership_tiers_service.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
+import { latestRejection, type ListingRejection } from './listing_review.js';
 import { onListingReviewed } from './notification_hooks.js';
 
 export const LISTING_TYPES = ['venue', 'arena', 'event', 'membership'] as const;
@@ -202,6 +208,8 @@ export interface ListingQueueItem {
   createdAt: string;
   /** Recurring events only: dates in this series with the queried status. */
   seriesCount?: number;
+  /** Circls rejected this listing before — it is back after the partner's fixes. */
+  resubmitted?: true;
 }
 
 /**
@@ -223,6 +231,11 @@ export async function listListingsForReview(input: {
       ? sql`JOIN venues v ON v.id = l.venue_id JOIN tenants t ON t.id = v.tenant_id`
       : sql`JOIN tenants t ON t.id = l.tenant_id`;
   const tableName = sql.raw(`${type}s`); // venue→venues, arena→arenas, …
+  // Has Circls rejected it before? (audit_log_listing_rejected_idx)
+  const everRejected = sql`EXISTS (
+    SELECT 1 FROM audit_log a
+     WHERE a.action = 'listing.rejected' AND a.entity_type = ${type} AND a.entity_id = l.id
+  ) AS resubmitted`;
 
   // Recurring events queue as one row per series (the earliest date represents
   // it) — the approve/reject decision cascades to the whole series anyway.
@@ -232,7 +245,8 @@ export async function listListingsForReview(input: {
           SELECT q.* FROM (
             SELECT DISTINCT ON (coalesce(l.series_id, l.id))
               l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at,
-              count(*) OVER (PARTITION BY coalesce(l.series_id, l.id))::int AS series_count
+              count(*) OVER (PARTITION BY coalesce(l.series_id, l.id))::int AS series_count,
+              ${everRejected}
             FROM events l
             ${tenantJoin}
             WHERE l.status = ${status}
@@ -242,7 +256,8 @@ export async function listListingsForReview(input: {
           LIMIT ${limit}
         `)
       : await db.execute<Record<string, unknown>>(sql`
-          SELECT l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at
+          SELECT l.id, t.id AS tenant_id, t.name AS tenant_name, l.name, l.status, l.created_at,
+            ${everRejected}
           FROM ${tableName} l
           ${tenantJoin}
           WHERE l.status = ${status}
@@ -262,6 +277,9 @@ export async function listListingsForReview(input: {
     ...(typeof r['series_count'] === 'number' && r['series_count'] > 1
       ? { seriesCount: r['series_count'] }
       : {}),
+    // Only meaningful while it waits for a decision: in the rejected view
+    // every row has been rejected.
+    ...(r['resubmitted'] === true && status !== 'rejected' ? { resubmitted: true as const } : {}),
   }));
 }
 
@@ -356,6 +374,9 @@ export interface ListingDetail {
   venueName?: string | null;
   /** Venue and event photos — part of the listing being judged. */
   images?: ListingImage[];
+  /** Circls' most recent rejection of this listing, if any — on a
+   *  resubmission, what the reviewer asked the partner to change. */
+  lastRejection?: ListingRejection;
 }
 
 /**
@@ -442,6 +463,13 @@ export async function getListingDetail(
   type: ListingType,
   id: string,
 ): Promise<ListingDetail | null> {
+  const detail = await loadListingDetail(type, id);
+  if (!detail) return null;
+  const lastRejection = await latestRejection(type, id);
+  return lastRejection ? { ...detail, lastRejection } : detail;
+}
+
+async function loadListingDetail(type: ListingType, id: string): Promise<ListingDetail | null> {
   switch (type) {
     case 'venue': {
       const [r] = await db

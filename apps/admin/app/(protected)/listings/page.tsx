@@ -109,6 +109,19 @@ function DetailContent({ detail }: { detail: AdminListingDetail }) {
       <Field label="Org / Tenant" value={detail.tenantName} />
       <Field label="Status" value={<span className="capitalize">{detail.status.replace(/_/g, ' ')}</span>} />
       <Field label="Submitted" value={fmtDate(detail.createdAt)} />
+      {detail.lastRejection && (
+        // A resubmission: what Circls asked the partner to change last time,
+        // so the reviewer can check it was done.
+        <div className="sm:col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700">
+            {detail.status === 'rejected' ? 'Rejected' : 'Previously rejected'} ·{' '}
+            {fmtDate(detail.lastRejection.rejectedAt)}
+          </dt>
+          <dd className="mt-0.5 whitespace-pre-line text-sm text-amber-900">
+            {detail.lastRejection.reason ?? 'No reason was given.'}
+          </dd>
+        </div>
+      )}
     </>
   );
 
@@ -1115,6 +1128,11 @@ export default function ListingsPage() {
                   {(r.seriesCount ?? 1) > 1 && (
                     <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                       recurring · {r.seriesCount} dates
+                    </span>
+                  )}
+                  {r.resubmitted && (
+                    <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      resubmitted
                     </span>
                   )}
                 </td>

@@ -657,8 +657,9 @@ export async function getPublicEventById(
   // Recurring event: expose every upcoming published date of the series for the
   // date picker, and borrow the series gallery when this occurrence has none.
   // A preview of one date shows the dates that will stand beside it once the
-  // series is approved — the unapproved siblings included — so the picker
-  // reads as it will when live.
+  // series is approved — the unapproved siblings included, and rejected ones
+  // the partner is fixing to send again — so the picker reads as it will when
+  // live.
   let seriesOccurrences: PublicSeriesOccurrence[] | undefined;
   if (joinRow.e.seriesId) {
     const occRows = await db
@@ -676,7 +677,7 @@ export async function getPublicEventById(
         and(
           eq(events.seriesId, joinRow.e.seriesId),
           preview
-            ? inArray(events.status, ['draft', 'pending_review', 'published'])
+            ? inArray(events.status, ['draft', 'pending_review', 'rejected', 'published'])
             : eq(events.status, 'published'),
           ...(preview ? [] : [sql`(${events.venueId} is null or ${venues.status} = 'active')`]),
           sql`${events.endsAt} >= now()`,

@@ -352,6 +352,8 @@ export interface AdminListingRow {
   createdAt: string;
   /** Recurring events queue as one row; this is the series' date count. */
   seriesCount?: number;
+  /** Circls rejected it before; the partner fixed it and sent it again. */
+  resubmitted?: true;
 }
 
 export interface AdminListingListResponse {
@@ -421,6 +423,8 @@ export interface AdminListingDetail {
   /** Recurring events: series grouping + total dates in the series. */
   seriesId?: string | null;
   seriesCount?: number;
+  /** Circls' most recent rejection — on a resubmission, what was asked for. */
+  lastRejection?: { reason: string | null; rejectedAt: string };
   // Membership
   durationDays?: number | null;
   benefits?: Record<string, unknown>;

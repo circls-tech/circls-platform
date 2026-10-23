@@ -534,6 +534,47 @@ export function useUpdateArenaQrConfig(arenaId: string) {
   });
 }
 
+export interface ArenaDetailsInput {
+  name?: string;
+  sport?: string | null;
+  capacity?: number | null;
+  slotDurationMin?: number;
+  tags?: string[];
+}
+
+/**
+ * PATCH what Circls reviews about an arena (name, sport, capacity, slot
+ * length, tags). Open only while the arena is rejected — the API answers 409
+ * `arena_not_editable` otherwise.
+ */
+export function useUpdateArenaDetails(arenaId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ArenaDetailsInput) =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
+      void qc.invalidateQueries({ queryKey: ['arenas', venueId] });
+    },
+  });
+}
+
+/** Send a rejected arena back to Circls review (rejected → pending_review). */
+export function useSubmitArena(arenaId: string, venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<Arena>(`/v1/arenas/${arenaId}/submit`, { method: 'POST', body: JSON.stringify({}) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['arena', arenaId] });
+      void qc.invalidateQueries({ queryKey: ['arenas', venueId] });
+    },
+  });
+}
+
 export function useArenaSlots(
   arenaId: string,
   fromISO: string,

@@ -491,6 +491,13 @@
       "when": 1784740000000,
       "tag": "0070_tenant_email_prefs",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784820000000,
+      "tag": "0071_audit_log_listing_rejected_idx",
+      "breakpoints": true
     }
   ]
 }

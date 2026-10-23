@@ -6,6 +6,7 @@ import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { CloseReopenControl } from '@/components/CloseReopenControl';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { RejectionNotice } from '@/components/RejectionNotice';
 import { useArenas, useCreateArena, useSetVenueOpen, useSubmitVenue, useVenue } from '@/lib/api/queries';
 import { describeRefusal } from '@/lib/listings/missing';
 import { inferSport } from '@/lib/api/sport_inference';
@@ -56,6 +57,10 @@ export default function VenuePage() {
       setSubmitError(describeRefusal(e));
     }
   }
+  // A draft goes to review for the first time; a venue Circls rejected goes
+  // back once the partner has fixed it (Edit details, then Submit again).
+  const submittable = venue?.status === 'draft' || venue?.status === 'rejected';
+  const submitLabel = venue?.status === 'rejected' ? 'Submit again' : 'Submit for review';
   const [shelf, setShelf] = useState<ArenaShelf>('open');
 
   const inferredSport = !sport ? inferSport(tags) : null;
@@ -109,11 +114,12 @@ export default function VenuePage() {
           <Button variant="secondary" size="sm" onClick={() => setPreview('look')}>
             Preview
           </Button>
-          {/* A draft is the partner's own until they send it to review; the
+          {/* A draft is the partner's own until they send it to review, and so
+              is a venue Circls rejected until it is sent again; the
               customer-site preview opens first, with the submission inside. */}
-          {canEditVenue && venue.status === 'draft' && (
+          {canEditVenue && submittable && (
             <Button petal="#A7E3BF" size="sm" loading={submitVenue.isPending} onClick={() => setPreview('submit')}>
-              Submit for review
+              {submitLabel}
             </Button>
           )}
           {/* Details and photos live on their own page, so this one can lead
@@ -132,7 +138,7 @@ export default function VenuePage() {
             {...(preview === 'submit'
               ? {
                   confirm: {
-                    label: 'Submit for review',
+                    label: submitLabel,
                     onConfirm: handleSubmitForReview,
                     loading: submitVenue.isPending,
                   },
@@ -140,6 +146,11 @@ export default function VenuePage() {
               : {})}
           />
           {submitError && <p className="w-full text-sm text-red-600">{submitError}</p>}
+          {venue.status === 'rejected' && (
+            <div className="w-full">
+              <RejectionNotice rejection={venue.rejection} noun="venue" canWrite={canEditVenue} />
+            </div>
+          )}
           {canEditVenue && (
             <span className="ml-auto">
               <CloseReopenControl
@@ -223,6 +234,15 @@ export default function VenuePage() {
                   status={a.status}
                   {...(a.status === 'suspended' ? { label: 'Closed' } : {})}
                 />
+                {/* A rejected arena is fixed and sent again from its own page. */}
+                {a.status === 'rejected' && canAddArena && (
+                  <Link
+                    href={`/arenas/${a.id}?tenantId=${tenantId}`}
+                    className="text-xs font-medium text-amber-700 underline-offset-2 hover:underline"
+                  >
+                    Fix &amp; submit again
+                  </Link>
+                )}
                 <ReceptionButton href={`/arenas/${a.id}?tenantId=${tenantId}`} />
               </span>
             </div>
