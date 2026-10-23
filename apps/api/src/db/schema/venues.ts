@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { doublePrecision, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { doublePrecision, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 import { tenants } from './tenants.js';
 
@@ -34,6 +34,10 @@ export const venues = pgTable('venues', {
   addressJson: jsonb('address_json').$type<Record<string, unknown>>(),
   lat: doublePrecision('lat'),
   lng: doublePrecision('lng'),
+  // Set only while lat/lng came from Google, which lets us keep them for 30
+  // days: the place they came from, and when. See coords_refresh_service.ts.
+  coordsPlaceId: text('coords_place_id'),
+  coordsFetchedAt: timestamp('coords_fetched_at', { withTimezone: true }),
   // IANA tz for rendering slots in venue-local time on the frontend.
   tzName: text('tz_name').notNull().default('Asia/Kolkata'),
   // ── Trust metadata (PR #109). All nullable; editable by owner/manager via

@@ -12,6 +12,7 @@ import { autoArchiveEndedEvents, expireLapsedMemberships } from '../services/lif
 import { runScheduleRollover } from '../services/schedule_rollover_service.js';
 import { sendAdminDailyDigest } from '../services/admin_digest_service.js';
 import { sendPayoutReminder } from '../services/payout_reminder_service.js';
+import { refreshGoogleCoords } from '../services/coords_refresh_service.js';
 
 /**
  * In-process pg-boss worker. One queue per scheduled job; each handler delegates
@@ -110,6 +111,16 @@ const JOBS: ScheduledJob[] = [
     run: async () => {
       const r = await runScheduleRollover();
       if (r.daysReleased > 0 || r.failed > 0) logger.info(r, 'schedule_rollover_complete');
+    },
+  },
+  {
+    // Google lets us keep its coordinates for 30 days: re-fetch the ones due.
+    // Two cheap queries while no listing has Google coordinates.
+    queue: 'google-coords-refresh',
+    cron: '45 21 * * *', // 03:15 IST.
+    run: async () => {
+      const r = await refreshGoogleCoords();
+      if (r.refreshed > 0 || r.replaced > 0) logger.info(r, 'google_coords_refresh_complete');
     },
   },
   {

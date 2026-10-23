@@ -35,6 +35,9 @@ export interface EventChangeRequestPatch {
   addressJson?: Record<string, unknown>;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place `lat`/`lng` came from, when they did (see
+   *  services/coords_refresh_service.ts); absent for the partner's own pin. */
+  coordsPlaceId?: string | null;
   tzName?: string;
   tiers?: ChangeRequestTier[];
 }

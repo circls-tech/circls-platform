@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   COUNTRY_CENTROID,
   canonicalizeCity,
+  findGazetteerCity,
   lookupGazetteer,
   normalizeCountry,
   searchGazetteer,
@@ -49,6 +50,18 @@ describe('lookupGazetteer', () => {
   it('returns null when the country itself is unrecognised', () => {
     expect(lookupGazetteer('Paris', 'France')).toBeNull();
     expect(lookupGazetteer('Somewhere', null)).toBeNull();
+  });
+});
+
+describe('findGazetteerCity', () => {
+  it('finds known cities, aliases included', () => {
+    expect(findGazetteerCity('Bangalore', 'India')).toEqual(lookupGazetteer('Bengaluru', 'India'));
+  });
+
+  it('never falls back to the country centroid', () => {
+    expect(findGazetteerCity('Nowheresville', 'India')).toBeNull();
+    expect(findGazetteerCity('', 'USA')).toBeNull();
+    expect(findGazetteerCity('Pune', null)).toBeNull();
   });
 });
 
@@ -147,6 +160,9 @@ describe('getGeocoder (stub default)', () => {
     expect(out[0]).toMatchObject({ city: 'Mumbai', country: 'India' });
     expect(typeof out[0]!.lat).toBe('number');
     expect(out[0]!.label).toContain('Mumbai');
+    // Complete already: no Google place, so nothing to resolve.
+    expect(out[0]!.placeId).toBeNull();
+    expect(await getGeocoder().resolve('ChIJanything')).toBeNull();
   });
 
   it('reverse() names the nearest gazetteer city when the point is close', async () => {

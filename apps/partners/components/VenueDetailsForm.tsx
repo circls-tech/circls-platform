@@ -5,6 +5,7 @@ import { useUpdateVenue } from '@/lib/api/queries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import type { OpeningHours, Venue } from '@/lib/api/types';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import { useCan } from '@/lib/use_can';
 import { Button, Input, TagsInput } from '@/lib/ui';
 import { AddressAutocomplete } from './AddressAutocomplete';
@@ -94,8 +95,10 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
   // Coordinates are held here (never shown) — set from an autocomplete pick or
   // the venue's existing value, and cleared on any manual address edit so the
   // server re-geocodes from the typed address on save.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
-    venue.lat != null && venue.lng != null ? { lat: venue.lat, lng: venue.lng } : null,
+  const [coords, setCoords] = useState<PinCoords | null>(
+    venue.lat != null && venue.lng != null
+      ? { lat: venue.lat, lng: venue.lng, placeId: venue.coordsPlaceId ?? null }
+      : null,
   );
 
   const [err, setErr] = useState<string | null>(null);
@@ -112,7 +115,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
     setState(s.state ?? '');
     if (s.postalCode) setPostalCode(s.postalCode);
     if (s.country) setCountry(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
   }
 
   function setDay(key: string, patch: Partial<DayState>) {
@@ -141,7 +144,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
         postalCode,
         country,
         tags,
-        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+        ...(coords ? { lat: coords.lat, lng: coords.lng, ...coordsPlaceIdOf(coords) } : {}),
       });
       setSaved(true);
     } catch (e) {

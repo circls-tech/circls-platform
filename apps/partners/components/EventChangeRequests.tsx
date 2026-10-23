@@ -13,6 +13,7 @@ import { useCurrency } from '@/lib/currency';
 import { useCan } from '@/lib/use_can';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { localToTzIso } from '@/lib/time';
+import type { PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
@@ -103,7 +104,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
   const [countryForm, setCountryForm] = useState('');
   // Set from an autocomplete pick / map pin; cleared on manual edits so the
   // server re-geocodes from the typed address on approval.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useState<PinCoords | null>(null);
   const [tzForm, setTzForm] = useState('Asia/Kolkata');
 
   const pending = requests?.rows.find((r) => r.status === 'pending');
@@ -137,7 +138,11 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     setStateRegion(str('state'));
     setPincode(str('pincode'));
     setCountryForm(str('country'));
-    setCoords(ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : null);
+    setCoords(
+      ev.lat != null && ev.lng != null
+        ? { lat: ev.lat, lng: ev.lng, placeId: ev.coordsPlaceId ?? null }
+        : null,
+    );
     setTzForm(ev.tzName ?? 'Asia/Kolkata');
     setError(null);
     setOpen(true);
@@ -149,7 +154,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     setStateRegion(s.state ?? '');
     if (s.postalCode) setPincode(s.postalCode);
     if (s.country) setCountryForm(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
   }
 
   function buildAddressJson(): Record<string, unknown> {
@@ -214,6 +219,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
         if (coords) {
           input.lat = coords.lat;
           input.lng = coords.lng;
+          if (coords.placeId) input.coordsPlaceId = coords.placeId;
         }
         if (scopeChanged) input.venueId = null;
       }

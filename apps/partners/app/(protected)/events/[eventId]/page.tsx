@@ -23,6 +23,7 @@ import {
 import { useVenues } from '@/lib/api/queries';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
@@ -161,7 +162,7 @@ export default function OrgEventDetailPage() {
   // Coordinates are held here (never shown) — set from an autocomplete pick or
   // the event's existing value, and cleared on any manual address edit so the
   // server re-geocodes from the typed address on save.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useState<PinCoords | null>(null);
   const [tzForm, setTzForm] = useState('Asia/Kolkata');
 
   // While editing, tier prices follow the LIVE form scope — the picked venue's
@@ -230,7 +231,7 @@ export default function OrgEventDetailPage() {
     setStateRegion(s.state ?? '');
     if (s.postalCode) setPincode(s.postalCode);
     if (s.country) setCountryForm(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
   }
 
   async function handlePublish() {
@@ -322,6 +323,7 @@ export default function OrgEventDetailPage() {
       tzName?: string;
       lat?: number | null;
       lng?: number | null;
+      coordsPlaceId?: string;
     } = {};
     if (venueChoice === '') {
       // Standalone (becoming or staying): require an address + tz, send them.
@@ -340,7 +342,7 @@ export default function OrgEventDetailPage() {
       scopePatch = {
         addressJson,
         tzName: tzForm.trim(),
-        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+        ...(coords ? { lat: coords.lat, lng: coords.lng, ...coordsPlaceIdOf(coords) } : {}),
         ...(scopeChanged ? { venueId: null } : {}),
       };
     } else if (scopeChanged) {

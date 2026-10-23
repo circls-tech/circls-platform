@@ -28,6 +28,7 @@ import {
   type CreateEventInput,
 } from '../services/events_service.js';
 import { getVenueById } from '../services/venue_service.js';
+import { placeIdSchema } from '../lib/geocoding/provenance.js';
 import {
   createChangeRequest,
   listChangeRequests,
@@ -132,6 +133,7 @@ const occurrenceSchema = z.object({
   addressJson: z.record(z.unknown()).optional(),
   lat: z.number().optional(),
   lng: z.number().optional(),
+  coordsPlaceId: placeIdSchema.nullable().optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
 });
@@ -166,6 +168,8 @@ const createTenantEventSchema = z
     addressJson: z.record(z.unknown()).optional(),
     lat: z.number().optional(),
     lng: z.number().optional(),
+    /** The Google place lat/lng were picked from, when they were. */
+    coordsPlaceId: placeIdSchema.nullable().optional(),
     tzName: z.string().min(1).optional(),
     name: eventNameField(200),
     description: z.string().optional(),
@@ -207,6 +211,7 @@ const updateEventSchema = z.object({
   addressJson: z.record(z.unknown()).optional(),
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
+  coordsPlaceId: placeIdSchema.nullable().optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
   questions: questionsField.optional(),
@@ -240,6 +245,7 @@ const changeRequestSchema = z
     addressJson: z.record(z.unknown()).optional(),
     lat: z.number().nullable().optional(),
     lng: z.number().nullable().optional(),
+    coordsPlaceId: placeIdSchema.nullable().optional(),
     tzName: z.string().min(1).optional(),
     tiers: z.array(liveTierSchema).min(1).max(20).optional(),
   })
@@ -275,6 +281,12 @@ async function resolveOccurrences(
       addressJson: standalone ? (occ.addressJson ?? base.addressJson) : undefined,
       lat: standalone ? (occ.lat ?? base.lat) : undefined,
       lng: standalone ? (occ.lng ?? base.lng) : undefined,
+      // The place travels with whichever coordinates the date ends up with.
+      coordsPlaceId: standalone
+        ? occ.lat !== undefined
+          ? occ.coordsPlaceId
+          : base.coordsPlaceId
+        : undefined,
       tzName: standalone ? (occ.tzName ?? base.tzName) : undefined,
       startsAt: new Date(occ.startsAt),
       endsAt: new Date(occ.endsAt),
@@ -412,6 +424,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       addressJson: parsed.data.addressJson,
       lat: parsed.data.lat,
       lng: parsed.data.lng,
+      coordsPlaceId: parsed.data.coordsPlaceId,
       tzName: parsed.data.tzName,
       name: parsed.data.name,
       description: parsed.data.description,
@@ -474,6 +487,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.tzName !== undefined) patch.tzName = parsed.data.tzName;
     if (parsed.data.lat !== undefined) patch.lat = parsed.data.lat;
     if (parsed.data.lng !== undefined) patch.lng = parsed.data.lng;
+    if (parsed.data.coordsPlaceId !== undefined) patch.coordsPlaceId = parsed.data.coordsPlaceId;
     return updateEvent({ tenantId, actorUserId: user.id }, id, patch);
   });
 
@@ -619,6 +633,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       if (d.addressJson !== undefined) patch.addressJson = d.addressJson;
       if (d.lat !== undefined) patch.lat = d.lat;
       if (d.lng !== undefined) patch.lng = d.lng;
+      if (d.coordsPlaceId !== undefined) patch.coordsPlaceId = d.coordsPlaceId;
       if (d.tzName !== undefined) patch.tzName = d.tzName;
       if (d.tiers !== undefined) {
         patch.tiers = d.tiers.map((t) => ({

@@ -7,9 +7,13 @@
  *   - `stub`   — resolves + searches against a built-in IN/US gazetteer
  *                (offline). The default; used in the sandbox + tests. Unknown
  *                city within a known country geocodes to the country centroid.
- *   - `photon` — OpenStreetMap Photon HTTP geocoder for prod. Free/keyless;
- *                ODbL permits storing the returned coordinates; built for
+ *   - `photon` — OpenStreetMap Photon HTTP geocoder. Free/keyless; ODbL
+ *                permits storing the returned coordinates; built for
  *                autocomplete. Subject to OSM fair-use — fine for venue edits.
+ *   - `google` — Google Maps Platform (Places autocomplete + Geocoding; see
+ *                google.ts). Paid past a free monthly allowance, and Google's
+ *                terms cap how long its coordinates may be kept — see
+ *                services/coords_refresh_service.ts.
  *
  * Geocoding is best-effort: callers treat a null result as "leave coordinates
  * as they are" and never fail a save because geocoding failed.
@@ -17,10 +21,14 @@
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { lookupGazetteer, normalizeCountry, reverseGazetteer, searchGazetteer } from './gazetteer.js';
+import { GoogleGeocoder } from './google.js';
 
 export interface GeoPoint {
   lat: number;
   lng: number;
+  /** The Google place the point came from. Set only by the Google provider:
+   *  its coordinates may be kept for 30 days, the place ID indefinitely. */
+  placeId?: string | null;
 }
 
 /** A coarse place for a point — what reverse geocoding returns. City-level
@@ -40,32 +48,47 @@ export interface GeocodeQuery {
   country?: string | null;
 }
 
-/** A single autocomplete suggestion — enough to fill the venue address form. */
+/**
+ * A single autocomplete suggestion — enough to fill the venue address form.
+ *
+ * The free providers return complete suggestions. A Google search result is
+ * only a prediction — a label and a place ID, with the address parts and
+ * coordinates null — and {@link Geocoder.resolve} fills it in once picked.
+ */
 export interface AddressSuggestion {
   /** Human-readable one-line label for the dropdown. */
   label: string;
+  /** The Google place behind the suggestion; null from the free providers. */
+  placeId: string | null;
   line1: string | null;
   city: string | null;
   state: string | null;
   postalCode: string | null;
   /** Canonical country ('India' | 'USA'), or null if unrecognised. */
   country: string | null;
-  lat: number;
-  lng: number;
+  /** Null only on an unresolved Google prediction. */
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface SearchOptions {
   /** Restrict suggestions to this country (canonical name); omit for all served countries. */
   country?: string | null;
   limit?: number;
+  /** Groups one person's keystrokes into one billed Google autocomplete
+   *  session, ended by {@link Geocoder.resolve} with the same token. */
+  sessionToken?: string | null;
 }
 
 export interface Geocoder {
-  readonly mode: 'stub' | 'photon';
+  readonly mode: 'stub' | 'photon' | 'google';
   /** Resolve an address to coordinates, or null if it can't be resolved. */
   geocode(query: GeocodeQuery): Promise<GeoPoint | null>;
   /** Type-ahead address suggestions for a partial query. */
   search(query: string, opts?: SearchOptions): Promise<AddressSuggestion[]>;
+  /** The full suggestion for a place ID, or null when there's none — always
+   *  null from the free providers, whose suggestions arrive complete. */
+  resolve(placeId: string, sessionToken?: string | null): Promise<AddressSuggestion | null>;
   /** Coarse place (city/country) for a point, or null if it can't be resolved. */
   reverse(point: GeoPoint): Promise<ReversePlace | null>;
 }
@@ -90,6 +113,7 @@ class StubGeocoder implements Geocoder {
   async search(query: string, opts: SearchOptions = {}): Promise<AddressSuggestion[]> {
     return searchGazetteer(query, opts.country, opts.limit ?? 5).map((h) => ({
       label: `${h.city}, ${h.country}`,
+      placeId: null,
       line1: null,
       city: h.city,
       state: null,
@@ -98,6 +122,10 @@ class StubGeocoder implements Geocoder {
       lat: h.lat,
       lng: h.lng,
     }));
+  }
+
+  async resolve(): Promise<AddressSuggestion | null> {
+    return null;
   }
 
   async reverse(point: GeoPoint): Promise<ReversePlace | null> {
@@ -181,6 +209,7 @@ class PhotonGeocoder implements Geocoder {
         const line1 = [p.housenumber, p.street ?? p.name].filter(Boolean).join(' ') || null;
         out.push({
           label: [p.name ?? p.street, p.city, p.state, country].filter(Boolean).join(', '),
+          placeId: null,
           line1,
           city: p.city ?? null,
           state: p.state ?? null,
@@ -196,6 +225,10 @@ class PhotonGeocoder implements Geocoder {
       logger.warn({ err }, 'geocode_photon_search_failed');
       return [];
     }
+  }
+
+  async resolve(): Promise<AddressSuggestion | null> {
+    return null;
   }
 
   async reverse(point: GeoPoint): Promise<ReversePlace | null> {
@@ -224,11 +257,34 @@ let cached: Geocoder | undefined;
 
 export function getGeocoder(): Geocoder {
   if (cached) return cached;
-  cached =
-    env.GEOCODER_PROVIDER === 'photon'
-      ? new PhotonGeocoder(env.GEOCODER_BASE_URL, env.GEOCODER_USER_AGENT)
-      : new StubGeocoder();
+  switch (env.GEOCODER_PROVIDER) {
+    case 'photon':
+      cached = new PhotonGeocoder(env.GEOCODER_BASE_URL, env.GEOCODER_USER_AGENT);
+      break;
+    case 'google':
+      // env.ts refuses to boot with the google provider and no key.
+      cached = new GoogleGeocoder(env.GOOGLE_MAPS_SERVER_KEY ?? '');
+      break;
+    default:
+      cached = new StubGeocoder();
+  }
   return cached;
+}
+
+let cachedCityLookup: Geocoder | undefined;
+
+/**
+ * The consumer "where am I" lookup (routes/consumer.ts): a city name for the
+ * location pin. It never goes to Google — with GEOCODER_PROVIDER=google it
+ * uses OpenStreetMap Photon instead. The endpoint is public and called from
+ * every consumer app, so Google would bill each call, and its terms want its
+ * results shown on a Google map, which the consumer apps don't draw. Photon's
+ * city name is all the pin needs. Otherwise it is the same as getGeocoder().
+ */
+export function getCityLookupGeocoder(): Geocoder {
+  if (env.GEOCODER_PROVIDER !== 'google') return getGeocoder();
+  cachedCityLookup ??= new PhotonGeocoder(env.GEOCODER_BASE_URL, env.GEOCODER_USER_AGENT);
+  return cachedCityLookup;
 }
 
 /** Boot-time introspection: which geocoder resolved. Logged once at startup. */
@@ -239,4 +295,5 @@ export function geocoderMode(): string {
 /** Test-only reset. */
 export function __resetGeocoderForTesting(): void {
   cached = undefined;
+  cachedCityLookup = undefined;
 }

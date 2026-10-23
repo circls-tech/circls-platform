@@ -65,6 +65,7 @@ function toUpdatePatch(patch: EventChangeRequestPatch): UpdateEventPatch {
   if (patch.addressJson !== undefined) out.addressJson = patch.addressJson;
   if (patch.lat !== undefined) out.lat = patch.lat;
   if (patch.lng !== undefined) out.lng = patch.lng;
+  if (patch.coordsPlaceId !== undefined) out.coordsPlaceId = patch.coordsPlaceId;
   if (patch.tzName !== undefined) out.tzName = patch.tzName;
   if (patch.tiers !== undefined) out.tiers = patch.tiers as LiveTierInput[];
   return out;

@@ -4,8 +4,8 @@
  * plus a country centroid fallback. This is deliberately coarse: it exists so
  * the sandbox + tests can turn a partner-entered "City, Country" into a
  * lat/lng WITHOUT any network call, which is enough to power the consumer
- * "nearest city" / country auto-detect. Prod uses the Nominatim provider for
- * precise, arbitrary-address resolution (see index.ts).
+ * "nearest city" / country auto-detect. Prod uses the Photon or Google provider
+ * for precise, arbitrary-address resolution (see index.ts).
  *
  * Coordinates are city-centre approximations (4 dp ≈ 11 m is meaningless here;
  * we only need the right city/country bucket). Keys are lowercased city names.
@@ -256,14 +256,22 @@ export function lookupGazetteer(
 ): GeoPoint | null {
   const countryKey = normalizeCountry(country);
   if (!countryKey) return null;
-
-  if (city && city.trim()) {
-    const raw = city.trim().toLowerCase();
-    const key = CITY_ALIASES[raw] ?? raw;
-    const hit = CITIES[countryKey][key];
-    if (hit) return hit;
-  }
   // Known country, unknown/absent city → country centroid so at least the
   // country auto-detect resolves correctly.
-  return COUNTRY_CENTROID[countryKey];
+  return findGazetteerCity(city, countryKey) ?? COUNTRY_CENTROID[countryKey];
+}
+
+/**
+ * A known city's centre, or null — unlike {@link lookupGazetteer}, never the
+ * country centroid. Centres the partner map on a typed city without a paid
+ * lookup, and is the coarse pin that replaces expired Google coordinates.
+ */
+export function findGazetteerCity(
+  city: string | null | undefined,
+  country: string | null | undefined,
+): GeoPoint | null {
+  const countryKey = normalizeCountry(country);
+  if (!countryKey || !city || !city.trim()) return null;
+  const raw = city.trim().toLowerCase();
+  return CITIES[countryKey][CITY_ALIASES[raw] ?? raw] ?? null;
 }

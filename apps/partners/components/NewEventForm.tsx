@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/events';
 import { useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
@@ -76,7 +77,7 @@ interface EventFields {
   pincode: string;
   country: string;
   tz: string;
-  coords: { lat: number; lng: number } | null;
+  coords: PinCoords | null;
 }
 
 /** A blank form, or one seeded from the event being duplicated. */
@@ -181,7 +182,7 @@ export function NewEventForm({
   // Coordinates are held here (never shown) — set from an autocomplete pick and
   // cleared on any manual address edit so the server geocodes from the typed
   // address on create. Organisers never enter lat/lng by hand.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(initial.coords);
+  const [coords, setCoords] = useState<PinCoords | null>(initial.coords);
   const [err, setErr] = useState<string | null>(null);
   useAutosave<EventFields>(autosave, {
     scope,
@@ -230,7 +231,7 @@ export function NewEventForm({
     setStateRegion(s.state ?? '');
     if (s.postalCode) setPincode(s.postalCode);
     if (s.country) setCountry(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
   }
 
   /** Timezone for one series date — its override venue's tz, else the event's. */
@@ -328,7 +329,7 @@ export function NewEventForm({
               ...base,
               addressJson,
               tzName: tz,
-              ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+              ...(coords ? { lat: coords.lat, lng: coords.lng, ...coordsPlaceIdOf(coords) } : {}),
             }
           : { ...base };
     }

@@ -5,6 +5,7 @@ import { Conflict, NotFound } from '../lib/errors.js';
 import { isSubmittable, submitForReview } from './listing_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
+import { coordsProvenance, sentCoordsProvenance } from '../lib/geocoding/provenance.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 import { onListingSubmitted } from './notification_hooks.js';
 
@@ -30,6 +31,8 @@ export interface CreateVenueInput extends VenueMetadataInput {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place lat/lng were picked from (address search, pin not moved). */
+  coordsPlaceId?: string | null;
   addressJson?: Record<string, unknown> | null;
   tags?: string[];
 }
@@ -39,6 +42,8 @@ export interface UpdateVenueInput extends VenueMetadataInput {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** As on create; read only alongside lat/lng. */
+  coordsPlaceId?: string | null;
   addressJson?: Record<string, unknown> | null;
   tags?: string[];
 }
@@ -113,6 +118,7 @@ async function applyAddressDerivation(
     if (point) {
       set.lat = point.lat;
       set.lng = point.lng;
+      Object.assign(set, coordsProvenance(point.placeId));
     }
   }
 }
@@ -129,6 +135,11 @@ export async function createVenue(tenantId: string, input: CreateVenueInput): Pr
     tzName: input.tzName ?? 'Asia/Kolkata',
     lat: input.lat ?? null,
     lng: input.lng ?? null,
+    ...sentCoordsProvenance({
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
+      coordsPlaceId: input.coordsPlaceId,
+    }),
     addressJson: input.addressJson ?? null,
     tags: input.tags ?? [],
     // New listings await Circls review before going live (subproject B) —
@@ -179,13 +190,33 @@ export async function updateVenue(
   if (patch.tags !== undefined) set.tags = patch.tags;
   applyMetadata(set, patch);
 
+  const addressTouched = ADDRESS_FIELDS.some((f) => patch[f] !== undefined);
+  const coordsTouched = patch.lat !== undefined || patch.lng !== undefined;
+  const current =
+    addressTouched || coordsTouched
+      ? await db.query.venues.findFirst({
+          where: and(eq(venues.id, venueId), eq(venues.tenantId, tenantId)),
+        })
+      : undefined;
+  if ((addressTouched || coordsTouched) && !current) throw new NotFound('Venue not found', 'venue_not_found');
+
+  if (coordsTouched && current) {
+    Object.assign(
+      set,
+      sentCoordsProvenance(
+        {
+          lat: patch.lat !== undefined ? patch.lat : current.lat,
+          lng: patch.lng !== undefined ? patch.lng : current.lng,
+          coordsPlaceId: patch.coordsPlaceId,
+        },
+        current,
+      ),
+    );
+  }
+
   // When the postal address is touched, re-mirror address_json and re-derive
   // coordinates from the effective (current-overlaid-by-patch) address.
-  if (ADDRESS_FIELDS.some((f) => patch[f] !== undefined)) {
-    const current = await db.query.venues.findFirst({
-      where: and(eq(venues.id, venueId), eq(venues.tenantId, tenantId)),
-    });
-    if (!current) throw new NotFound('Venue not found', 'venue_not_found');
+  if (addressTouched && current) {
     const pick = <K extends keyof Venue>(patchVal: unknown, col: K): Venue[K] =>
       (patchVal !== undefined ? patchVal : current[col]) as Venue[K];
     const eff: EffectiveAddress = {

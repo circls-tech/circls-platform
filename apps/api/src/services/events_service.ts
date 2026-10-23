@@ -36,6 +36,7 @@ import {
 } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 import { onEventCancelled, onListingSubmitted } from './notification_hooks.js';
+import { coordsProvenance, sentCoordsProvenance } from '../lib/geocoding/provenance.js';
 import {
   applyLiveTiers,
   listTiersWithRemaining,
@@ -215,6 +216,8 @@ export interface CreateEventInput {
   addressJson?: Record<string, unknown> | undefined;
   lat?: number | undefined;
   lng?: number | undefined;
+  /** The Google place lat/lng came from, when they did (see lib/geocoding/provenance). */
+  coordsPlaceId?: string | null | undefined;
   tzName?: string | undefined;
   name: string;
   description?: string | undefined;
@@ -239,7 +242,7 @@ export interface CreateEventInput {
  * Map an event's freeform address_json to a geocode query. Events store the
  * postal code under `pincode` (the form's label), not `postalCode`.
  */
-function toGeocodeQuery(addressJson: Record<string, unknown>): GeocodeQuery {
+export function toGeocodeQuery(addressJson: Record<string, unknown>): GeocodeQuery {
   const str = (k: string) =>
     typeof addressJson[k] === 'string' ? (addressJson[k] as string) : null;
   return {
@@ -278,6 +281,7 @@ async function deriveStandaloneCoords(
     if (point) {
       input.lat = point.lat;
       input.lng = point.lng;
+      input.coordsPlaceId = point.placeId ?? null;
     }
   }
 }
@@ -377,6 +381,13 @@ async function insertEventTx(
       addressJson: isStandalone ? (input.addressJson ?? null) : null,
       lat: isStandalone ? (input.lat ?? null) : null,
       lng: isStandalone ? (input.lng ?? null) : null,
+      ...(isStandalone
+        ? sentCoordsProvenance({
+            lat: input.lat ?? null,
+            lng: input.lng ?? null,
+            coordsPlaceId: input.coordsPlaceId,
+          })
+        : coordsProvenance(null)),
       tzName: isStandalone ? (input.tzName ?? null) : null,
       name: input.name,
       description: input.description ?? null,
@@ -589,6 +600,8 @@ export interface UpdateEventPatch {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place lat/lng came from; read only alongside them. */
+  coordsPlaceId?: string | null;
   /** null clears (QR tickets off); omitted = unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
   /** null clears (no post-booking link); omitted = unchanged. */
@@ -732,7 +745,7 @@ export async function prepareEventPatch(patch: UpdateEventPatch): Promise<Update
     const query = toGeocodeQuery(patch.addressJson);
     if (hasGeocodableAddress(query)) {
       const point = await getGeocoder().geocode(query);
-      if (point) patch = { ...patch, lat: point.lat, lng: point.lng };
+      if (point) patch = { ...patch, lat: point.lat, lng: point.lng, coordsPlaceId: point.placeId ?? null };
     }
   }
   return patch;
@@ -783,6 +796,7 @@ async function applyEventPatchTx(
     set.addressJson = null;
     set.lat = null;
     set.lng = null;
+    Object.assign(set, coordsProvenance(null));
     set.tzName = null;
   } else if (!targetVenueId) {
     // Standalone (becoming or staying). Address/tz come from the patch when
@@ -803,6 +817,19 @@ async function applyEventPatchTx(
     if (patch.tzName !== undefined) set.tzName = patch.tzName;
     if (patch.lat !== undefined) set.lat = patch.lat;
     if (patch.lng !== undefined) set.lng = patch.lng;
+    if (patch.lat !== undefined || patch.lng !== undefined) {
+      Object.assign(
+        set,
+        sentCoordsProvenance(
+          {
+            lat: patch.lat !== undefined ? patch.lat : existing.lat,
+            lng: patch.lng !== undefined ? patch.lng : existing.lng,
+            coordsPlaceId: patch.coordsPlaceId,
+          },
+          existing,
+        ),
+      );
+    }
   }
 
   if (Object.keys(set).length > 0) {

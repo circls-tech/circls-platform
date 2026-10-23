@@ -88,6 +88,8 @@ export interface CreateTenantEventInput {
   addressJson?: Record<string, unknown>;
   lat?: number;
   lng?: number;
+  /** The Google place lat/lng were picked from (see lib/map_view PinCoords). */
+  coordsPlaceId?: string;
   tzName?: string;
   name: string;
   description?: string;
@@ -239,6 +241,7 @@ export interface UpdateEventInput {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  coordsPlaceId?: string | null;
   /** Per-customer ticket cap; null clears, omit to leave unchanged. */
   maxPerUser?: number | null;
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
@@ -458,6 +461,7 @@ export interface EventChangeRequestInput {
   addressJson?: Record<string, unknown>;
   lat?: number | null;
   lng?: number | null;
+  coordsPlaceId?: string | null;
   tzName?: string;
   tiers?: ChangeRequestTierInput[];
 }

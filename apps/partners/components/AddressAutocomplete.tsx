@@ -1,42 +1,64 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { searchAddress, type AddressSuggestion } from '@/lib/api/geocode';
+import {
+  resolvePlace,
+  searchAddress,
+  type AddressSuggestion,
+  type GeocoderProvider,
+} from '@/lib/api/geocode';
+
+/** Each billed Google search request counts, so wait for a real query. */
+const MIN_QUERY = 3;
+const DEBOUNCE_MS = 400;
 
 /**
  * Type-ahead address search for the venue form. Debounces input, queries the
  * API's geocode search, and hands the picked suggestion back to the parent to
  * fill the structured address fields + coordinates. Optional `country` scopes
  * results. Purely a convenience — the manual fields below stay editable.
+ *
+ * With Google behind the search, one search's keystrokes share a session
+ * token, and resolving the pick with the same token ends the session — which
+ * is what caps its billed requests. Google results carry a "Google Maps"
+ * credit, as Google's terms require when they're shown off its map.
  */
 export function AddressAutocomplete({
   country,
   onSelect,
 }: {
   country?: string | null;
+  /** Always a resolved suggestion: coordinates and address parts filled in. */
   onSelect: (s: AddressSuggestion) => void;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AddressSuggestion[]>([]);
+  const [provider, setProvider] = useState<GeocoderProvider | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [failed, setFailed] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  // One session per search, from the first keystroke to the pick.
+  const sessionRef = useRef<string | null>(null);
 
   // Debounced search. A stale-guard flag drops out-of-order responses.
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) {
+    if (q.length < MIN_QUERY) {
       setResults([]);
       setLoading(false);
       return;
     }
+    sessionRef.current ??= newSessionToken();
     let active = true;
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const hits = await searchAddress(q, country);
+        const res = await searchAddress(q, country, sessionRef.current);
         if (active) {
-          setResults(hits);
+          setResults(res.suggestions);
+          setProvider(res.provider);
           setOpen(true);
         }
       } catch {
@@ -44,7 +66,7 @@ export function AddressAutocomplete({
       } finally {
         if (active) setLoading(false);
       }
-    }, 300);
+    }, DEBOUNCE_MS);
     return () => {
       active = false;
       clearTimeout(t);
@@ -60,8 +82,22 @@ export function AddressAutocomplete({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  function pick(s: AddressSuggestion) {
-    onSelect(s);
+  async function pick(s: AddressSuggestion) {
+    setFailed(false);
+    let picked = s;
+    if (s.lat == null && s.placeId) {
+      setResolving(true);
+      try {
+        picked = await resolvePlace(s.placeId, sessionRef.current);
+      } catch {
+        setFailed(true);
+        return;
+      } finally {
+        setResolving(false);
+      }
+    }
+    onSelect(picked);
+    sessionRef.current = null;
     setQuery('');
     setResults([]);
     setOpen(false);
@@ -74,12 +110,14 @@ export function AddressAutocomplete({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onFocus={() => results.length > 0 && setOpen(true)}
-        placeholder="Start typing an address or city…"
+        placeholder="Start typing an address, place or city…"
         className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
         autoComplete="off"
       />
-      <span className="text-xs text-gray-400">
-        Pick a result to fill the address and map location automatically.
+      <span className={`text-xs ${failed ? 'text-red-600' : 'text-gray-400'}`}>
+        {failed
+          ? "Couldn't load that address — pick it again, or fill the fields below."
+          : 'Pick a result to fill the address and map location automatically.'}
       </span>
 
       {open && (loading || results.length > 0) && (
@@ -88,19 +126,31 @@ export function AddressAutocomplete({
             <li className="px-3 py-2 text-sm text-gray-400">Searching…</li>
           ) : (
             results.map((s, i) => (
-              <li key={`${s.label}-${i}`}>
+              <li key={`${s.placeId ?? s.label}-${i}`}>
                 <button
                   type="button"
-                  onClick={() => pick(s)}
-                  className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  disabled={resolving}
+                  onClick={() => void pick(s)}
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
                 >
                   {s.label}
                 </button>
               </li>
             ))
           )}
+          {provider === 'google' && results.length > 0 && (
+            <li className="border-t border-gray-100 px-3 pb-1 pt-2 text-right text-[11px] text-gray-500">
+              Google Maps
+            </li>
+          )}
         </ul>
       )}
     </div>
   );
+}
+
+/** A Google session token: URL-safe, at most 36 characters (a UUID is). */
+function newSessionToken(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }

@@ -96,7 +96,7 @@ describe('duplicateDraftFromEvent', () => {
       pincode: '560001',
       country: 'India',
       tz: 'Asia/Kolkata',
-      coords: { lat: 12.97, lng: 77.59 },
+      coords: { lat: 12.97, lng: 77.59, placeId: null },
     });
     // An event with no tiers still gives the form one blank row to fill.
     expect(draft.tiers).toHaveLength(1);
@@ -106,6 +106,17 @@ describe('duplicateDraftFromEvent', () => {
 });
 
 describe('addressDraftFromApi', () => {
+  it("keeps a Google pin's place, so a copy is still known to be Google's", () => {
+    const draft = addressDraftFromApi({
+      addressJson: { city: 'Pune' },
+      lat: 18.52,
+      lng: 73.85,
+      coordsPlaceId: 'ChIJpune',
+      tzName: 'Asia/Kolkata',
+    });
+    expect(draft.coords).toEqual({ lat: 18.52, lng: 73.85, placeId: 'ChIJpune' });
+  });
+
   it('falls back to blanks, the default timezone and no pin', () => {
     expect(addressDraftFromApi({ addressJson: null, lat: 12.9, lng: null, tzName: null })).toEqual({
       line1: '',

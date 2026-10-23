@@ -1,6 +1,7 @@
 import { emptyTier, tierDraftFromApi, type TierDraft } from '@/components/TiersEditor';
 import { maxPerUserFromApi } from '@/components/MaxPerUserField';
 import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/types';
+import type { PinCoords } from '@/lib/map_view';
 import { questionDraftFromApi, type QuestionDraft } from './questions';
 
 /** Standalone-address form fields hydrated from an event (as returned by GET). */
@@ -12,7 +13,7 @@ export interface AddressDraft {
   pincode: string;
   country: string;
   tz: string;
-  coords: { lat: number; lng: number } | null;
+  coords: PinCoords | null;
 }
 
 const DEFAULT_TZ = 'Asia/Kolkata';
@@ -23,7 +24,7 @@ const DEFAULT_TZ = 'Asia/Kolkata';
  * `postalCode`), so this is a straight read; anything non-string is blank.
  */
 export function addressDraftFromApi(
-  ev: Pick<VenueEvent, 'addressJson' | 'lat' | 'lng' | 'tzName'>,
+  ev: Pick<VenueEvent, 'addressJson' | 'lat' | 'lng' | 'coordsPlaceId' | 'tzName'>,
 ): AddressDraft {
   const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
   const str = (k: string) => (typeof addr[k] === 'string' ? (addr[k] as string) : '');
@@ -35,7 +36,11 @@ export function addressDraftFromApi(
     pincode: str('pincode'),
     country: str('country'),
     tz: ev.tzName ?? DEFAULT_TZ,
-    coords: ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : null,
+    // A Google pin keeps its place, so a copy is still known to be Google's.
+    coords:
+      ev.lat != null && ev.lng != null
+        ? { lat: ev.lat, lng: ev.lng, placeId: ev.coordsPlaceId ?? null }
+        : null,
   };
 }
 

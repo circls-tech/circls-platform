@@ -48,6 +48,9 @@ export const events = pgTable('events', {
   addressJson: jsonb('address_json').$type<Record<string, unknown>>(),
   lat: doublePrecision('lat'),
   lng: doublePrecision('lng'),
+  // As on venues: set only while lat/lng came from Google (30-day limit).
+  coordsPlaceId: text('coords_place_id'),
+  coordsFetchedAt: timestamp('coords_fetched_at', { withTimezone: true }),
   tzName: text('tz_name'),
   name: text('name').notNull(),
   description: text('description'),

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { env } from '../config/env.js';
 import { BadRequest, NotFound, Unauthorized } from '../lib/errors.js';
 import { checkoutGatewaysOf } from '../lib/gateway.js';
-import { getGeocoder } from '../lib/geocoding/index.js';
+import { getCityLookupGeocoder } from '../lib/geocoding/index.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import {
@@ -153,10 +153,11 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
   // pin with the user's actual city when they're outside every served city.
   // Public (anonymous browse shares the pin) but under the strict public rate
   // ceiling; the response never carries more precision than a city name.
+  // Never Google, even when the partner forms are (see getCityLookupGeocoder).
   app.get('/v1/consumer/geocode/reverse', { config: publicLimit }, async (req) => {
     const parsed = reverseGeocodeQuery.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid query', 'bad_request', { issues: parsed.error.issues });
-    const place = await getGeocoder().reverse(parsed.data);
+    const place = await getCityLookupGeocoder().reverse(parsed.data);
     return { place };
   });
 

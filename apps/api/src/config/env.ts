@@ -173,13 +173,20 @@ export const envSchema = z
 
   // Geocoding + address autocomplete (venue address → lat/lng, and type-ahead
   // suggestions). Default 'stub' resolves against a built-in IN/US city
-  // gazetteer (offline; used in the sandbox + tests). Set GEOCODER_PROVIDER=
-  // 'photon' in prod to resolve/search arbitrary addresses via OpenStreetMap
-  // Photon (free/keyless; ODbL permits storing results; built for autocomplete
-  // — see lib/geocoding/). GEOCODER_USER_AGENT identifies the app per OSM policy.
-  GEOCODER_PROVIDER: z.enum(['stub', 'photon']).default('stub'),
+  // gazetteer (offline; used in the sandbox + tests). 'photon' resolves/searches
+  // arbitrary addresses via OpenStreetMap Photon (free/keyless; ODbL permits
+  // storing results). 'google' uses Google Maps Platform with
+  // GOOGLE_MAPS_SERVER_KEY — paid past the free allowance, and only together
+  // with the partner portal's Google map (Google results must not be drawn on
+  // a non-Google map). The consumer city lookup stays on Photon under
+  // 'google' (getCityLookupGeocoder). See lib/geocoding/. GEOCODER_USER_AGENT
+  // identifies the app per OSM policy.
+  GEOCODER_PROVIDER: z.enum(['stub', 'photon', 'google']).default('stub'),
   GEOCODER_BASE_URL: z.string().url().default('https://photon.komoot.io'),
   GEOCODER_USER_AGENT: z.string().default('circls-platform/1.0 (+https://circls.app)'),
+  // Server-side Google key: Places API (New) + Geocoding API only, restricted
+  // to the API server's IP. Never the browser key the partner portal ships.
+  GOOGLE_MAPS_SERVER_KEY: z.string().optional(),
 
   // Partner portal base URL (used to build invite acceptance links).
   PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),
@@ -236,6 +243,15 @@ export const envSchema = z
   CIRCLS_INTERNAL_TENANT_SLUG: z.string().default('circls-internal'),
   })
   .superRefine((val, ctx) => {
+    // Without a key every Google call fails, and the failures are silent:
+    // geocoding is best-effort, so address search would just come back empty.
+    if (val.GEOCODER_PROVIDER === 'google' && !val.GOOGLE_MAPS_SERVER_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GOOGLE_MAPS_SERVER_KEY'],
+        message: 'GOOGLE_MAPS_SERVER_KEY is required when GEOCODER_PROVIDER=google',
+      });
+    }
     if (val.NODE_ENV === 'production') {
       for (const key of [
         'RAZORPAY_KEY_ID',

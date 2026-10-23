@@ -8,7 +8,8 @@ import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
-import { suggestCity } from '../lib/geocoding/gazetteer.js';
+import { findGazetteerCity, suggestCity } from '../lib/geocoding/gazetteer.js';
+import { placeIdSchema } from '../lib/geocoding/provenance.js';
 import { latestRejection } from '../services/listing_review.js';
 import {
   closeVenue,
@@ -58,6 +59,8 @@ const createVenueSchema = z.object({
   tzName: z.string().min(1).max(64).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  /** The Google place lat/lng were picked from, when they were. */
+  coordsPlaceId: placeIdSchema.nullable().optional(),
   addressJson: z.record(z.unknown()).optional(),
   tags: z.array(z.string().min(1).max(40)).max(20).optional(),
   ...venueMetadataShape,
@@ -83,10 +86,21 @@ function pickMetadata(p: z.infer<typeof updateVenueSchema>): VenueMetadataInput 
   };
 }
 
+/** Google autocomplete session token: URL-safe base64, at most 36 characters. */
+const sessionTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{1,36}$/);
+
 const geocodeSearchSchema = z.object({
   q: z.string().trim().min(2).max(120),
   country: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(10).optional(),
+  session: sessionTokenSchema.optional(),
+});
+
+const geocodePlaceSchema = z.object({ session: sessionTokenSchema.optional() });
+
+const cityCenterSchema = z.object({
+  city: z.string().trim().min(1).max(120),
+  country: z.string().trim().max(120).optional(),
 });
 
 const suggestCitySchema = z.object({
@@ -104,9 +118,42 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
       throw new BadRequest('Invalid search query', 'bad_request', { issues: parsed.error.issues });
     }
     await currentUser(req); // any authenticated partner may search
-    const { q, country, limit } = parsed.data;
-    const suggestions = await getGeocoder().search(q, { country: country ?? null, limit: limit ?? 5 });
-    return { suggestions };
+    const { q, country, limit, session } = parsed.data;
+    const geocoder = getGeocoder();
+    const suggestions = await geocoder.search(q, {
+      country: country ?? null,
+      limit: limit ?? 5,
+      sessionToken: session ?? null,
+    });
+    // `provider` tells the form whether to credit Google Maps under the results.
+    return { suggestions, provider: geocoder.mode };
+  });
+
+  // The full address + coordinates of a picked Google suggestion (Google
+  // search results arrive without them). Passing the search's `session` ends
+  // that autocomplete session, which caps its billed requests. 404 when the
+  // place can't be resolved — always so with the free providers, whose
+  // suggestions arrive complete.
+  app.get('/v1/venues/geocode/place/:placeId', { preHandler: requireAuth }, async (req) => {
+    const placeId = placeIdSchema.safeParse((req.params as { placeId: string }).placeId);
+    const parsed = geocodePlaceSchema.safeParse(req.query);
+    if (!placeId.success || !parsed.success) throw new BadRequest('Invalid place', 'bad_request');
+    await currentUser(req); // any authenticated partner, as for search
+    const suggestion = await getGeocoder().resolve(placeId.data, parsed.data.session ?? null);
+    if (!suggestion) throw new NotFound('Place not found', 'place_not_found');
+    return { suggestion };
+  });
+
+  // Where to centre the map for a typed city: the gazetteer's centre for a
+  // known city, else null (the form falls back to the country). Offline, so
+  // following each pause in typing costs nothing whatever the provider.
+  app.get('/v1/venues/geocode/city-center', { preHandler: requireAuth }, async (req) => {
+    const parsed = cityCenterSchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new BadRequest('Invalid city', 'bad_request', { issues: parsed.error.issues });
+    }
+    await currentUser(req);
+    return { center: findGazetteerCity(parsed.data.city, parsed.data.country ?? null) };
   });
 
   // "Did you mean" for a hand-typed city: canonical spelling for alias/case
@@ -133,13 +180,14 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'venues.write');
     assertTermsAccepted(ctx);
-    const { name, tzName, lat, lng, addressJson, tags, draft } = parsed.data;
+    const { name, tzName, lat, lng, coordsPlaceId, addressJson, tags, draft } = parsed.data;
     return createVenue(tenantId, {
       name,
       ...(draft !== undefined ? { draft } : {}),
       tzName: tzName ?? 'Asia/Kolkata',
       lat: lat ?? null,
       lng: lng ?? null,
+      coordsPlaceId: coordsPlaceId ?? null,
       addressJson: addressJson ?? null,
       tags: tags ?? [],
       ...pickMetadata(parsed.data),
@@ -198,6 +246,7 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
       ...(p.tzName !== undefined ? { tzName: p.tzName } : {}),
       ...(p.lat !== undefined ? { lat: p.lat } : {}),
       ...(p.lng !== undefined ? { lng: p.lng } : {}),
+      ...(p.coordsPlaceId !== undefined ? { coordsPlaceId: p.coordsPlaceId } : {}),
       ...(p.addressJson !== undefined ? { addressJson: p.addressJson } : {}),
       ...(p.tags !== undefined ? { tags: p.tags } : {}),
       ...pickMetadata(p),

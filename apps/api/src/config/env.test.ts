@@ -162,4 +162,24 @@ describe('envSchema production refinement', () => {
       expect(result.data.CORS_ALLOWED_ORIGINS).toContain('https://www.circls.app');
     }
   });
+
+  it('refuses the google geocoder without a server key, in any environment', () => {
+    const result = envSchema.safeParse({
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgres://x',
+      GEOCODER_PROVIDER: 'google',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((i) => i.path.join('.'))).toContain('GOOGLE_MAPS_SERVER_KEY');
+    }
+    expect(
+      envSchema.safeParse({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgres://x',
+        GEOCODER_PROVIDER: 'google',
+        GOOGLE_MAPS_SERVER_KEY: 'server-key',
+      }).success,
+    ).toBe(true);
+  });
 });

@@ -252,6 +252,8 @@ export interface UpdateVenueInput {
   tzName?: string;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place lat/lng were picked from (see lib/map_view PinCoords). */
+  coordsPlaceId?: string | null;
   tags?: string[];
   description?: string | null;
   amenities?: string[];
