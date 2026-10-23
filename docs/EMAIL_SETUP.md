@@ -29,7 +29,7 @@ listing needs changes, and the three admin emails. The rest are plain text.
 - **Resend** (admin) and **Mailpit** get the HTML rendered by the API.
 - **MSG91** sends only through templates stored in its dashboard and renders
   them itself (Handlebars). The six customer/partner designs each have their
-  own MSG91 template, named by its slug (`circls_booking_confirmed_v2`, …). A
+  own MSG91 template, named by its slug (`circls_booking_confirmed`, …). A
   design uses its template only once **switched on** in
   `MSG91_EMAIL_DESIGNS`; until then it goes through the generic template as
   plain text, so nothing fails while a template awaits approval.

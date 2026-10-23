@@ -60,8 +60,8 @@ interface Msg91Template {
   id?: number;
   slug?: string;
   name?: string;
-  /** Newest first; review status lives on the version (1 pending, 2 approved, 5 rejected). */
-  versions?: Array<{ name?: string; status_id?: number; mail_type_id?: number; is_active?: boolean }>;
+  /** In no reliable order; review status lives on the version (1 pending, 2 approved, 5 rejected). */
+  versions?: Array<{ id?: number; name?: string; status_id?: number; mail_type_id?: number; is_active?: boolean }>;
 }
 
 async function existing(): Promise<Map<string, Msg91Template>> {
@@ -93,7 +93,8 @@ if (command === 'export') {
   const have = await existing();
   for (const d of designs) {
     const t = have.get(d.msg91Slug!);
-    const v = t?.versions?.[0];
+    // The newest version (highest id) is the one under review after an update.
+    const v = [...(t?.versions ?? [])].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
     const state = t ? `${v?.name ?? '?'} ${STATUS[v?.status_id ?? 0] ?? 'present'}` : 'missing';
     const active = t?.versions?.find((x) => x.is_active)?.name ?? (t ? 'none' : '');
     // MSG91 decides the mail type itself; transactional is what these are.

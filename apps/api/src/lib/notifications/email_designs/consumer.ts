@@ -22,8 +22,8 @@ const FOOTER_HELP = { href: '{{consumerUrl}}/help', label: 'Help centre' };
 
 export const bookingConfirmed: EmailDesign = {
   key: 'booking.confirmed',
-  name: 'Circls · Booking confirmed v2',
-  msg91Slug: 'circls_booking_confirmed_v2',
+  name: 'Circls · Booking confirmed',
+  msg91Slug: 'circls_booking_confirmed',
   subject: 'You’re booked in — {{placeName}}, {{shortDate}}',
   html: emailDocument({
     preheader: '{{preheader}}',
@@ -101,8 +101,8 @@ const refundBoxes =
 
 export const bookingCancelled: EmailDesign = {
   key: 'booking.cancelled',
-  name: 'Circls · Booking cancelled v2',
-  msg91Slug: 'circls_booking_cancelled_v2',
+  name: 'Circls · Booking cancelled',
+  msg91Slug: 'circls_booking_cancelled',
   subject: 'Cancelled: {{subjectName}} — {{shortDate}}',
   html: emailDocument({
     preheader: '{{preheader}}',
@@ -160,8 +160,8 @@ export const bookingCancelled: EmailDesign = {
 
 export const bookingRefunded: EmailDesign = {
   key: 'booking.refunded',
-  name: 'Circls · Refund initiated v2',
-  msg91Slug: 'circls_refund_initiated_v2',
+  name: 'Circls · Refund initiated',
+  msg91Slug: 'circls_refund_initiated',
   subject: 'Refund of {{amountText}} initiated — {{bookingRef}}',
   html: emailDocument({
     preheader: '{{preheader}}',
