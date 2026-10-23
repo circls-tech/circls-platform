@@ -94,6 +94,36 @@ describe.skipIf(!runIntegration)('trust metadata (epic #106)', () => {
     expect(get.json()).not.toHaveProperty('subscriptionStatus');
   });
 
+  it('owner switches kinds of org email off and on (Settings → Notifications)', async () => {
+    const get = await app.inject({ method: 'GET', url: `/v1/tenants/${tenantId}`, headers: bearer('owner') });
+    expect(get.json().emailPrefs).toEqual({ booking: true, listing: true });
+    const off = await app.inject({
+      method: 'PATCH',
+      url: `/v1/tenants/${tenantId}`,
+      headers: bearer('owner'),
+      payload: { emailPrefs: { booking: false } },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(off.json().emailPrefs).toEqual({ booking: false, listing: true });
+    const on = await app.inject({
+      method: 'PATCH',
+      url: `/v1/tenants/${tenantId}`,
+      headers: bearer('owner'),
+      payload: { emailPrefs: { booking: true } },
+    });
+    expect(on.json().emailPrefs).toEqual({ booking: true, listing: true });
+    // Only the known kinds, as booleans.
+    for (const emailPrefs of [{ questions: false }, { booking: 'no' }]) {
+      const bad = await app.inject({
+        method: 'PATCH',
+        url: `/v1/tenants/${tenantId}`,
+        headers: bearer('owner'),
+        payload: { emailPrefs },
+      });
+      expect(bad.statusCode).toBe(400);
+    }
+  });
+
   it('rejects an invalid profile payload (400)', async () => {
     const res = await app.inject({
       method: 'PATCH',

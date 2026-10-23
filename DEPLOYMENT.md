@@ -48,12 +48,17 @@ RUN_INTEGRATION=1 pnpm --filter @circls/api test  # integration tests (needs the
 | `PORT` | no | 8080 | |
 | `LOG_LEVEL` | no | info | |
 | `NODE_ENV` | no | development | set `production` in prod |
-| `RESEND_API_KEY` | for email | — | Resend server key (`re_…`). Unset ⇒ email runs in stub mode. See `docs/EMAIL_SETUP.md`. |
-| `RESEND_FROM` | with key | — | verified sender, e.g. `Circls <no-reply@circls.app>`. Required alongside the key. |
-| `MSG91_EMAIL_FROM` | for MSG91 email | — | Sender on the domain verified in MSG91 → Email, e.g. `Circls <no-reply@event.circls.app>`. With the two below, **all email goes through MSG91** instead of Resend. |
-| `MSG91_EMAIL_TEMPLATE_ID` | with from | — | **Slug** (not the numeric id) of the approved generic MSG91 template, e.g. `circls_transactional` (subject `Circls: {{VAR1}}`, body `{{VAR2}}`). Uses the shared `MSG91_AUTH_KEY`; setting only some of the three fails the boot in production. |
+| `MSG91_AUTH_KEY` | for email | — | MSG91 account auth key (profile → Authkey; only the account owner can create one). With the two below it sends every **customer and partner** email. Also used for SMS, but only with `MSG91_SMS_ENABLED`. See `docs/EMAIL_SETUP.md`. |
+| `MSG91_EMAIL_FROM` | for email | — | Sender on the domain verified in MSG91 → Email, e.g. `Circls <no-reply@event.circls.app>`. |
+| `MSG91_EMAIL_TEMPLATE_ID` | for email | — | **Slug** (not the numeric id) of the generic MSG91 template, e.g. `circls_transactional` (subject `Circls: {{VAR1}}`, body `{{VAR2}}`), used by emails with no design of their own. Designed emails use their own templates (`pnpm --filter @circls/api email:msg91-templates`). Setting only some of key/from/template fails the boot in production. |
 | `MSG91_EMAIL_DOMAIN` | no | domain of `MSG91_EMAIL_FROM` | The MSG91-registered (DKIM) domain, when it differs from the from address's. |
+| `MSG91_EMAIL_DESIGNS` | no | — | Which designed customer/partner emails use their own MSG91 template: `all`, or keys as their templates are approved (`booking.confirmed,listing.approved`). Others go through the generic template as plain text. Create the templates with `pnpm --filter @circls/api email:msg91-templates create`. |
+| `MSG91_EMAIL_TEMPLATES` | no | — | Only if a designed email's MSG91 template has a slug other than its default: `booking.confirmed=my-slug,listing.approved=other-slug`. |
 | `MSG91_SMS_ENABLED` | no | `false` | `true` sends SMS (booking confirmations, moves, reminders) through MSG91 with `MSG91_AUTH_KEY`. Off ⇒ SMS stays in stub mode even when the key is set for email. Turn on only once the SMS flows (DLT templates) exist in MSG91. |
+| `RESEND_API_KEY` | for admin mail | — | Resend server key (`re_…`). Sends the **admin-team** email only (review requests, new organisers, payout reminders, daily summary). Unset ⇒ that mail goes through MSG91's generic template if configured, else stub mode. |
+| `RESEND_FROM` | with key | — | Verified sender, e.g. `Circls Ops <ops@circls.app>`. Required alongside the key. |
+| `ADMIN_TEAM_EMAILS` | for admin mail | — | Comma-separated recipients of the admin-team email: listing-review requests, new-organiser sign-ups, the payout reminders (Tue and Wed, 9:00 IST) and the 08:00 IST daily summary. Unset ⇒ none is sent. |
+| `EMAIL_REPLY_TO` | no | — | Where replies to Circls email go, e.g. a support inbox. Unset ⇒ no Reply-To, and the designs leave out their "just reply to this email" lines. |
 | `R2_ACCOUNT_ID` | for media | — | Cloudflare R2 account id (hex prefix of the S3 endpoint). Unset ⇒ storage stub mode. |
 | `R2_ACCESS_KEY_ID` | for media | — | R2 API token S3 access key id. |
 | `R2_SECRET_ACCESS_KEY` | for media | — | R2 API token S3 secret. |

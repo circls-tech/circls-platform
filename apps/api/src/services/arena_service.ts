@@ -5,6 +5,7 @@ import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { inferSport } from '../lib/sport_inference.js';
+import { onListingSubmitted } from './notification_hooks.js';
 
 export interface CreateArenaInput {
   name: string;
@@ -36,6 +37,7 @@ export async function createArena(venueId: string, input: CreateArenaInput): Pro
     })
     .returning();
   if (!a) throw new Error('arena insert returned no row');
+  await onListingSubmitted('arena', a.id);
   return a;
 }
 

@@ -88,7 +88,19 @@ export const envSchema = z
   // pending → cancelled grace period for unpaid carts (minutes).
   ABANDONED_CART_GRACE_MIN: z.coerce.number().int().min(1).default(15),
 
-  // Notifications. Phase 13. SMS = MSG91, email = Resend, WA = AiSensy/Gupshup.
+  // Notifications. Phase 13. SMS = MSG91, WA = AiSensy/Gupshup. Email has two
+  // senders, picked per template (see lib/notifications/email.ts):
+  //   - MSG91 Email → every email to a customer or partner: booking
+  //     confirmations, question replies, team invitations, … Same account and
+  //     MSG91_AUTH_KEY as SMS; needs MSG91_EMAIL_FROM and
+  //     MSG91_EMAIL_TEMPLATE_ID as well (the key alone sends no email; SMS
+  //     also needs MSG91_SMS_ENABLED).
+  //   - Resend      → internal mail to the Circls admin team only (`admin.*`
+  //     templates: review requests, org sign-ups, payout reminders, the
+  //     daily summary). Needs BOTH
+  //     RESEND_API_KEY and RESEND_FROM.
+  //   Each sender falls back to the other when it alone is configured (with a
+  //   boot warning); half-configuring a sender fails the boot in production.
   MSG91_AUTH_KEY: z.string().optional(),
   MSG91_SENDER_ID: z.string().optional(),
   // Real SMS through MSG91 only when 'true'. The auth key is shared with MSG91
@@ -98,18 +110,64 @@ export const envSchema = z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  RESEND_API_KEY: z.string().optional(),
-  RESEND_FROM: z.string().optional(),
-  // MSG91 Email (same account and MSG91_AUTH_KEY as SMS). When configured it
-  // sends ALL email in place of Resend; MSG91_AUTH_KEY alone sends no email.
+  // MSG91 Email (same account and MSG91_AUTH_KEY as SMS) sends every customer
+  // and partner email once these are set; MSG91_AUTH_KEY alone sends no email.
   // Sender on a domain verified in MSG91 → Email, e.g. "Circls <no-reply@event.circls.app>".
   MSG91_EMAIL_FROM: z.string().optional(),
   // The MSG91-registered (DKIM) domain; defaults to the from address's domain.
   MSG91_EMAIL_DOMAIN: z.string().optional(),
-  // SLUG (not the numeric id) of the approved generic template every email
-  // goes through, e.g. circls_transactional. Subject
-  // `Circls: {{VAR1}}`, body `{{VAR2}}` in a <pre> (docs/EMAIL_SETUP.md).
+  // SLUG (not the numeric id) of the generic template, e.g.
+  // circls_transactional (subject `Circls: {{VAR1}}`, body `{{VAR2}}`), for emails
+  // that have no design of their own — see docs/EMAIL_SETUP.md. Designed
+  // emails use their own MSG91 template, named by its slug in
+  // lib/notifications/email_designs.
   MSG91_EMAIL_TEMPLATE_ID: z.string().optional(),
+  // Which designed emails MSG91 sends with their own (approved) template:
+  // "all", or a comma-separated list of template keys, e.g.
+  // "booking.confirmed,listing.approved". Every other designed email goes
+  // through the generic template above as plain text, so nothing fails while
+  // a design's template awaits MSG91's approval. Unset ⇒ none yet.
+  MSG91_EMAIL_DESIGNS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0),
+    ),
+  // Only if a designed email's MSG91 template was created under a different
+  // slug: "booking.confirmed=my-slug,listing.approved=other-slug". A mapped
+  // key counts as switched on.
+  MSG91_EMAIL_TEMPLATES: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const map: Record<string, string> = {};
+      for (const pair of (v ?? '').split(',')) {
+        const [key, id] = pair.split('=').map((x) => x.trim());
+        if (key && id) map[key] = id;
+      }
+      return map;
+    }),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().optional(),
+  // Where replies to Circls email go (customer and partner email from MSG91,
+  // admin email from Resend). Unset ⇒ no Reply-To, and the designs leave out
+  // their "just reply to this email" lines.
+  EMAIL_REPLY_TO: z.string().email().optional(),
+  // Who receives the internal admin-team mail (review requests, sign-ups,
+  // payout reminders, daily summary). Comma-separated; trimmed, empties
+  // dropped. Unset ⇒ that mail is skipped entirely (no notification rows).
+  ADMIN_TEAM_EMAILS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0),
+    ),
   WHATSAPP_PROVIDER: z.enum(['aisensy', 'gupshup']).optional(),
   WHATSAPP_API_KEY: z.string().optional(),
 

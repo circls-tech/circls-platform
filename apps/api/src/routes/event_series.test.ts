@@ -76,6 +76,8 @@ describe.skipIf(!runIntegration)('recurring event series', () => {
 
   afterAll(async () => {
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    // Reviewing the series emails the org (listing approved / needs changes).
+    await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from event_images where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);

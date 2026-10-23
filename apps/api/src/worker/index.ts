@@ -10,6 +10,8 @@ import { reconcileWeeklyPayouts } from '../services/payout_service.js';
 import { deliverPendingOutboundWebhooks } from '../services/webhook_subscriptions_service.js';
 import { autoArchiveEndedEvents, expireLapsedMemberships } from '../services/lifecycle_sweeps.js';
 import { runScheduleRollover } from '../services/schedule_rollover_service.js';
+import { sendAdminDailyDigest } from '../services/admin_digest_service.js';
+import { sendPayoutReminder } from '../services/payout_reminder_service.js';
 
 /**
  * In-process pg-boss worker. One queue per scheduled job; each handler delegates
@@ -118,6 +120,35 @@ const JOBS: ScheduledJob[] = [
         env.WEBHOOK_DELIVERY_CONCURRENCY,
       );
       if (delivered > 0) logger.info({ delivered }, 'outbound_webhook_delivery_complete');
+    },
+  },
+  {
+    // 08:00 IST (UTC+5:30, no DST): yesterday's numbers for the Circls admin
+    // team, by email. Idempotent per IST day, so a restart can't send twice.
+    queue: 'admin-daily-digest',
+    cron: '30 2 * * *',
+    run: async () => {
+      const r = await sendAdminDailyDigest();
+      logger.info(r, 'admin_daily_digest_complete');
+    },
+  },
+  {
+    // Tuesday 09:00 IST (03:30 UTC): the admin team's heads-up that payouts go
+    // out tomorrow. Covers every unpaid payout; silent when none.
+    queue: 'admin-payout-reminder-tue',
+    cron: '30 3 * * 2',
+    run: async () => {
+      const r = await sendPayoutReminder('heads_up');
+      if (r.pending > 0) logger.info(r, 'admin_payout_reminder_complete');
+    },
+  },
+  {
+    // Wednesday 09:00 IST: payout day — sent only while something is unpaid.
+    queue: 'admin-payout-reminder-wed',
+    cron: '30 3 * * 3',
+    run: async () => {
+      const r = await sendPayoutReminder('payout_day');
+      if (r.pending > 0) logger.info(r, 'admin_payout_reminder_complete');
     },
   },
 ];

@@ -22,6 +22,7 @@ import { Conflict, NotFound } from '../lib/errors.js';
 import { writeSystemAudit } from '../lib/audit.js';
 import { getGateway, isGatewayProvider } from '../lib/gateway.js';
 import { logger } from '../lib/logger.js';
+import { onBookingRefunded } from './notification_hooks.js';
 
 /**
  * Structural type satisfied by both `db` (PgDatabase) and any drizzle tx
@@ -214,8 +215,21 @@ export async function issueRefund(
     throw new Conflict('Refund amount must be a positive integer (paise)', 'bad_refund_amount');
   }
 
+  // Inside a caller's transaction the caller tells the customer once it has
+  // committed (cancellation_service, payments_service); standalone, we do.
   if (exec) return runRefund(exec, input);
-  return db.transaction((tx) => runRefund(tx, input));
+  const result = await db.transaction((tx) => runRefund(tx, input));
+  // Standalone = Circls refunding from the admin portal (routes/
+  // admin_refunds.ts, the only standalone caller; partners refund through a
+  // cancellation). The cancellation and capture flows tell the customer
+  // themselves, after their own transactions commit.
+  await onBookingRefunded(input.bookingId, {
+    amountPaise: input.amountPaise,
+    status: result.status,
+    refundPaymentId: result.paymentId,
+    reason: { kind: 'manual' },
+  });
+  return result;
 }
 
 async function runRefund(tx: RefundExec, input: IssueRefundInput): Promise<IssueRefundResult> {
