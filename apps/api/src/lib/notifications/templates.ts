@@ -88,6 +88,15 @@ const TEMPLATES: Record<string, TemplateDef> = {
     // email: the designed template in ./email_designs/consumer.ts.
   },
 
+  // SMS only: the organiser called the whole event off. The booking itself
+  // stays confirmed until the organiser refunds it, so this doesn't say the
+  // booking was cancelled. (The email is booking.cancelled in event mode.)
+  'booking.event_cancelled': {
+    sms: {
+      body: 'Circls: {{itemName}} on {{when}} has been cancelled by the organiser. Your refund comes from them. Ref {{bookingId}}.',
+    },
+  },
+
   // Rescheduling moves court slots; no design yet, so the email is plain text.
   'booking.rescheduled': {
     sms: {

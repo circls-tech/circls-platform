@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatWhen, toBullets } from '../lib/notifications/email_format.js';
-import { bookingSummary, type BookingNotifyContext } from './notification_payloads.js';
+import { formatMoney, formatWhen, sumByCurrency, toBullets, toNumber } from '../lib/notifications/email_format.js';
+import { bookingSummary, cancelledPayload, type BookingNotifyContext } from './notification_payloads.js';
 
 const base: BookingNotifyContext = {
   bookingId: 'b-1',
@@ -28,6 +28,7 @@ const base: BookingNotifyContext = {
   currency: 'INR',
   totalPaise: 120000,
   eventName: null,
+  eventCancelled: false,
   eventWhere: null,
   tickets: null,
   membershipName: null,
@@ -127,5 +128,33 @@ describe('toBullets (a reviewer’s reject reason → "What to fix")', () => {
     expect(toBullets('The address is wrong.')).toEqual(['The address is wrong.']);
     expect(toBullets(' ; ;')).toEqual([]);
     expect(toBullets(undefined)).toEqual([]);
+  });
+});
+
+describe('cancelledPayload with no date', () => {
+  it('says "Date TBA" in the subject instead of today’s date, and leaves "on …" out of the text', () => {
+    const p = cancelledPayload(
+      { ...base, itemType: 'event', eventName: 'Pop-up', startAt: null, whenText: 'your booked time' },
+      { mode: 'venue' },
+    );
+    expect(p['shortDate']).toBe('Date TBA');
+    expect(p['preheader']).toBe('Pop-up is cancelled.');
+  });
+});
+
+describe('toNumber / sumByCurrency', () => {
+  it('reads Postgres numeric strings and totals per currency, sorted', () => {
+    expect(toNumber('2450000')).toBe(2450000);
+    expect(toNumber(null)).toBe(0);
+    expect(toNumber('n/a')).toBe(0);
+    const rows = [
+      { c: 'USD', m: 100 },
+      { c: 'INR', m: 500 },
+      { c: 'INR', m: 250 },
+    ];
+    expect(sumByCurrency(rows, (r) => r.c, (r) => r.m)).toEqual([
+      { currency: 'INR', minor: 750 },
+      { currency: 'USD', minor: 100 },
+    ]);
   });
 });

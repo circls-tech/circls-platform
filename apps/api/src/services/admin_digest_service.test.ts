@@ -9,7 +9,7 @@ vi.hoisted(() => {
 });
 
 import { closeDb, db, pingDb } from '../db/client.js';
-import { bookings, notifications, tenants, venues } from '../db/schema/index.js';
+import { auditLog, bookings, notifications, tenants, venues } from '../db/schema/index.js';
 import { __resetNotificationsForTesting } from '../lib/notifications/index.js';
 import {
   DIGEST_TEMPLATE_KEY,
@@ -72,13 +72,13 @@ describe('renderDigest (pure)', () => {
     const text = renderDigest(stats);
     expect(text).toContain('Circls daily summary — Mon, 19 Oct 2026 (IST)');
     expect(text).toContain('New bookings: 12 (event 3 · membership 1 · slot 8)');
-    expect(text).toContain('Confirmed value: INR 24,500.00 · USD 120.00');
+    expect(text).toContain('Confirmed value: ₹24,500 · $120');
     expect(text).toContain('Cancellations during the day: 2');
-    expect(text).toContain('Captured charges: 9 · INR 23,000.00');
-    expect(text).toContain('Refunds: 1 · INR 500.00');
+    expect(text).toContain('Captured charges: 9 · ₹23,000');
+    expect(text).toContain('Refunds: 1 · ₹500');
     expect(text).toContain('New customer accounts: 7');
     expect(text).toContain('Awaiting review: venues 2 · arenas 1 · events 3 · memberships 0');
-    expect(text).toContain('Payouts awaiting transfer: 2 · INR 18,000.00');
+    expect(text).toContain('Payouts awaiting transfer: 2 · ₹18,000');
     expect(text).toContain('1. Tigers Arena — 5');
     expect(text).toContain('2. Lions Court — 3');
   });
@@ -152,6 +152,7 @@ describe.skipIf(!runIntegration)('sendAdminDailyDigest (integration)', () => {
   afterAll(async () => {
     await db.execute(sql`delete from notifications where template_key = ${DIGEST_TEMPLATE_KEY} and payload->>'windowStart' = ${windowStart}`);
     await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from venues where id = ${venueId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
@@ -170,6 +171,35 @@ describe.skipIf(!runIntegration)('sendAdminDailyDigest (integration)', () => {
     // The shared DB may hold busier venues; ours must at least be counted.
     const mine = stats.topVenues.find((v) => v.name === venueName);
     if (mine) expect(mine.bookings).toBe(2);
+  });
+
+  it('counts bookings cancelled during the day from the audit log, not the row', async () => {
+    const window = digestWindow(fakeNow);
+    const before = (await collectDigestStats(window)).bookings.cancelledInWindow;
+    const cancelled = (status: 'cancelled') => ({
+      tenantId,
+      venueId,
+      itemType: 'slot' as const,
+      channel: 'circls' as const,
+      paymentMethod: 'razorpay_route' as const,
+      status,
+      totalPaise: 1000,
+      currency: 'INR',
+    });
+    const [today, lastWeek, cart] = await db
+      .insert(bookings)
+      .values([cancelled('cancelled'), cancelled('cancelled'), cancelled('cancelled')])
+      .returning({ id: bookings.id });
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await db.insert(auditLog).values([
+      { tenantId, action: 'booking.cancelled', entityType: 'booking', entityId: today!.id },
+      // Cancelled a week ago; its row was touched today (updated_at), which
+      // must not count it again.
+      { tenantId, action: 'booking.cancelled', entityType: 'booking', entityId: lastWeek!.id, createdAt: weekAgo },
+      // An unpaid cart the sweep dropped isn't a cancellation.
+      { tenantId, action: 'booking.abandoned_cart_cancelled', entityType: 'booking', entityId: cart!.id },
+    ]);
+    expect((await collectDigestStats(window)).bookings.cancelledInWindow).toBe(before + 1);
   });
 
   it('sends once per window and skips a repeat run', async () => {

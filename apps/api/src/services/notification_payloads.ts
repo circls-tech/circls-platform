@@ -23,16 +23,14 @@ import {
   shortName,
   shortRef,
   toBullets,
+  toNumber,
 } from '../lib/notifications/email_format.js';
 
 type Row = Record<string, unknown>;
 type DetailRow = { label: string; value: string; mono?: boolean };
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
-const num = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
-};
+const num = toNumber;
 const date = (v: unknown): Date | null => (v ? new Date(String(v)) : null);
 const trimSlash = (u: string): string => u.replace(/\/+$/, '');
 const consumerUrl = (): string => trimSlash(env.CONSUMER_BASE_URL);
@@ -108,6 +106,8 @@ export interface BookingNotifyContext {
   totalPaise: number;
   eventId: string | null;
   eventName: string | null;
+  /** The event itself was called off (its ticket holders were already told). */
+  eventCancelled: boolean;
   /** Where an event happens: its venue's name, else its own address. */
   eventWhere: string | null;
   eventCapacity: number | null;
@@ -157,6 +157,7 @@ export async function loadBookingContext(bookingId: string): Promise<BookingNoti
            ab_fallback.name           as fallback_arena_name,
            e.id                       as event_id,
            e.name                     as event_name,
+           e.status                   as event_status,
            e.starts_at                as event_starts_at,
            e.ends_at                  as event_ends_at,
            e.capacity                 as event_capacity,
@@ -295,6 +296,7 @@ export async function loadBookingContext(bookingId: string): Promise<BookingNoti
     totalPaise: num(r['total_paise']),
     eventId: str(r['event_id']),
     eventName: str(r['event_name']),
+    eventCancelled: str(r['event_status']) === 'cancelled',
     eventWhere: str(r['event_where']),
     eventCapacity: r['event_capacity'] == null ? null : num(r['event_capacity']),
     tickets,
@@ -369,16 +371,22 @@ interface BookingDisplay {
   /** The big line at the top of the card. */
   heroLabel: string;
   heroValue: string;
-  /** "Sat 4 Oct" — for subjects. */
+  /** "Sat 4 Oct" — for subjects; "Date TBA" when the booking has no date yet
+   *  (the designs' subjects always show one). */
   shortDate: string;
+  /** "on Sat 4 Oct", or "" when there is no date — for running text. */
+  onDate: string;
   /** What-was-booked rows (no reference, no money). */
   itemRows: DetailRow[];
   /** One line naming the item, for partner emails and previews. */
   listingName: string;
 }
 
+const NO_DATE = 'Date TBA';
+
 function bookingDisplay(ctx: BookingNotifyContext): BookingDisplay {
   const day = ctx.startAt ? formatDay(ctx.startAt, ctx.tz) : '';
+  const dated = (d: string) => ({ shortDate: d || NO_DATE, onDate: d ? `on ${d}` : '' });
   if (ctx.itemType === 'event') {
     const name = ctx.eventName ?? 'your event';
     const rows: DetailRow[] = [{ label: 'Event', value: name }];
@@ -389,7 +397,7 @@ function bookingDisplay(ctx: BookingNotifyContext): BookingDisplay {
       itemNoun: 'spot',
       heroLabel: 'When',
       heroValue: ctx.startAt ? formatWhen(ctx.startAt, null, ctx.tz) : 'Date to be announced',
-      shortDate: day,
+      ...dated(day),
       itemRows: rows,
       listingName: name,
     };
@@ -403,7 +411,7 @@ function bookingDisplay(ctx: BookingNotifyContext): BookingDisplay {
       itemNoun: 'membership',
       heroLabel: 'Valid until',
       heroValue: ctx.membershipEndsAt ? formatDayWithYear(ctx.membershipEndsAt, ctx.tz) : 'See your booking',
-      shortDate: ctx.membershipStartsAt ? formatDay(ctx.membershipStartsAt, ctx.tz) : day,
+      ...dated(ctx.membershipStartsAt ? formatDay(ctx.membershipStartsAt, ctx.tz) : day),
       itemRows: rows,
       listingName: plan,
     };
@@ -415,7 +423,7 @@ function bookingDisplay(ctx: BookingNotifyContext): BookingDisplay {
     itemNoun: 'slot',
     heroLabel: 'When',
     heroValue: ctx.whenText,
-    shortDate: day,
+    ...dated(day),
     itemRows: rows,
     listingName: [ctx.venueName, ctx.arenaName].filter(Boolean).join(' · '),
   };
@@ -536,8 +544,8 @@ export function cancelledPayload(
   const preheader = refundText
     ? `${refundText} is on its way back to you.`
     : opts.mode === 'event' && paidOnline
-      ? `${d.placeName} on ${d.shortDate} is off. We’ll email you about your refund.`
-      : `${d.placeName}${d.shortDate ? ` on ${d.shortDate}` : ''} is cancelled.`;
+      ? `${[d.placeName, d.onDate].filter(Boolean).join(' ')} is off. We’ll email you about your refund.`
+      : `${[d.placeName, d.onDate].filter(Boolean).join(' ')} is cancelled.`;
 
   return {
     ...basePayload(ctx),
@@ -548,7 +556,7 @@ export function cancelledPayload(
     orgName,
     placeName: d.placeName,
     subjectName: d.placeName,
-    shortDate: d.shortDate || formatDay(new Date(), ctx.tz),
+    shortDate: d.shortDate,
     heroValue,
     rows: [...d.itemRows, refRow(ctx)],
     ...(refundText ? { refundText } : {}),
@@ -564,7 +572,10 @@ export type RefundReason =
   | { kind: 'cancellation'; bySelf: boolean }
   | { kind: 'late_capture' }
   | { kind: 'duplicate' }
-  | { kind: 'manual' };
+  /** Issued from the admin portal: a refund by Circls, not the organiser. */
+  | { kind: 'manual' }
+  /** The organiser refunding a booking for an event they called off. */
+  | { kind: 'event_cancelled' };
 
 /** booking.refunded — to the customer. */
 export function refundedPayload(
@@ -589,7 +600,9 @@ export function refundedPayload(
       case 'duplicate':
         return 'Duplicate payment';
       case 'manual':
-        return `Refund from ${ctx.tenantName || 'the venue'}`;
+        return 'Refund from Circls';
+      case 'event_cancelled':
+        return `Event cancelled by ${ctx.tenantName || 'the organizer'}`;
     }
   })();
 

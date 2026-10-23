@@ -171,7 +171,7 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
     expect(rows.map((r) => r.channel).sort()).toEqual(['email', 'sms']);
     const email = rows.find((r) => r.channel === 'email')!;
     expect(email.payload).toMatchObject({ amount: '₹250', amountText: '₹250', firstName: 'Ravi' });
-    expect(email.payload['rows']).toContainEqual({ label: 'Reason', value: 'Refund from Admin Alert Co' });
+    expect(email.payload['rows']).toContainEqual({ label: 'Reason', value: 'Refund from Circls' });
     // ₹250 of a ₹750 booking: the partial note explains it.
     expect(String(email.payload['partialNote'])).toContain('₹250 of the ₹750');
 
@@ -193,6 +193,19 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
       placeName: 'Alert Arena',
       refundText: '₹750',
     });
+  });
+
+  it('a refunded cancellation is one message: the cancellation, with the amount', async () => {
+    const bookingId = await insertBooking('circls', 'Nisha');
+    await notifyBookingCancelled(bookingId, {
+      mode: 'customer',
+      refundPaise: 60000,
+      refund: { amountPaise: 60000, status: 'processed', reason: { kind: 'cancellation', bySelf: true } },
+    });
+    const cancelled = await rowsFor('booking.cancelled', sql`payload->>'bookingId' = ${bookingId}`);
+    expect(cancelled.map((r) => r.channel).sort()).toEqual(['email', 'sms']);
+    expect(cancelled.find((r) => r.channel === 'email')!.payload).toMatchObject({ byCustomer: true, refundText: '₹600' });
+    expect(await rowsFor('booking.refunded', sql`payload->>'bookingId' = ${bookingId}`)).toHaveLength(0);
   });
 
   it('notifyListingSubmitted alerts every admin address with the org, listing and queue', async () => {

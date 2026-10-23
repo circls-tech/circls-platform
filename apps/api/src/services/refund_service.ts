@@ -219,8 +219,9 @@ export async function issueRefund(
   // committed (cancellation_service, payments_service); standalone, we do.
   if (exec) return runRefund(exec, input);
   const result = await db.transaction((tx) => runRefund(tx, input));
-  // Standalone = a partner or Circls refunding money on its own (no
-  // cancellation); the cancellation and capture flows tell the customer
+  // Standalone = Circls refunding from the admin portal (routes/
+  // admin_refunds.ts, the only standalone caller; partners refund through a
+  // cancellation). The cancellation and capture flows tell the customer
   // themselves, after their own transactions commit.
   await onBookingRefunded(input.bookingId, {
     amountPaise: input.amountPaise,

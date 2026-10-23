@@ -30,6 +30,12 @@ export interface DispatchInput {
   payload?: Record<string, unknown> | undefined;
   /** Defer dispatch to a future time (e.g. T-24h reminders). */
   scheduledFor?: Date | null | undefined;
+  /**
+   * Write the row but leave sending to the worker (it drains due rows every
+   * minute). For fan-outs that would otherwise hold up a request, e.g.
+   * telling every ticket holder that an event was cancelled.
+   */
+  queue?: boolean | undefined;
 }
 
 export interface DispatchResult {
@@ -65,8 +71,8 @@ class DefaultDispatcher implements NotificationsAdapter {
     const [inserted] = await db.insert(notifications).values(row).returning();
     if (!inserted) throw new Error('notifications_insert_failed');
 
-    // If scheduledFor is in the future, leave it pending for the worker.
-    if (input.scheduledFor && input.scheduledFor > new Date()) {
+    // Queued, or scheduled for later: leave it pending for the worker.
+    if (input.queue || (input.scheduledFor && input.scheduledFor > new Date())) {
       return { notificationId: inserted.id, status: 'pending' };
     }
 

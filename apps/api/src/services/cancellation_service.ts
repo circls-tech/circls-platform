@@ -38,7 +38,7 @@ import {
   sumPriorRefunds,
 } from './refund_service.js';
 import { revokeQrTicketsForBooking } from './qr_ticket_service.js';
-import { onBookingCancelled, onBookingRefunded } from './notification_hooks.js';
+import { onBookingCancelled } from './notification_hooks.js';
 
 export interface CancelInput {
   bookingId: string;
@@ -310,18 +310,23 @@ export async function cancelPaidBooking(input: CancelInput): Promise<CancelResul
     }),
   );
 
-  // The customer hears about the cancellation, then the money, once committed.
+  // One message once committed: the cancellation, carrying the refund amount.
+  // (A booking for an event already called off gets the refund receipt
+  // instead — see notifyBookingCancelled.)
+  const refunded = result.refundId !== undefined && refundStatus !== undefined && refundStatus !== 'failed';
   await onBookingCancelled(input.bookingId, {
     mode: input.bySelf ? 'customer' : 'venue',
-    refundPaise: result.refundId !== undefined && refundStatus !== 'failed' ? result.refundPaise : 0,
+    refundPaise: refunded ? result.refundPaise : 0,
+    ...(refunded
+      ? {
+          refund: {
+            amountPaise: result.refundPaise,
+            status: refundStatus!,
+            refundPaymentId: result.refundId,
+            reason: { kind: 'cancellation' as const, bySelf: input.bySelf },
+          },
+        }
+      : {}),
   });
-  if (result.refundId !== undefined && refundStatus !== undefined) {
-    await onBookingRefunded(input.bookingId, {
-      amountPaise: result.refundPaise,
-      status: refundStatus,
-      refundPaymentId: result.refundId,
-      reason: { kind: 'cancellation', bySelf: input.bySelf },
-    });
-  }
   return result;
 }

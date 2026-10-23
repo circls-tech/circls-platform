@@ -12,7 +12,7 @@ import {
 } from '../db/schema/index.js';
 import { __resetNotificationsForTesting } from '../lib/notifications/index.js';
 import { formatWhen } from '../lib/notifications/email_format.js';
-import { notifyBookingConfirmed } from './notification_service.js';
+import { notifyBookingCancelled, notifyBookingConfirmed, notifyEventCancelled } from './notification_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
@@ -116,5 +116,47 @@ describe.skipIf(!runIntegration)('event booking confirmation (integration)', () 
     // The event's own start time now drives the SMS reminders too.
     const reminders = rows.filter((r) => r.templateKey.startsWith('booking.reminder_'));
     expect(reminders.length).toBeGreaterThan(0);
+  });
+
+  it('an event called off queues its holders’ messages; refunding one later sends only the receipt', async () => {
+    const [b] = await db
+      .insert(bookings)
+      .values({
+        tenantId,
+        venueId,
+        itemType: 'event',
+        itemData: { eventId, eventName: 'Coffee Tasting' },
+        channel: 'circls',
+        paymentMethod: 'razorpay_route',
+        status: 'confirmed',
+        customerName: 'Priya Rao',
+        customerContactJson: { phone: '+919999900003', email: 'priya@example.com' },
+        totalPaise: 50000,
+      })
+      .returning();
+    const bookingId = b!.id;
+    const forBooking = async () =>
+      db.select().from(notifications).where(sql`tenant_id = ${tenantId} and payload->>'bookingId' = ${bookingId}`);
+
+    await db.update(events).set({ status: 'cancelled' }).where(sql`id = ${eventId}`);
+    expect(await notifyEventCancelled(eventId)).toBeGreaterThanOrEqual(1);
+    const told = await forBooking();
+    // Queued for the worker, not sent inside the organiser's request.
+    expect(told.map((r) => `${r.channel}:${r.templateKey}:${r.status}`).sort()).toEqual([
+      'email:booking.cancelled:pending',
+      'sms:booking.event_cancelled:pending',
+    ]);
+
+    // The organiser refunds the registration: no second "cancelled" message.
+    await notifyBookingCancelled(bookingId, {
+      mode: 'venue',
+      refundPaise: 50000,
+      refund: { amountPaise: 50000, status: 'processed', reason: { kind: 'cancellation', bySelf: false } },
+    });
+    const after = await forBooking();
+    expect(after.filter((r) => r.templateKey === 'booking.cancelled')).toHaveLength(1);
+    const receipt = after.find((r) => r.channel === 'email' && r.templateKey === 'booking.refunded');
+    expect(receipt).toBeDefined();
+    expect(receipt!.payload['rows']).toContainEqual({ label: 'Reason', value: 'Event cancelled by Tan Coffee Co' });
   });
 });

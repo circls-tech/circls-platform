@@ -34,7 +34,7 @@ For every booking made through circls the customer is emailed (and sent an SMS w
 
 - **Booking confirmed** — what they booked, when, and what they paid.
 - **Booking cancelled** — when they cancel, or your team cancels it from the portal. The email says who cancelled, and the refund amount if one was issued with the cancellation.
-- **Refund** — a receipt for every refund, with the amount, the reason and when to expect it. A refund issued with a cancellation sends this as well as the cancellation email.
+- **Refund** — a receipt with the amount, the reason and when to expect it, for money sent back without a cancellation (for example a refund from the circls team). When a cancellation comes with a refund, the cancellation email carries the amount instead, so the customer gets one email, not two. The exception is a registration for an event you'd already cancelled: refunding it sends just the receipt, since they were told about the cancellation then.
 - **Booking moved** — when your team reschedules a court booking.
 
 **Cancelling an event** emails everyone holding a ticket for it (or for any date of a cancelled series). Their bookings are not cancelled or refunded automatically: the email tells them the refund comes from your organisation, so refund each registration from the event's registrations (or the booking's refund page).

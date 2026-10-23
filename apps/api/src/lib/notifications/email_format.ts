@@ -20,6 +20,25 @@ export function formatMoney(minor: number, currency = 'INR'): string {
   }
 }
 
+/** A DB number (Postgres sends bigint/sum() as strings) as a JS number; 0 if not one. */
+export function toNumber(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Totals per currency, sorted by currency code — the input formatMoneyList takes. */
+export function sumByCurrency<T>(
+  items: readonly T[],
+  currency: (item: T) => string,
+  minor: (item: T) => number,
+): Array<{ currency: string; minor: number }> {
+  const acc = new Map<string, number>();
+  for (const it of items) acc.set(currency(it), (acc.get(currency(it)) ?? 0) + minor(it));
+  return [...acc.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([c, m]) => ({ currency: c, minor: m }));
+}
+
 /** Sum of several currencies: "₹1,84,350 · $1,200". */
 export function formatMoneyList(list: Array<{ currency: string; minor: number }>): string {
   if (list.length === 0) return formatMoney(0);

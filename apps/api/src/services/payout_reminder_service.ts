@@ -18,6 +18,8 @@ import {
   formatMoney,
   formatMoneyList,
   plural,
+  sumByCurrency as sumPerCurrency,
+  toNumber as num,
 } from '../lib/notifications/email_format.js';
 import { notifyAdminTeam } from './notification_service.js';
 
@@ -37,10 +39,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TZ = 'Asia/Kolkata';
 
 type Row = Record<string, unknown>;
-const num = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
-};
 
 interface PendingPayout {
   tenantName: string;
@@ -88,13 +86,8 @@ async function loadPendingPayouts(): Promise<PendingPayout[]> {
   }));
 }
 
-function sumByCurrency(items: PendingPayout[], pick: (p: PendingPayout) => number) {
-  const acc = new Map<string, number>();
-  for (const p of items) acc.set(p.currency, (acc.get(p.currency) ?? 0) + pick(p));
-  return [...acc.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([currency, minor]) => ({ currency, minor }));
-}
+const sumByCurrency = (items: PendingPayout[], pick: (p: PendingPayout) => number) =>
+  sumPerCurrency(items, (p) => p.currency, pick);
 
 /** The template variables for a reminder (exported for tests). */
 export function payoutReminderPayload(

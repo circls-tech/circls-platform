@@ -349,6 +349,16 @@ export interface BookingCancelledOptions {
   mode?: CancellationMode;
   /** Refund issued with the cancellation, minor units. */
   refundPaise?: number;
+  /** Leave sending to the worker (see DispatchInput.queue). */
+  queue?: boolean;
+  /**
+   * The refund issued with the cancellation. Normally the cancellation
+   * message already carries the amount (`refundPaise`), so there is no
+   * separate receipt — one message per cancellation. The exception: a booking
+   * for an event that was already called off, whose holder was told then; it
+   * gets just the refund receipt now.
+   */
+  refund?: BookingRefundedInput;
 }
 
 /** Called after a cancellation commits. Tells the customer (SMS + email); the
@@ -363,10 +373,20 @@ export async function notifyBookingCancelled(
     return;
   }
   await skipPendingReminders(bookingId, 'booking cancelled');
+  // The organiser cancelled the whole event earlier, and this booking's holder
+  // got that message then. Refunding it now is the follow-through, not news:
+  // a refund receipt only, and nothing when no money moves.
+  if (ctx.eventCancelled && opts.mode !== 'event') {
+    if (opts.refund) {
+      await sendRefundReceipt(ctx, { ...opts.refund, reason: { kind: 'event_cancelled' } });
+    }
+    return;
+  }
   const common = {
     tenantId: ctx.tenantId,
     userId: ctx.customerUserId,
     payload: basePayload(ctx),
+    queue: opts.queue,
   };
 
   if (ctx.phone) {
@@ -374,7 +394,9 @@ export async function notifyBookingCancelled(
       ...common,
       channel: 'sms' as NotificationChannel,
       recipient: ctx.phone,
-      templateKey: 'booking.cancelled',
+      // An event called off leaves the booking confirmed (the organiser
+      // refunds it), so its text says the event is off, not the booking.
+      templateKey: opts.mode === 'event' ? 'booking.event_cancelled' : 'booking.cancelled',
     });
   }
   if (ctx.email) {
@@ -395,7 +417,9 @@ export async function notifyBookingCancelled(
  * Called after an event (or an occurrence of a series) is cancelled. Every
  * customer still holding a confirmed booking for it hears about it. The
  * bookings themselves are not cancelled or refunded here — that stays the
- * organizer's call — so the email says the refund comes from them.
+ * organizer's call — so the email says the refund comes from them. The
+ * messages are queued for the worker rather than sent here, so cancelling a
+ * big event doesn't hold up the organiser's request.
  */
 export async function notifyEventCancelled(eventId: string): Promise<number> {
   const rows = (await db.execute<Record<string, unknown>>(sql`
@@ -405,7 +429,7 @@ export async function notifyEventCancelled(eventId: string): Promise<number> {
        and item_data->>'eventId' = ${eventId}
   `)) as unknown as Array<{ id: string }>;
   for (const r of rows) {
-    await notifyBookingCancelled(r.id, { mode: 'event' });
+    await notifyBookingCancelled(r.id, { mode: 'event', queue: true });
   }
   return rows.length;
 }
@@ -429,6 +453,12 @@ export async function notifyBookingRefunded(bookingId: string, refund: BookingRe
     logger.warn({ bookingId }, 'notify_booking_refunded_missing');
     return;
   }
+  await sendRefundReceipt(ctx, refund);
+}
+
+/** The refund receipt (SMS + email) for an already loaded booking. */
+async function sendRefundReceipt(ctx: BookingNotifyContext, refund: BookingRefundedInput): Promise<void> {
+  if (refund.status === 'failed') return;
   const payload = refundedPayload(ctx, refund);
   const common = { tenantId: ctx.tenantId, userId: ctx.customerUserId, payload };
   if (ctx.phone) {

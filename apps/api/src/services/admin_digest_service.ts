@@ -20,6 +20,7 @@ import { db } from '../db/client.js';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { notifyAdminTeam } from './notification_service.js';
+import { formatMoneyList, sumByCurrency, toNumber as num } from '../lib/notifications/email_format.js';
 
 export const DIGEST_TEMPLATE_KEY = 'admin.daily_digest' as const;
 
@@ -95,21 +96,11 @@ export interface DigestStats {
 
 type Row = Record<string, unknown>;
 
-function num(v: unknown): number {
-  // Postgres returns bigint/sum() as strings through the driver.
-  const n = typeof v === 'number' ? v : Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
+const byCurrency = (rows: Row[], minor: (r: Row) => number = (r) => num(r['total'])): MoneyByCurrency[] =>
+  sumByCurrency(rows, (r) => String(r['currency']), minor);
 
-function addMoney(acc: Map<string, number>, currency: string, minor: number): void {
-  acc.set(currency, (acc.get(currency) ?? 0) + minor);
-}
-
-function moneyList(acc: Map<string, number>): MoneyByCurrency[] {
-  return [...acc.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([currency, minor]) => ({ currency, minor }));
-}
+/** Sum of the grouped rows' `n` counts. */
+const count = (rows: Row[]): number => rows.reduce((n, r) => n + num(r['n']), 0);
 
 export async function collectDigestStats(window: DigestWindow): Promise<DigestStats> {
   const start = window.start.toISOString();
@@ -127,7 +118,6 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
 
   const byItemType: Record<string, number> = {};
   const byStatus: Record<string, number> = {};
-  const confirmedValue = new Map<string, number>();
   let total = 0;
   for (const r of bookingRows) {
     const n = num(r['n']);
@@ -136,17 +126,21 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
     total += n;
     byItemType[itemType] = (byItemType[itemType] ?? 0) + n;
     byStatus[status] = (byStatus[status] ?? 0) + n;
-    if (status === 'confirmed' || status === 'completed') {
-      addMoney(confirmedValue, String(r['currency']), num(r['total']));
-    }
   }
+  const confirmedValue = byCurrency(
+    bookingRows.filter((r) => r['status'] === 'confirmed' || r['status'] === 'completed'),
+  );
 
+  // When a booking was cancelled is in the audit log, not on the row (its
+  // updated_at moves on any later change, e.g. a refund). Unpaid carts the
+  // sweep drops (booking.abandoned_cart_cancelled) aren't cancellations.
   const [cancelledRow] = (await db.execute<Row>(sql`
-    select count(*)::int as n
-      from bookings
-     where status = 'cancelled'
-       and updated_at >= ${start}::timestamptz
-       and updated_at <  ${end}::timestamptz
+    select count(distinct entity_id)::int as n
+      from audit_log
+     where entity_type = 'booking'
+       and action in ('booking.cancelled', 'booking.cancel')
+       and created_at >= ${start}::timestamptz
+       and created_at <  ${end}::timestamptz
   `)) as unknown as Row[];
 
   const paymentRows = (await db.execute<Row>(sql`
@@ -159,29 +153,15 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
      group by kind, status, currency
   `)) as unknown as Row[];
 
-  let capturedCharges = 0;
-  let refunds = 0;
-  let failedCharges = 0;
-  const capturedValue = new Map<string, number>();
-  const refundedValue = new Map<string, number>();
-  for (const r of paymentRows) {
-    const kind = String(r['kind']);
-    const status = String(r['status']);
-    const n = num(r['n']);
-    const currency = String(r['currency']);
-    if (kind === 'charge') {
-      if (status === 'captured' || status === 'refunded' || status === 'partially_refunded') {
-        capturedCharges += n;
-        addMoney(capturedValue, currency, num(r['total']));
-      } else if (status === 'failed') {
-        failedCharges += n;
-      }
-    } else if (kind === 'refund') {
-      refunds += n;
-      // Refund rows carry a negative amount; report the money that went back.
-      addMoney(refundedValue, currency, Math.abs(num(r['total'])));
-    }
-  }
+  const captured = paymentRows.filter(
+    (r) => r['kind'] === 'charge' && ['captured', 'refunded', 'partially_refunded'].includes(String(r['status'])),
+  );
+  const refundRows = paymentRows.filter((r) => r['kind'] === 'refund');
+  const capturedCharges = count(captured);
+  const refunds = count(refundRows);
+  const failedCharges = count(paymentRows.filter((r) => r['kind'] === 'charge' && r['status'] === 'failed'));
+  const capturedValue = byCurrency(captured);
+  const refundedValue = byCurrency(refundRows, (r) => Math.abs(num(r['total'])));
 
   const [growthRow] = (await db.execute<Row>(sql`
     select (select count(*)::int from users
@@ -207,12 +187,8 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
      where status <> 'paid'
      group by currency
   `)) as unknown as Row[];
-  const payoutsValue = new Map<string, number>();
-  let payoutsCount = 0;
-  for (const r of payoutRows) {
-    payoutsCount += num(r['n']);
-    addMoney(payoutsValue, String(r['currency']), num(r['total']));
-  }
+  const payoutsCount = count(payoutRows);
+  const payoutsValue = byCurrency(payoutRows);
 
   const [failedNotifRow] = (await db.execute<Row>(sql`
     select count(*)::int as n
@@ -240,14 +216,14 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
       total,
       byItemType,
       byStatus,
-      confirmedValue: moneyList(confirmedValue),
+      confirmedValue,
       cancelledInWindow: num(cancelledRow?.['n']),
     },
     payments: {
       capturedCharges,
-      capturedValue: moneyList(capturedValue),
+      capturedValue,
       refunds,
-      refundedValue: moneyList(refundedValue),
+      refundedValue,
       failedCharges,
     },
     growth: {
@@ -260,7 +236,7 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
       events: num(reviewRow?.['events']),
       memberships: num(reviewRow?.['memberships']),
     },
-    payoutsPending: { count: payoutsCount, value: moneyList(payoutsValue) },
+    payoutsPending: { count: payoutsCount, value: payoutsValue },
     failedNotifications: num(failedNotifRow?.['n']),
     topVenues: topVenueRows.map((r) => ({ name: String(r['name']), bookings: num(r['n']) })),
   };
@@ -268,17 +244,9 @@ export async function collectDigestStats(window: DigestWindow): Promise<DigestSt
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
+/** "₹24,500 · $120", like the other admin emails; "—" for nothing. */
 function formatMoney(list: MoneyByCurrency[]): string {
-  if (list.length === 0) return '—';
-  return list
-    .map(
-      ({ currency, minor }) =>
-        `${currency} ${(minor / 100).toLocaleString('en-IN', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`,
-    )
-    .join(' · ');
+  return list.length === 0 ? '—' : formatMoneyList(list);
 }
 
 function formatCounts(counts: Record<string, number>): string {
