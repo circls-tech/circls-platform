@@ -781,31 +781,19 @@ export function listingApprovedPayload(l: ListingDetail, now: Date = new Date())
   };
 }
 
-/** listing.rejected — to the org. A rejected listing stays rejected (it can't
- *  be edited back into review), so the way forward is to list it again. */
+/** listing.rejected — to the org. The partner fixes the listing in place and
+ *  presses Submit again on its page, which sends it back to review. */
 export function listingRejectedPayload(
   l: ListingDetail,
   reason: string | undefined,
   now: Date = new Date(),
 ): Record<string, unknown> {
   const fixes = toBullets(reason);
-  let ctaUrl: string;
-  let ctaLabel: string;
-  let nextStep: string;
-  if (l.type === 'event') {
-    ctaUrl = `${partnersUrl()}/events/new?from=${l.id}`;
-    ctaLabel = 'Duplicate & resubmit';
-    nextStep = 'Duplicate it with the fixes and submit — it’s usually reviewed within 24 hours.';
-  } else {
-    ctaUrl =
-      l.type === 'arena' && l.venueId
-        ? `${partnersUrl()}/venues/${l.venueId}`
-        : l.type === 'membership'
-          ? `${partnersUrl()}/memberships/new`
-          : `${partnersUrl()}/venues`;
-    ctaLabel = 'Add it again';
-    nextStep = 'A rejected listing can’t be edited — add it again with the fixes and it goes back to review, usually within 24 hours.';
-  }
+  // The listing's own page carries the reason, Edit and Submit again (an
+  // arena's is its reception page, with the "Fix this arena" card).
+  const ctaUrl = partnerListingUrl(l);
+  const ctaLabel = 'Edit & resubmit';
+  const nextStep = 'Make the fixes on the listing and press Submit again — it’s usually reviewed within 24 hours.';
   const preheader =
     fixes.length > 0
       ? `${fixes.length === 1 ? 'One quick fix' : `${fixes.length} quick fixes`} and your ${l.type} can go live.`

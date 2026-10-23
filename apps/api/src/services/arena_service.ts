@@ -111,7 +111,7 @@ export async function updateArenaDetails(
  * (A new arena starts in review, so rejected is the only state to send from.)
  */
 export async function submitArenaForReview(ctx: AuditCtx, arenaId: string): Promise<Arena> {
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(arenas).where(eq(arenas.id, arenaId)).limit(1).for('update');
     if (!existing) throw new NotFound('Arena not found', 'arena_not_found');
     if (existing.status !== 'rejected') {
@@ -121,6 +121,8 @@ export async function submitArenaForReview(ctx: AuditCtx, arenaId: string): Prom
     }
     return submitForReview(tx, ctx, 'arena', arenaId, 'rejected', []);
   });
+  await onListingSubmitted('arena', arenaId);
+  return submitted;
 }
 
 /**

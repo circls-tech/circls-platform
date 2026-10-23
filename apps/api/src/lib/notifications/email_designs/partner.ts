@@ -174,9 +174,9 @@ export const listingRejected: EmailDesign = {
       'Add a meeting point so attendees know where to show up.',
       'Refund policy is missing — pick one in Ticketing settings.',
     ],
-    ctaUrl: 'https://partners.circls.app/events/new?from=0193a2b4-0000-7000-8000-000000055120',
-    ctaLabel: 'Duplicate & resubmit',
-    nextStep: 'Duplicate it with the fixes and submit — it’s usually reviewed within 24 hours.',
+    ctaUrl: 'https://partners.circls.app/events/0193a2b4-0000-7000-8000-000000055120',
+    ctaLabel: 'Edit & resubmit',
+    nextStep: 'Make the fixes on the listing and press Submit again — it’s usually reviewed within 24 hours.',
     canReply: true,
   },
 };
