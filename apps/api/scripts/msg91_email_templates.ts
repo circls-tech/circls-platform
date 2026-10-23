@@ -4,9 +4,11 @@
  *   pnpm --filter @circls/api email:msg91-templates list
  *       Each design's MSG91 slug and whether MSG91 has it (and its status).
  *   pnpm --filter @circls/api email:msg91-templates create
- *       Create every missing template (name, slug, subject, HTML body); MSG91
- *       then reviews them. Existing slugs are left alone — MSG91 has no update
- *       API, so edit those in the dashboard (or `export` and paste).
+ *       Create every missing template (name, subject, HTML body); MSG91 then
+ *       reviews them. MSG91 derives each slug from the name (see
+ *       msg91SlugFromName), which is why each design's name and msg91Slug
+ *       must agree. Existing slugs are left alone — MSG91 has no update API,
+ *       so edit those in the dashboard (or `export` and paste).
  *   pnpm --filter @circls/api email:msg91-templates export <dir>
  *       Write <slug>.html + <slug>.subject.txt per template, for pasting into
  *       the dashboard's HTML (source) editor by hand.
@@ -49,12 +51,12 @@ function authKey(): string {
 interface Msg91Template {
   slug?: string;
   name?: string;
-  status_id?: number;
-  status?: string;
+  /** Newest first; review status lives on the version (1 pending, 2 approved, 5 rejected). */
+  versions?: Array<{ status_id?: number; mail_type_id?: number }>;
 }
 
 async function existing(): Promise<Map<string, Msg91Template>> {
-  const res = await fetch(`${API}?per_page=100&page=1`, {
+  const res = await fetch(`${API}?per_page=100&page=1&with=versions`, {
     headers: { authkey: authKey(), accept: 'application/json' },
   });
   const text = await res.text();
@@ -65,6 +67,7 @@ async function existing(): Promise<Map<string, Msg91Template>> {
 }
 
 const STATUS: Record<number, string> = { 1: 'pending', 2: 'approved', 5: 'rejected' };
+const MAIL_TYPE: Record<number, string> = { 1: 'transactional', 2: 'notification', 3: 'promotional' };
 
 const [command = 'list', arg] = process.argv.slice(2);
 
@@ -81,8 +84,11 @@ if (command === 'export') {
   const have = await existing();
   for (const d of designs) {
     const t = have.get(d.msg91Slug!);
-    const state = t ? (STATUS[t.status_id ?? 0] ?? t.status ?? 'present') : 'missing';
-    process.stdout.write(`${state.padEnd(9)} ${d.msg91Slug!.padEnd(32)} ${d.key}\n`);
+    const v = t?.versions?.[0];
+    const state = t ? (STATUS[v?.status_id ?? 0] ?? 'present') : 'missing';
+    // MSG91 decides the mail type itself; transactional is what these are.
+    const type = v?.mail_type_id ? (MAIL_TYPE[v.mail_type_id] ?? String(v.mail_type_id)) : '';
+    process.stdout.write(`${state.padEnd(9)} ${type.padEnd(14)} ${d.msg91Slug!.padEnd(32)} ${d.key}\n`);
   }
 } else if (command === 'create') {
   const have = await existing();
@@ -104,6 +110,14 @@ if (command === 'export') {
       // non-JSON: rely on the status code
     }
     process.stdout.write(`${hasError ? 'FAILED ' : 'created'}  ${d.msg91Slug}${hasError ? `  ${text.slice(0, 300)}` : ''}\n`);
+  }
+  // MSG91 derives the slug from the name rather than taking ours; check it
+  // came out as the slug the app sends.
+  const after = await existing();
+  for (const d of designs) {
+    if (!after.has(d.msg91Slug!)) {
+      process.stdout.write(`WARNING  no template with slug ${d.msg91Slug} — map the one MSG91 made with MSG91_EMAIL_TEMPLATES=${d.key}=<its slug>\n`);
+    }
   }
   process.stdout.write('MSG91 reviews new templates; check with `list`, then switch approved ones on with MSG91_EMAIL_DESIGNS.\n');
 } else {

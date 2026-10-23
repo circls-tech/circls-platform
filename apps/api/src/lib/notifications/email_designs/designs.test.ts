@@ -72,6 +72,13 @@ describe('design content', () => {
     expect(out.html).toContain('&lt;script&gt;');
   });
 
+  it('each MSG91 slug is the one MSG91 derives from the design name', async () => {
+    const { msg91SlugFromName } = await import('./index.js');
+    for (const d of EMAIL_DESIGNS.filter((x) => x.msg91Slug)) {
+      expect(d.msg91Slug).toBe(msg91SlugFromName(d.name));
+    }
+  });
+
   it('every MSG91 slug is unique and admin designs have none', () => {
     const slugs = EMAIL_DESIGNS.flatMap((d) => (d.msg91Slug ? [d.msg91Slug] : []));
     expect(new Set(slugs).size).toBe(slugs.length);
@@ -109,11 +116,11 @@ describe('msg91TemplateId — a design uses its own template only once switched 
 
   it('switches on per key, or all at once', async () => {
     let m = await load({ MSG91_EMAIL_DESIGNS: ['booking.confirmed'] });
-    expect(m.msg91TemplateId('booking.confirmed')).toBe('circls-booking-confirmed');
+    expect(m.msg91TemplateId('booking.confirmed')).toBe('circls_booking_confirmed');
     expect(m.msg91TemplateId('listing.approved')).toBeUndefined();
     vi.resetModules();
     m = await load({ MSG91_EMAIL_DESIGNS: ['all'] });
-    expect(m.msg91TemplateId('listing.approved')).toBe('circls-listing-approved');
+    expect(m.msg91TemplateId('listing.approved')).toBe('circls_partner_listing_approved');
     // Admin designs never have an MSG91 template of their own.
     expect(m.msg91TemplateId('admin.org_signup')).toBeUndefined();
   });

@@ -116,6 +116,19 @@ export function emailTemplateExists(templateKey: string): boolean {
 }
 
 /**
+ * The slug MSG91 gives a template created through its API: it ignores the
+ * slug sent and derives one from the name ("Circls · Booking confirmed" →
+ * "circls_booking_confirmed"). Each design's `msg91Slug` must equal this for
+ * its `name` (a test keeps them in step).
+ */
+export function msg91SlugFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
  * MSG91 template id for an email, when it has its own switched-on template:
  * the MSG91_EMAIL_TEMPLATES mapping for the key, else the design's slug if
  * MSG91_EMAIL_DESIGNS lists the key (or "all"). Undefined ⇒ send through the
