@@ -59,12 +59,21 @@ Preview every design with sample data:
    pnpm --filter @circls/api email:msg91-templates create
    pnpm --filter @circls/api email:msg91-templates list
    ```
-   `list` shows each one as `pending`, `approved` or `rejected`. MSG91 has no
-   update API: to change a template later, `export <dir>` and paste the HTML
-   into the dashboard's source editor (the left pane — the rich editor
-   mangles pasted code). If a template ends up with a different slug, map it
-   with `MSG91_EMAIL_TEMPLATES=booking.confirmed=that-slug`.
-5. **Switch approved designs on** — `MSG91_EMAIL_DESIGNS=all`, or a list of
+   `list` shows each template's newest version (`pending`, `approved` or
+   `rejected`) and which version is active. MSG91 names the slug after the
+   template's name, so keep each design's name and `msg91Slug` in step (a
+   test checks). If a template ends up with another slug, map it with
+   `MSG91_EMAIL_TEMPLATES=booking.confirmed=that-slug`.
+5. **Changing a design later** — never create a new template; add a version
+   to the existing one, so the slug (and the code) stay the same:
+   ```bash
+   pnpm --filter @circls/api email:msg91-templates update booking.confirmed
+   ```
+   The new version is pending review and inactive; the previous one keeps
+   sending until the new one is approved and active. (Or `export <dir>` and
+   paste into the dashboard's source editor — the left pane; the rich editor
+   mangles pasted code.)
+6. **Switch approved designs on** — `MSG91_EMAIL_DESIGNS=all`, or a list of
    keys as they're approved, e.g.
    `booking.confirmed,booking.cancelled,booking.refunded`. Redeploy.
 

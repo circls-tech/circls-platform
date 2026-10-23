@@ -2,13 +2,21 @@
  * Manage the designed emails' templates in MSG91.
  *
  *   pnpm --filter @circls/api email:msg91-templates list
- *       Each design's MSG91 slug and whether MSG91 has it (and its status).
+ *       Each design's MSG91 slug, its newest version's review status, and
+ *       which version is active (the one MSG91 sends).
  *   pnpm --filter @circls/api email:msg91-templates create
  *       Create every missing template (name, subject, HTML body); MSG91 then
  *       reviews them. MSG91 derives each slug from the name (see
  *       msg91SlugFromName), which is why each design's name and msg91Slug
- *       must agree. Existing slugs are left alone — MSG91 has no update API,
- *       so edit those in the dashboard (or `export` and paste).
+ *       must agree. Existing templates are left alone.
+ *   pnpm --filter @circls/api email:msg91-templates update [key…]
+ *       After changing a design: add its current subject + HTML as a new
+ *       version of the existing template (same slug, so no code or env
+ *       change). The new version is pending review and inactive; the
+ *       previous one keeps sending until the new one is approved and active.
+ *       With keys, only those designs; without, every design whose template
+ *       exists. (POST /api/v5/email/template-versions — not in MSG91's docs,
+ *       but it is what the dashboard's "new version" uses.)
  *   pnpm --filter @circls/api email:msg91-templates export <dir>
  *       Write <slug>.html + <slug>.subject.txt per template, for pasting into
  *       the dashboard's HTML (source) editor by hand.
@@ -49,10 +57,11 @@ function authKey(): string {
 }
 
 interface Msg91Template {
+  id?: number;
   slug?: string;
   name?: string;
   /** Newest first; review status lives on the version (1 pending, 2 approved, 5 rejected). */
-  versions?: Array<{ status_id?: number; mail_type_id?: number }>;
+  versions?: Array<{ name?: string; status_id?: number; mail_type_id?: number; is_active?: boolean }>;
 }
 
 async function existing(): Promise<Map<string, Msg91Template>> {
@@ -85,11 +94,44 @@ if (command === 'export') {
   for (const d of designs) {
     const t = have.get(d.msg91Slug!);
     const v = t?.versions?.[0];
-    const state = t ? (STATUS[v?.status_id ?? 0] ?? 'present') : 'missing';
+    const state = t ? `${v?.name ?? '?'} ${STATUS[v?.status_id ?? 0] ?? 'present'}` : 'missing';
+    const active = t?.versions?.find((x) => x.is_active)?.name ?? (t ? 'none' : '');
     // MSG91 decides the mail type itself; transactional is what these are.
     const type = v?.mail_type_id ? (MAIL_TYPE[v.mail_type_id] ?? String(v.mail_type_id)) : '';
-    process.stdout.write(`${state.padEnd(9)} ${type.padEnd(14)} ${d.msg91Slug!.padEnd(32)} ${d.key}\n`);
+    process.stdout.write(
+      `${state.padEnd(14)} active:${active.padEnd(6)} ${type.padEnd(14)} ${d.msg91Slug!.padEnd(36)} ${d.key}\n`,
+    );
   }
+} else if (command === 'update') {
+  const only = process.argv.slice(3);
+  const have = await existing();
+  for (const d of designs.filter((x) => only.length === 0 || only.includes(x.key))) {
+    const t = have.get(d.msg91Slug!);
+    if (!t?.id) {
+      process.stdout.write(`missing  ${d.msg91Slug} — run \`create\` first\n`);
+      continue;
+    }
+    const res = await fetch('https://control.msg91.com/api/v5/email/template-versions', {
+      method: 'POST',
+      headers: { authkey: authKey(), accept: 'application/json', 'content-type': 'application/json' },
+      // A version may not carry a name: MSG91 numbers it (v1.1, v1.2, …).
+      body: JSON.stringify({ template_id: t.id, subject: msg91Subject(d.subject), body: d.html }),
+    });
+    const text = await res.text();
+    let version = '';
+    let hasError = !res.ok;
+    try {
+      const j = JSON.parse(text) as { hasError?: boolean; data?: { name?: string } };
+      hasError ||= Boolean(j.hasError);
+      version = j.data?.name ?? '';
+    } catch {
+      // non-JSON: rely on the status code
+    }
+    process.stdout.write(
+      hasError ? `FAILED   ${d.msg91Slug}  ${text.slice(0, 300)}\n` : `updated  ${d.msg91Slug} → ${version} (pending review)\n`,
+    );
+  }
+  process.stdout.write('The previous version keeps sending until the new one is approved and active; check with `list`.\n');
 } else if (command === 'create') {
   const have = await existing();
   for (const d of designs) {
@@ -121,6 +163,6 @@ if (command === 'export') {
   }
   process.stdout.write('MSG91 reviews new templates; check with `list`, then switch approved ones on with MSG91_EMAIL_DESIGNS.\n');
 } else {
-  process.stderr.write('usage: msg91_email_templates.ts list | create | export <dir>\n');
+  process.stderr.write('usage: msg91_email_templates.ts list | create | update [key…] | export <dir>\n');
   process.exit(2);
 }
