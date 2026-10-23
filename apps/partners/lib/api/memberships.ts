@@ -21,6 +21,19 @@ export function useMemberships(tenantId: string) {
   });
 }
 
+/**
+ * One plan's detail read — what the list leaves out: what a draft or rejected
+ * plan still lacks before review (`missing`) and why Circls rejected it
+ * (`rejection`). Pass `enabled` false to skip it for plans that have neither.
+ */
+export function useMembership(tenantId: string, membershipId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['membership', membershipId],
+    queryFn: () => apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${membershipId}`),
+    enabled: Boolean(tenantId && membershipId) && enabled,
+  });
+}
+
 /** Consumer purchases of a membership plan (partner-facing). */
 export interface AddMemberInput {
   name: string;
@@ -154,7 +167,8 @@ export interface CreateMembershipInput {
   qrTicketConfig?: QrTicketConfig | null;
 }
 
-/** A draft plan goes to Circls review (draft → pending_review); needs a tier. */
+/** A draft plan, or a rejected one the partner has fixed, goes to Circls
+ *  review (→ pending_review); needs a tier. */
 export function useSubmitMembership(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -195,8 +209,9 @@ export interface UpdateMembershipInput {
 }
 
 /**
- * PATCH a membership. Editable only when pending_review or inactive — the API
- * returns 409 membership_not_editable otherwise.
+ * PATCH a membership. Editable only while no buyer can see it (draft,
+ * pending_review, rejected or inactive) — the API returns 409
+ * membership_not_editable otherwise.
  */
 export function useUpdateMembership(tenantId: string) {
   const qc = useQueryClient();
@@ -206,7 +221,10 @@ export function useUpdateMembership(tenantId: string) {
         method: 'PATCH',
         body: JSON.stringify(input),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['memberships', tenantId] }),
+    onSuccess: (_m, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['memberships', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['membership', id] });
+    },
   });
 }
 

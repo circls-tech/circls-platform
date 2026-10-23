@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
-import { submitDraftForReview } from './draft_review.js';
+import { isSubmittable, submitDraftForReview } from './draft_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
@@ -231,9 +231,10 @@ export async function updateVenue(
  * or a double click can't overwrite the stashed status with `suspended`.
  */
 /**
- * Send a draft venue to Circls review: draft → pending_review. A venue needs
- * only its name to be reviewed (the address and photos can follow while it
- * waits, as they always could), so there is nothing else to check here.
+ * Send a venue to Circls review: draft → pending_review, or rejected →
+ * pending_review once the partner has fixed what Circls asked for. A venue
+ * needs only its name to be reviewed (the address and photos can follow while
+ * it waits, as they always could), so there is nothing else to check here.
  */
 export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Promise<Venue> {
   return db.transaction(async (tx) => {
@@ -244,12 +245,12 @@ export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Prom
       .limit(1)
       .for('update');
     if (!existing) throw new NotFound('Venue not found', 'venue_not_found');
-    if (existing.status !== 'draft') {
-      throw new Conflict('Only a draft venue can be submitted for review', 'venue_not_draft', {
+    if (!isSubmittable(existing.status)) {
+      throw new Conflict('Only a draft or rejected venue can be submitted for review', 'venue_not_draft', {
         status: existing.status,
       });
     }
-    return submitDraftForReview(tx, ctx, 'venue', venueId, []);
+    return submitDraftForReview(tx, ctx, 'venue', venueId, existing.status, []);
   });
 }
 
@@ -288,7 +289,8 @@ export async function closeVenue(ctx: AuditCtx, venueId: string): Promise<Venue>
  *
  * A venue that was live comes straight back live. One closed while awaiting
  * review returns to review, and a rejected one stays rejected — reopening must
- * never be a way round Circls review. A venue closed before the prior status
+ * never be a way round Circls review (a rejected venue goes back through
+ * {@link submitVenueForReview} instead). A venue closed before the prior status
  * was recorded has nothing to restore, so it goes back to review: the one
  * outcome that can't publish something Circls hasn't approved.
  */

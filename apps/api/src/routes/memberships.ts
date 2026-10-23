@@ -238,7 +238,8 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     return removeMembershipCover(tenantId, id);
   });
 
-  // ── POST .../memberships/:id/submit — a draft goes to Circls review ───────
+  // ── POST .../memberships/:id/submit — a draft, or a rejected plan the
+  // partner has fixed, goes to Circls review ──────────────────────────────
   app.post('/v1/tenants/:tenantId/memberships/:id/submit', { preHandler: requireAuth }, async (req) => {
     const { tenantId, id } = req.params as { tenantId: string; id: string };
     const user = await currentUser(req);

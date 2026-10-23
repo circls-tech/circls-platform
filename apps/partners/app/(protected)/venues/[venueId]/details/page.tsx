@@ -2,6 +2,7 @@
 import { useParams, useSearchParams } from 'next/navigation';
 import { VenueImages } from '@/components/VenueImages';
 import { VenueDetailsForm } from '@/components/VenueDetailsForm';
+import { RejectionNotice } from '@/components/RejectionNotice';
 import { useVenue } from '@/lib/api/queries';
 import { useCan } from '@/lib/use_can';
 import { BackLink, StatusPill } from '@/lib/ui';
@@ -34,6 +35,10 @@ export default function VenueDetailsPage() {
           />
           <span className="text-sm text-slate-500">Details and photos</span>
         </div>
+      )}
+      {/* Fixing a rejected venue happens here; Submit again is on the venue page. */}
+      {venue?.status === 'rejected' && (
+        <RejectionNotice rejection={venue.rejection} noun="venue" canWrite={canEditVenue} />
       )}
       {venue && <VenueDetailsForm venue={venue} />}
       <VenueImages venueId={venueId} readOnly={!canEditVenue} />

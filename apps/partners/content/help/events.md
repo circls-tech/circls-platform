@@ -55,7 +55,7 @@ Open **Advanced settings** under the weekly options to fine-tune individual date
 
 ### Managing a series
 
-Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts) or cancelled on their own pages.
+Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts, or after a rejection) or cancelled on their own pages.
 
 Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery. Reordering photos or adjusting a crop therefore changes what every date in the series shows.
 
@@ -85,7 +85,7 @@ Unlike most settings, this limit stays editable **after the event goes live** (s
 
 ### Tiers are frozen once submitted
 
-Ticket tiers can only be added or edited freely while the event is a **draft**. Once you submit the event for review, tiers are locked alongside the rest of the event details. After the event is published, tier **capacity increases** stay free (see **Live settings** below), and any other tier change — names, prices, adding or removing tiers — goes through a **change request** that the circls team approves first (see **Requesting changes to a live event**).
+Ticket tiers can only be added or edited freely while the event is a **draft** (or **rejected**, while you fix it). Once you submit the event for review, tiers are locked alongside the rest of the event details. After the event is published, tier **capacity increases** stay free (see **Live settings** below), and any other tier change — names, prices, adding or removing tiers — goes through a **change request** that the circls team approves first (see **Requesting changes to a live event**).
 
 ### Live settings (editable after publish)
 
@@ -193,7 +193,7 @@ passes customers already hold are never changed.
 | **pending_review** | Submitted and awaiting the circls team's approval. |
 | **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
-| **rejected** | Not approved. Read-only. |
+| **rejected** | Circls asked for changes. Editable like a draft — fix it and **Submit again**. Not visible to consumers. |
 | **completed** | Ended by you. The event has stopped selling. Read-only, but reopenable while its end time is still ahead. |
 
 ## Previewing as a customer
@@ -211,9 +211,10 @@ Open an event to see its detail page. What you can do depends on its status:
 - **Draft** — click **Edit** to change any field (name, description, start/end — the dates may stay empty until you have them). You can also add, edit, or remove ticket tiers. The page says what is **still needed** before review: a start and end, a venue or address, and at least one ticket tier. Once nothing is missing, click **Submit for review**: the customer-site preview opens so you can check the page, and you confirm the submission from there. **Cancel** drops the event.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
 - **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers.
-- **Cancelled**, **rejected** or **ended** — read-only.
+- **Rejected** — Circls asked for changes, and the page shows their reason (when they gave one) above the details. The event is editable exactly like a draft: click **Edit**, fix what was asked (any field, tiers and questions included), save, then click **Submit again** — the customer-site preview opens first, and you confirm from there. It goes back to **pending review** and into the Circls review queue, marked as a resubmission; customers don't see it until Circls approves it. For a recurring event, a rejection covers every date, and **Submit all dates again** under **Series dates** sends them all back together. You don't need to duplicate a rejected event.
+- **Cancelled** or **ended** — read-only.
 
-The lifecycle is: *draft → submit for review → published* (or *rejected*), with *cancel* available along the way and *end* available once it's live.
+The lifecycle is: *draft → submit for review → published* (or *rejected → fix → submit again*), with *cancel* available along the way and *end* available once it's live.
 
 ## Ending an event
 

@@ -41,7 +41,7 @@ If you leave the form before pressing either button — **Back**, a link, a relo
 | **pending_review** | Awaiting the circls team's approval before it can be sold. | Edit. |
 | **active** | Approved and on sale. | View buyers; **Deactivate**. |
 | **inactive** | Taken off sale by you. Existing members keep their access until it expires. | Edit; **Activate** to put it back on sale; view buyers. |
-| **rejected** | Not approved. Read-only. | — |
+| **rejected** | Circls asked for changes. Not on sale. | Edit; **Submit again** to send it back for review. |
 
 ## Previewing as a customer
 
@@ -51,7 +51,11 @@ Preview is available to every member of your organisation, including Staff and R
 
 ## Editing a plan
 
-Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is **pending review** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate. Existing members keep the tier they bought even if you later change or remove it.
+Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is a **draft**, **pending review**, **rejected** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate.
+
+### Fixing a rejected plan
+
+If Circls rejects a plan, its page shows **Circls asked for changes** with the reviewer's reason (when they gave one). You don't need to create the plan again: click **Edit**, change what was asked, save, then click **Submit again** beside the plan's status — the customer-site preview opens first, and you confirm from there. The plan goes back to **pending review** and into the Circls review queue, marked as a resubmission; it isn't on sale until Circls approves it. Fixing and resubmitting is for Owners and Managers. Existing members keep the tier they bought even if you later change or remove it.
 
 ### Artwork
 

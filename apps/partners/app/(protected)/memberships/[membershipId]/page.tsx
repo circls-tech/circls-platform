@@ -8,7 +8,7 @@ import {
   useActivateMembership,
   useDeactivateMembership,
   useMemberships,
-  useUpdateMembership, useSubmitMembership, } from '@/lib/api/memberships';
+  useUpdateMembership, useSubmitMembership, useMembership, } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { type CurrencyCode, formatMoney, useVenueCurrencies } from '@/lib/currency';
 import type { Membership } from '@/lib/api/types';
@@ -19,6 +19,7 @@ import { MembershipArtwork } from '@/components/MembershipArtwork';
 import { MembershipMembers } from '@/components/MembershipMembers';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
+import { RejectionNotice } from '@/components/RejectionNotice';
 import {
   MembershipPlanFields,
   planDraftFrom,
@@ -53,6 +54,10 @@ export default function MembershipDetailPage() {
   // so a dedicated read would cost a round trip to save nothing.
   const { data: memberships, isLoading } = useMemberships(tenantId);
   const membership = memberships?.find((m) => m.id === membershipId) ?? null;
+  // A draft or rejected plan is on its way to review: the detail read adds
+  // what it still lacks and, once rejected, what Circls asked to change.
+  const fixable = membership?.status === 'draft' || membership?.status === 'rejected';
+  const { data: detail } = useMembership(tenantId, membershipId, fixable);
 
   const { data: venues } = useVenues(tenantId);
   const { currencyFor } = useVenueCurrencies();
@@ -108,10 +113,14 @@ export default function MembershipDetailPage() {
   // Circls reviews a plan before it goes live, so a live one can't be edited
   // freely; deactivate it first.
   const editable =
-    membership.status === 'draft' || membership.status === 'pending_review' || membership.status === 'inactive';
-  // What the API says a draft still lacks before review (the same list it
-  // would refuse submission with).
-  const stillNeeded = missingCopy(membership.status === 'draft' ? membership.missing : []);
+    membership.status === 'draft' ||
+    membership.status === 'pending_review' ||
+    membership.status === 'rejected' ||
+    membership.status === 'inactive';
+  const submitLabel = membership.status === 'rejected' ? 'Submit again' : 'Submit for review';
+  // What the API says a draft or rejected plan still lacks before review (the
+  // same list it would refuse submission with).
+  const stillNeeded = missingCopy(fixable ? detail?.missing : []);
   const currency = currencyFor(membership.venueId);
   const venueLabel = membership.venueId
     ? (venues?.find((v) => v.id === membership.venueId)?.name ?? 'Venue')
@@ -158,9 +167,10 @@ export default function MembershipDetailPage() {
           <Button variant="secondary" size="sm" disabled={!authed} onClick={() => setPreview('look')}>
             Preview
           </Button>
-          {/* A draft is the partner's own until they send it to review; the
+          {/* A draft is the partner's own until they send it to review, and so
+              is a plan Circls rejected until it is sent again; the
               customer-site preview opens first, with the submission inside. */}
-          {membership.status === 'draft' && canEditPlan && (
+          {fixable && canEditPlan && (
             <Button
               petal="#A7E3BF"
               size="sm"
@@ -169,7 +179,7 @@ export default function MembershipDetailPage() {
               loading={submitPlan.isPending}
               onClick={() => setPreview('submit')}
             >
-              Submit for review
+              {submitLabel}
             </Button>
           )}
           <ListingPreviewModal
@@ -181,7 +191,7 @@ export default function MembershipDetailPage() {
             {...(preview === 'submit'
               ? {
                   confirm: {
-                    label: 'Submit for review',
+                    label: submitLabel,
                     onConfirm: () => handleSubmitForReview(membership.id),
                     loading: submitPlan.isPending,
                   },
@@ -216,6 +226,10 @@ export default function MembershipDetailPage() {
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
           {err}
         </p>
+      )}
+
+      {membership.status === 'rejected' && (
+        <RejectionNotice rejection={detail?.rejection} noun="plan" canWrite={canEditPlan} />
       )}
 
       <Card
@@ -311,7 +325,7 @@ export default function MembershipDetailPage() {
                   size="sm"
                   disabled={!authed || !editable}
                   onClick={() => setEditing(true)}
-                  title={editable ? undefined : 'Only pending-review or inactive plans can be edited.'}
+                  title={editable ? undefined : 'A live plan can’t be edited — deactivate it first.'}
                 >
                   Edit
                 </Button>
