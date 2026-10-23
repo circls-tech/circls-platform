@@ -13,13 +13,16 @@
  * fallbacks for clients that ignore <link>.
  */
 
-/** Hosted copy of the logo (apps/consumer/public/email). Email clients block
- *  `data:` images, so it must be a public URL. */
-export const LOGO_URL = 'https://circls.app/email/circls-logo.png';
+/** The logo, as the consumer site already serves it (its apple-icon,
+ *  apps/consumer/app/apple-icon.png, 180×180). Email clients block `data:`
+ *  images, so it must be a public URL. */
+export const LOGO_URL = 'https://circls.app/apple-icon.png';
 
 const BRI = "font-family:'Bricolage Grotesque','Helvetica Neue',Helvetica,Arial,sans-serif;";
 const JAK = "font-family:'Plus Jakarta Sans','Helvetica Neue',Helvetica,Arial,sans-serif;";
-const MONO = "font-family:'SFMono-Regular',Menlo,Consolas,monospace;";
+// References (booking, refund, listing ids) in the body font with even-width
+// digits: a monospace stack falls back to Courier in many clients.
+const REF = 'letter-spacing:.5px;font-variant-numeric:tabular-nums;';
 const HAND = "font-family:'Caveat','Bradley Hand',cursive;";
 
 /** Pill + note-box colour pairs used by the designs. */
@@ -61,7 +64,7 @@ export function cardHero(label: string, value: string): string {
 export function cardRows(listVar = 'rows'): string {
   return (
     `{{#each ${listVar}}}<tr><td style="padding:7px 0;${JAK}font-size:15px;color:#4a4654">{{label}}</td>` +
-    `<td align="right" style="padding:7px 0;{{#if mono}}${MONO}letter-spacing:1px;{{else}}${JAK}{{/if}}font-size:15px;font-weight:600;color:#17151D">{{value}}</td></tr>{{/each}}`
+    `<td align="right" style="padding:7px 0;${JAK}{{#if mono}}${REF}{{/if}}font-size:15px;font-weight:600;color:#17151D">{{value}}</td></tr>{{/each}}`
   );
 }
 
@@ -198,7 +201,7 @@ export function emailDocument(p: EmailParts): string {
 <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #EEE5D5;border-radius:6px;overflow:hidden">
 <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${stripe}</tr></table></td></tr>
 <tr><td align="center" style="padding:40px 40px 0">
-<img src="${LOGO_URL}" width="44" height="51" alt="Circls" style="display:block;width:44px;height:51px">
+<img src="${LOGO_URL}" width="52" height="52" alt="" style="display:block;width:52px;height:52px">
 <div style="padding-top:8px;${BRI}font-size:30px;line-height:32px;font-weight:800;letter-spacing:-1px;color:#17151D">circls</div>
 </td></tr>
 <tr><td align="center" style="padding:28px 40px 0">

@@ -16,8 +16,8 @@ const { EMAIL_DESIGNS, renderDesign } = await import('../src/lib/notifications/e
 const { LOGO_URL } = await import('../src/lib/notifications/email_designs/layout.js');
 
 // The emails link to the logo on the consumer site; inline the repo's copy so
-// the preview shows it before that is deployed.
-const logoFile = fileURLToPath(new URL('../../consumer/public/email/circls-logo.png', import.meta.url));
+// the preview works offline.
+const logoFile = fileURLToPath(new URL('../../consumer/app/apple-icon.png', import.meta.url));
 const logoSrc = existsSync(logoFile)
   ? `data:image/png;base64,${readFileSync(logoFile).toString('base64')}`
   : LOGO_URL;

@@ -116,11 +116,11 @@ describe('msg91TemplateId — a design uses its own template only once switched 
 
   it('switches on per key, or all at once', async () => {
     let m = await load({ MSG91_EMAIL_DESIGNS: ['booking.confirmed'] });
-    expect(m.msg91TemplateId('booking.confirmed')).toBe('circls_booking_confirmed');
+    expect(m.msg91TemplateId('booking.confirmed')).toBe('circls_booking_confirmed_v2');
     expect(m.msg91TemplateId('listing.approved')).toBeUndefined();
     vi.resetModules();
     m = await load({ MSG91_EMAIL_DESIGNS: ['all'] });
-    expect(m.msg91TemplateId('listing.approved')).toBe('circls_partner_listing_approved');
+    expect(m.msg91TemplateId('listing.approved')).toBe('circls_partner_listing_approved_v2');
     // Admin designs never have an MSG91 template of their own.
     expect(m.msg91TemplateId('admin.org_signup')).toBeUndefined();
   });

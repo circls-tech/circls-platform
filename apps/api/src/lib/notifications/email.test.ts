@@ -274,7 +274,7 @@ describe('designed emails through MSG91', () => {
     await getEmailProvider().send(designedSend);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as { template_id: string; recipients: Array<{ variables: Record<string, unknown> }> };
-    expect(body.template_id).toBe('circls_booking_confirmed');
+    expect(body.template_id).toBe('circls_booking_confirmed_v2');
     const vars = body.recipients[0]!.variables;
     expect(vars['placeName']).toBe('Bandra Sports Club');
     expect(vars['rows']).toEqual(bookingConfirmed.sample['rows']);

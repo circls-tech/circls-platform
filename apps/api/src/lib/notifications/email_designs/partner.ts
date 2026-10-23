@@ -29,8 +29,8 @@ const PARTNER_FOOTER_LINKS = [
 
 export const partnerBookingConfirmed: EmailDesign = {
   key: 'partner.booking_confirmed',
-  name: 'Circls · Partner: new booking',
-  msg91Slug: 'circls_partner_new_booking',
+  name: 'Circls · Partner: new booking v2',
+  msg91Slug: 'circls_partner_new_booking_v2',
   subject: 'New booking: {{listingName}} — {{customerShort}}',
   html: emailDocument({
     preheader: '{{preheader}}',
@@ -83,8 +83,8 @@ export const partnerBookingConfirmed: EmailDesign = {
 
 export const listingApproved: EmailDesign = {
   key: 'listing.approved',
-  name: 'Circls · Partner: listing approved',
-  msg91Slug: 'circls_partner_listing_approved',
+  name: 'Circls · Partner: listing approved v2',
+  msg91Slug: 'circls_partner_listing_approved_v2',
   subject: 'Approved: {{subjectName}} is live',
   html: emailDocument({
     preheader: '{{preheader}}',
@@ -129,8 +129,8 @@ export const listingApproved: EmailDesign = {
 
 export const listingRejected: EmailDesign = {
   key: 'listing.rejected',
-  name: 'Circls · Partner: changes needed',
-  msg91Slug: 'circls_partner_changes_needed',
+  name: 'Circls · Partner: changes needed v2',
+  msg91Slug: 'circls_partner_changes_needed_v2',
   subject: 'Changes needed: {{subjectName}}',
   html: emailDocument({
     preheader: '{{preheader}}',

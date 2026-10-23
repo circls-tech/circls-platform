@@ -29,7 +29,7 @@ listing needs changes, and the three admin emails. The rest are plain text.
 - **Resend** (admin) and **Mailpit** get the HTML rendered by the API.
 - **MSG91** sends only through templates stored in its dashboard and renders
   them itself (Handlebars). The six customer/partner designs each have their
-  own MSG91 template, named by its slug (`circls_booking_confirmed`, …). A
+  own MSG91 template, named by its slug (`circls_booking_confirmed_v2`, …). A
   design uses its template only once **switched on** in
   `MSG91_EMAIL_DESIGNS`; until then it goes through the generic template as
   plain text, so nothing fails while a template awaits approval.
@@ -117,4 +117,4 @@ Local runs read the same names from `apps/api/.env` (gitignored).
 | Designed email arrives as plain text | Its key isn't in `MSG91_EMAIL_DESIGNS` yet. |
 | `resend_send_failed:403` / `422 …domain…` | Resend key or domain. |
 | No admin mail at all | `ADMIN_TEAM_EMAILS` unset. |
-| Images missing in a designed email | The logo is served from the consumer site (`/email/circls-logo.png`); deploy it. |
+| Logo missing in a designed email | It is the consumer site's icon, `https://circls.app/apple-icon.png`; check that URL loads (and that the mail client shows images). |
