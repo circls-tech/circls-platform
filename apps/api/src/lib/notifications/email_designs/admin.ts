@@ -31,7 +31,7 @@ export const adminListingSubmitted: EmailDesign = {
     card: cardHero('Listing', '{{listingName}}') + cardRows(),
     cta: { href: '{{reviewUrl}}', label: 'Review now', color: 'lilac' },
     footnote: '<strong style="color:#4a4654">{{queueCount}}</strong> {{#if queueOne}}item{{else}}items{{/if}} waiting in the queue &middot; oldest {{oldestAge}}',
-    signoff: 'keep the circles turning',
+    signoff: 'keep the circls turning',
     footerReason: 'Admin notification &middot; review requests.',
     footerLinks: [
       { href: '{{adminUrl}}/listings', label: 'Review queue' },
@@ -96,7 +96,7 @@ export const adminPayoutsReminder: EmailDesign = {
     cta: { href: '{{payoutsUrl}}', label: 'Review payouts', color: 'yellow' },
     footnote:
       '{{#if payoutDay}}Approved already? Ignore this — transfers are queued.{{else}}Wednesday’s reminder goes out at 9:00 AM if anything is still pending.{{/if}}',
-    signoff: 'keep the circles turning',
+    signoff: 'keep the circls turning',
     footerReason: 'Admin notification &middot; scheduled payout reminders (Tue &amp; Wed, 9:00 AM IST).',
     footerLinks: [
       { href: '{{adminUrl}}/payouts', label: 'Payouts' },

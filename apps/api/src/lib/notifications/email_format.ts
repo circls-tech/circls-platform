@@ -20,6 +20,17 @@ export function formatMoney(minor: number, currency = 'INR'): string {
   }
 }
 
+/**
+ * A date or time for an email's big hero line, with invisible zero-width
+ * non-joiners after each digit run, so mail apps' date detection (Outlook on
+ * iPhone turned "Sun 2 Nov, 6:00 AM" into a blue calendar link) no longer
+ * matches it. Reads and copies the same. Display only — never for SMS, plain
+ * text or anything parsed later.
+ */
+export function noAutoLink(s: string): string {
+  return s.replace(/(\d+)/g, '$1‌');
+}
+
 /** A DB number (Postgres sends bigint/sum() as strings) as a JS number; 0 if not one. */
 export function toNumber(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v ?? 0);

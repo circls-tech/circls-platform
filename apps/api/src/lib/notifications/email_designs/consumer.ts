@@ -116,7 +116,7 @@ export const bookingCancelled: EmailDesign = {
     boxes: refundBoxes,
     cta: { href: '{{browseUrl}}', label: 'Find something else', color: 'blue' },
     footnote: `{{#if refundText}}Track your refund anytime from ${inlineLink('{{bookingUrl}}', 'your bookings')}.{{else}}See this booking anytime in ${inlineLink('{{bookingUrl}}', 'your bookings')}.{{/if}}`,
-    signoff: 'plenty more circles out there',
+    signoff: 'plenty more circls out there',
     footerReason: 'You&rsquo;re getting this because you had a booking on Circls.',
     footerLinks: [FOOTER_HELP, { href: '{{bookingUrl}}', label: 'Your bookings' }],
   }),
