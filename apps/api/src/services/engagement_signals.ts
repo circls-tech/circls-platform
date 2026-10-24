@@ -21,7 +21,10 @@ import { sql, type SQL } from 'drizzle-orm';
  * `unavailable` / `failed` (nothing happened), or, from the mobile app,
  * `unknown` (the sheet opened but the platform could not say what the person
  * did with it). Only the first two are known to have put a link in someone's
- * hands, so only they count as shares.
+ * hands, so only they count as shares. The web app's "Invite friends" on a
+ * booking logs the same `share`, against the listing its link opens (the
+ * event, the venue for a court, the plan), with `props.from` set to `booking`
+ * or `checkout`; it counts like any other share of that listing.
  *
  * LIKES are not here: they are read from `wishlist_items`, which both clients
  * write through the wishlist API, rather than from `like` / `unlike` activity

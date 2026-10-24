@@ -26,6 +26,7 @@ import {
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
+import { InviteButton } from '@/components/InviteButton';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
@@ -384,6 +385,14 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
             <p className="text-sm text-[var(--color-text-secondary)]">
               Checking whether the organiser has a next step for you…
             </p>
+          )}
+          {/* Same rule as the redirect: nothing to invite friends to until
+              the booking is paid for. */}
+          {phase.kind === 'success' && item.invite && (
+            <div className="rounded-[var(--radius)] border-[1.5px] border-dashed border-ink/25 p-3">
+              <p className="mb-2 text-sm text-[var(--color-text-secondary)]">Bringing friends? Send them the details.</p>
+              <InviteButton invite={item.invite} from="checkout" wide />
+            </div>
           )}
           <Button onClick={onClose}>Done</Button>
         </div>

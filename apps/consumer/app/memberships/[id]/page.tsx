@@ -16,6 +16,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { currencyForCountry, formatPaise } from '@/lib/format';
 import { membershipScope } from '@/lib/trust';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { membershipInvite } from '@/lib/booking_invite';
 import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
 import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import { useItemView } from '@/lib/activity/ActivityProvider';
@@ -119,6 +120,9 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
         title: tier ? `${m.name} — ${tier.name}` : m.name,
         currency,
         ...(tier ? { membershipTierId: tier.id } : {}),
+        // A venue plan names its venue; a brand-wide plan names no place, as
+        // its booking page does.
+        invite: membershipInvite({ id: m.id, name: m.name, place: m.venueId ? m.scopeName : null }),
       },
       prefill,
     );

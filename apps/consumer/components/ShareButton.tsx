@@ -2,11 +2,11 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import type { WishlistItemType } from '@/lib/api/types';
-import { shareLink, type ShareOutcome } from '@/lib/share';
+import { listingUrl, shareLink, type ShareOutcome } from '@/lib/share';
 import { inlinePillClass, overlayChipClass } from '@/components/chips';
 
 /** The three-dots-and-lines share glyph (the Android / Material one). */
-function ShareIcon({ className = '' }: { className?: string }) {
+export function ShareIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -27,7 +27,7 @@ function ShareIcon({ className = '' }: { className?: string }) {
   );
 }
 
-function CheckIcon({ className = '' }: { className?: string }) {
+export function CheckIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -45,13 +45,6 @@ function CheckIcon({ className = '' }: { className?: string }) {
 }
 
 const NOTE_MS = 2500;
-
-/** Where each kind of listing lives on circls.app. */
-const LISTING_ROOT: Record<WishlistItemType, string> = {
-  event: '/events',
-  venue: '/venues',
-  membership: '/memberships',
-};
 
 /**
  * One tap to share a listing: the device's share sheet where there is one
@@ -111,7 +104,7 @@ export function ShareButton({
   async function onClick(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}${LISTING_ROOT[itemType]}/${itemId}`;
+    const url = listingUrl(window.location.origin, itemType, itemId);
     const result = await shareLink({ title, text, url });
     activity.log('share', { itemType, itemId, props: { outcome: result } });
     // The sheet is its own confirmation; only the quieter outcomes need a note.

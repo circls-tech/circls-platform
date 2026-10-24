@@ -8,6 +8,8 @@ import { useMyBooking } from '@/lib/api/consumer';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatDateTime, formatPaise, formatTime } from '@/lib/format';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
+import { InviteButton } from '@/components/InviteButton';
+import { inviteForBooking } from '@/lib/booking_invite';
 import { QrTicketCard } from '@/lib/QrTicketCard';
 import { Card, StatusPill } from '@/lib/ui';
 
@@ -44,6 +46,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   }, [loading, user, router, id]);
 
   const b = bookingQ.data;
+  const invite = b ? inviteForBooking(b) : null;
 
   return (
     <div className="min-h-screen">
@@ -79,6 +82,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise, b.currency)}</span>
                 </div>
               </div>
+              {invite && <InviteButton invite={invite} from="booking" className="mt-4" />}
             </Card>
 
             {/* Court (slot) booking: list each booked slot */}

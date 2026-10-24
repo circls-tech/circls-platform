@@ -1,5 +1,6 @@
 import type { CurrencyCode } from '@/lib/format';
 import type { PublicEventQuestion } from '@/lib/api/types';
+import type { BookingInvite } from '@/lib/booking_invite';
 
 export type CheckoutLine = { tierId: string; tierName: string; quantity: number; unitPricePaise: number };
 
@@ -23,6 +24,9 @@ export interface CartSlot {
 interface CheckoutItemBase {
   title: string;
   currency?: CurrencyCode;
+  /** What "Invite friends" sends from the success screen; without it there
+   *  is no invite there. */
+  invite?: BookingInvite;
 }
 
 export type CheckoutItem =
