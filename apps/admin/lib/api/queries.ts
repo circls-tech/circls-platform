@@ -220,6 +220,8 @@ export function useUpdateTenantBilling() {
       }),
     onSuccess: (_data, args) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.id] });
+      // The list shows the commission-free period.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenants'] });
     },
   });
 }
@@ -279,6 +281,8 @@ export function useUpdateEventBilling() {
       }),
     onSuccess: (_data, args) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.tenantId, 'events'] });
+      // The detail counts events charging commission, for the waiver warning.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.tenantId], exact: true });
     },
   });
 }

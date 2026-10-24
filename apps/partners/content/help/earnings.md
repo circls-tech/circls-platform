@@ -12,6 +12,20 @@ Earnings covers all three ways you sell — **events, memberships and venues** �
 
 Earnings is visible to **Owners**, **Managers** and **Read-only** members. **Staff** do not see it: they run the desk, and financial reports are not part of that. If your organisation is suspended you can still see what you are owed — suspension stops changes, not visibility.
 
+## Your commission-free period
+
+Your organisation's **first 3 months on circls are commission-free**: circls takes no commission on your sales during that time. The 3 months start on the day of your **first paid booking** — the first customer who pays online through circls. A booking you took at your desk doesn't count, and neither does a purchase that was refunded in full (such as one you made yourself to try checkout).
+
+The Earnings page shows where you are in it, at the top:
+
+- **Before your first paid booking** — a reminder that your first 3 months will be commission-free once you start selling.
+- **During the period** — the date it ends, and the date it started.
+- **After it ends** — the date it ended.
+
+**The end date is the day commission starts.** A sale made on that day or after is charged commission; a sale made the day before is not. Where circls has agreed the commission rate that applies after the period, the page states it; otherwise it is the rate in your Partner Agreement.
+
+If circls has agreed different dates with you, the page shows those instead. If the dates look wrong, tell us through **Questions**.
+
 ## Choosing a period
 
 Pick **Today**, **Last 7 days**, **Last 30 days**, **This month**, **Last month**, or **Custom** for any two dates.

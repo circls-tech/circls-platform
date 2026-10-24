@@ -2,6 +2,7 @@ import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Arena, arenas, type RolloverPlan, tenants, venues } from '../db/schema/index.js';
 import type { AuditCtx } from '../lib/audit.js';
+import { dateStrInTz } from '../lib/calendar_day.js';
 import { NotFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { applyRolloverChange, type RolloverChange } from '../lib/rollover_plan.js';
@@ -41,16 +42,6 @@ import { localMinutesToUtcIso, releaseSlots } from './slot_service.js';
 export const ROLLOVER_HORIZON_DAYS = 7;
 
 const DAY_MIN = 1440;
-
-/** 'YYYY-MM-DD' calendar date of an instant in `tz`. */
-function dateStrInTz(ms: number, tz: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(ms));
-}
 
 /**
  * PURE. The business date ('YYYY-MM-DD') that owns instant `iso` in `tz`,

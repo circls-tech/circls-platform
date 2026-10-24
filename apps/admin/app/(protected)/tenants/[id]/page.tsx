@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AuditLog } from '@/components/audit/AuditLog';
 import {
   useAdminTenantDetail,
@@ -16,8 +16,16 @@ import {
 import type {
   AdminTenantDetail,
   AdminTenantEventBillingItem,
+  CommissionWaiver,
 } from '@/lib/api/types';
 import { PARTNER_ROLE_INFO, ROLE_LABELS, formatRole, type TenantRole } from '@/lib/roles';
+import {
+  addMonths,
+  daysBetween,
+  fmtDay,
+  previewWaiver,
+  waiverSummary,
+} from '@/lib/commission_waiver';
 import { EventsTab, MembershipsTab, ShelfTabs, VenuesTab } from './listings_tabs';
 import { EarningsTab } from './earnings_tab';
 import { useAdminTenantVenues } from '@/lib/api/queries';
@@ -137,6 +145,7 @@ export default function TenantDetailPage() {
               Hidden from consumers
             </span>
           ) : null}
+          <WaiverPill data={data} />
         </div>
       </div>
 
@@ -358,6 +367,20 @@ function PctInput({
   );
 }
 
+/** Header pill: where the org is in its commission-free period. */
+function WaiverPill({ data }: { data: AdminTenantDetail }) {
+  const summary = waiverSummary(data.commissionWaiver);
+  if (!summary) return null;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${summary.tone}`}
+      title="Commission-free period"
+    >
+      Commission: {summary.label}
+    </span>
+  );
+}
+
 function BillingTab({ data }: { data: AdminTenantDetail }) {
   const t = data.tenant;
   const update = useUpdateTenantBilling();
@@ -366,11 +389,27 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
   const [customerShare, setCustomerShare] = useState(bpsToPct(t.customerFeeShareBps));
   const [orgShare, setOrgShare] = useState(bpsToPct(t.orgFeeShareBps));
   const [advance, setAdvance] = useState(bpsToPct(t.advancePayoutBps));
+  const savedStart = t.commissionWaiverStartsOn ?? '';
+  const savedEnd = t.commissionWaiverEndsOn ?? '';
+  const [waiverStart, setWaiverStart] = useState<DateField>({ value: savedStart, bad: false });
+  const [waiverEnd, setWaiverEnd] = useState<DateField>({ value: savedEnd, bad: false });
+  const [afterWaiver, setAfterWaiver] = useState(bpsToPct(t.commissionAfterWaiverBps));
 
   const customerBps = pctToBps(customerShare) ?? 0;
   const orgBps = pctToBps(orgShare) ?? 0;
   const platformSharePct = (10_000 - customerBps - orgBps) / 100;
   const splitInvalid = customerBps + orgBps > 10_000;
+  const preview = data.commissionWaiver
+    ? previewWaiver(data.commissionWaiver, waiverStart.value, waiverEnd.value)
+    : null;
+  // The same check the API makes: the end against the start the period will
+  // actually have, set or derived from the first paid booking.
+  const waiverInvalid =
+    waiverStart.bad || waiverEnd.bad
+      ? 'Finish typing the date, or click Use default.'
+      : preview?.startsOn && waiverEnd.value !== '' && waiverEnd.value < preview.startsOn
+        ? `The end date is before the start (${fmtDay(preview.startsOn)}).`
+        : null;
 
   const save = () => {
     update.mutate({
@@ -381,6 +420,12 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
         customerFeeShareBps: customerBps,
         orgFeeShareBps: orgBps,
         advancePayoutBps: pctToBps(advance) ?? 0,
+        // Dates only when edited, so saving a rate never rewrites them.
+        ...(waiverStart.value !== savedStart
+          ? { commissionWaiverStartsOn: waiverStart.value || null }
+          : {}),
+        ...(waiverEnd.value !== savedEnd ? { commissionWaiverEndsOn: waiverEnd.value || null } : {}),
+        commissionAfterWaiverBps: pctToBps(afterWaiver),
       },
     });
   };
@@ -456,11 +501,26 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
         </Card>
       </div>
 
+      {preview && (
+        <WaiverCard
+          preview={preview}
+          commissionBps={pctToBps(commission) ?? 0}
+          eventsChargingCommission={data.eventsChargingCommission ?? 0}
+          start={waiverStart}
+          onStart={setWaiverStart}
+          end={waiverEnd}
+          onEnd={setWaiverEnd}
+          after={afterWaiver}
+          onAfter={setAfterWaiver}
+          invalid={waiverInvalid}
+        />
+      )}
+
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={save}
-          disabled={update.isPending || splitInvalid}
+          disabled={update.isPending || splitInvalid || waiverInvalid !== null}
           className="rounded-md border-2 border-[#17151D] bg-brand-600 px-4 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_#17151D] hover:bg-brand-700 disabled:opacity-50"
         >
           {update.isPending ? 'Saving…' : 'Save billing settings'}
@@ -477,6 +537,161 @@ function BillingTab({ data }: { data: AdminTenantDetail }) {
 
       <EventOverridesTable tenant={t} />
     </div>
+  );
+}
+
+/** A YYYY-MM-DD value plus whether the field holds a date the browser can't
+ *  read yet (half typed): its value is then '' and must not count as cleared. */
+interface DateField {
+  value: string;
+  bad: boolean;
+}
+
+function DateInput({
+  field,
+  onChange,
+  label,
+}: {
+  field: DateField;
+  onChange: (f: DateField) => void;
+  label: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <input
+        ref={ref}
+        type="date"
+        value={field.value}
+        onChange={(e) => onChange({ value: e.target.value, bad: e.target.validity.badInput })}
+        aria-label={label}
+        className="rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
+      />
+      {(field.value !== '' || field.bad) && (
+        <button
+          type="button"
+          onClick={() => {
+            // A half-typed date already reads as '', so React would leave the
+            // partial text on screen; clear the element itself.
+            if (ref.current) ref.current.value = '';
+            onChange({ value: '', bad: false });
+          }}
+          className="whitespace-nowrap text-xs text-slate-500 underline hover:text-slate-800"
+        >
+          Use default
+        </button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The commission-free period every org was promised: its first months from
+ * its first paid booking. RECORD-ONLY — the dates don't change what a sale is
+ * charged; Partner commission above and the event overrides below do. Hence
+ * the nudges: commission charged during the period, and a period that ended
+ * with the agreed rate not applied. Everything here reads the period as the
+ * edited dates will make it (previewWaiver), not as it was last saved.
+ */
+function WaiverCard({
+  preview,
+  commissionBps,
+  eventsChargingCommission,
+  start,
+  onStart,
+  end,
+  onEnd,
+  after,
+  onAfter,
+  invalid,
+}: {
+  preview: CommissionWaiver;
+  commissionBps: number;
+  eventsChargingCommission: number;
+  start: DateField;
+  onStart: (f: DateField) => void;
+  end: DateField;
+  onEnd: (f: DateField) => void;
+  after: string;
+  onAfter: (v: string) => void;
+  invalid: string | null;
+}) {
+  const summary = waiverSummary(preview);
+  const afterBps = pctToBps(after);
+  const daysLeft =
+    preview.status === 'active' && preview.endsOn ? daysBetween(preview.today, preview.endsOn) : null;
+  const charging = preview.status === 'active' && (commissionBps > 0 || eventsChargingCommission > 0);
+
+  return (
+    <section className="rounded-lg border-2 border-[#17151D] bg-white p-4 shadow-[4px_4px_0_#17151D]">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Commission-free period
+        </h2>
+        {summary && (
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${summary.tone}`}>
+            {summary.label}
+          </span>
+        )}
+        {daysLeft !== null && (
+          <span className="text-xs text-slate-500">
+            {daysLeft} day{daysLeft === 1 ? '' : 's'} left
+          </span>
+        )}
+      </div>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm lg:grid-cols-3">
+        <div>
+          <dt className="text-xs text-slate-500">Starts on</dt>
+          <dd className="mt-1">
+            <DateInput field={start} onChange={onStart} label="Commission-free period starts on" />
+          </dd>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Default: first paid booking ({preview.firstPaidOn ? fmtDay(preview.firstPaidOn) : 'none yet'})
+          </p>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Ends on (commission starts)</dt>
+          <dd className="mt-1">
+            <DateInput field={end} onChange={onEnd} label="Commission-free period ends on" />
+          </dd>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Default: {preview.months} months after the start
+            {preview.startsOn ? ` (${fmtDay(addMonths(preview.startsOn, preview.months))})` : ''}
+          </p>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Commission after the period</dt>
+          <dd className="mt-1">
+            <PctInput value={after} onChange={onAfter} placeholder="—" label="Commission after the period %" />
+          </dd>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Shown to the partner on Earnings. Blank = not decided.
+          </p>
+        </div>
+      </dl>
+      {invalid && <p className="mt-3 text-sm text-rose-600">{invalid}</p>}
+      {charging && (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {commissionBps > 0 &&
+            `Partner commission is ${commissionBps / 100}%, so this org’s sales are charged commission during its commission-free period. `}
+          {eventsChargingCommission > 0 &&
+            `${eventsChargingCommission} in-flight event${eventsChargingCommission === 1 ? ' overrides' : 's override'} partner commission above 0%, so ${eventsChargingCommission === 1 ? 'its' : 'their'} sales are charged commission${commissionBps > 0 ? ' too' : ''}. `}
+          These dates don&rsquo;t stop it: set{' '}
+          {commissionBps > 0 && eventsChargingCommission > 0
+            ? 'Partner commission and the event overrides below'
+            : commissionBps > 0
+              ? 'Partner commission'
+              : 'the event overrides below'}{' '}
+          to 0% until {fmtDay(preview.endsOn)}.
+        </p>
+      )}
+      {preview.status === 'ended' && afterBps !== null && afterBps !== commissionBps && (
+        <p className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          The period ended on {fmtDay(preview.endsOn)}. Partner commission is still{' '}
+          {commissionBps / 100}%; the agreed rate after the period is {afterBps / 100}%.
+        </p>
+      )}
+    </section>
   );
 }
 

@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { getTenantEarnings } from '../services/earnings_service.js';
+import { getCommissionWaiver } from '../services/commission_waiver.js';
 
 /**
  * Partner-facing earnings: net payable for a window the partner chooses.
@@ -44,9 +45,21 @@ const windowSchema = z
     { message: `window must be at most ${MAX_WINDOW_DAYS} days` },
   );
 
+/** Parsed, not cast: a malformed id would otherwise reach `uuid` comparisons
+ *  in the membership check and come back as a 500. */
+const tenantParamSchema = z.object({ tenantId: z.string().uuid() });
+
+function parseTenantId(params: unknown): string {
+  const parsed = tenantParamSchema.safeParse(params);
+  if (!parsed.success) {
+    throw new BadRequest('Invalid tenant id', 'bad_request', { issues: parsed.error.issues });
+  }
+  return parsed.data.tenantId;
+}
+
 export const earningsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/tenants/:tenantId/earnings', { preHandler: requireAuth }, async (req) => {
-    const { tenantId } = req.params as { tenantId: string };
+    const tenantId = parseTenantId(req.params);
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'financials.read');
@@ -58,6 +71,19 @@ export const earningsRoutes: FastifyPluginAsync = async (app) => {
       });
     }
     return getTenantEarnings(tenantId, parsed.data.from, parsed.data.to);
+  });
+
+  /**
+   * The org's commission-free period, for the banner on Earnings. Same gate:
+   * it is about what the partner is paid. Carries the agreed after-period rate
+   * an admin chose to state, never the live commission_bps.
+   */
+  app.get('/v1/tenants/:tenantId/commission-waiver', { preHandler: requireAuth }, async (req) => {
+    const tenantId = parseTenantId(req.params);
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'financials.read');
+    return getCommissionWaiver(tenantId);
   });
 };
 
