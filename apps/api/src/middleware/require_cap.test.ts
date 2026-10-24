@@ -10,6 +10,7 @@ function ctx(overrides: Partial<TenantContext> = {}): TenantContext {
     role: 'owner',
     isPlatform: false,
     suspended: false,
+    superAdmin: false,
     termsVersion: null,
     termsAcceptedAt: null,
     ...overrides,

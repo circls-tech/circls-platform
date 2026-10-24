@@ -32,6 +32,24 @@ export function TermsGate() {
 
   if (!tenant) return null;
 
+  // Accepting binds the organisation, so a Circls super admin can't do it for them.
+  if (tenant.superAdminVisit) {
+    return (
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 py-8">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            Terms &amp; Conditions
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {tenant.name} hasn&apos;t accepted the current Partner Terms &amp; Conditions. Only its own
+            Owner or Manager can accept them — ask one of them to sign in and accept, then you can work
+            here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // The org's country on file picks its document. Only an org with none on
   // file (one that predates the Terms) chooses here.
   const fixedCountry = termsCountryFor(tenant.country);

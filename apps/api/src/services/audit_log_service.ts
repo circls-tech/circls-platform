@@ -8,6 +8,11 @@ export interface AuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  /**
+   * The actor is on the Circls team and not a member of this org: a super
+   * admin working in it, or an admin acting on it (say, reviewing a listing).
+   */
+  actorIsCircls: boolean;
   before: unknown;
   after: unknown;
   createdAt: string;
@@ -86,6 +91,18 @@ export async function listAuditLog(
       al.entity_id,
       al.actor_user_id,
       u.display_name AS actor_name,
+      (
+        al.actor_user_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM tenant_members m
+           WHERE m.tenant_id = al.tenant_id AND m.user_id = al.actor_user_id
+        )
+        AND EXISTS (
+          SELECT 1 FROM tenant_members pm
+            JOIN tenants pt ON pt.id = pm.tenant_id AND pt.is_platform
+           WHERE pm.user_id = al.actor_user_id
+        )
+      ) AS actor_is_circls,
       al.before,
       al.after,
       al.created_at
@@ -107,6 +124,7 @@ export async function listAuditLog(
     entityId: (row['entity_id'] as string | null) ?? null,
     actorUserId: (row['actor_user_id'] as string | null) ?? null,
     actorName: (row['actor_name'] as string | null) ?? null,
+    actorIsCircls: row['actor_is_circls'] === true,
     before: row['before'] ?? null,
     after: row['after'] ?? null,
     createdAt: new Date(row['created_at'] as string).toISOString(),

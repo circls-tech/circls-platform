@@ -10,6 +10,7 @@ import {
   useRemoveMember,
   useResendInvitation,
   useRevokeInvitation,
+  useSetMemberSuperAdmin,
   useTeamInvitations,
   useTeamMembers,
   useUpdateMemberProfile,
@@ -19,8 +20,11 @@ import type { TeamMember, TenantRole } from '@/lib/api/types';
 import { ROLE_INFO, ROLE_ORDER, roleCanActOn } from '@/lib/roles';
 
 export default function TeamPage() {
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
   const tenantId = activeTenantId ?? '';
+  // The Circls team: its Owners also name the super admins, who may open any
+  // partner organisation in this portal.
+  const circlsTeam = tenants.find((t) => t.id === activeTenantId)?.isPlatform ?? false;
   const { resolveTz } = useTimezone();
   const { data: me } = useMe();
   // Managing the team needs its own capabilities, and never reaches above your
@@ -58,6 +62,7 @@ export default function TeamPage() {
   const updateRole = useUpdateMemberRole(tenantId);
   const updateProfile = useUpdateMemberProfile(tenantId);
   const removeMember = useRemoveMember(tenantId);
+  const setSuperAdmin = useSetMemberSuperAdmin(tenantId);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TenantRole>('manager');
@@ -65,16 +70,23 @@ export default function TeamPage() {
   const [lastToken, setLastToken] = useState<string | null>(null);
   // Each list shows the error of its latest action: starting one clears the
   // other's, so an old failure never hides (or outlives) a newer outcome.
-  const memberError = updateRole.error ?? removeMember.error;
+  const memberError = updateRole.error ?? removeMember.error ?? setSuperAdmin.error;
   const pendingError = resendInvite.error ?? revokeInvite.error;
 
   function changeRole(userId: string, role: TenantRole) {
     removeMember.reset();
+    setSuperAdmin.reset();
     updateRole.mutate({ userId, role });
   }
   function remove(userId: string) {
     updateRole.reset();
+    setSuperAdmin.reset();
     removeMember.mutate(userId);
+  }
+  function toggleSuperAdmin(userId: string, superAdmin: boolean) {
+    updateRole.reset();
+    removeMember.reset();
+    setSuperAdmin.mutate({ userId, superAdmin });
   }
   function resend(invitationId: string) {
     revokeInvite.reset();
@@ -279,6 +291,30 @@ export default function TeamPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {circlsTeam &&
+                    (canChangeRoles ? (
+                      <label
+                        className="flex items-center gap-1 text-xs text-slate-600"
+                        title="Can open any partner organisation in this portal"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={m.superAdmin ?? false}
+                          disabled={setSuperAdmin.isPending}
+                          onChange={(e) => toggleSuperAdmin(m.userId, e.target.checked)}
+                        />
+                        Super admin
+                      </label>
+                    ) : (
+                      m.superAdmin && (
+                        <span
+                          className="rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-800"
+                          title="Can open any partner organisation in this portal"
+                        >
+                          Super admin
+                        </span>
+                      )
+                    ))}
                   {canChangeRoles && roleCanActOn(myRole, m.role) ? (
                     <select
                       value={m.role}

@@ -1,9 +1,11 @@
 'use client';
 import Link from 'next/link';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useOrg } from '@/lib/org_context';
 import { useVenues, useArenas, useArena } from '@/lib/api/queries';
+import { isSuperAdmin } from '@/lib/roles';
+import { SuperAdminOrgPicker } from './SuperAdminOrgPicker';
 
 // ── shared chevron svgs ────────────────────────────────────────────────────────
 
@@ -170,11 +172,17 @@ function OrgSwitcher({
   currentId,
   subtitle,
   onSelect,
+  visitId,
+  onOpenAny,
 }: {
   tenants: SegmentItem[];
   currentId: string | null;
   subtitle: string | null;
   onSelect: (id: string) => void;
+  /** The org a super admin has open (badged Circls). */
+  visitId: string | null;
+  /** Super admins only: open any partner org. */
+  onOpenAny: (() => void) | null;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   // A stale/unknown currentId falls back to the first org so the trigger never
@@ -214,11 +222,34 @@ function OrgSwitcher({
               >
                 <OrgInitial name={t.name} color={petalFor(i)} className="h-8 w-8 text-sm" />
                 <span className="flex-1 truncate">{t.name}</span>
+                {t.id === visitId && (
+                  <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-800">
+                    Circls
+                  </span>
+                )}
               </button>
             </li>
           ))}
         </ul>
         <div className="mx-2 my-1.5 border-t border-slate-200" />
+        {onOpenAny && (
+          <button
+            type="button"
+            onClick={() => {
+              if (detailsRef.current) detailsRef.current.open = false;
+              onOpenAny();
+            }}
+            className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+          >
+            <span
+              aria-hidden
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-slate-900 bg-violet-100 text-base font-bold text-slate-900"
+            >
+              ⌕
+            </span>
+            Open any organisation
+          </button>
+        )}
         <Link
           href="/onboarding"
           onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
@@ -277,6 +308,8 @@ export function ContextBar() {
   const router = useRouter();
   const { activeTenantId, setActiveTenantId, tenants } = useOrg();
   const { depth, venueId: paramVenueId, arenaId: paramArenaId } = useRouteDepth();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const superAdmin = isSuperAdmin(tenants);
 
   // ── Arena-level data ──────────────────────────────────────────────────────
   // Hooks must be unconditional; use enabled/null to gate fetches.
@@ -332,7 +365,10 @@ export function ContextBar() {
         currentId={activeTenantId}
         subtitle={venuesLoading ? null : `${venues.length} venue${venues.length === 1 ? '' : 's'}`}
         onSelect={handleOrgSelect}
+        visitId={tenants.find((t) => t.superAdminVisit)?.id ?? null}
+        onOpenAny={superAdmin ? () => setPickerOpen(true) : null}
       />
+      {superAdmin && <SuperAdminOrgPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />}
 
       {/* Venue segment (shown on venue + arena routes) */}
       {(depth === 'venue' || depth === 'arena') && (

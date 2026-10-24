@@ -24,6 +24,22 @@ export interface Tenant {
   termsAcceptedAt?: string | null;
   /** The signed-in user's own role here — only on /v1/me/tenants rows. */
   myRole?: TenantRole;
+  /** On the Circls org's row: the signed-in user is a Circls super admin. */
+  mySuperAdmin?: boolean;
+  /**
+   * An org the signed-in super admin opened without being a member (from
+   * POST /v1/super-admin/tenants/:id/visit): SUPER_ADMIN_CAPS, not myRole's.
+   */
+  superAdminVisit?: boolean;
+}
+
+/** A partner org a super admin can open (GET /v1/super-admin/tenants). */
+export interface SuperAdminOrgHit {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  city: string | null;
 }
 
 /** Social handles/URLs an org advertises (PR #107). All optional. */
@@ -549,6 +565,8 @@ export interface AuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  /** The actor is on the Circls team, not this org's (a super admin, or an admin). */
+  actorIsCircls?: boolean;
   before: unknown;
   after: unknown;
   /** ISO-8601 */
@@ -928,6 +946,8 @@ export interface TeamMember {
   displayName: string | null;
   phoneE164: string | null;
   role: TenantRole;
+  /** A Circls super admin (only ever true on the Circls team). */
+  superAdmin?: boolean;
   createdAt: string;
 }
 

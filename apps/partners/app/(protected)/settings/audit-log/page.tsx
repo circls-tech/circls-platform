@@ -17,6 +17,16 @@ function actionTone(action: string): 'success' | 'warning' | 'open' | 'neutral' 
   return 'neutral';
 }
 
+/**
+ * What a Circls super admin changed, for the changes that don't record
+ * themselves: the API request, e.g. "PATCH /v1/venues/:id".
+ */
+function superAdminRequest(row: AuditLogItem): string | null {
+  if (row.action !== 'tenant.super_admin_change') return null;
+  const request = (row.after as { request?: unknown } | null)?.request;
+  return typeof request === 'string' ? request : null;
+}
+
 function DiffToggle({ before, after }: { before: unknown; after: unknown }) {
   const [open, setOpen] = useState(false);
   const hasDiff = before != null || after != null;
@@ -201,9 +211,20 @@ export default function AuditLogPage() {
                     </td>
                     <td className="py-2.5 pr-4 text-slate-700">
                       {row.actorName ?? <span className="text-slate-400">—</span>}
+                      {row.actorIsCircls && (
+                        <Badge
+                          tone="support"
+                          label="Circls"
+                          className="ml-1.5"
+                          title="Circls team — not a member of this organisation"
+                        />
+                      )}
                     </td>
                     <td className="py-2.5 pr-4">
                       <Badge tone={actionTone(row.action)} label={row.action} />
+                      {superAdminRequest(row) && (
+                        <div className="mt-1 font-mono text-xs text-slate-500">{superAdminRequest(row)}</div>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4">
                       <span className="text-slate-700">{row.entityType}</span>

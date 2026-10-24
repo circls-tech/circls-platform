@@ -64,6 +64,35 @@ describe('can() — authz matrix', () => {
     expect(can(owner, 'questions.write')).toBe(false);
   });
 
+  it("a super admin in a partner org holds a Manager's caps, bar the team and API keys", () => {
+    const visit = { role: 'manager' as const, isPlatform: false, suspended: false, superAdmin: true };
+    const granted = ALL_CAPABILITIES.filter((cap) => can(visit, cap));
+    expect(granted).toEqual([
+      'tenant.read', 'tenant.update',
+      'members.read',
+      'venues.read', 'venues.write',
+      'arenas.read', 'arenas.write',
+      'schedules.read', 'schedules.write',
+      'pricing.read', 'pricing.write',
+      'bookings.read', 'bookings.create', 'bookings.cancel',
+      'analytics.read', 'financials.read',
+      'payments.refund',
+      'events.read', 'events.write',
+      'memberships.read', 'memberships.write',
+      'discounts.read', 'discounts.write',
+      'questions.read', 'questions.write',
+      'integration.read',
+    ]);
+  });
+
+  it('a super admin context grants nothing on the platform tenant, and only reads when suspended', () => {
+    const onPlatform = { role: 'manager' as const, isPlatform: true, suspended: false, superAdmin: true };
+    expect(ALL_CAPABILITIES.filter((cap) => can(onPlatform, cap))).toEqual([]);
+    const suspended = { role: 'manager' as const, isPlatform: false, suspended: true, superAdmin: true };
+    expect(can(suspended, 'events.read')).toBe(true);
+    expect(can(suspended, 'events.write')).toBe(false);
+  });
+
   it('only a partner tenant can be suspended', () => {
     expect(isSuspendedTenant({ isPlatform: false, status: 'suspended' })).toBe(true);
     expect(isSuspendedTenant({ isPlatform: false, status: 'active' })).toBe(false);

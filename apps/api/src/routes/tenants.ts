@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
+import { superAdminRefusal } from '../lib/authz/super_admin.js';
 import type { TenantSocials } from '../db/schema/index.js';
 import { BadRequest } from '../lib/errors.js';
 import { assertCap } from '../middleware/require_cap.js';
@@ -140,6 +141,9 @@ export const tenantRoutes: FastifyPluginAsync = async (app) => {
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, id);
     assertCap(ctx, 'tenant.update');
+    if (ctx.superAdmin) {
+      throw superAdminRefusal("Only the organisation's own Owner or Manager can accept its Terms");
+    }
     return acceptTenantTerms(id, user.id, parsed.data);
   });
 

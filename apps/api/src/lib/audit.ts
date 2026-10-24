@@ -1,5 +1,6 @@
 import { db } from '../db/client.js';
 import { auditLog } from '../db/schema/index.js';
+import { noteAudited } from './request_audit_context.js';
 
 export interface AuditCtx {
   tenantId: string;
@@ -31,6 +32,7 @@ export async function writeAudit(
     before: before ?? undefined,
     after: after ?? undefined,
   });
+  noteAudited(ctx.tenantId);
 }
 
 /**
@@ -58,4 +60,5 @@ export async function writeSystemAudit(
     before: before ?? undefined,
     after: after ?? undefined,
   });
+  noteAudited(ctx.tenantId);
 }
