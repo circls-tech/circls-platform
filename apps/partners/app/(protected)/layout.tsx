@@ -9,6 +9,7 @@ import { OrgProvider, useOrg } from '@/lib/org_context';
 import { useCan } from '@/lib/use_can';
 import { ContextBar } from '@/components/ContextBar';
 import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
+import { SuperAdminBanner } from '@/components/SuperAdminBanner';
 import { SuspendedBanner } from '@/components/SuspendedBanner';
 import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
@@ -189,8 +190,9 @@ const ROLE_LABELS: Record<string, string> = {
 function SidebarUserCard() {
   const { signOut } = useAuth();
   const { data: me } = useMe();
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
   const { role } = useMyRole(activeTenantId);
+  const visiting = tenants.find((t) => t.id === activeTenantId)?.superAdminVisit ?? false;
   const name = me?.displayName ?? me?.email ?? '…';
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (
@@ -204,7 +206,11 @@ function SidebarUserCard() {
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-slate-900">{name}</p>
-          {role && <p className="text-xs text-slate-500">{ROLE_LABELS[role] ?? role}</p>}
+          {visiting ? (
+            <p className="text-xs text-slate-500">Circls super admin</p>
+          ) : (
+            role && <p className="text-xs text-slate-500">{ROLE_LABELS[role] ?? role}</p>
+          )}
         </div>
       </div>
       {/* Sign out — salmon petal pill with the comic border, per the mock. */}
@@ -330,9 +336,10 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
     setSidebarOpen(false);
   }, [pathname]);
 
-  // Show org selector modal once per session when user has multiple orgs.
+  // Show org selector modal once per session when user has multiple orgs. An
+  // org a super admin opened doesn't count: they just picked it.
   useEffect(() => {
-    if (!tenants || tenants.length <= 1) return;
+    if (!tenants || tenants.filter((t) => !t.superAdminVisit).length <= 1) return;
     const alreadySelected = sessionStorage.getItem(ORG_SELECTED_KEY);
     if (!alreadySelected) {
       setShowOrgSelector(true);
@@ -369,6 +376,7 @@ function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; path
 
           <EmailVerificationBanner />
           <SuspendedBanner />
+          <SuperAdminBanner />
 
           {/* Content area */}
           <main className="flex-1 bg-[#FAF3E8] p-4 sm:p-6">

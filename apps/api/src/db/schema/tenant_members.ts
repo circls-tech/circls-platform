@@ -1,4 +1,4 @@
-import { jsonb, pgEnum, pgTable, primaryKey, uuid } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, pgEnum, pgTable, primaryKey, uuid } from 'drizzle-orm/pg-core';
 import { createdAt } from './_columns.js';
 import { tenants } from './tenants.js';
 import { users } from './users.js';
@@ -17,6 +17,12 @@ export const tenantMembers = pgTable(
       .references(() => tenants.id),
     role: tenantRole('role').notNull(),
     permissionsOverride: jsonb('permissions_override'),
+    /**
+     * A Circls super admin: may open any partner organisation in the partner
+     * portal without being its member (see requireTenantMembership). Only
+     * meaningful on the Circls platform tenant's rows; platform Owners set it.
+     */
+    superAdmin: boolean('super_admin').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.tenantId] })],

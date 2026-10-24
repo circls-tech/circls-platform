@@ -99,6 +99,14 @@ const PLATFORM_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
   staff: [],
   readonly: [],
 };
+/**
+ * A Circls super admin in an org they opened (SUPER_ADMIN_CAPS in the API):
+ * a Manager's, but not the team or API keys. Accepting the org's Terms is
+ * refused too (see TermsGate).
+ */
+const SUPER_ADMIN_ROLE_CAPS: readonly PortalCapability[] = ALL.filter(
+  (cap) => !CIRCLS_TEAM_MANAGEMENT.includes(cap) && cap !== 'integration.api_keys.manage',
+);
 
 /**
  * Whether `role` holds `cap` — on a partner organisation, or on the Circls
@@ -121,12 +129,18 @@ export function roleCan(
  * organisation keeps only the read capabilities. Mirrors can() in the API.
  */
 export function tenantCan(
-  tenant: Pick<Tenant, 'status' | 'isPlatform' | 'myRole'> | undefined,
+  tenant: Pick<Tenant, 'status' | 'isPlatform' | 'myRole' | 'superAdminVisit'> | undefined,
   cap: PortalCapability,
 ): boolean {
   if (!tenant) return false;
   if (isSuspended(tenant) && !cap.endsWith('.read')) return false;
+  if (tenant.superAdminVisit) return SUPER_ADMIN_ROLE_CAPS.includes(cap);
   return roleCan(tenant.myRole, cap, { isPlatform: tenant.isPlatform });
+}
+
+/** Whether the signed-in user is a Circls super admin (from their org list). */
+export function isSuperAdmin(tenants: readonly Tenant[] | undefined): boolean {
+  return tenants?.some((t) => t.isPlatform && t.mySuperAdmin) ?? false;
 }
 
 /**
