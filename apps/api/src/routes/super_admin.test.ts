@@ -172,7 +172,7 @@ describe.skipIf(!runIntegration)('super admins', () => {
     expect(members.map((m) => m.userId)).toEqual([userIds['owner']]);
   });
 
-  it('a super admin cannot run the team, the API keys or the Terms', async () => {
+  it('a super admin cannot run the team, API keys, settings or Terms, or read Earnings', async () => {
     const invite = await call('sadmin', 'POST', `/v1/tenants/${partnerTenantId}/invitations`, {
       email: 'friend@x.com',
       role: 'staff',
@@ -190,7 +190,13 @@ describe.skipIf(!runIntegration)('super admins', () => {
     });
     expect(errorCode(key)).toBe('forbidden_capability');
     const terms = await call('sadmin', 'POST', `/v1/tenants/${partnerTenantId}/terms/accept`, {});
-    expect(errorCode(terms)).toBe('super_admin_forbidden');
+    expect(errorCode(terms)).toBe('forbidden_capability');
+    const profile = await call('sadmin', 'PATCH', `/v1/tenants/${partnerTenantId}`, { description: 'Ours now' });
+    expect(errorCode(profile)).toBe('forbidden_capability');
+    const earnings = await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}/earnings`);
+    expect(errorCode(earnings)).toBe('forbidden_capability');
+    const waiver = await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}/commission-waiver`);
+    expect(errorCode(waiver)).toBe('forbidden_capability');
   });
 
   it("the org's audit log marks the super admin's actions as Circls", async () => {
@@ -224,16 +230,14 @@ describe.skipIf(!runIntegration)('super admins', () => {
       `)) as unknown as { actor: string; after: { request: string; params: Record<string, string> } }[];
     const before = (await changeRows()).length;
 
-    // Editing the org profile writes no audit row of its own.
-    const profile = await call('sadmin', 'PATCH', `/v1/tenants/${partnerTenantId}`, {
-      description: 'Set up with help from Circls',
-    });
-    expect(profile.statusCode).toBe(200);
+    // Adding a venue writes no audit row of its own.
+    const venue = await call('sadmin', 'POST', `/v1/tenants/${partnerTenantId}/venues`, { name: 'Side Court' });
+    expect(venue.statusCode).toBeLessThan(300);
     const after = await changeRows();
     expect(after).toHaveLength(before + 1);
     expect(after.at(-1)).toEqual({
       actor: userIds['sadmin'],
-      after: { request: 'PATCH /v1/tenants/:id', params: { id: partnerTenantId } },
+      after: { request: 'POST /v1/tenants/:tenantId/venues', params: { tenantId: partnerTenantId } },
     });
 
     // An event audits itself (event.created): no second row for it.

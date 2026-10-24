@@ -62,12 +62,18 @@ export function useMe() {
  * the gates and every page treat it like one of theirs.
  */
 export function useMyTenants() {
+  const qc = useQueryClient();
   const { user } = useAuth();
   const uid = user?.uid;
   return useQuery({
     queryKey: ['tenants', uid],
     enabled: Boolean(user),
-    queryFn: async () => withSuperAdminVisit(await apiFetch<Tenant[]>('/v1/me/tenants'), uid),
+    queryFn: async () =>
+      withSuperAdminVisit(
+        await apiFetch<Tenant[]>('/v1/me/tenants'),
+        uid,
+        qc.getQueryData<Tenant[]>(['tenants', uid]),
+      ),
   });
 }
 

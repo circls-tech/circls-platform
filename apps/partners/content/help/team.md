@@ -65,16 +65,18 @@ Circls can suspend an organisation — for example over an unpaid bill or a poli
 
 If you'd like a hand setting up — say you run the organisation on your own and want Circls to create an event you've planned together — a member of the Circls team who is a **super admin** can open your organisation in the Partner Portal with their own login. They don't need an invitation, and they don't join your team: they never appear in **Settings → Team**, and they get none of your organisation's emails.
 
-While they're in, a super admin can do what a **Manager** can — venues, arenas, schedules, pricing, events, memberships, bookings (including cancelling and refunding them), coupons, customer questions and your organisation profile — with these exceptions:
+While they're in, a super admin can do what a **Manager** can — venues, arenas, schedules, pricing, events, memberships, bookings (including cancelling and refunding them), coupons and customer questions — with these exceptions:
 
 - they can't invite anyone, or change, rename or remove members;
 - they can't create or revoke API keys or webhooks;
+- they can't see your **Earnings** page (what circls will pay you);
+- they can't change your organisation's settings: its profile (logo, description, contact details, address) and which emails circls sends you — they can only view them;
 - they can't accept the Partner Terms for you — only your own Owner or Manager can;
 - they can't delete the organisation.
 
 Everything they do goes through the same rules as your own team: a new event or venue still goes to review before customers see it, and a suspended organisation stays view-only for them too.
 
-You can always see when Circls was there: **Settings → Activity Log** records each visit (`tenant.super_admin_visited`) and every change they make, with a **Circls** label next to their name. Most changes show under their usual name (`event.created`, say); the ones your log doesn't otherwise record — editing a venue, the organisation profile, photos, schedules or prices — show as `tenant.super_admin_change`, with what was changed underneath. The same **Circls** label marks other actions the Circls team takes on your organisation, such as reviewing a listing.
+You can always see when Circls was there: **Settings → Activity Log** records each visit (`tenant.super_admin_visited`) and every change they make, with a **Circls** label next to their name. Most changes show under their usual name (`event.created`, say); the ones your log doesn't otherwise record — adding or editing a venue, photos, schedules or prices — show as `tenant.super_admin_change`, with what was changed underneath. The same **Circls** label marks other actions the Circls team takes on your organisation, such as reviewing a listing.
 
 ## Tips
 

@@ -64,18 +64,18 @@ describe('can() — authz matrix', () => {
     expect(can(owner, 'questions.write')).toBe(false);
   });
 
-  it("a super admin in a partner org holds a Manager's caps, bar the team and API keys", () => {
+  it("a super admin in a partner org holds a Manager's caps, bar the team, API keys, Earnings and settings", () => {
     const visit = { role: 'manager' as const, isPlatform: false, suspended: false, superAdmin: true };
     const granted = ALL_CAPABILITIES.filter((cap) => can(visit, cap));
     expect(granted).toEqual([
-      'tenant.read', 'tenant.update',
+      'tenant.read',
       'members.read',
       'venues.read', 'venues.write',
       'arenas.read', 'arenas.write',
       'schedules.read', 'schedules.write',
       'pricing.read', 'pricing.write',
       'bookings.read', 'bookings.create', 'bookings.cancel',
-      'analytics.read', 'financials.read',
+      'analytics.read',
       'payments.refund',
       'events.read', 'events.write',
       'memberships.read', 'memberships.write',

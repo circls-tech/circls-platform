@@ -33,8 +33,3 @@ export async function assertSuperAdmin(userId: string): Promise<void> {
     throw new Forbidden('Only Circls super admins can do this', 'super_admin_required');
   }
 }
-
-/** The refusal for what a super admin may never do for an org (e.g. accept its Terms). */
-export function superAdminRefusal(message: string): Forbidden {
-  return new Forbidden(message, 'super_admin_forbidden');
-}

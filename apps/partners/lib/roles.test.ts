@@ -56,15 +56,16 @@ describe('tenantCan', () => {
     expect(tenantCan(undefined, 'integration.read')).toBe(false);
   });
 
-  it("gives a super admin's visit a Manager's controls, bar the team and API keys", () => {
+  it("gives a super admin's visit a Manager's controls, bar the team, API keys, Earnings and settings", () => {
     const visit = (status = 'active') => ({ ...tenant('manager', status), superAdminVisit: true });
     expect(tenantCan(visit(), 'events.write')).toBe(true);
     expect(tenantCan(visit(), 'bookings.cancel')).toBe(true);
-    expect(tenantCan(visit(), 'tenant.update')).toBe(true);
+    expect(tenantCan(visit(), 'tenant.update')).toBe(false);
     expect(tenantCan(visit(), 'integration.read')).toBe(true);
     expect(tenantCan(visit(), 'members.invite')).toBe(false);
     expect(tenantCan(visit(), 'members.role_change')).toBe(false);
     expect(tenantCan(visit(), 'integration.api_keys.manage')).toBe(false);
+    expect(tenantCan(visit(), 'financials.read')).toBe(false);
     expect(tenantCan(visit('suspended'), 'events.write')).toBe(false);
   });
 });

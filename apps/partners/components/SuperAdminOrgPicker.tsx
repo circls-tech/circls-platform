@@ -52,7 +52,7 @@ export function SuperAdminOrgPicker({ open, onClose }: { open: boolean; onClose:
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-500">
           As a Circls super admin you can work in any organisation, as a Manager would, apart from its
-          team and API keys. They see your visit and every change you make in their audit log.
+          team, API keys, Earnings and settings. They see your visit and every change you make in their audit log.
         </p>
         <Input
           type="search"

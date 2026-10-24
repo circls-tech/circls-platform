@@ -101,11 +101,17 @@ const PLATFORM_ROLE_CAPS: Record<TenantRole, readonly PortalCapability[]> = {
 };
 /**
  * A Circls super admin in an org they opened (SUPER_ADMIN_CAPS in the API):
- * a Manager's, but not the team or API keys. Accepting the org's Terms is
- * refused too (see TermsGate).
+ * a Manager's, but not the team, API keys, the Earnings page or the org's
+ * settings (profile, email preferences, accepting the Terms — see TermsGate).
  */
+const SUPER_ADMIN_WITHHELD: readonly PortalCapability[] = [
+  ...CIRCLS_TEAM_MANAGEMENT,
+  'integration.api_keys.manage',
+  'financials.read',
+  'tenant.update',
+];
 const SUPER_ADMIN_ROLE_CAPS: readonly PortalCapability[] = ALL.filter(
-  (cap) => !CIRCLS_TEAM_MANAGEMENT.includes(cap) && cap !== 'integration.api_keys.manage',
+  (cap) => !SUPER_ADMIN_WITHHELD.includes(cap),
 );
 
 /**

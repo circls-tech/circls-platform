@@ -31,7 +31,7 @@ const NON_CHANGING_ROUTES = new Set([
 /**
  * Every successful change a Circls super admin makes in a partner org lands
  * in that org's Activity Log. Most changes audit themselves; for the rest
- * (venue and profile edits, photos, schedules, prices…) this writes one
+ * (venues, photos, schedules, prices…) this writes one
  * `tenant.super_admin_change` row naming the request, before the response
  * goes out.
  */

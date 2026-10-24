@@ -41,8 +41,14 @@ export function clearSuperAdminVisit(uid: string): void {
  * Loading it records the visit on that org's audit log (the API skips a
  * repeat within a few hours). A refusal — they're no longer a super admin,
  * the org is gone, or they have since joined it — drops the stored visit.
+ * Any other failure (a deploy, a network blip) keeps `cached`, the row the
+ * portal already has, so they aren't bounced out of the org mid-work.
  */
-export async function withSuperAdminVisit(mine: Tenant[], uid: string | undefined): Promise<Tenant[]> {
+export async function withSuperAdminVisit(
+  mine: Tenant[],
+  uid: string | undefined,
+  cached: Tenant[] | undefined,
+): Promise<Tenant[]> {
   if (!uid) return mine;
   const visitId = readSuperAdminVisit(uid);
   if (!visitId) return mine;
@@ -54,8 +60,11 @@ export async function withSuperAdminVisit(mine: Tenant[], uid: string | undefine
     const row = await apiFetch<Tenant>(`/v1/super-admin/tenants/${visitId}/visit`, { method: 'POST' });
     return [...mine, row];
   } catch (err) {
-    // Anything else (a network blip, a server error) keeps it for the next load.
-    if (err instanceof ApiError && VISIT_REFUSALS.includes(err.code)) clearSuperAdminVisit(uid);
-    return mine;
+    if (err instanceof ApiError && VISIT_REFUSALS.includes(err.code)) {
+      clearSuperAdminVisit(uid);
+      return mine;
+    }
+    const previous = cached?.find((t) => t.id === visitId && t.superAdminVisit);
+    return previous ? [...mine, previous] : mine;
   }
 }
