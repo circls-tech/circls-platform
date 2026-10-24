@@ -13,6 +13,7 @@
 import Handlebars from 'handlebars';
 import { env } from '../../../config/env.js';
 import { renderTemplate } from '../templates.js';
+import { stripZeroWidth } from '../email_format.js';
 import { adminListingSubmitted, adminOrgSignup, adminPayoutsReminder } from './admin.js';
 import { bookingCancelled, bookingConfirmed, bookingRefunded } from './consumer.js';
 import { listingApproved, listingRejected, partnerBookingConfirmed } from './partner.js';
@@ -89,7 +90,8 @@ export function renderDesign(design: EmailDesign, variables: Record<string, unkn
   return {
     subject: compile(`${design.key}#subject`, design.subject, false)(variables).trim(),
     html: compile(`${design.key}#html`, design.html, true)(variables),
-    text: compile(`${design.key}#text`, design.text, false)(variables),
+    // noAutoLink's zero-width characters are for the HTML only.
+    text: compile(`${design.key}#text`, design.text, false)(stripZeroWidth(variables)),
   };
 }
 

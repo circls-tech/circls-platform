@@ -13,14 +13,16 @@ import { fileURLToPath } from 'node:url';
 process.env['DATABASE_URL'] ??= 'postgres://placeholder@127.0.0.1:5432/placeholder';
 
 const { EMAIL_DESIGNS, renderDesign } = await import('../src/lib/notifications/email_designs/index.js');
-const { LOGO_URL } = await import('../src/lib/notifications/email_designs/layout.js');
+const { LOGO_URL, STRIPE_URL } = await import('../src/lib/notifications/email_designs/layout.js');
 
-// The emails link to the logo on the consumer site; inline the repo's copy so
-// the preview works offline.
-const logoFile = fileURLToPath(new URL('../../consumer/app/apple-icon.png', import.meta.url));
-const logoSrc = existsSync(logoFile)
-  ? `data:image/png;base64,${readFileSync(logoFile).toString('base64')}`
-  : LOGO_URL;
+// The emails link to the logo and stripe on the consumer site; inline the
+// repo's copies so the preview works offline and before a deploy.
+const inline = (name: string, url: string): string => {
+  const file = fileURLToPath(new URL(`../../consumer/public/${name}`, import.meta.url));
+  return existsSync(file) ? `data:image/png;base64,${readFileSync(file).toString('base64')}` : url;
+};
+const logoSrc = inline('email-logo.png', LOGO_URL);
+const stripeSrc = inline('email-stripe.png', STRIPE_URL);
 
 const out = process.argv[2] ?? 'email-previews.html';
 const shared = {
@@ -61,7 +63,7 @@ for (const d of EMAIL_DESIGNS) {
   const runs = [{ label: 'sample', vars: {} as Record<string, unknown> }, ...variants.filter((v) => v.key === d.key)];
   for (const run of runs) {
     const r = renderDesign(d, { ...shared, ...d.sample, ...run.vars });
-    r.html = r.html.split(LOGO_URL).join(logoSrc);
+    r.html = r.html.split(LOGO_URL).join(logoSrc).split(STRIPE_URL).join(stripeSrc);
     const who = d.key.startsWith('admin.') ? 'Admin · Resend' : `MSG91 · ${d.msg91Slug}`;
     cards.push(`<article><header><h3>${esc(d.name)} <small>(${esc(run.label)})</small></h3>
 <p><b>Key:</b> ${esc(d.key)} · <b>Sender:</b> ${esc(who)}</p><p class="subj"><b>Subject:</b> ${esc(r.subject)}</p></header>

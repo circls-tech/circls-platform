@@ -406,7 +406,7 @@ function bookingDisplay(ctx: BookingNotifyContext): BookingDisplay {
   if (ctx.itemType === 'membership') {
     const plan = [ctx.membershipName, ctx.membershipTier].filter(Boolean).join(' · ') || 'Membership';
     const rows: DetailRow[] = [{ label: 'Plan', value: plan }];
-    if (ctx.membershipStartsAt) rows.push({ label: 'Starts', value: formatDayWithYear(ctx.membershipStartsAt, ctx.tz) });
+    if (ctx.membershipStartsAt) rows.push({ label: 'Starts', value: noAutoLink(formatDayWithYear(ctx.membershipStartsAt, ctx.tz)) });
     return {
       placeName: ctx.tenantName || 'the organizer',
       itemNoun: 'membership',
@@ -613,8 +613,8 @@ export function refundedPayload(
     { label: 'Refunded to', value: atVenue ? 'Cash at the venue' : 'Original payment method' },
   ];
   if (refund.refundPaymentId) rows.push({ label: 'Refund ref', value: shortRef('RF', refund.refundPaymentId), mono: true });
-  rows.push({ label: 'Initiated on', value: formatDay(now, ctx.tz) });
-  if (expectedBy) rows.push({ label: 'Expected by', value: expectedBy });
+  rows.push({ label: 'Initiated on', value: noAutoLink(formatDay(now, ctx.tz)) });
+  if (expectedBy) rows.push({ label: 'Expected by', value: noAutoLink(expectedBy) });
 
   const partialNote =
     refund.amountPaise < paidPaise
@@ -761,9 +761,9 @@ function reviewRows(l: ListingDetail, decidedLabel: string, decidedAt: Date): De
     { label: 'Organizer', value: l.tenantName },
   ];
   if (l.type === 'arena' && l.venueName) rows.push({ label: 'Venue', value: l.venueName });
-  if (l.submittedAt) rows.push({ label: 'Submitted', value: formatDay(l.submittedAt, l.tz) });
+  if (l.submittedAt) rows.push({ label: 'Submitted', value: noAutoLink(formatDay(l.submittedAt, l.tz)) });
   rows.push(
-    { label: decidedLabel, value: formatDay(decidedAt, l.tz) },
+    { label: decidedLabel, value: noAutoLink(formatDay(decidedAt, l.tz)) },
     { label: 'Listing ID', value: shortRef(LISTING_PREFIX[l.type], l.id), mono: true },
   );
   return rows;
@@ -844,7 +844,7 @@ export async function listingSubmittedPayload(l: ListingDetail, now: Date = new 
   if (l.submittedBy) rows.push({ label: 'Submitted by', value: l.submittedBy });
   if (l.city) rows.push({ label: 'City', value: l.city });
   if (price) rows.push({ label: 'Price', value: price });
-  if (l.startsAt) rows.push({ label: 'Starts', value: formatWhen(l.startsAt, null, l.tz) });
+  if (l.startsAt) rows.push({ label: 'Starts', value: noAutoLink(formatWhen(l.startsAt, null, l.tz)) });
   rows.push({ label: 'Listing ID', value: shortRef(LISTING_PREFIX[l.type], l.id), mono: true });
 
   return {

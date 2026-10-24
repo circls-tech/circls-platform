@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatWhen, noAutoLink, sumByCurrency, toBullets, toNumber } from '../lib/notifications/email_format.js';
+import {
+  formatMoney,
+  formatWhen,
+  noAutoLink,
+  stripZeroWidth,
+  sumByCurrency,
+  toBullets,
+  toNumber,
+} from '../lib/notifications/email_format.js';
 import { bookingSummary, cancelledPayload, type BookingNotifyContext } from './notification_payloads.js';
 
 const base: BookingNotifyContext = {
@@ -163,7 +171,8 @@ describe('noAutoLink', () => {
   it('breaks digit runs with invisible joiners so mail apps don’t link the date, and reads the same', () => {
     const v = noAutoLink('Sun 2 Nov, 6:00 AM');
     expect(v).not.toBe('Sun 2 Nov, 6:00 AM');
-    expect(v.replace(/‌/g, '')).toBe('Sun 2 Nov, 6:00 AM');
-    expect(v).toContain('2‌ Nov');
+    expect(stripZeroWidth(v)).toBe('Sun 2 Nov, 6:00 AM');
+    expect(v).toContain('2\u200C Nov');
+    expect(stripZeroWidth({ rows: [{ value: v }] })).toEqual({ rows: [{ value: 'Sun 2 Nov, 6:00 AM' }] });
   });
 });

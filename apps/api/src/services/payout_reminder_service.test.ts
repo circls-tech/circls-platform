@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { noAutoLink } from '../lib/notifications/email_format.js';
 
 // env.ts is parsed once at import; the admin list must exist before it loads.
 vi.hoisted(() => {
@@ -50,7 +51,7 @@ describe('payoutReminderPayload (pure)', () => {
       orgCount: 2,
       totalText: '₹63,660',
       rows: [
-        { label: 'Cycle', value: '28 Sep – 4 Oct' },
+        { label: 'Cycle', value: noAutoLink('28 Sep – 4 Oct') },
         { label: 'Organizers', value: '2' },
         { label: 'Bookings', value: '114' },
         { label: 'Platform fees', value: '₹6,000' },

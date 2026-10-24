@@ -17,6 +17,7 @@ import {
   formatDayMonth,
   formatMoney,
   formatMoneyList,
+  noAutoLink,
   plural,
   sumByCurrency as sumPerCurrency,
   toNumber as num,
@@ -112,7 +113,7 @@ export function payoutReminderPayload(
   const totalText = formatMoneyList(sumByCurrency(pending, (p) => p.amountPaise));
 
   const rows: Array<{ label: string; value: string }> = [];
-  if (cycle) rows.push({ label: 'Cycle', value: cycle });
+  if (cycle) rows.push({ label: 'Cycle', value: noAutoLink(cycle) });
   rows.push(
     { label: 'Organizers', value: String(orgCount) },
     { label: 'Bookings', value: String(bookingCount) },

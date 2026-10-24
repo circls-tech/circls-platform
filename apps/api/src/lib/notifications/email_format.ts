@@ -24,11 +24,22 @@ export function formatMoney(minor: number, currency = 'INR'): string {
  * A date or time for an email's big hero line, with invisible zero-width
  * non-joiners after each digit run, so mail apps' date detection (Outlook on
  * iPhone turned "Sun 2 Nov, 6:00 AM" into a blue calendar link) no longer
- * matches it. Reads and copies the same. Display only — never for SMS, plain
- * text or anything parsed later.
+ * matches it. Reads the same. For designed-email variables only: the
+ * plain-text render strips them again (stripZeroWidth), and it must never
+ * reach SMS or anything parsed later.
  */
 export function noAutoLink(s: string): string {
-  return s.replace(/(\d+)/g, '$1‌');
+  return s.replace(/(\d+)/g, '$1\u200C');
+}
+
+/** Undo noAutoLink everywhere in a set of template variables (plain-text render). */
+export function stripZeroWidth<T>(v: T): T {
+  if (typeof v === 'string') return v.replace(/\u200C/g, '') as T;
+  if (Array.isArray(v)) return v.map((x) => stripZeroWidth(x)) as T;
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, stripZeroWidth(x)])) as T;
+  }
+  return v;
 }
 
 /** A DB number (Postgres sends bigint/sum() as strings) as a JS number; 0 if not one. */
