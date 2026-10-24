@@ -675,7 +675,7 @@ function WaiverCard({
           {commissionBps > 0 &&
             `Partner commission is ${commissionBps / 100}%, so this org’s sales are charged commission during its commission-free period. `}
           {eventsChargingCommission > 0 &&
-            `${eventsChargingCommission} in-flight event${eventsChargingCommission === 1 ? ' overrides' : 's override'} partner commission above 0%, so ${eventsChargingCommission === 1 ? 'its' : 'their'} sales are charged commission too. `}
+            `${eventsChargingCommission} in-flight event${eventsChargingCommission === 1 ? ' overrides' : 's override'} partner commission above 0%, so ${eventsChargingCommission === 1 ? 'its' : 'their'} sales are charged commission${commissionBps > 0 ? ' too' : ''}. `}
           These dates don&rsquo;t stop it: set{' '}
           {commissionBps > 0 && eventsChargingCommission > 0
             ? 'Partner commission and the event overrides below'
