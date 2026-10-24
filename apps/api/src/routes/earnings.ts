@@ -45,9 +45,21 @@ const windowSchema = z
     { message: `window must be at most ${MAX_WINDOW_DAYS} days` },
   );
 
+/** Parsed, not cast: a malformed id would otherwise reach `uuid` comparisons
+ *  in the membership check and come back as a 500. */
+const tenantParamSchema = z.object({ tenantId: z.string().uuid() });
+
+function parseTenantId(params: unknown): string {
+  const parsed = tenantParamSchema.safeParse(params);
+  if (!parsed.success) {
+    throw new BadRequest('Invalid tenant id', 'bad_request', { issues: parsed.error.issues });
+  }
+  return parsed.data.tenantId;
+}
+
 export const earningsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v1/tenants/:tenantId/earnings', { preHandler: requireAuth }, async (req) => {
-    const { tenantId } = req.params as { tenantId: string };
+    const tenantId = parseTenantId(req.params);
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'financials.read');
@@ -67,7 +79,7 @@ export const earningsRoutes: FastifyPluginAsync = async (app) => {
    * an admin chose to state, never the live commission_bps.
    */
   app.get('/v1/tenants/:tenantId/commission-waiver', { preHandler: requireAuth }, async (req) => {
-    const { tenantId } = req.params as { tenantId: string };
+    const tenantId = parseTenantId(req.params);
     const user = await currentUser(req);
     const ctx = await requireTenantMembership(user.id, tenantId);
     assertCap(ctx, 'financials.read');

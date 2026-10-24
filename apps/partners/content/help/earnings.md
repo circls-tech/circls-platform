@@ -14,7 +14,7 @@ Earnings is visible to **Owners**, **Managers** and **Read-only** members. **Sta
 
 ## Your commission-free period
 
-Your organisation's **first 3 months on circls are commission-free**: circls takes no commission on your sales during that time. The 3 months start on the day of your **first paid booking** — the first customer who pays online through circls, not a booking you took at your desk.
+Your organisation's **first 3 months on circls are commission-free**: circls takes no commission on your sales during that time. The 3 months start on the day of your **first paid booking** — the first customer who pays online through circls. A booking you took at your desk doesn't count, and neither does a purchase that was refunded in full (such as one you made yourself to try checkout).
 
 The Earnings page shows where you are in it, at the top:
 

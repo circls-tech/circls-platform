@@ -21,8 +21,9 @@ function Pill({ tone, label }: { tone: string; label: string }) {
 }
 
 function WaiverCell({ waiver }: { waiver: AdminTenantListItem['commissionWaiver'] }) {
-  const { label, tone } = waiverSummary(waiver);
-  return <Pill tone={`${tone} whitespace-nowrap`} label={label} />;
+  const s = waiverSummary(waiver);
+  if (!s) return <span className="text-slate-400">—</span>;
+  return <Pill tone={`${s.tone} whitespace-nowrap`} label={s.label} />;
 }
 
 const IST_DATE = new Intl.DateTimeFormat('en-IN', {

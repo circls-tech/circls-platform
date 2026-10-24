@@ -176,8 +176,13 @@ describe.skipIf(!runIntegration)('GET /v1/tenants/:tenantId/earnings', () => {
       });
     }
 
-    /** A charge on a fresh booking; `held` = it settles through Circls. */
-    async function insertCharge(at: Date, held: boolean): Promise<void> {
+    /**
+     * A charge on a fresh booking. 'held' settles through Circls; 'failed'
+     * never captured; 'refunded' was held and then refunded in full.
+     */
+    async function insertCharge(at: Date, kind: 'held' | 'failed' | 'refunded'): Promise<void> {
+      const held = kind !== 'failed';
+      const status = kind === 'held' ? 'captured' : kind;
       const [b] = (await db.execute<Record<string, unknown>>(sql`
         insert into bookings (tenant_id, item_type, channel, payment_method, status,
                               item_data, currency, total_paise, created_at)
@@ -189,7 +194,7 @@ describe.skipIf(!runIntegration)('GET /v1/tenants/:tenantId/earnings', () => {
         insert into payments (booking_id, tenant_id, provider, amount_paise, currency,
                               status, kind, settlement_hold_until, created_at)
         values (${b!['id'] as string}::uuid, ${tenantId}::uuid, 'stub', 10000, 'INR',
-                ${held ? 'captured' : 'failed'}, 'charge',
+                ${status}, 'charge',
                 ${held ? new Date(at.getTime() + 86_400_000).toISOString() : null}::timestamptz,
                 ${at.toISOString()}::timestamptz)
       `);
@@ -215,16 +220,23 @@ describe.skipIf(!runIntegration)('GET /v1/tenants/:tenantId/earnings', () => {
       expect((await getWaiver('outsider')).statusCode).toBe(403);
     });
 
-    it('starts on the first paid booking — not a failed checkout before it', async () => {
+    // 02:00 UTC ten days ago: already that day in India, still the day before
+    // in New York — so the zone the org is read in shows in the date.
+    const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+    const firstPaid = new Date(
+      Date.UTC(tenDaysAgo.getUTCFullYear(), tenDaysAgo.getUTCMonth(), tenDaysAgo.getUTCDate(), 2),
+    );
+
+    it('starts on the first paid booking — not a failed checkout or a refunded test purchase', async () => {
       const day = 86_400_000;
-      await insertCharge(new Date(Date.now() - 20 * day), false);
-      const firstPaid = new Date(Date.now() - 10 * day);
-      await insertCharge(firstPaid, true);
-      await insertCharge(new Date(Date.now() - 5 * day), true);
+      await insertCharge(new Date(Date.now() - 20 * day), 'failed');
+      await insertCharge(new Date(Date.now() - 15 * day), 'refunded');
+      await insertCharge(firstPaid, 'held');
+      await insertCharge(new Date(Date.now() - 5 * day), 'held');
 
       const res = await getWaiver();
       expect(res.statusCode).toBe(200);
-      // No venue, so the org's days are cut in IST.
+      // No venue or event, so the org's days are cut in IST.
       const startsOn = dayIn('Asia/Kolkata', firstPaid);
       expect(res.json()).toMatchObject({
         status: 'active',
@@ -233,7 +245,30 @@ describe.skipIf(!runIntegration)('GET /v1/tenants/:tenantId/earnings', () => {
         firstPaidOn: startsOn,
         startSetByAdmin: false,
         endSetByAdmin: false,
+        months: 3,
       });
+    });
+
+    it('reads an events-only organiser in its event s zone', async () => {
+      await db.execute(sql`
+        insert into events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name)
+        values (${tenantId}::uuid, 'Boston meetup', now() + interval '7 days',
+                now() + interval '7 days 2 hours', 'draft', '{"city":"Boston"}'::jsonb,
+                'America/New_York')
+      `);
+      const body = (await getWaiver()).json() as { startsOn: string; today: string };
+      expect(body.startsOn).toBe(dayIn('America/New_York', firstPaid));
+      expect(body.startsOn).not.toBe(dayIn('Asia/Kolkata', firstPaid));
+      expect(body.today).toBe(dayIn('America/New_York', new Date()));
+    });
+
+    it('rejects a malformed tenant id with a 400, not a 500', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/tenants/not-a-uuid/commission-waiver',
+        headers: bearer('owner'),
+      });
+      expect(res.statusCode).toBe(400);
     });
 
     it('never carries the live commission rate', async () => {

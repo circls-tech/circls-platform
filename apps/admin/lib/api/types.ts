@@ -46,6 +46,10 @@ export interface CommissionWaiver {
   endSetByAdmin: boolean;
   /** Commission agreed for after the period, in bps; null = not decided. */
   afterWaiverBps: number | null;
+  /** Today in the org's zone — the day `status` was judged on. */
+  today: string;
+  /** Default length of the period, in months. */
+  months: number;
 }
 
 export interface AdminTenantListItem {
@@ -57,7 +61,8 @@ export interface AdminTenantListItem {
   createdAt: string;
   venueCount: number;
   bookingCount30d: number;
-  commissionWaiver: CommissionWaiver;
+  /** Optional: absent from an API older than this portal (mid-deploy). */
+  commissionWaiver?: CommissionWaiver;
 }
 
 export interface AdminTenantListPage {
@@ -104,8 +109,11 @@ export interface AdminTenantDetail {
     createdAt: string;
     updatedAt: string | null;
   };
-  /** The resolved period, defaults filled in. */
-  commissionWaiver: CommissionWaiver;
+  /** The resolved period, defaults filled in. Optional: absent from an API
+   *  older than this portal (mid-deploy). */
+  commissionWaiver?: CommissionWaiver;
+  /** In-flight events overriding partner commission above 0%. */
+  eventsChargingCommission?: number;
   members: AdminTenantMember[];
 }
 

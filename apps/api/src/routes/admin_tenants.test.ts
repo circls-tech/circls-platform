@@ -638,6 +638,45 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(detail.json().commissionWaiver).toMatchObject({ status: 'not_started', startsOn: null });
   });
 
+  it('commission-free period — an end before the first paid booking is rejected', async () => {
+    // tenantB's first paid booking: 06:00 UTC on 1 Mar 2026 (11:30 IST).
+    const [b] = (await db.execute<Record<string, unknown>>(sql`
+      INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status,
+                            item_data, currency, total_paise, created_at)
+      VALUES (${tenantBId}::uuid, 'event', 'circls', 'razorpay_route', 'confirmed',
+              '{}'::jsonb, 'INR', 10000, '2026-03-01T06:00:00Z')
+      RETURNING id
+    `)) as unknown as Record<string, unknown>[];
+    await db.execute(sql`
+      INSERT INTO payments (booking_id, tenant_id, provider, amount_paise, currency,
+                            status, kind, settlement_hold_until, created_at)
+      VALUES (${b!['id'] as string}::uuid, ${tenantBId}::uuid, 'stub', 10000, 'INR',
+              'captured', 'charge', '2026-03-02T06:00:00Z', '2026-03-01T06:00:00Z')
+    `);
+
+    const early = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantBId}/billing`,
+      headers: bearer('padmin'),
+      payload: { commissionWaiverEndsOn: '2026-02-01' },
+    });
+    expect(early.statusCode).toBe(400);
+    expect(early.json().error.code).toBe('commission_waiver_ends_before_start');
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantBId}`,
+      headers: bearer('padmin'),
+    });
+    expect(detail.json().commissionWaiver).toMatchObject({
+      firstPaidOn: '2026-03-01',
+      startsOn: '2026-03-01',
+      endsOn: '2026-06-01',
+      endSetByAdmin: false,
+      months: 3,
+    });
+  });
+
   it('per-event billing overrides — list, set, clear', async () => {
     // Standalone (venue-less) event: the scope CHECK requires address + tz.
     const evRows = await db.execute<{ id: string }>(sql`
@@ -647,6 +686,17 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
       RETURNING id
     `);
     const eventId = ((evRows as unknown as { id: string }[])[0]!).id;
+    const chargingCount = async () =>
+      (
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/v1/admin/tenants/${tenantAId}`,
+            headers: bearer('padmin'),
+          })
+        ).json() as { eventsChargingCommission: number }
+      ).eventsChargingCommission;
+    const chargingBefore = await chargingCount();
 
     // Listed with NULL overrides (inherit).
     const list = await app.inject({
@@ -672,6 +722,8 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(setBody['partnerCommissionBps']).toBe(100);
     expect(setBody['consumerCommissionBps']).toBe(0);
     expect(setBody['advancePayoutBps']).toBeNull();
+    // A live event charging partner commission is what the waiver warning counts.
+    expect(await chargingCount()).toBe(chargingBefore + 1);
 
     const audit = await db.execute<Record<string, unknown>>(sql`
       SELECT action FROM audit_log
@@ -691,6 +743,7 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect((clear.json() as Record<string, unknown>)['partnerCommissionBps']).toBeNull();
     // The untouched override survives.
     expect((clear.json() as Record<string, unknown>)['consumerCommissionBps']).toBe(0);
+    expect(await chargingCount()).toBe(chargingBefore);
 
     await db.execute(sql`DELETE FROM events WHERE id = ${eventId}::uuid`);
   });

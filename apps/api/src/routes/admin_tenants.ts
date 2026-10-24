@@ -17,7 +17,10 @@ import { BadRequest, NotFound } from '../lib/errors.js';
 import { currencyForCountry } from '../lib/gateway.js';
 import { getPlatformRevenue, getTenantItemRevenue } from '../services/revenue_service.js';
 import {
-  getCommissionWaiver,
+  countEventsChargingCommission,
+  dayIn,
+  resolveCommissionWaiver,
+  waiverBasis,
   waiverColumnsSql,
   waiverFromRow,
   type CommissionWaiver,
@@ -323,7 +326,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, id) });
       if (!tenant) throw new NotFound('Tenant not found', 'tenant_not_found');
 
-      const memberRows = await db
+      const membersQuery = db
         .select({
           userId: tenantMembers.userId,
           role: tenantMembers.role,
@@ -335,10 +338,25 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         .from(tenantMembers)
         .innerJoin(users, eq(users.id, tenantMembers.userId))
         .where(eq(tenantMembers.tenantId, id));
+      // The waiver resolves from the row already in hand plus its derived
+      // inputs; all three reads are independent.
+      const [memberRows, basis, eventsChargingCommission] = await Promise.all([
+        membersQuery,
+        waiverBasis(id),
+        countEventsChargingCommission(id),
+      ]);
 
       return {
         tenant,
-        commissionWaiver: await getCommissionWaiver(id),
+        commissionWaiver: resolveCommissionWaiver({
+          startsOn: tenant.commissionWaiverStartsOn,
+          endsOn: tenant.commissionWaiverEndsOn,
+          afterWaiverBps: tenant.commissionAfterWaiverBps,
+          ...basis,
+        }),
+        // In-flight events overriding partner commission above 0% — the
+        // Billing tab warns about them while the period is active.
+        eventsChargingCommission,
         members: memberRows.map((m) => ({
           userId: m.userId,
           role: m.role,
@@ -518,9 +536,9 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             { customerFeeShareBps: mergedCustomer, orgFeeShareBps: mergedOrg },
           );
         }
-        // Same for the waiver dates: compare the merged pair. Only two SET
-        // dates are checked — an end set before a not-yet-known first booking
-        // just reads as an ended period.
+        // Same for the waiver dates: compare the merged end with the start the
+        // period will actually have — the set one, else the first paid
+        // booking. Before any paid booking there is no start to check against.
         const mergedStart =
           patch.commissionWaiverStartsOn !== undefined
             ? patch.commissionWaiverStartsOn
@@ -529,12 +547,19 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           patch.commissionWaiverEndsOn !== undefined
             ? patch.commissionWaiverEndsOn
             : before.commissionWaiverEndsOn;
-        if (mergedStart !== null && mergedEnd !== null && mergedEnd < mergedStart) {
-          throw new BadRequest(
-            'The commission-free period must end on or after its start',
-            'commission_waiver_ends_before_start',
-            { commissionWaiverStartsOn: mergedStart, commissionWaiverEndsOn: mergedEnd },
-          );
+        if (mergedEnd !== null) {
+          let effectiveStart = mergedStart;
+          if (effectiveStart === null) {
+            const basis = await waiverBasis(id, tx);
+            effectiveStart = basis.firstPaidAt ? dayIn(basis.tz, basis.firstPaidAt) : null;
+          }
+          if (effectiveStart !== null && mergedEnd < effectiveStart) {
+            throw new BadRequest(
+              'The commission-free period must end on or after its start',
+              'commission_waiver_ends_before_start',
+              { startsOn: effectiveStart, commissionWaiverEndsOn: mergedEnd },
+            );
+          }
         }
 
         const [after] = await tx

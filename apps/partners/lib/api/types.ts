@@ -461,9 +461,9 @@ export interface Analytics {
 }
 
 // ── Commission-free period ────────────────────────────────────────────────────
-// Mirrors apps/api/src/services/commission_waiver.ts. Every org's first 3
-// months from its first paid booking carry no Circls commission. Dates are
-// YYYY-MM-DD; `endsOn` is the day commission starts.
+// Mirrors apps/api/src/services/commission_waiver.ts. Every org's first
+// `months` months from its first paid booking carry no Circls commission.
+// Dates are YYYY-MM-DD; `endsOn` is the day commission starts.
 
 export interface CommissionWaiver {
   status: 'not_started' | 'active' | 'ended';
@@ -474,6 +474,10 @@ export interface CommissionWaiver {
   endSetByAdmin: boolean;
   /** Commission agreed for after the period, in bps; null = not stated. */
   afterWaiverBps: number | null;
+  /** Today in the org's zone. */
+  today: string;
+  /** Default length of the period, in months. */
+  months: number;
 }
 
 // ── Earnings ──────────────────────────────────────────────────────────────────

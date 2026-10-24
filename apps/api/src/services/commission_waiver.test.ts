@@ -38,6 +38,13 @@ describe('resolveCommissionWaiver', () => {
     expect(w).toMatchObject({ status: 'not_started', startsOn: null, endsOn: null, firstPaidOn: null });
   });
 
+  it('reports today in the org s zone and the default length', () => {
+    // 20:00 UTC on the 23rd is already the 24th in India, still the 23rd in New York.
+    const late = new Date('2026-10-23T20:00:00Z');
+    expect(resolveCommissionWaiver(base, late)).toMatchObject({ today: '2026-10-24', months: 3 });
+    expect(resolveCommissionWaiver({ ...base, tz: 'America/New_York' }, late).today).toBe('2026-10-23');
+  });
+
   it('starts on the first paid booking and runs 3 months', () => {
     const w = resolveCommissionWaiver(
       { ...base, firstPaidAt: new Date('2026-09-10T20:00:00Z') },
