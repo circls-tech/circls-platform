@@ -17,7 +17,7 @@ import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { eventInvite } from '@/lib/booking_invite';
+import { inviteForEvent } from '@/lib/booking_invite';
 import { SCRATCH_ID, usePreviewToken, useScratchListing } from '@/lib/preview';
 import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import type { PublicEventWithVenue } from '@/lib/api/types';
@@ -117,7 +117,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
         lines,
         currency,
         questions: ev.questions,
-        invite: eventInvite({ id: ev.id, name: ev.name, startsAt: ev.startsAt, place: ev.venueName }),
+        invite: inviteForEvent(ev),
       },
       prefill,
     );

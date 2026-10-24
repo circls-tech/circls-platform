@@ -82,6 +82,8 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** IANA zone the venue's slots happen in (absent on a scratch preview). */
+  tzName?: string;
   /** Trust metadata (PR #109). */
   description: string | null;
   amenities: string[];
@@ -390,6 +392,8 @@ export interface MyBookingDetail {
   customerContact: string | null;
   /** ISO-8601 */
   createdAt: string;
+  /** IANA zone the booking happens in (the venue's, or a venue-less event's). */
+  timeZone: string;
   slots: MyBookingSlot[];
   event: {
     id: string;
@@ -410,6 +414,8 @@ export interface MyBookingDetail {
     name: string;
     durationDays: number;
     description: string | null;
+    /** ISO-8601; when the membership runs out. Null until it exists. */
+    endsAt: string | null;
   } | null;
   /** Scannable entry tickets; [] until the booking is confirmed. */
   qrTickets: QrTicket[];

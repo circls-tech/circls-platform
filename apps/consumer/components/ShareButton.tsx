@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { useActivity } from '@/lib/activity/ActivityProvider';
+import type { MouseEvent } from 'react';
 import type { WishlistItemType } from '@/lib/api/types';
-import { listingUrl, shareLink, type ShareOutcome } from '@/lib/share';
+import { listingUrl } from '@/lib/share';
+import { useShareTap } from '@/lib/useShareTap';
 import { inlinePillClass, overlayChipClass } from '@/components/chips';
 
 /** The three-dots-and-lines share glyph (the Android / Material one). */
@@ -91,29 +91,17 @@ export function ShareButton({
   variant?: 'overlay' | 'inline';
   className?: string;
 }) {
-  const [outcome, setOutcome] = useState<ShareOutcome | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activity = useActivity();
+  const { last, recent, tap } = useShareTap(NOTE_MS);
 
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  async function onClick(e: MouseEvent<HTMLButtonElement>) {
+  function onClick(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     e.stopPropagation();
-    const url = listingUrl(window.location.origin, itemType, itemId);
-    const result = await shareLink({ title, text, url });
-    activity.log('share', { itemType, itemId, props: { outcome: result } });
-    // The sheet is its own confirmation; only the quieter outcomes need a note.
-    if (result === 'shared' || result === 'dismissed') return;
-    setOutcome(result);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setOutcome(null), NOTE_MS);
+    void tap({ title, text, url: listingUrl(window.location.origin, itemType, itemId) }, { itemType, itemId });
   }
 
+  // The sheet is its own confirmation; only the quieter outcomes get a note,
+  // and only for a moment.
+  const outcome = recent ? last : null;
   const copied = outcome === 'copied';
   const note = copied ? 'Link copied' : outcome === 'unavailable' ? 'Copy the address bar to share' : null;
   const icon = copied ? <CheckIcon className="h-4 w-4" /> : <ShareIcon className="h-4 w-4" />;

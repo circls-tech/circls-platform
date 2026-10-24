@@ -35,7 +35,7 @@ import {
   telHref,
 } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
-import { courtInvite } from '@/lib/booking_invite';
+import { inviteForCourts } from '@/lib/booking_invite';
 import { usePublicCoupons } from '@/lib/api/checkout';
 import { OffersStrip } from '@/components/OffersStrip';
 import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
@@ -289,6 +289,7 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
                 cart={cart}
                 venueId={venueQ.data.venue.id}
                 venueName={venueQ.data.venue.name}
+                venueTz={venueQ.data.venue.tzName}
                 currency={currency}
                 onRemove={removeFromCart}
                 onClear={clearCart}
@@ -505,6 +506,7 @@ function CartBar({
   cart,
   venueId,
   venueName,
+  venueTz,
   currency,
   onRemove,
   onClear,
@@ -513,6 +515,7 @@ function CartBar({
   cart: Map<string, CartSlot>;
   venueId: string;
   venueName: string;
+  venueTz: string | undefined;
   currency: CurrencyCode;
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -577,17 +580,14 @@ function CartBar({
 
   function book() {
     if (preview) return;
-    // The invite names the earliest slot, as the booking page does.
-    const first = items.reduce<CartSlot | null>((a, s) => (!a || s.startAt < a.startAt ? s : a), null);
+    const invite = inviteForCourts({ id: venueId, name: venueName, timeZone: venueTz }, items);
     openCheckout(
       {
         kind: 'slot',
         slotIds,
         title: `${venueName} · ${n} slot${n > 1 ? 's' : ''}${courts > 1 ? ` · ${courts} courts` : ''}`,
         currency,
-        ...(first
-          ? { invite: courtInvite({ venueId, venueName, arenaName: first.arenaName, startAt: first.startAt }) }
-          : {}),
+        ...(invite ? { invite } : {}),
       },
       appliedCode ? { couponCode: appliedCode } : {},
       { onSuccess: onClear },

@@ -1,4 +1,5 @@
-import type { MyBookingDetail, WishlistItemType } from '@/lib/api/types';
+import type { MyBookingDetail, PublicEventWithVenue, PublicMembershipWithScope, WishlistItemType } from '@/lib/api/types';
+import { formatDayAtTime } from './format';
 
 /**
  * "Invite friends" on a booking, the way ticketing apps do it: a short note in
@@ -8,7 +9,12 @@ import type { MyBookingDetail, WishlistItemType } from '@/lib/api/types';
  * Only public listing details go in: never the price, the reference, the QR
  * tickets or the booker's answers. The link is the listing's (the event, the
  * venue for a court, the plan), never the booking's, which only its owner can
- * open.
+ * open. Times are written in the zone the booking happens in, since that is
+ * where the friends will read them.
+ *
+ * Checkout builds the invite from the listing (inviteForEvent, inviteForCourts,
+ * inviteForMembership) and the booking page from the booking
+ * (inviteForBooking); both go through the same rules below.
  */
 export interface BookingInvite {
   /** The listing the link opens. */
@@ -20,51 +26,76 @@ export interface BookingInvite {
   message: string;
 }
 
-/**
- * "Sat, 1 Nov at 7:00 pm". In the viewer's time zone, as the booking page and
- * the listing show it; `timeZone` is for tests.
- */
-export function inviteWhen(iso: string, timeZone?: string): string {
-  const d = new Date(iso);
-  const tz = timeZone ? { timeZone } : {};
-  const day = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', ...tz }).format(d);
-  const time = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, ...tz }).format(d);
-  return `${day} at ${time}`;
+/** The slots of a court booking or cart, as far as an invite needs them. */
+interface CourtSlot {
+  arenaName: string;
+  startAt: string;
+  endAt: string;
 }
 
-const at = (place: string | null | undefined) => (place ? ` at ${place}` : '');
+/** A place is named only when there is a venue: without one, a booking's title is the listing's own name. */
+const placeOf = (venueId: string | null, name: string | null) => (venueId ? name : null);
+const at = (place: string | null) => (place ? ` at ${place}` : '');
+/** "Court 1", "Court 1 and Court 2", "Court 1, Court 2 and Court 3". */
+const listOf = (names: string[]) =>
+  names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 
-export function eventInvite(
-  e: { id: string; name: string; startsAt: string; place?: string | null },
-  timeZone?: string,
+function eventInvite(
+  e: { id: string; name: string; startsAt: string },
+  place: string | null,
+  timeZone: string | undefined,
 ): BookingInvite {
   return {
     itemType: 'event',
     itemId: e.id,
     title: `Join me at ${e.name}`,
-    message: `Hi! I'm going to ${e.name}${at(e.place)} on ${inviteWhen(e.startsAt, timeZone)}. Care to join me?`,
+    message: `Hi! I'm going to ${e.name}${at(place)} on ${formatDayAtTime(e.startsAt, timeZone)}. Care to join me?`,
   };
 }
 
-/** A court booking links to the venue: friends come to play, not to book the same slot. */
-export function courtInvite(
-  c: { venueId: string; venueName: string; arenaName: string; startAt: string },
-  timeZone?: string,
-): BookingInvite {
-  return {
-    itemType: 'venue',
-    itemId: c.venueId,
-    title: `Play with me at ${c.venueName}`,
-    message: `Hi! I've booked ${c.arenaName} at ${c.venueName} for ${inviteWhen(c.startAt, timeZone)}. Care to join me?`,
-  };
-}
-
-export function membershipInvite(m: { id: string; name: string; place?: string | null }): BookingInvite {
+function membershipInvite(m: { id: string; name: string }, place: string | null): BookingInvite {
   return {
     itemType: 'membership',
     itemId: m.id,
-    title: `Join me at ${m.place ?? m.name}`,
-    message: `Hi! I've joined ${m.name}${at(m.place)}. Care to join me?`,
+    title: `Join me at ${place ?? m.name}`,
+    message: `Hi! I've joined ${m.name}${at(place)}. Care to join me?`,
+  };
+}
+
+/** Checkout's invite for an event about to be booked. */
+export function inviteForEvent(
+  ev: Pick<PublicEventWithVenue, 'id' | 'name' | 'startsAt' | 'venueId' | 'venueName' | 'locTzName'>,
+): BookingInvite {
+  return eventInvite(ev, placeOf(ev.venueId, ev.venueName), ev.locTzName);
+}
+
+/** Checkout's invite for a membership plan about to be bought. */
+export function inviteForMembership(
+  m: Pick<PublicMembershipWithScope, 'id' | 'name' | 'venueId' | 'scopeName'>,
+): BookingInvite {
+  return membershipInvite(m, placeOf(m.venueId, m.scopeName));
+}
+
+/**
+ * A court booking (or cart) links to the venue: friends come to play, not to
+ * book the same slot. It names the next slot still to come and every court
+ * booked for that time ("Court 1 and Court 2"); null once every slot is over.
+ */
+export function inviteForCourts(
+  venue: { id: string; name: string; timeZone?: string | undefined },
+  slots: CourtSlot[],
+  now: Date = new Date(),
+): BookingInvite | null {
+  const upcoming = slots.filter((s) => Date.parse(s.endAt) > now.getTime());
+  if (upcoming.length === 0) return null;
+  const first = Math.min(...upcoming.map((s) => Date.parse(s.startAt)));
+  const firstSlots = upcoming.filter((s) => Date.parse(s.startAt) === first);
+  const courts = [...new Set(firstSlots.map((s) => s.arenaName))];
+  return {
+    itemType: 'venue',
+    itemId: venue.id,
+    title: `Play with me at ${venue.name}`,
+    message: `Hi! I've booked ${listOf(courts)} at ${venue.name} for ${formatDayAtTime(firstSlots[0]!.startAt, venue.timeZone)}. Care to join me?`,
   };
 }
 
@@ -75,29 +106,23 @@ export function inviteText(invite: BookingInvite, url: string): string {
 
 /**
  * The invite for one of the consumer's bookings, or null when there is nothing
- * to invite anyone to: a booking that is unpaid, cancelled or over, or an event
- * or court time that has already ended. A court booking with several slots
- * invites to the next one still to come.
+ * to invite anyone to: a booking that is unpaid or cancelled, an event or court
+ * time that has already ended, or a membership that has run out (its booking
+ * stays confirmed after it does).
  */
-export function inviteForBooking(b: MyBookingDetail, now: Date = new Date(), timeZone?: string): BookingInvite | null {
+export function inviteForBooking(b: MyBookingDetail, now: Date = new Date()): BookingInvite | null {
   if (b.status !== 'confirmed') return null;
-  // With no venue, the booking's title falls back to the event's or plan's own
-  // name, so it only names a place when there is a venue.
-  const place = b.venueId ? b.venueName : null;
+  const place = placeOf(b.venueId, b.venueName);
   if (b.itemType === 'event' && b.event) {
-    if (new Date(b.event.endsAt) <= now) return null;
-    return eventInvite({ id: b.event.id, name: b.event.name, startsAt: b.event.startsAt, place }, timeZone);
+    if (Date.parse(b.event.endsAt) <= now.getTime()) return null;
+    return eventInvite(b.event, place, b.timeZone);
   }
   if (b.itemType === 'slot' && b.venueId) {
-    const next = b.slots.find((s) => new Date(s.endAt) > now);
-    if (!next) return null;
-    return courtInvite(
-      { venueId: b.venueId, venueName: b.venueName, arenaName: next.arenaName, startAt: next.startAt },
-      timeZone,
-    );
+    return inviteForCourts({ id: b.venueId, name: b.venueName, timeZone: b.timeZone }, b.slots, now);
   }
   if (b.itemType === 'membership' && b.membership) {
-    return membershipInvite({ id: b.membership.id, name: b.membership.name, place });
+    if (b.membership.endsAt && Date.parse(b.membership.endsAt) <= now.getTime()) return null;
+    return membershipInvite(b.membership, place);
   }
   return null;
 }

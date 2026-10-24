@@ -1,8 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useActivity } from '@/lib/activity/ActivityProvider';
 import { inviteText, type BookingInvite } from '@/lib/booking_invite';
-import { listingUrl, shareLink } from '@/lib/share';
+import { listingUrl } from '@/lib/share';
+import { useShareTap } from '@/lib/useShareTap';
 import { Button } from '@/lib/ui';
 import { CheckIcon, ShareIcon } from '@/components/ShareButton';
 
@@ -16,8 +15,8 @@ const NOTE_MS = 4000;
  * Every tap is logged as a `share` of the listing, like `ShareButton`'s, so
  * the admin reports count it with the listing's other shares; `props.from`
  * says it came from a booking. If neither the sheet nor the clipboard is
- * allowed, the note is shown to copy by hand: the address bar here is the
- * booking's, which is no use to a friend.
+ * allowed, the note is shown to copy by hand until the next tap: the address
+ * bar here is the booking's, which is no use to a friend.
  */
 export function InviteButton({
   invite,
@@ -32,31 +31,22 @@ export function InviteButton({
   wide?: boolean;
   className?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [manual, setManual] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activity = useActivity();
+  const { last, recent, tap } = useShareTap(NOTE_MS);
+  // Built at click time, never during server rendering.
+  const urlNow = () => listingUrl(window.location.origin, invite.itemType, invite.itemId);
 
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  async function onClick() {
-    const url = listingUrl(window.location.origin, invite.itemType, invite.itemId);
-    const text = inviteText(invite, url);
-    const result = await shareLink({ title: invite.title, text: invite.message, url }, { copy: text });
-    activity.log('share', { itemType: invite.itemType, itemId: invite.itemId, props: { outcome: result, from } });
-    if (result === 'unavailable') {
-      setManual(text);
-      return;
-    }
-    if (result !== 'copied') return;
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), NOTE_MS);
+  function onClick() {
+    const url = urlNow();
+    void tap(
+      { title: invite.title, text: invite.message, url },
+      { itemType: invite.itemType, itemId: invite.itemId, props: { from } },
+      { copy: inviteText(invite, url) },
+    );
   }
+
+  const copied = recent && last === 'copied';
+  // `last` is only set after a tap, so this never runs on the server.
+  const manual = last === 'unavailable' ? inviteText(invite, urlNow()) : null;
 
   return (
     <div className={className}>
