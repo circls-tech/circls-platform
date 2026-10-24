@@ -58,15 +58,40 @@ export function formatPaiseExact(paise: number, currency: string = 'INR'): strin
   return moneyFmt(currency, 2).format(paise / 100);
 }
 
-const timeFmt = new Intl.DateTimeFormat('en-IN', {
+const TIME_OPTS: Intl.DateTimeFormatOptions = {
   hour: 'numeric',
   minute: '2-digit',
   hour12: true,
-});
+};
+const timeFmt = new Intl.DateTimeFormat('en-IN', TIME_OPTS);
 
 /** Time portion of an ISO string, e.g. "6:30 PM". */
 export function formatTime(iso: string): string {
   return timeFmt.format(new Date(iso));
+}
+
+/** formatDayAtTime's formatters, one pair per time zone. */
+const zonedFmts = new Map<string, { day: Intl.DateTimeFormat; time: Intl.DateTimeFormat }>();
+
+/**
+ * Day and time in `timeZone`, e.g. "Sat, 7 Nov at 6:30 pm". For text that
+ * leaves the app (a booking invite): it is read where the booking happens, so
+ * it is written in that place's zone, not the sender's. No zone falls back to
+ * the viewer's.
+ */
+export function formatDayAtTime(iso: string, timeZone?: string): string {
+  const key = timeZone ?? '';
+  let f = zonedFmts.get(key);
+  if (!f) {
+    const tz = timeZone ? { timeZone } : {};
+    f = {
+      day: new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', ...tz }),
+      time: new Intl.DateTimeFormat('en-IN', { ...TIME_OPTS, ...tz }),
+    };
+    zonedFmts.set(key, f);
+  }
+  const d = new Date(iso);
+  return `${f.day.format(d)} at ${f.time.format(d)}`;
 }
 
 /** Hour:minute in 12-hour form without the meridiem, e.g. "9:30", "12:00". */

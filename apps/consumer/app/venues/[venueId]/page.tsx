@@ -35,6 +35,7 @@ import {
   telHref,
 } from '@/lib/format';
 import { useCheckoutModal, useResumeCheckout } from '@/lib/checkout/CheckoutProvider';
+import { inviteForCourts } from '@/lib/booking_invite';
 import { usePublicCoupons } from '@/lib/api/checkout';
 import { OffersStrip } from '@/components/OffersStrip';
 import { loadVenueCart, saveVenueCart } from '@/lib/checkout/pending';
@@ -286,7 +287,9 @@ function VenuePageInner({ params }: { params: Promise<{ venueId: string }> }) {
             {cart.size > 0 && (
               <CartBar
                 cart={cart}
+                venueId={venueQ.data.venue.id}
                 venueName={venueQ.data.venue.name}
+                venueTz={venueQ.data.venue.tzName}
                 currency={currency}
                 onRemove={removeFromCart}
                 onClear={clearCart}
@@ -501,14 +504,18 @@ function ArenaCard({
  */
 function CartBar({
   cart,
+  venueId,
   venueName,
+  venueTz,
   currency,
   onRemove,
   onClear,
   preview,
 }: {
   cart: Map<string, CartSlot>;
+  venueId: string;
   venueName: string;
+  venueTz: string | undefined;
   currency: CurrencyCode;
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -573,12 +580,14 @@ function CartBar({
 
   function book() {
     if (preview) return;
+    const invite = inviteForCourts({ id: venueId, name: venueName, timeZone: venueTz }, items);
     openCheckout(
       {
         kind: 'slot',
         slotIds,
         title: `${venueName} · ${n} slot${n > 1 ? 's' : ''}${courts > 1 ? ` · ${courts} courts` : ''}`,
         currency,
+        ...(invite ? { invite } : {}),
       },
       appliedCode ? { couponCode: appliedCode } : {},
       { onSuccess: onClear },

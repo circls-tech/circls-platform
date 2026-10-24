@@ -90,6 +90,8 @@ export interface PublicVenue {
   lat: number | null;
   lng: number | null;
   addressJson: Record<string, unknown> | null;
+  /** IANA zone the venue's slots happen in. */
+  tzName: string;
   /** Trust metadata (PR #109). */
   description: string | null;
   amenities: string[];
@@ -118,6 +120,7 @@ function toPublicVenue(v: Venue, brand: BrandSummary, images: PublicImageRef[] =
     lat: v.lat,
     lng: v.lng,
     addressJson: v.addressJson ?? null,
+    tzName: v.tzName,
     description: v.description,
     amenities: v.amenities,
     openingHours: v.openingHours ?? null,
@@ -1337,6 +1340,9 @@ export interface MyBookingDetail {
   customerName: string | null;
   customerContact: string | null;
   createdAt: string;
+  /** IANA time zone the booking happens in: the venue's, or a venue-less
+   *  event's own. Times shared from the booking are written in it. */
+  timeZone: string;
   /** Court bookings: the booked slots, oldest-first (empty for other types). */
   slots: MyBookingSlot[];
   /** Event bookings: the event details (null otherwise). */
@@ -1361,6 +1367,8 @@ export interface MyBookingDetail {
     name: string;
     durationDays: number;
     description: string | null;
+    /** When the membership this purchase started runs out; null until it exists. */
+    endsAt: string | null;
   } | null;
   /** QR entry tickets issued for this booking (empty when the listing has QR
    *  tickets disabled or the booking isn't confirmed yet). */
@@ -1419,11 +1427,14 @@ export async function getMyBookingDetail(
       mm.id                      as membership_id,
       mm.name                    as membership_name,
       mm.description             as membership_description,
-      mm.duration_days           as membership_duration_days
+      mm.duration_days           as membership_duration_days,
+      um.ends_at                 as membership_ends_at,
+      coalesce(v.tz_name, ev.tz_name, 'Asia/Kolkata') as tz_name
     from bookings b
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
+    left join user_memberships um on um.id = nullif(b.item_data->>'userMembershipId', '')::uuid
     where b.id = ${bookingId}
       and ${ownBookingCondition(userId)}
     limit 1
@@ -1515,6 +1526,7 @@ export async function getMyBookingDetail(
           name: r['membership_name'] as string,
           durationDays: Number(r['membership_duration_days']),
           description: (r['membership_description'] as string | null) ?? null,
+          endsAt: r['membership_ends_at'] ? new Date(r['membership_ends_at'] as string).toISOString() : null,
         }
       : null;
 
@@ -1532,6 +1544,7 @@ export async function getMyBookingDetail(
     customerName: (r['customer_name'] as string | null) ?? null,
     customerContact: (r['customer_contact'] as string | null) ?? null,
     createdAt: new Date(r['created_at'] as string).toISOString(),
+    timeZone: r['tz_name'] as string,
     slots: bookingSlots,
     event,
     membership,

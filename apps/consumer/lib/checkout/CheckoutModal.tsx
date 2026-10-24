@@ -26,6 +26,7 @@ import {
 import { useAuth } from '@/lib/firebase/auth_context';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
+import { InviteButton } from '@/components/InviteButton';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { ContactDetailsForm } from './ContactDetailsForm';
 import { RegistrationQuestionsForm } from './RegistrationQuestionsForm';
@@ -39,7 +40,8 @@ type Phase =
   | { kind: 'confirming' }
   /** A Cashfree checkout closed unpaid: try again, or pay through Razorpay. */
   | { kind: 'unpaid'; message: string }
-  | { kind: 'success'; message: string } | { kind: 'reserved'; message: string } | { kind: 'error'; message: string };
+  /** `paid`: false while a submitted payment is still clearing (PROCESSING). */
+  | { kind: 'success'; message: string; paid: boolean } | { kind: 'reserved'; message: string } | { kind: 'error'; message: string };
 
 /** A payment order to open checkout on, as the API returns it. */
 interface CheckoutOrder {
@@ -223,7 +225,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
       return;
     }
 
-    if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.' }); return; }
+    if (breakdown.totalPaise === 0) { setPhase({ kind: 'success', message: 'Confirmed! See it in My Bookings.', paid: true }); return; }
     orderRef.current = order;
     await payOrder(order);
   }
@@ -289,7 +291,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
   }
 
   function onPaid(message: string) {
-    setPhase({ kind: 'success', message });
+    setPhase({ kind: 'success', message, paid: message !== PROCESSING });
     // The booking only earns its post-booking link once the webhook flips
     // it to confirmed, which usually lands just after this callback.
     const bookingId = eventBookingIdRef.current;
@@ -384,6 +386,14 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
             <p className="text-sm text-[var(--color-text-secondary)]">
               Checking whether the organiser has a next step for you…
             </p>
+          )}
+          {/* Nothing to invite friends to until the booking is paid for: not
+              while reserved, nor while a payment is still clearing. */}
+          {phase.kind === 'success' && phase.paid && item.invite && (
+            <div className="rounded-[var(--radius)] border-[1.5px] border-dashed border-ink/25 p-3">
+              <p className="mb-2 text-sm text-[var(--color-text-secondary)]">Bringing friends? Send them the details.</p>
+              <InviteButton invite={item.invite} from="checkout" wide />
+            </div>
           )}
           <Button onClick={onClose}>Done</Button>
         </div>

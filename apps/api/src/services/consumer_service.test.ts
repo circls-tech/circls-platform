@@ -5,7 +5,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { arenas, bookings, events, memberships, slots, tenants, users, venues } from '../db/schema/index.js';
+import { arenas, bookings, events, memberships, slots, tenants, userMemberships, users, venues } from '../db/schema/index.js';
 import {
   getMyBookingDetail,
   getPublicMembershipById,
@@ -407,7 +407,10 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     await pingDb();
     const [t] = await db.insert(tenants).values({ name: 'BkDetail', slug: tag }).returning();
     tenantId = t!.id;
-    const [v] = await db.insert(venues).values({ tenantId, name: `BkD Venue ${tag}`, status: 'active' }).returning();
+    const [v] = await db
+      .insert(venues)
+      .values({ tenantId, name: `BkD Venue ${tag}`, status: 'active', tzName: 'America/New_York' })
+      .returning();
     venueId = v!.id;
     const [a] = await db.insert(arenas).values({ venueId, name: 'Center Court', status: 'active' }).returning();
     arenaId = a!.id;
@@ -481,6 +484,15 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
       .returning({ id: bookings.id });
     eventBookingId = eb!.id;
 
+    const [um] = await db
+      .insert(userMemberships)
+      .values({
+        userId: userA,
+        membershipId,
+        startsAt: new Date('2026-06-01T00:00:00Z'),
+        endsAt: new Date('2026-08-30T00:00:00Z'),
+      })
+      .returning({ id: userMemberships.id });
     const [mb] = await db
       .insert(bookings)
       .values({
@@ -490,7 +502,7 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
         paymentMethod: 'razorpay_route',
         status: 'confirmed',
         totalPaise: 500000,
-        itemData: { membershipId },
+        itemData: { membershipId, userMembershipId: um!.id },
         createdByUserId: userA,
         customerUserId: userA,
       })
@@ -519,6 +531,7 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     await db.execute(sql`delete from slots where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from user_memberships where membership_id = ${membershipId}`);
     await db.execute(sql`delete from memberships where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from arenas where venue_id = ${venueId}`);
     await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
@@ -536,6 +549,7 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     expect(d.slots).toHaveLength(1);
     expect(d.slots[0]!.arenaName).toBe('Center Court');
     expect(d.slots[0]!.pricePaise).toBe(80000);
+    expect(d.timeZone).toBe('America/New_York');
   });
 
   it('resolves an event booking with the event block', async () => {
@@ -545,6 +559,8 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     expect(d.event?.description).toBe('A friendly tournament');
     expect(d.slots).toHaveLength(0);
     expect(d.membership).toBeNull();
+    // The venue's zone, which the event's times are read in.
+    expect(d.timeZone).toBe('America/New_York');
   });
 
   it('resolves a membership booking with the membership block (title = plan name)', async () => {
@@ -553,6 +569,7 @@ describe.skipIf(!runIntegration)('consumer booking detail (getMyBookingDetail)',
     expect(d.venueName).toBe('Gold Plan');
     expect(d.membership?.name).toBe('Gold Plan');
     expect(d.membership?.durationDays).toBe(90);
+    expect(d.membership?.endsAt).toBe('2026-08-30T00:00:00.000Z');
     expect(d.event).toBeNull();
     expect(d.slots).toHaveLength(0);
   });

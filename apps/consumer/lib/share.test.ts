@@ -46,6 +46,14 @@ describe('shareLink', () => {
     expect(writeText).toHaveBeenCalledWith(data.url);
   });
 
+  it('copies the given text instead of the bare link when asked to', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const copy = `Care to join me?\n${data.url}`;
+    await expect(shareLink(data, { copy })).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(copy);
+  });
+
   it('says so when neither sharing nor the clipboard is available', async () => {
     vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
     await expect(shareLink(data)).resolves.toBe('unavailable');
