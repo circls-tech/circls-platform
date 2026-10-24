@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alreadyCollectedField,
   hasChoiceQuestionWithoutOptions,
   questionDraftFromApi,
   questionsToPayload,
@@ -52,5 +53,23 @@ describe('registration question drafts', () => {
     // Blank rows are dropped from the payload, so they never block saving.
     expect(hasChoiceQuestionWithoutOptions(row('select', '', ''))).toBe(false);
     expect(hasChoiceQuestionWithoutOptions(row('text', 'Notes', ''))).toBe(false);
+  });
+
+  it('spots questions asking for the name, email or phone Circls already collects', () => {
+    expect(alreadyCollectedField('Name')).toBe('name');
+    expect(alreadyCollectedField("What's your full name?")).toBe('name');
+    expect(alreadyCollectedField('Please enter your email address')).toBe('email');
+    expect(alreadyCollectedField('E-mail ID')).toBe('email');
+    expect(alreadyCollectedField('Your mobile no.')).toBe('phone');
+    expect(alreadyCollectedField('  Phone Number  ')).toBe('phone');
+  });
+
+  it('leaves questions about other people or other details alone', () => {
+    expect(alreadyCollectedField('Team name')).toBeNull();
+    expect(alreadyCollectedField('Emergency contact number')).toBeNull();
+    expect(alreadyCollectedField("Parent's phone number")).toBeNull();
+    expect(alreadyCollectedField('WhatsApp number')).toBeNull();
+    expect(alreadyCollectedField('Name on your T-shirt')).toBeNull();
+    expect(alreadyCollectedField('')).toBeNull();
   });
 });

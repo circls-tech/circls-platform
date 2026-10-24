@@ -22,6 +22,60 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   multiselect: 'Multiple choice (pick any)',
 };
 
+/** Attendee details every registration already carries from the customer's account. */
+export type CollectedField = 'name' | 'email' | 'phone';
+
+/** How the editor names each collected field ("…each attendee's phone number"). */
+export const COLLECTED_FIELD_LABELS: Record<CollectedField, string> = {
+  name: 'name',
+  email: 'email address',
+  phone: 'phone number',
+};
+
+/** Normalised question wordings that ask for nothing but a collected field. */
+const COLLECTED_FIELD_QUESTIONS: Record<string, CollectedField> = {
+  name: 'name',
+  'full name': 'name',
+  'first name': 'name',
+  'last name': 'name',
+  surname: 'name',
+  'first and last name': 'name',
+  email: 'email',
+  'e mail': 'email',
+  'email address': 'email',
+  'e mail address': 'email',
+  'email id': 'email',
+  'e mail id': 'email',
+  'mail id': 'email',
+  phone: 'phone',
+  'phone number': 'phone',
+  'phone no': 'phone',
+  'ph no': 'phone',
+  mobile: 'phone',
+  'mobile number': 'phone',
+  'mobile no': 'phone',
+  'contact number': 'phone',
+  'contact no': 'phone',
+  'cell number': 'phone',
+  telephone: 'phone',
+  'telephone number': 'phone',
+};
+
+/**
+ * The collected field a question asks for, or null. Only questions asking for
+ * the attendee's own name, email or phone and nothing else match ("What's your
+ * phone number?", "Email ID"), so "Team name" or "Emergency contact number"
+ * never trip it. The editor uses it to nudge, never to block.
+ */
+export function alreadyCollectedField(label: string): CollectedField | null {
+  const core = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/^(?:please )?(?:(?:enter|provide|share|give)(?: us)? )?(?:(?:what is|what s|whats) )?(?:your )?/, '');
+  return COLLECTED_FIELD_QUESTIONS[core] ?? null;
+}
+
 /** Choice questions ('select' = pick one, 'multiselect' = pick any) carry options. */
 export function isChoiceType(type: QuestionType): boolean {
   return type === 'select' || type === 'multiselect';
