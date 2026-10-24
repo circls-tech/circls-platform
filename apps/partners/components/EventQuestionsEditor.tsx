@@ -1,9 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Button, Input } from '@/lib/ui';
 import {
-  alreadyCollectedField,
-  COLLECTED_FIELD_LABELS,
+  collectedFieldNudge,
   emptyQuestion,
   isChoiceType,
   MAX_EVENT_QUESTIONS,
@@ -51,111 +51,100 @@ export function EventQuestionsEditor({
           restrictions). Answers are collected when they book.
         </p>
       )}
-      <p className="rounded-[var(--radius)] border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-        <span className="font-semibold">Already collected:</span> every registration comes
-        with the attendee&apos;s name, email and phone number from their Circls account, so
-        there&apos;s no need to ask for them here.
+      <p className="rounded-[var(--radius)] bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <span className="font-semibold text-slate-700">Already collected:</span> every
+        registration comes with the booker&apos;s name, email and phone number from their
+        Circls account, so there&apos;s no need to ask for them here.
       </p>
-      {value.map((q, i) => {
-        const collected = alreadyCollectedField(q.label);
-        return (
-          <div
-            key={i}
-            className="grid grid-cols-1 gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3 sm:grid-cols-12"
-          >
-            <div className="sm:col-span-7">
-              <Input
-                label="Question"
-                placeholder="e.g. What is your T-shirt size?"
-                value={q.label}
-                disabled={disabled}
-                onChange={(e) => update(i, { label: e.target.value })}
-              />
-              {collected && (
-                <p className="mt-1 text-xs text-amber-700">
-                  Circls already gives you each attendee&apos;s {COLLECTED_FIELD_LABELS[collected]}
-                  {' '}with their registration{disabled ? '.' : ' — you can remove this question.'}
-                </p>
-              )}
-            </div>
-            <div className="sm:col-span-3">
-              <label className="flex flex-col gap-1 text-xs font-medium text-[#475569]">
-                Answer type
-                <select
-                  value={q.type}
-                  disabled={disabled}
-                  onChange={(e) => update(i, { type: e.target.value as QuestionType })}
-                  className="rounded border border-gray-300 bg-white px-2 py-2 text-sm font-normal text-slate-900"
-                >
-                  {(Object.keys(QUESTION_TYPE_LABELS) as QuestionType[]).map((t) => (
-                    <option key={t} value={t}>
-                      {QUESTION_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="flex items-end pb-2 sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={q.required}
-                  disabled={disabled}
-                  onChange={(e) => update(i, { required: e.target.checked })}
-                />
-                Required
-              </label>
-            </div>
-            {isChoiceType(q.type) && (
-              <div className="sm:col-span-12">
-                <Input
-                  label="Options (comma-separated)"
-                  placeholder="e.g. Small, Medium, Large"
-                  value={q.optionsText}
-                  disabled={disabled}
-                  onChange={(e) => update(i, { optionsText: e.target.value })}
-                  hint={
-                    q.type === 'multiselect'
-                      ? 'Attendees can tick any number of these.'
-                      : 'Attendees pick exactly one of these.'
-                  }
-                />
-              </div>
-            )}
-            {!disabled && (
-              <div className="flex items-center justify-end gap-1 sm:col-span-12">
-                <button
-                  type="button"
-                  onClick={() => move(i, -1)}
-                  disabled={i === 0}
-                  className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
-                  aria-label="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(i, 1)}
-                  disabled={i === value.length - 1}
-                  className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
-                  aria-label="Move down"
-                >
-                  ↓
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-600 hover:bg-red-50"
-                  onClick={() => onChange(value.filter((_, j) => j !== i))}
-                >
-                  Remove
-                </Button>
-              </div>
-            )}
+      {value.map((q, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-1 gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3 sm:grid-cols-12"
+        >
+          <div className="sm:col-span-7">
+            <QuestionLabelInput
+              value={q.label}
+              disabled={disabled}
+              onChange={(label) => update(i, { label })}
+            />
           </div>
-        );
-      })}
+          <div className="sm:col-span-3">
+            <label className="flex flex-col gap-1 text-xs font-medium text-[#475569]">
+              Answer type
+              <select
+                value={q.type}
+                disabled={disabled}
+                onChange={(e) => update(i, { type: e.target.value as QuestionType })}
+                className="rounded border border-gray-300 bg-white px-2 py-2 text-sm font-normal text-slate-900"
+              >
+                {(Object.keys(QUESTION_TYPE_LABELS) as QuestionType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {QUESTION_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-end pb-2 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={q.required}
+                disabled={disabled}
+                onChange={(e) => update(i, { required: e.target.checked })}
+              />
+              Required
+            </label>
+          </div>
+          {isChoiceType(q.type) && (
+            <div className="sm:col-span-12">
+              <Input
+                label="Options (comma-separated)"
+                placeholder="e.g. Small, Medium, Large"
+                value={q.optionsText}
+                disabled={disabled}
+                onChange={(e) => update(i, { optionsText: e.target.value })}
+                hint={
+                  q.type === 'multiselect'
+                    ? 'Attendees can tick any number of these.'
+                    : 'Attendees pick exactly one of these.'
+                }
+              />
+            </div>
+          )}
+          {!disabled && (
+            <div className="flex items-center justify-end gap-1 sm:col-span-12">
+              <button
+                type="button"
+                onClick={() => move(i, -1)}
+                disabled={i === 0}
+                className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
+                aria-label="Move up"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(i, 1)}
+                disabled={i === value.length - 1}
+                className="rounded border border-[#17151D] shadow-[2px_2px_0_#17151D] px-2 py-1 text-xs transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:translate-y-0 disabled:shadow-none text-slate-500 disabled:opacity-40 hover:bg-white"
+                aria-label="Move down"
+              >
+                ↓
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:bg-red-50"
+                onClick={() => onChange(value.filter((_, j) => j !== i))}
+              >
+                Remove
+              </Button>
+            </div>
+          )}
+        </div>
+      ))}
       {!disabled && (
         <Button
           type="button"
@@ -169,5 +158,36 @@ export function EventQuestionsEditor({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * A question's label field. The "you already get this" nudge waits until the
+ * field loses focus, so it doesn't flash while a longer question is typed
+ * through a matching start ("Name" on the way to "Name of your team").
+ */
+function QuestionLabelInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (label: string) => void;
+  disabled?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const nudge = editing ? null : collectedFieldNudge(value);
+  return (
+    <Input
+      label="Question"
+      placeholder="e.g. What is your T-shirt size?"
+      value={value}
+      disabled={disabled}
+      onFocus={() => setEditing(true)}
+      onBlur={() => setEditing(false)}
+      onChange={(e) => onChange(e.target.value)}
+      hint={nudge ?? undefined}
+      hintTone="warning"
+    />
   );
 }

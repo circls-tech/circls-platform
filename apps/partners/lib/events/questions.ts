@@ -22,58 +22,56 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   multiselect: 'Multiple choice (pick any)',
 };
 
-/** Attendee details every registration already carries from the customer's account. */
+/** Booker details every registration already carries from the customer's account. */
 export type CollectedField = 'name' | 'email' | 'phone';
 
-/** How the editor names each collected field ("…each attendee's phone number"). */
-export const COLLECTED_FIELD_LABELS: Record<CollectedField, string> = {
+/** How the nudge names each collected field ("…the booker's phone number"). */
+const COLLECTED_FIELD_LABELS: Record<CollectedField, string> = {
   name: 'name',
   email: 'email address',
   phone: 'phone number',
 };
 
-/** Normalised question wordings that ask for nothing but a collected field. */
-const COLLECTED_FIELD_QUESTIONS: Record<string, CollectedField> = {
-  name: 'name',
-  'full name': 'name',
-  'first name': 'name',
-  'last name': 'name',
-  surname: 'name',
-  'first and last name': 'name',
-  email: 'email',
-  'e mail': 'email',
-  'email address': 'email',
-  'e mail address': 'email',
-  'email id': 'email',
-  'e mail id': 'email',
-  'mail id': 'email',
-  phone: 'phone',
-  'phone number': 'phone',
-  'phone no': 'phone',
-  'ph no': 'phone',
-  mobile: 'phone',
-  'mobile number': 'phone',
-  'mobile no': 'phone',
-  'contact number': 'phone',
-  'contact no': 'phone',
-  'cell number': 'phone',
-  telephone: 'phone',
-  'telephone number': 'phone',
-};
+/**
+ * Normalised wordings (see alreadyCollectedField) that ask for nothing but a
+ * collected field, in English, Hindi and Spanish. Bare "contact", "cell" and
+ * "mail" are left out: on their own they are as likely to mean something else.
+ */
+const COLLECTED_FIELD_PATTERNS: [CollectedField, RegExp][] = [
+  ['name', /^(?:(?:full|first|last|first and last) name|name|surname|(?:पूरा )?नाम|nombre(?: completo)?)$/u],
+  ['email', /^(?:e ?mail(?: address| id)?|mail id|ई ?मेल(?: आईडी| पता)?|correo(?: electronico)?)$/u],
+  [
+    'phone',
+    /^(?:(?:(?:mobile|cell) )?phone(?: number| no| num)?|(?:mobile|cell|contact|telephone|mob|ph) (?:number|no|num)|mobile|telephone|(?:फ़?ोन|मोबाइल)(?: नंबर)?|(?:numero de )?telefono|celular)$/u,
+  ],
+];
 
 /**
  * The collected field a question asks for, or null. Only questions asking for
- * the attendee's own name, email or phone and nothing else match ("What's your
- * phone number?", "Email ID"), so "Team name" or "Emergency contact number"
- * never trip it. The editor uses it to nudge, never to block.
+ * the booker's own name, email or phone and nothing else match ("What's your
+ * phone number?", "Email ID", "आपका नाम"), so "Team name" or "Emergency
+ * contact number" never trip it. The editor uses it to nudge, never to block.
  */
 export function alreadyCollectedField(label: string): CollectedField | null {
   const core = label
+    .normalize('NFD')
+    // Latin accents only ("teléfono" → "telefono"); Devanagari vowel signs are marks too and must stay.
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
     .trim()
-    .replace(/^(?:please )?(?:(?:enter|provide|share|give)(?: us)? )?(?:(?:what is|what s|whats) )?(?:your )?/, '');
-  return COLLECTED_FIELD_QUESTIONS[core] ?? null;
+    .replace(/ (?:please|क्या है)$/u, '')
+    .replace(
+      /^(?:please )?(?:(?:enter|provide|share|give)(?: us)? )?(?:(?:what is|what s|whats) )?(?:your |आपका |अपना )?/u,
+      '',
+    );
+  return COLLECTED_FIELD_PATTERNS.find(([, pattern]) => pattern.test(core))?.[0] ?? null;
+}
+
+/** The editor's note under a question asking for a collected field, or null. */
+export function collectedFieldNudge(label: string): string | null {
+  const field = alreadyCollectedField(label);
+  return field && `You already get the booker's ${COLLECTED_FIELD_LABELS[field]} with every registration.`;
 }
 
 /** Choice questions ('select' = pick one, 'multiselect' = pick any) carry options. */

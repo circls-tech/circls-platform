@@ -3,11 +3,13 @@ import { forwardRef, InputHTMLAttributes, useId } from 'react';
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: string;
+  /** 'warning' shows the hint in amber: advice worth acting on, short of an error. */
+  hintTone?: 'muted' | 'warning';
   error?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, hint, error, id: idProp, className = '', ...rest },
+  { label, hint, hintTone = 'muted', error, id: idProp, className = '', ...rest },
   ref,
 ) {
   const generatedId = useId();
@@ -45,7 +47,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         </p>
       )}
       {hint != null && error == null && (
-        <p id={`${id}-hint`} className="text-xs text-[#94a3b8]">
+        <p
+          id={`${id}-hint`}
+          className={`text-xs ${hintTone === 'warning' ? 'text-amber-700' : 'text-[#94a3b8]'}`}
+        >
           {hint}
         </p>
       )}
