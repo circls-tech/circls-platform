@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alreadyCollectedField,
+  collectedFieldNudge,
   hasChoiceQuestionWithoutOptions,
   questionDraftFromApi,
   questionsToPayload,
@@ -52,5 +54,59 @@ describe('registration question drafts', () => {
     // Blank rows are dropped from the payload, so they never block saving.
     expect(hasChoiceQuestionWithoutOptions(row('select', '', ''))).toBe(false);
     expect(hasChoiceQuestionWithoutOptions(row('text', 'Notes', ''))).toBe(false);
+  });
+
+  it('spots questions asking for the name, email or phone Circls already collects', () => {
+    expect(alreadyCollectedField('Name')).toBe('name');
+    expect(alreadyCollectedField("What's your full name?")).toBe('name');
+    expect(alreadyCollectedField('First and last name')).toBe('name');
+    expect(alreadyCollectedField('Please enter your email address')).toBe('email');
+    expect(alreadyCollectedField('E-mail ID')).toBe('email');
+    expect(alreadyCollectedField('Give us your email')).toBe('email');
+    expect(alreadyCollectedField('Your mobile no.')).toBe('phone');
+    expect(alreadyCollectedField('  Phone Number  ')).toBe('phone');
+    expect(alreadyCollectedField('Share your phone number please')).toBe('phone');
+    expect(alreadyCollectedField('Provide your mobile phone number')).toBe('phone');
+    expect(alreadyCollectedField('Mob no')).toBe('phone');
+  });
+
+  it('spots the same questions in Hindi and Spanish', () => {
+    expect(alreadyCollectedField('नाम')).toBe('name');
+    expect(alreadyCollectedField('आपका नाम क्या है?')).toBe('name');
+    expect(alreadyCollectedField('ईमेल आईडी')).toBe('email');
+    // With and without the nukta, precomposed or not.
+    expect(alreadyCollectedField('फ़ोन नंबर')).toBe('phone');
+    expect(alreadyCollectedField('फ़ोन नंबर')).toBe('phone');
+    expect(alreadyCollectedField('फोन नंबर')).toBe('phone');
+    expect(alreadyCollectedField('मोबाइल नंबर')).toBe('phone');
+    expect(alreadyCollectedField('Número de teléfono')).toBe('phone');
+    expect(alreadyCollectedField('Correo electrónico')).toBe('email');
+  });
+
+  it('leaves questions about other people or other details alone', () => {
+    expect(alreadyCollectedField('Team name')).toBeNull();
+    expect(alreadyCollectedField('Emergency contact number')).toBeNull();
+    expect(alreadyCollectedField("Parent's phone number")).toBeNull();
+    expect(alreadyCollectedField('WhatsApp number')).toBeNull();
+    expect(alreadyCollectedField('Name on your T-shirt')).toBeNull();
+    expect(alreadyCollectedField('Contact')).toBeNull();
+    expect(alreadyCollectedField('टीम का नाम')).toBeNull();
+    expect(alreadyCollectedField('')).toBeNull();
+  });
+
+  it('never matches inherited object keys', () => {
+    expect(alreadyCollectedField('Constructor')).toBeNull();
+    expect(alreadyCollectedField('toString')).toBeNull();
+    expect(alreadyCollectedField('__proto__')).toBeNull();
+  });
+
+  it('words the editor nudge only for collected fields', () => {
+    expect(collectedFieldNudge('Phone number')).toBe(
+      "You already get the booker's phone number with every registration.",
+    );
+    expect(collectedFieldNudge('Email')).toBe(
+      "You already get the booker's email address with every registration.",
+    );
+    expect(collectedFieldNudge('T-shirt size')).toBeNull();
   });
 });

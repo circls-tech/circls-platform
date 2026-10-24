@@ -134,6 +134,10 @@ For each question you set:
 
 Use the arrows to reorder questions; consumers see them in this order. You can add up to 20 questions, and events don't need any — leave the section empty to skip it.
 
+**No need to ask for name, email or phone.** Every registration already comes with the booker's name and the email and phone number on their Circls account, shown in the **Registered** table and its CSV (see **Managing registrations** below). The section says so above your questions, and once you've typed a question that asks for nothing but one of these (say "Phone number", "What's your email?" or "फ़ोन नंबर"), a note under it says you already have it. The note never stops you saving — keep the question if you genuinely need something different, like a WhatsApp number.
+
+These are the details of the person who booked. Registration questions are answered once per booking, so when one booking covers several tickets, ask a question (e.g. "Names of everyone attending") if you need the others' details.
+
 Questions are editable while the event is a **draft**, locked during review, and editable again once the event is **published** (from the **Live settings** card). Editing a question mid-event keeps the answers people already gave under the old wording — in the registrations CSV, the old and new versions appear as two separate columns. Answers appear with each registration (see **Managing registrations** below); a multiple-choice answer lists every option the attendee ticked, comma-separated, in the order you defined them.
 
 Don't confuse these with **customer questions** — the public Q&A threads consumers post on your event page (see the end of this guide). Registration questions are asked *by you* and answered privately at booking.

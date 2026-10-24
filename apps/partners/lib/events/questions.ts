@@ -22,6 +22,58 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   multiselect: 'Multiple choice (pick any)',
 };
 
+/** Booker details every registration already carries from the customer's account. */
+export type CollectedField = 'name' | 'email' | 'phone';
+
+/** How the nudge names each collected field ("…the booker's phone number"). */
+const COLLECTED_FIELD_LABELS: Record<CollectedField, string> = {
+  name: 'name',
+  email: 'email address',
+  phone: 'phone number',
+};
+
+/**
+ * Normalised wordings (see alreadyCollectedField) that ask for nothing but a
+ * collected field, in English, Hindi and Spanish. Bare "contact", "cell" and
+ * "mail" are left out: on their own they are as likely to mean something else.
+ */
+const COLLECTED_FIELD_PATTERNS: [CollectedField, RegExp][] = [
+  ['name', /^(?:(?:full|first|last|first and last) name|name|surname|(?:पूरा )?नाम|nombre(?: completo)?)$/u],
+  ['email', /^(?:e ?mail(?: address| id)?|mail id|ई ?मेल(?: आईडी| पता)?|correo(?: electronico)?)$/u],
+  [
+    'phone',
+    /^(?:(?:(?:mobile|cell) )?phone(?: number| no| num)?|(?:mobile|cell|contact|telephone|mob|ph) (?:number|no|num)|mobile|telephone|(?:फ़?ोन|मोबाइल)(?: नंबर)?|(?:numero de )?telefono|celular)$/u,
+  ],
+];
+
+/**
+ * The collected field a question asks for, or null. Only questions asking for
+ * the booker's own name, email or phone and nothing else match ("What's your
+ * phone number?", "Email ID", "आपका नाम"), so "Team name" or "Emergency
+ * contact number" never trip it. The editor uses it to nudge, never to block.
+ */
+export function alreadyCollectedField(label: string): CollectedField | null {
+  const core = label
+    .normalize('NFD')
+    // Latin accents only ("teléfono" → "telefono"); Devanagari vowel signs are marks too and must stay.
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/ (?:please|क्या है)$/u, '')
+    .replace(
+      /^(?:please )?(?:(?:enter|provide|share|give)(?: us)? )?(?:(?:what is|what s|whats) )?(?:your |आपका |अपना )?/u,
+      '',
+    );
+  return COLLECTED_FIELD_PATTERNS.find(([, pattern]) => pattern.test(core))?.[0] ?? null;
+}
+
+/** The editor's note under a question asking for a collected field, or null. */
+export function collectedFieldNudge(label: string): string | null {
+  const field = alreadyCollectedField(label);
+  return field && `You already get the booker's ${COLLECTED_FIELD_LABELS[field]} with every registration.`;
+}
+
 /** Choice questions ('select' = pick one, 'multiselect' = pick any) carry options. */
 export function isChoiceType(type: QuestionType): boolean {
   return type === 'select' || type === 'multiselect';

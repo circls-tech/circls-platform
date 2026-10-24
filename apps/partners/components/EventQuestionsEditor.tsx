@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Button, Input } from '@/lib/ui';
 import {
+  collectedFieldNudge,
   emptyQuestion,
   isChoiceType,
   MAX_EVENT_QUESTIONS,
@@ -49,18 +51,21 @@ export function EventQuestionsEditor({
           restrictions). Answers are collected when they book.
         </p>
       )}
+      <p className="rounded-[var(--radius)] bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <span className="font-semibold text-slate-700">Already collected:</span> every
+        registration comes with the booker&apos;s name, email and phone number from their
+        Circls account, so there&apos;s no need to ask for them here.
+      </p>
       {value.map((q, i) => (
         <div
           key={i}
           className="grid grid-cols-1 gap-3 rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 p-3 sm:grid-cols-12"
         >
           <div className="sm:col-span-7">
-            <Input
-              label="Question"
-              placeholder="e.g. What is your T-shirt size?"
+            <QuestionLabelInput
               value={q.label}
               disabled={disabled}
-              onChange={(e) => update(i, { label: e.target.value })}
+              onChange={(label) => update(i, { label })}
             />
           </div>
           <div className="sm:col-span-3">
@@ -153,5 +158,36 @@ export function EventQuestionsEditor({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * A question's label field. The "you already get this" nudge waits until the
+ * field loses focus, so it doesn't flash while a longer question is typed
+ * through a matching start ("Name" on the way to "Name of your team").
+ */
+function QuestionLabelInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (label: string) => void;
+  disabled?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const nudge = editing ? null : collectedFieldNudge(value);
+  return (
+    <Input
+      label="Question"
+      placeholder="e.g. What is your T-shirt size?"
+      value={value}
+      disabled={disabled}
+      onFocus={() => setEditing(true)}
+      onBlur={() => setEditing(false)}
+      onChange={(e) => onChange(e.target.value)}
+      hint={nudge ?? undefined}
+      hintTone="warning"
+    />
   );
 }
