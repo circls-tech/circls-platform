@@ -13,10 +13,20 @@
  * fallbacks for clients that ignore <link>.
  */
 
-/** The logo, as the consumer site already serves it (its apple-icon,
- *  apps/consumer/app/apple-icon.png, 180×180). Email clients block `data:`
- *  images, so it must be a public URL. */
-export const LOGO_URL = 'https://circls.app/apple-icon.png';
+/** The logo on its own white rounded square (apps/consumer/public/
+ *  email-logo.png, 256×256, shown at 64px), served by the consumer site.
+ *  The bare logo's black outline vanished on dark backgrounds (Outlook) or
+ *  turned into a dark blob (Gmail on iPhone); mail apps never recolour an
+ *  image, so the badge looks the same in light and dark mode. Email clients
+ *  block `data:` images, so it must be a public URL. */
+export const LOGO_URL = 'https://circls.app/email-logo.png';
+
+/** The colour stripe across the top (apps/consumer/public/email-stripe.png,
+ *  1200×12, shown 6px tall). An image because Gmail on iPhone squeezed the
+ *  equivalent row of empty table cells into a speck, and because mail apps
+ *  never recolour images, so it keeps its colours in dark mode. Its cell is
+ *  coral underneath, so a reader with images off still gets a bar. */
+export const STRIPE_URL = 'https://circls.app/email-stripe.png';
 
 const BRI = "font-family:'Bricolage Grotesque','Helvetica Neue',Helvetica,Arial,sans-serif;";
 const JAK = "font-family:'Plus Jakarta Sans','Helvetica Neue',Helvetica,Arial,sans-serif;";
@@ -44,7 +54,23 @@ export const CTA_COLORS = {
 } as const;
 export type CtaColor = keyof typeof CTA_COLORS;
 
-const STRIPE = ['#ffd64a', '#f34f34', '#206d3f', '#a7e3bf', '#f1608c', '#a73344', '#006476'];
+/**
+ * Desktop sizes. Phone sizes are the inline defaults because Gmail on iPhone
+ * skips the <style> block; wider screens get these through a min-width
+ * media query, and Outlook for Windows (no media queries) through an
+ * [if mso] block. Paddings per row, as in the design.
+ */
+const DESKTOP_CSS = [
+  '.px{padding-left:48px!important;padding-right:48px!important}',
+  '.pxi{padding-left:64px!important;padding-right:64px!important}',
+  '.pxf{padding-left:56px!important;padding-right:56px!important}',
+  '.pxo{padding-left:40px!important;padding-right:40px!important}',
+  '.cp{padding-left:30px!important;padding-right:30px!important}',
+  '.h1{font-size:36px!important;line-height:40px!important}',
+  '.hero{font-size:23px!important;line-height:28px!important}',
+]
+  .map((r) => `    ${r}`)
+  .join('\n');
 
 // ── Card pieces (inside the cream details card) ──────────────────────────────
 
@@ -52,7 +78,7 @@ const STRIPE = ['#ffd64a', '#f34f34', '#206d3f', '#a7e3bf', '#f1608c', '#a73344'
 export function cardHero(label: string, value: string): string {
   return (
     `<tr><td colspan="2" style="padding:0 0 4px;${BRI}font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#4a4654">${label}</td></tr>\n` +
-    `<tr><td colspan="2" style="padding:0 0 14px;border-bottom:1px solid #E9E0D0;${BRI}font-size:23px;line-height:28px;font-weight:800;letter-spacing:-.4px;color:#17151D">${value}</td></tr>\n` +
+    `<tr><td colspan="2" class="hero" style="padding:0 0 14px;border-bottom:1px solid #E9E0D0;${BRI}font-size:20px;line-height:25px;font-weight:800;letter-spacing:-.4px;color:#17151D">${value}</td></tr>\n` +
     `<tr><td colspan="2" style="height:10px;line-height:10px;font-size:0">&nbsp;</td></tr>`
   );
 }
@@ -109,7 +135,7 @@ export function cardRankedList(listVar: string): string {
 export function noteBox(tone: Tone, title: string, body: string): string {
   const t = TONES[tone];
   return (
-    `<tr><td class="px" style="padding:18px 48px 0">\n` +
+    `<tr><td class="px" style="padding:18px 24px 0">\n` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${t.bg};border-radius:14px;border-left:4px solid ${t.fg}">\n` +
     `<tr><td style="padding:18px 22px">\n` +
     `<div style="${BRI}font-size:15px;font-weight:700;color:${t.fg};padding-bottom:6px">${title}</div>\n` +
@@ -161,9 +187,6 @@ export interface EmailParts {
 
 /** The full standalone email document, as Handlebars source. */
 export function emailDocument(p: EmailParts): string {
-  const stripe = STRIPE.map(
-    (c) => `<td height="6" style="height:6px;line-height:6px;font-size:0;background:${c}">&nbsp;</td>`,
-  ).join('');
   const tone = TONES[p.pill.tone];
   const links = p.footerLinks
     .map((l) => `<a href="${l.href}" style="color:#4a4654;text-decoration:underline">${l.label}</a>`)
@@ -186,12 +209,18 @@ export function emailDocument(p: EmailParts): string {
   table{border-collapse:collapse;mso-table-lspace:0;mso-table-rspace:0}
   img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic}
   a{color:inherit}
+  a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important}
   @media only screen and (max-width:620px){
     .container{width:100%!important}
-    .px{padding-left:22px!important;padding-right:22px!important}
     .outer{padding:20px 10px!important}
   }
+  @media only screen and (min-width:621px){
+${DESKTOP_CSS}
+  }
 </style>
+<!--[if mso]><style>
+${DESKTOP_CSS}
+</style><![endif]-->
 </head>
 <body style="margin:0;padding:0;background:#FAF3E8">
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#FAF3E8">${p.preheader}${filler}</div>
@@ -199,19 +228,19 @@ export function emailDocument(p: EmailParts): string {
 <tr><td class="outer" align="center" style="padding:40px 16px">
 
 <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #EEE5D5;border-radius:6px;overflow:hidden">
-<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${stripe}</tr></table></td></tr>
+<tr><td bgcolor="#f34f34" style="font-size:0;line-height:0;background:#f34f34"><img src="${STRIPE_URL}" width="598" height="6" alt="" style="display:block;width:100%;max-width:600px;height:6px;border:0"></td></tr>
 <tr><td align="center" style="padding:40px 40px 0">
-<img src="${LOGO_URL}" width="52" height="52" alt="" style="display:block;width:52px;height:52px">
+<img src="${LOGO_URL}" width="64" height="64" alt="Circls" style="display:block;width:64px;height:64px">
 <div style="padding-top:8px;${BRI}font-size:30px;line-height:32px;font-weight:800;letter-spacing:-1px;color:#17151D">circls</div>
 </td></tr>
 <tr><td align="center" style="padding:28px 40px 0">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${tone.bg};border-radius:999px;padding:8px 20px;${BRI}font-size:12px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:${tone.fg}">${p.pill.text}</td></tr></table>
 </td></tr>
-<tr><td class="px" align="center" style="padding:22px 48px 0;${BRI}font-size:36px;line-height:40px;font-weight:800;letter-spacing:-1px;color:#17151D">${p.headline}</td></tr>
-<tr><td class="px" align="center" style="padding:14px 64px 0;${JAK}font-size:17px;line-height:27px;color:#4a4654">${p.intro}</td></tr>
-<tr><td class="px" style="padding:30px 48px 0">
+<tr><td class="px h1" align="center" style="padding:22px 24px 0;${BRI}font-size:29px;line-height:33px;font-weight:800;letter-spacing:-1px;color:#17151D">${p.headline}</td></tr>
+<tr><td class="px pxi" align="center" style="padding:14px 24px 0;${JAK}font-size:17px;line-height:27px;color:#4a4654">${p.intro}</td></tr>
+<tr><td class="px" style="padding:30px 24px 0">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FAF3E8;border-radius:16px">
-<tr><td style="padding:26px 30px 24px">
+<tr><td class="cp" style="padding:26px 22px 24px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${p.card}</table>
 </td></tr></table>
 </td></tr>
@@ -221,12 +250,12 @@ ${p.boxes ?? ''}
 <a href="${p.cta.href}" target="_blank" style="display:inline-block;padding:15px 40px;${BRI}font-size:17px;font-weight:700;color:#17151D;text-decoration:none;border-radius:10px">${p.cta.label}</a>
 </td></tr></table>
 </td></tr>
-${p.footnote ? `<tr><td class="px" align="center" style="padding:18px 56px 0;${JAK}font-size:14px;line-height:22px;color:#8a8594">${p.footnote}</td></tr>` : ''}
+${p.footnote ? `<tr><td class="px pxf" align="center" style="padding:18px 24px 0;${JAK}font-size:14px;line-height:22px;color:#8a8594">${p.footnote}</td></tr>` : ''}
 <tr><td align="center" style="padding:30px 40px 44px;${HAND}font-size:22px;font-weight:700;color:#EE5C2B">${p.signoff} &#10022;</td></tr>
 </table>
 
 <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px">
-<tr><td class="px" align="center" style="padding:28px 40px 6px;${JAK}font-size:13px;line-height:21px;color:#8a8594">${p.footerReason}</td></tr>
+<tr><td class="px pxo" align="center" style="padding:28px 24px 6px;${JAK}font-size:13px;line-height:21px;color:#8a8594">${p.footerReason}</td></tr>
 <tr><td align="center" style="padding:0 40px;${JAK}font-size:13px;line-height:21px">${links}</td></tr>
 <tr><td align="center" style="padding:18px 40px 0;${JAK}font-size:12px;color:#b3ada2">Circls &middot; Mumbai, India</td></tr>
 </table>

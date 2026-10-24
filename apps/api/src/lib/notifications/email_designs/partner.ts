@@ -3,6 +3,7 @@
  * changes. Sent by MSG91 from its stored copy of each template, to the org's
  * contact email (else its owners).
  */
+import { noAutoLink } from '../email_format.js';
 import {
   bulletList,
   cardHero,
@@ -62,7 +63,7 @@ export const partnerBookingConfirmed: EmailDesign = {
     customerShort: 'Rohan M.',
     listingName: 'Sunday 10K Social',
     heroLabel: 'When',
-    heroValue: 'Sun 12 Oct, 6:00 AM',
+    heroValue: noAutoLink('Sun 12 Oct, 6:00 AM'),
     rows: [
       { label: 'Booked by', value: 'Rohan Mehta' },
       { label: 'Listing', value: 'Sunday 10K Social' },

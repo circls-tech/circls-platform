@@ -126,4 +126,4 @@ Local runs read the same names from `apps/api/.env` (gitignored).
 | Designed email arrives as plain text | Its key isn't in `MSG91_EMAIL_DESIGNS` yet. |
 | `resend_send_failed:403` / `422 …domain…` | Resend key or domain. |
 | No admin mail at all | `ADMIN_TEAM_EMAILS` unset. |
-| Logo missing in a designed email | It is the consumer site's icon, `https://circls.app/apple-icon.png`; check that URL loads (and that the mail client shows images). |
+| Logo or colour stripe missing in a designed email | They are images on the consumer site: `https://circls.app/email-logo.png` and `https://circls.app/email-stripe.png`. Check both load (and that the mail client shows images). They ship with the consumer site, so **deploy the consumer site before the API** whenever they change, or emails go out with broken images until it lands. |

@@ -2,6 +2,7 @@
  * Customer emails: booking confirmed, booking cancelled, refund issued.
  * Sent by MSG91 from its stored copy of each template (`msg91Slug`).
  */
+import { noAutoLink } from '../email_format.js';
 import {
   cardHero,
   cardRows,
@@ -52,7 +53,7 @@ export const bookingConfirmed: EmailDesign = {
     placeName: 'Bandra Sports Club',
     shortDate: 'Sat 4 Oct',
     heroLabel: 'When',
-    heroValue: 'Sat 4 Oct, 7:00–8:00 PM',
+    heroValue: noAutoLink('Sat 4 Oct, 7:00–8:00 PM'),
     rows: [
       { label: 'Venue', value: 'Bandra Sports Club' },
       { label: 'Arena', value: 'Turf 2 · 5-a-side' },
@@ -116,7 +117,7 @@ export const bookingCancelled: EmailDesign = {
     boxes: refundBoxes,
     cta: { href: '{{browseUrl}}', label: 'Find something else', color: 'blue' },
     footnote: `{{#if refundText}}Track your refund anytime from ${inlineLink('{{bookingUrl}}', 'your bookings')}.{{else}}See this booking anytime in ${inlineLink('{{bookingUrl}}', 'your bookings')}.{{/if}}`,
-    signoff: 'plenty more circles out there',
+    signoff: 'plenty more circls out there',
     footerReason: 'You&rsquo;re getting this because you had a booking on Circls.',
     footerLinks: [FOOTER_HELP, { href: '{{bookingUrl}}', label: 'Your bookings' }],
   }),
@@ -140,7 +141,7 @@ export const bookingCancelled: EmailDesign = {
     placeName: 'Sunday 10K Social',
     subjectName: 'Sunday 10K Social',
     shortDate: 'Sun 12 Oct',
-    heroValue: 'Sun 12 Oct, 6:00 AM',
+    heroValue: noAutoLink('Sun 12 Oct, 6:00 AM'),
     rows: [
       { label: 'Event', value: 'Sunday 10K Social' },
       { label: 'Where', value: 'Marine Drive Promenade' },

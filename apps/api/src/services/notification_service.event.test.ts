@@ -11,7 +11,7 @@ import {
   venues,
 } from '../db/schema/index.js';
 import { __resetNotificationsForTesting } from '../lib/notifications/index.js';
-import { formatWhen } from '../lib/notifications/email_format.js';
+import { formatWhen, noAutoLink } from '../lib/notifications/email_format.js';
 import { notifyBookingCancelled, notifyBookingConfirmed, notifyEventCancelled } from './notification_service.js';
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
@@ -106,7 +106,7 @@ describe.skipIf(!runIntegration)('event booking confirmation (integration)', () 
     expect(email!.payload).toMatchObject({
       placeName: 'Coffee Tasting',
       itemNoun: 'spot',
-      heroValue: expectedWhen,
+      heroValue: noAutoLink(expectedWhen),
       totalValue: 'Free',
     });
     const rowLabels = (email!.payload['rows'] as Array<{ label: string; value: string }>).map((r) => r.label);
