@@ -18,6 +18,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 
 const { closeDb, db } = await import('../db/client.js');
 const { buildServer } = await import('../server.js');
+const { addMonths, dayIn } = await import('../services/commission_waiver.js');
 
 const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
@@ -162,5 +163,82 @@ describe.skipIf(!runIntegration)('GET /v1/tenants/:tenantId/earnings', () => {
     for (const forbidden of ['grossPaise', 'commissionPaise', 'refundsPaise', 'feePaise']) {
       expect(body).not.toContain(forbidden);
     }
+  });
+
+  // ── Commission-free period ─────────────────────────────────────────────────
+
+  describe('GET /v1/tenants/:tenantId/commission-waiver', () => {
+    function getWaiver(token = 'owner') {
+      return app.inject({
+        method: 'GET',
+        url: `/v1/tenants/${tenantId}/commission-waiver`,
+        headers: bearer(token),
+      });
+    }
+
+    /** A charge on a fresh booking; `held` = it settles through Circls. */
+    async function insertCharge(at: Date, held: boolean): Promise<void> {
+      const [b] = (await db.execute<Record<string, unknown>>(sql`
+        insert into bookings (tenant_id, item_type, channel, payment_method, status,
+                              item_data, currency, total_paise, created_at)
+        values (${tenantId}::uuid, 'event', 'circls', 'razorpay_route', 'confirmed',
+                '{}'::jsonb, 'INR', 10000, ${at.toISOString()}::timestamptz)
+        returning id
+      `)) as unknown as Record<string, unknown>[];
+      await db.execute(sql`
+        insert into payments (booking_id, tenant_id, provider, amount_paise, currency,
+                              status, kind, settlement_hold_until, created_at)
+        values (${b!['id'] as string}::uuid, ${tenantId}::uuid, 'stub', 10000, 'INR',
+                ${held ? 'captured' : 'failed'}, 'charge',
+                ${held ? new Date(at.getTime() + 86_400_000).toISOString() : null}::timestamptz,
+                ${at.toISOString()}::timestamptz)
+      `);
+    }
+
+    it('has not started before the first paid booking', async () => {
+      const res = await getWaiver();
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        status: 'not_started',
+        startsOn: null,
+        endsOn: null,
+        firstPaidOn: null,
+        afterWaiverBps: null,
+      });
+    });
+
+    it('is financial data: Read-only may see it, Staff may not', async () => {
+      expect((await getWaiver('readonly')).statusCode).toBe(200);
+      const staff = await getWaiver('staff');
+      expect(staff.statusCode).toBe(403);
+      expect(staff.json()).toMatchObject({ error: { code: 'forbidden_capability' } });
+      expect((await getWaiver('outsider')).statusCode).toBe(403);
+    });
+
+    it('starts on the first paid booking — not a failed checkout before it', async () => {
+      const day = 86_400_000;
+      await insertCharge(new Date(Date.now() - 20 * day), false);
+      const firstPaid = new Date(Date.now() - 10 * day);
+      await insertCharge(firstPaid, true);
+      await insertCharge(new Date(Date.now() - 5 * day), true);
+
+      const res = await getWaiver();
+      expect(res.statusCode).toBe(200);
+      // No venue, so the org's days are cut in IST.
+      const startsOn = dayIn('Asia/Kolkata', firstPaid);
+      expect(res.json()).toMatchObject({
+        status: 'active',
+        startsOn,
+        endsOn: addMonths(startsOn, 3),
+        firstPaidOn: startsOn,
+        startSetByAdmin: false,
+        endSetByAdmin: false,
+      });
+    });
+
+    it('never carries the live commission rate', async () => {
+      const body = JSON.stringify((await getWaiver()).json());
+      expect(body).not.toContain('commissionBps');
+    });
   });
 });

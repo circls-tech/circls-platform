@@ -460,6 +460,22 @@ export interface Analytics {
   trend7d: AnalyticsTrendSeries[];
 }
 
+// ── Commission-free period ────────────────────────────────────────────────────
+// Mirrors apps/api/src/services/commission_waiver.ts. Every org's first 3
+// months from its first paid booking carry no Circls commission. Dates are
+// YYYY-MM-DD; `endsOn` is the day commission starts.
+
+export interface CommissionWaiver {
+  status: 'not_started' | 'active' | 'ended';
+  startsOn: string | null;
+  endsOn: string | null;
+  firstPaidOn: string | null;
+  startSetByAdmin: boolean;
+  endSetByAdmin: boolean;
+  /** Commission agreed for after the period, in bps; null = not stated. */
+  afterWaiverBps: number | null;
+}
+
 // ── Earnings ──────────────────────────────────────────────────────────────────
 // Net payable for a chosen window. Mirrors apps/api/src/services/earnings_service.ts,
 // which returns net ONLY — there is deliberately no gross, commission or fee

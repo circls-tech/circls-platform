@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useAdminTenants } from '@/lib/api/queries';
 import type { AdminTenantListItem } from '@/lib/api/types';
+import { waiverSummary } from '@/lib/commission_waiver';
 
 const STATUS_TONE: Record<AdminTenantListItem['status'], string> = {
   active: 'bg-emerald-100 text-emerald-800',
@@ -17,6 +18,11 @@ function Pill({ tone, label }: { tone: string; label: string }) {
       {label}
     </span>
   );
+}
+
+function WaiverCell({ waiver }: { waiver: AdminTenantListItem['commissionWaiver'] }) {
+  const { label, tone } = waiverSummary(waiver);
+  return <Pill tone={`${tone} whitespace-nowrap`} label={label} />;
 }
 
 const IST_DATE = new Intl.DateTimeFormat('en-IN', {
@@ -177,7 +183,7 @@ export default function TenantsPage() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead className="border-b-2 border-[#17151D] bg-[#FAF3E8] text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Name</th>
@@ -185,27 +191,28 @@ export default function TenantsPage() {
               <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 text-right font-medium">Venues</th>
               <th className="px-4 py-2 text-right font-medium">Bookings (30d)</th>
+              <th className="px-4 py-2 font-medium">Commission-free</th>
               <th className="px-4 py-2 font-medium">Created</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
                   Loading…
                 </td>
               </tr>
             )}
             {isError && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-600">
                   Failed to load: {error instanceof Error ? error.message : 'unknown error'}
                 </td>
               </tr>
             )}
             {!isLoading && !isError && rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
                   {filtered
                     ? 'No tenants match these filters.'
                     : 'No tenants found.'}
@@ -233,6 +240,9 @@ export default function TenantsPage() {
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{t.venueCount}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{t.bookingCount30d}</td>
+                <td className="px-4 py-2.5">
+                  <WaiverCell waiver={t.commissionWaiver} />
+                </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">
                   {IST_DATE.format(new Date(t.createdAt))}
                 </td>

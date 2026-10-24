@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, date, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, updatedAt, uuidPk } from './_columns.js';
 
 /**
@@ -103,6 +103,17 @@ export const tenants = pgTable('tenants', {
    *  paid out in the weekly payout after CAPTURE instead of waiting for the
    *  settlement hold. The final tranche nets it back out. Events may override. */
   advancePayoutBps: integer('advance_payout_bps').notNull().default(0),
+  // ── Commission-free period (record-only; see services/commission_waiver.ts) ─
+  /** Admin-set first day of the commission-free period (YYYY-MM-DD). NULL =
+   *  the org's first paid booking. */
+  commissionWaiverStartsOn: date('commission_waiver_starts_on'),
+  /** Admin-set day the period ends and commission starts. NULL = start + 3
+   *  months. */
+  commissionWaiverEndsOn: date('commission_waiver_ends_on'),
+  /** The partner commission agreed for after the period, in bps — shown to the
+   *  partner, never charged by itself (commissionBps is what's charged). NULL =
+   *  not decided. */
+  commissionAfterWaiverBps: integer('commission_after_waiver_bps'),
   subscriptionStatus: subscriptionStatus('subscription_status').notNull().default('trial'),
   status: tenantStatus('status').notNull().default('active'),
   /**

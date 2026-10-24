@@ -25,6 +25,7 @@ import type {
   TeamMember,
   Tenant,
   TenantEarnings,
+  CommissionWaiver,
   TenantInvitation,
   TenantEmailPrefs,
   TenantProfile,
@@ -929,6 +930,15 @@ export function useEarnings(
     // `range` is null while the period is incomplete — a cleared date field —
     // so the query is disabled and queryFn never runs.
     enabled: Boolean(tenantId) && range !== null && enabled,
+  });
+}
+
+/** The org's commission-free period. Same gate as earnings (financials.read). */
+export function useCommissionWaiver(tenantId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['commission-waiver', tenantId],
+    queryFn: () => apiFetch<CommissionWaiver>(`/v1/tenants/${tenantId}/commission-waiver`),
+    enabled: Boolean(tenantId) && enabled,
   });
 }
 

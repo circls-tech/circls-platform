@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { CommissionWaiverCard } from '@/components/CommissionWaiverCard';
 import { useEarnings } from '@/lib/api/queries';
 import type { EarningsItem, EarningsStream, TenantEarnings } from '@/lib/api/types';
 import { asCurrencyCode, formatMoney } from '@/lib/currency';
@@ -254,6 +255,8 @@ export default function EarningsPage() {
           </Button>
         )}
       </div>
+
+      <CommissionWaiverCard tenantId={activeTenantId} enabled={canRead} />
 
       {/* ── What the numbers mean. Stated up front, because a partner who has
           only ever seen gross will otherwise read these as the same figure

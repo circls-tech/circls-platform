@@ -546,6 +546,98 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('commission-free period — not started by default; admin dates reach detail and list', async () => {
+    const detail = () =>
+      app.inject({ method: 'GET', url: `/v1/admin/tenants/${tenantBId}`, headers: bearer('padmin') });
+    const before = await detail();
+    expect(before.statusCode).toBe(200);
+    expect(before.json().commissionWaiver).toMatchObject({
+      status: 'not_started',
+      startsOn: null,
+      endsOn: null,
+      firstPaidOn: null,
+      afterWaiverBps: null,
+    });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/v1/admin/tenants/${tenantBId}/billing`,
+      headers: bearer('padmin'),
+      payload: { commissionWaiverStartsOn: '2026-01-10', commissionAfterWaiverBps: 500 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      commissionWaiverStartsOn: '2026-01-10',
+      commissionWaiverEndsOn: null,
+      commissionAfterWaiverBps: 500,
+      // Record-only: the live rate is untouched.
+      commissionBps: 0,
+    });
+
+    // The default end follows the set start; long past, so ended.
+    expect((await detail()).json().commissionWaiver).toMatchObject({
+      status: 'ended',
+      startsOn: '2026-01-10',
+      endsOn: '2026-04-10',
+      startSetByAdmin: true,
+      endSetByAdmin: false,
+      afterWaiverBps: 500,
+    });
+
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants?q=${slugB}`,
+      headers: bearer('padmin'),
+    });
+    expect(list.statusCode).toBe(200);
+    const row = (list.json() as { rows: Array<{ id: string; commissionWaiver: unknown }> }).rows.find(
+      (r) => r.id === tenantBId,
+    );
+    expect(row?.commissionWaiver).toMatchObject({ status: 'ended', endsOn: '2026-04-10' });
+
+    const audit = (await db.execute<Record<string, unknown>>(sql`
+      SELECT after FROM audit_log
+       WHERE tenant_id = ${tenantBId} AND action = 'tenant.billing_updated'
+       ORDER BY created_at DESC LIMIT 1
+    `)) as unknown as Record<string, unknown>[];
+    expect(audit[0]!['after']).toMatchObject({
+      commissionWaiverStartsOn: '2026-01-10',
+      commissionAfterWaiverBps: 500,
+    });
+  });
+
+  it('commission-free period — rejects an end before the start and a non-date; null resets', async () => {
+    const patch = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/v1/admin/tenants/${tenantBId}/billing`,
+        headers: bearer('padmin'),
+        payload,
+      });
+
+    // Start is 2026-01-10 from the previous test.
+    const early = await patch({ commissionWaiverEndsOn: '2026-01-09' });
+    expect(early.statusCode).toBe(400);
+    expect(early.json().error.code).toBe('commission_waiver_ends_before_start');
+
+    expect((await patch({ commissionWaiverStartsOn: '2026-02-31' })).statusCode).toBe(400);
+    expect((await patch({ commissionWaiverStartsOn: '10/01/2026' })).statusCode).toBe(400);
+    expect((await patch({ commissionAfterWaiverBps: 10001 })).statusCode).toBe(400);
+
+    const reset = await patch({
+      commissionWaiverStartsOn: null,
+      commissionWaiverEndsOn: null,
+      commissionAfterWaiverBps: null,
+    });
+    expect(reset.statusCode).toBe(200);
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/admin/tenants/${tenantBId}`,
+      headers: bearer('padmin'),
+    });
+    expect(detail.json().commissionWaiver).toMatchObject({ status: 'not_started', startsOn: null });
+  });
+
   it('per-event billing overrides — list, set, clear', async () => {
     // Standalone (venue-less) event: the scope CHECK requires address + tz.
     const evRows = await db.execute<{ id: string }>(sql`

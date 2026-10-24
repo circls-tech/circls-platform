@@ -31,6 +31,23 @@ export interface AdminStats {
   logins7d: number;
 }
 
+/**
+ * The org's commission-free period (apps/api/src/services/commission_waiver.ts).
+ * Record-only: commission is still whatever `commissionBps` says. Dates are
+ * YYYY-MM-DD; `endsOn` is the day commission starts.
+ */
+export interface CommissionWaiver {
+  status: 'not_started' | 'active' | 'ended';
+  startsOn: string | null;
+  endsOn: string | null;
+  /** Day of the org's first paid booking — the default start. */
+  firstPaidOn: string | null;
+  startSetByAdmin: boolean;
+  endSetByAdmin: boolean;
+  /** Commission agreed for after the period, in bps; null = not decided. */
+  afterWaiverBps: number | null;
+}
+
 export interface AdminTenantListItem {
   id: string;
   name: string;
@@ -40,6 +57,7 @@ export interface AdminTenantListItem {
   createdAt: string;
   venueCount: number;
   bookingCount30d: number;
+  commissionWaiver: CommissionWaiver;
 }
 
 export interface AdminTenantListPage {
@@ -79,9 +97,15 @@ export interface AdminTenantDetail {
     customerFeeShareBps: number;
     orgFeeShareBps: number;
     advancePayoutBps: number;
+    // Commission-free period overrides (null = default); see commissionWaiver.
+    commissionWaiverStartsOn: string | null;
+    commissionWaiverEndsOn: string | null;
+    commissionAfterWaiverBps: number | null;
     createdAt: string;
     updatedAt: string | null;
   };
+  /** The resolved period, defaults filled in. */
+  commissionWaiver: CommissionWaiver;
   members: AdminTenantMember[];
 }
 
@@ -92,6 +116,11 @@ export interface AdminTenantBillingPatch {
   customerFeeShareBps?: number;
   orgFeeShareBps?: number;
   advancePayoutBps?: number;
+  /** YYYY-MM-DD; null = back to the default (first paid booking). */
+  commissionWaiverStartsOn?: string | null;
+  /** YYYY-MM-DD; null = back to the default (start + 3 months). */
+  commissionWaiverEndsOn?: string | null;
+  commissionAfterWaiverBps?: number | null;
 }
 
 /**

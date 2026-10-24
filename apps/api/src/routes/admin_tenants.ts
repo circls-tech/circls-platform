@@ -16,6 +16,12 @@ import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currencyForCountry } from '../lib/gateway.js';
 import { getPlatformRevenue, getTenantItemRevenue } from '../services/revenue_service.js';
+import {
+  getCommissionWaiver,
+  waiverColumnsSql,
+  waiverFromRow,
+  type CommissionWaiver,
+} from '../services/commission_waiver.js';
 import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
@@ -37,6 +43,7 @@ interface AdminTenantListItem {
   createdAt: string;
   venueCount: number;
   bookingCount30d: number;
+  commissionWaiver: CommissionWaiver;
 }
 
 interface AdminTenantListPage {
@@ -82,6 +89,19 @@ const listQuerySchema = z.object({
 const tenantIdParamSchema = z.object({ id: z.string().uuid() });
 
 const bps = z.number().int().min(0).max(10_000);
+
+/** A real calendar day as YYYY-MM-DD (rejects 2026-02-31). The refine still
+ *  runs when the regex fails, so it must not throw on garbage. */
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (d) => {
+      const ms = Date.parse(`${d}T00:00:00Z`);
+      return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === d;
+    },
+    { message: 'Not a calendar date' },
+  );
 
 /** Cursor pagination only — unlike the tenants list there is no `q` search. */
 const eventsListQuerySchema = z.object({
@@ -130,6 +150,11 @@ const tenantBillingBodySchema = z
     customerFeeShareBps: bps.optional(),
     orgFeeShareBps: bps.optional(),
     advancePayoutBps: bps.optional(),
+    // Commission-free period overrides; null = back to the default (first paid
+    // booking / start + 3 months / not decided). See commission_waiver.ts.
+    commissionWaiverStartsOn: isoDay.nullable().optional(),
+    commissionWaiverEndsOn: isoDay.nullable().optional(),
+    commissionAfterWaiverBps: bps.nullable().optional(),
   })
   .refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Empty patch' });
 
@@ -143,20 +168,26 @@ const eventBillingBodySchema = z
   })
   .refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Empty patch' });
 
-/** The five admin-editable billing fields, for audit before/after blobs. */
+/** The admin-editable billing fields, for audit before/after blobs. */
 function billingFields(t: {
   commissionBps: number;
   consumerCommissionBps: number;
   customerFeeShareBps: number;
   orgFeeShareBps: number;
   advancePayoutBps: number;
-}): Record<string, number> {
+  commissionWaiverStartsOn: string | null;
+  commissionWaiverEndsOn: string | null;
+  commissionAfterWaiverBps: number | null;
+}): Record<string, number | string | null> {
   return {
     commissionBps: t.commissionBps,
     consumerCommissionBps: t.consumerCommissionBps,
     customerFeeShareBps: t.customerFeeShareBps,
     orgFeeShareBps: t.orgFeeShareBps,
     advancePayoutBps: t.advancePayoutBps,
+    commissionWaiverStartsOn: t.commissionWaiverStartsOn,
+    commissionWaiverEndsOn: t.commissionWaiverEndsOn,
+    commissionAfterWaiverBps: t.commissionAfterWaiverBps,
   };
 }
 
@@ -235,7 +266,8 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             (SELECT count(*) FROM venues v WHERE v.tenant_id = t.id)                     AS venue_count,
             (SELECT count(*) FROM bookings b
                WHERE b.tenant_id = t.id
-                 AND b.created_at >= now() - interval '30 days')                          AS booking_count_30d
+                 AND b.created_at >= now() - interval '30 days')                          AS booking_count_30d,
+            ${waiverColumnsSql()}
           FROM tenants t
           WHERE ${whereClause}
         ) s
@@ -257,6 +289,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         createdAt: new Date(r['created_at'] as string).toISOString(),
         venueCount: Number(r['venue_count'] ?? 0),
         bookingCount30d: Number(r['booking_count_30d'] ?? 0),
+        commissionWaiver: waiverFromRow(r),
       }));
 
       let nextCursor: string | null = null;
@@ -305,6 +338,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
 
       return {
         tenant,
+        commissionWaiver: await getCommissionWaiver(id),
         members: memberRows.map((m) => ({
           userId: m.userId,
           role: m.role,
@@ -484,6 +518,24 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             { customerFeeShareBps: mergedCustomer, orgFeeShareBps: mergedOrg },
           );
         }
+        // Same for the waiver dates: compare the merged pair. Only two SET
+        // dates are checked — an end set before a not-yet-known first booking
+        // just reads as an ended period.
+        const mergedStart =
+          patch.commissionWaiverStartsOn !== undefined
+            ? patch.commissionWaiverStartsOn
+            : before.commissionWaiverStartsOn;
+        const mergedEnd =
+          patch.commissionWaiverEndsOn !== undefined
+            ? patch.commissionWaiverEndsOn
+            : before.commissionWaiverEndsOn;
+        if (mergedStart !== null && mergedEnd !== null && mergedEnd < mergedStart) {
+          throw new BadRequest(
+            'The commission-free period must end on or after its start',
+            'commission_waiver_ends_before_start',
+            { commissionWaiverStartsOn: mergedStart, commissionWaiverEndsOn: mergedEnd },
+          );
+        }
 
         const [after] = await tx
           .update(tenants)
@@ -498,6 +550,15 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             ...(patch.orgFeeShareBps !== undefined ? { orgFeeShareBps: patch.orgFeeShareBps } : {}),
             ...(patch.advancePayoutBps !== undefined
               ? { advancePayoutBps: patch.advancePayoutBps }
+              : {}),
+            ...(patch.commissionWaiverStartsOn !== undefined
+              ? { commissionWaiverStartsOn: patch.commissionWaiverStartsOn }
+              : {}),
+            ...(patch.commissionWaiverEndsOn !== undefined
+              ? { commissionWaiverEndsOn: patch.commissionWaiverEndsOn }
+              : {}),
+            ...(patch.commissionAfterWaiverBps !== undefined
+              ? { commissionAfterWaiverBps: patch.commissionAfterWaiverBps }
               : {}),
           })
           .where(eq(tenants.id, id))

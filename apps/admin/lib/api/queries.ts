@@ -220,6 +220,8 @@ export function useUpdateTenantBilling() {
       }),
     onSuccess: (_data, args) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', args.id] });
+      // The list shows the commission-free period.
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenants'] });
     },
   });
 }
