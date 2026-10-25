@@ -136,7 +136,7 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     expect(ingest.statusCode).toBe(200);
 
     // Hot: two web views from one person (plus that Flutter view from
-    // another), and one view 40 days ago; shares sent, copied and dismissed;
+    // another), and one view 40 days ago; shares sent, copied, sent to WhatsApp and dismissed;
     // a like that is not a view; and a view of the draft, which must not
     // surface at all. The series: one view of each date, by two people.
     await db.execute(sql`
@@ -150,6 +150,7 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
         (${consumerUserId}::uuid, 'e1', 'share', 'event', ${hotId}::uuid, '{"outcome":"shared"}'::jsonb, now(), now()),
         (${adminUserId}::uuid,    'e2', 'share', 'event', ${hotId}::uuid, '{"outcome":"copied"}'::jsonb, now(), now()),
         (${consumerUserId}::uuid, 'e1', 'share', 'event', ${hotId}::uuid, '{"outcome":"dismissed"}'::jsonb, now(), now()),
+        (${adminUserId}::uuid,    'e2', 'share', 'event', ${hotId}::uuid, '{"outcome":"whatsapp","from":"booking"}'::jsonb, now(), now()),
         (${consumerUserId}::uuid, 'e1', 'like',  'event', ${hotId}::uuid, NULL, now(), now()),
         (${consumerUserId}::uuid, 'e1', 'item_view', 'event', ${draftId}::uuid, NULL, now(), now())
     `);
@@ -212,11 +213,11 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       views: 4, // both clients' view events; the share and like rows are not views
       viewers: 2,
       likes: 2,
-      shares: 2, // shared + copied; the dismissed sheet is not a share
+      shares: 3, // shared, copied and WhatsApp; the dismissed sheet is not a share
       bookings: 1, // pending and walk-in left out
     });
     expect(page.rows[2]).toMatchObject({ views: 0, viewers: 0, likes: 0, shares: 0, bookings: 0 });
-    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 2, bookings: 1 });
+    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 3, bookings: 1 });
     expect(page.nextCursor).toBeNull();
   });
 

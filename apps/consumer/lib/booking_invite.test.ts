@@ -55,20 +55,25 @@ describe('checkout invites (from the listing)', () => {
       itemType: 'event',
       itemId: 'evt_1',
       title: 'Join me at Sunday Smash',
-      message: "Hi! I'm going to Sunday Smash at Smash Arena on Sat, 7 Nov at 7:00 pm. Care to join me?",
+      message: "Hi! I'm going to *Sunday Smash*\n📅 Sat, 7 Nov at 7:00 pm\n📍 Smash Arena\nCare to join me? 👇",
     });
   });
 
   it("writes the time in the event's zone, whatever the sender's", () => {
     const ev = { id: 'evt_2', name: 'Harbor Hoops', startsAt: SAT, venueId: 'ven_2', venueName: 'Harbor Yard', locTzName: 'America/New_York' };
     expect(inviteForEvent(ev).message).toBe(
-      "Hi! I'm going to Harbor Hoops at Harbor Yard on Sat, 7 Nov at 8:30 am. Care to join me?",
+      "Hi! I'm going to *Harbor Hoops*\n📅 Sat, 7 Nov at 8:30 am\n📍 Harbor Yard\nCare to join me? 👇",
     );
   });
 
   it('an event with no venue leaves the place out', () => {
     const ev = { id: 'evt_3', name: 'City 10K', startsAt: SAT, venueId: null, venueName: null, locTzName: 'Asia/Kolkata' };
-    expect(inviteForEvent(ev).message).toBe("Hi! I'm going to City 10K on Sat, 7 Nov at 7:00 pm. Care to join me?");
+    expect(inviteForEvent(ev).message).toBe("Hi! I'm going to *City 10K*\n📅 Sat, 7 Nov at 7:00 pm\nCare to join me? 👇");
+  });
+
+  it('keeps the bold whole when the name has an asterisk in it', () => {
+    const ev = { id: 'evt_4', name: 'Smash *Night* ', startsAt: SAT, venueId: null, venueName: null, locTzName: 'Asia/Kolkata' };
+    expect(inviteForEvent(ev).message.split('\n')[0]).toBe("Hi! I'm going to *Smash Night*");
   });
 
   it('a membership names the plan and, for a venue plan only, the venue', () => {
@@ -76,12 +81,12 @@ describe('checkout invites (from the listing)', () => {
       itemType: 'membership',
       itemId: 'mem_1',
       title: 'Join me at Smash Arena',
-      message: "Hi! I've joined Gold Monthly at Smash Arena. Care to join me?",
+      message: "Hi! I've joined *Gold Monthly*\n📍 Smash Arena\nCare to join me? 👇",
     });
     // A brand-wide plan's scope is the brand, which is no place to meet.
     expect(inviteForMembership({ id: 'mem_2', name: 'Acme Pass', venueId: null, scopeName: 'Acme' })).toMatchObject({
       title: 'Join me at Acme Pass',
-      message: "Hi! I've joined Acme Pass. Care to join me?",
+      message: "Hi! I've joined *Acme Pass*\nCare to join me? 👇",
     });
   });
 
@@ -95,7 +100,7 @@ describe('checkout invites (from the listing)', () => {
       itemType: 'venue',
       itemId: 'ven_1',
       title: 'Play with me at Smash Arena',
-      message: "Hi! I've booked Court 2 at Smash Arena for Sat, 7 Nov at 7:00 pm. Care to join me?",
+      message: "Hi! I've booked Court 2 at *Smash Arena*\n📅 Sat, 7 Nov at 7:00 pm\nCare to join me? 👇",
     });
   });
 
@@ -104,7 +109,7 @@ describe('checkout invites (from the listing)', () => {
     const end = '2026-11-07T14:30:00.000Z';
     const two = [slot('Court 2', SAT, end), slot('Court 1', SAT, end), slot('Court 1', end, '2026-11-07T15:30:00.000Z')];
     expect(inviteForCourts(venue, two, NOW)?.message).toBe(
-      "Hi! I've booked Court 2 and Court 1 at Smash Arena for Sat, 7 Nov at 7:00 pm. Care to join me?",
+      "Hi! I've booked Court 2 and Court 1 at *Smash Arena*\n📅 Sat, 7 Nov at 7:00 pm\nCare to join me? 👇",
     );
     const three = [slot('A', SAT, end), slot('B', SAT, end), slot('C', SAT, end)];
     expect(inviteForCourts(venue, three, NOW)?.message).toContain("I've booked A, B and C at");
@@ -113,7 +118,7 @@ describe('checkout invites (from the listing)', () => {
   it('the copied text is the note, then the link', () => {
     const invite = inviteForMembership({ id: 'mem_1', name: 'Gold Monthly', venueId: null, scopeName: 'Acme' });
     expect(inviteText(invite, 'https://circls.app/memberships/mem_1')).toBe(
-      "Hi! I've joined Gold Monthly. Care to join me?\nhttps://circls.app/memberships/mem_1",
+      "Hi! I've joined *Gold Monthly*\nCare to join me? 👇\nhttps://circls.app/memberships/mem_1",
     );
   });
 });
@@ -121,10 +126,10 @@ describe('checkout invites (from the listing)', () => {
 describe('inviteForBooking', () => {
   it('invites to a confirmed, upcoming event, in the booking’s zone', () => {
     expect(inviteForBooking(booking({ event }), NOW)?.message).toBe(
-      "Hi! I'm going to Sunday Smash at Smash Arena on Sat, 7 Nov at 7:00 pm. Care to join me?",
+      "Hi! I'm going to *Sunday Smash*\n📅 Sat, 7 Nov at 7:00 pm\n📍 Smash Arena\nCare to join me? 👇",
     );
     expect(inviteForBooking(booking({ event, timeZone: 'America/New_York' }), NOW)?.message).toContain(
-      'on Sat, 7 Nov at 8:30 am',
+      '📅 Sat, 7 Nov at 8:30 am',
     );
   });
 
@@ -137,7 +142,7 @@ describe('inviteForBooking', () => {
   it('leaves the place out when the booking has no venue', () => {
     // The API titles a venue-less booking with the event's own name.
     const invite = inviteForBooking(booking({ event, venueId: null, venueName: 'Sunday Smash' }), NOW);
-    expect(invite?.message).toBe("Hi! I'm going to Sunday Smash on Sat, 7 Nov at 7:00 pm. Care to join me?");
+    expect(invite?.message).toBe("Hi! I'm going to *Sunday Smash*\n📅 Sat, 7 Nov at 7:00 pm\nCare to join me? 👇");
   });
 
   it('has nothing to say for a booking that is not confirmed', () => {
@@ -159,7 +164,7 @@ describe('inviteForBooking', () => {
       itemType: 'venue',
       itemId: 'ven_1',
       title: 'Play with me at Smash Arena',
-      message: "Hi! I've booked Court 2 at Smash Arena for Sat, 7 Nov at 7:00 pm. Care to join me?",
+      message: "Hi! I've booked Court 2 at *Smash Arena*\n📅 Sat, 7 Nov at 7:00 pm\nCare to join me? 👇",
     });
     expect(inviteForBooking(booking({ itemType: 'slot', slots }), new Date('2026-11-08T00:00:00Z'))).toBeNull();
   });
@@ -167,12 +172,12 @@ describe('inviteForBooking', () => {
   it('invites to a membership, naming the venue only for a venue plan', () => {
     const membership = { id: 'mem_1', name: 'Gold Monthly', durationDays: 30, description: null, endsAt: '2026-11-20T00:00:00.000Z' };
     expect(inviteForBooking(booking({ itemType: 'membership', membership }), NOW)?.message).toBe(
-      "Hi! I've joined Gold Monthly at Smash Arena. Care to join me?",
+      "Hi! I've joined *Gold Monthly*\n📍 Smash Arena\nCare to join me? 👇",
     );
     expect(
       inviteForBooking(booking({ itemType: 'membership', membership, venueId: null, venueName: 'Gold Monthly' }), NOW)
         ?.message,
-    ).toBe("Hi! I've joined Gold Monthly. Care to join me?");
+    ).toBe("Hi! I've joined *Gold Monthly*\nCare to join me? 👇");
   });
 
   it('has nothing to say once the membership has run out, though its booking stays confirmed', () => {

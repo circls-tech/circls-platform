@@ -35,10 +35,19 @@ interface CourtSlot {
 
 /** A place is named only when there is a venue: without one, a booking's title is the listing's own name. */
 const placeOf = (venueId: string | null, name: string | null) => (venueId ? name : null);
-const at = (place: string | null) => (place ? ` at ${place}` : '');
 /** "Court 1", "Court 1 and Court 2", "Court 1, Court 2 and Court 3". */
 const listOf = (names: string[]) =>
   names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+/**
+ * WhatsApp bold. Most invites go out on WhatsApp, which shows `*name*` in
+ * bold; other apps show the asterisks, which still reads. A `*` inside the
+ * name would end the bold early, so it is dropped.
+ */
+const bold = (s: string) => `*${s.replace(/\*/g, '').trim()}*`;
+
+/** The note, one line each: who's going to what, when, where, and the ask (the link follows on the next line). */
+const lines = (...ls: (string | null)[]) => [...ls.filter(Boolean), 'Care to join me? 👇'].join('\n');
 
 function eventInvite(
   e: { id: string; name: string; startsAt: string },
@@ -49,7 +58,11 @@ function eventInvite(
     itemType: 'event',
     itemId: e.id,
     title: `Join me at ${e.name}`,
-    message: `Hi! I'm going to ${e.name}${at(place)} on ${formatDayAtTime(e.startsAt, timeZone)}. Care to join me?`,
+    message: lines(
+      `Hi! I'm going to ${bold(e.name)}`,
+      `📅 ${formatDayAtTime(e.startsAt, timeZone)}`,
+      place ? `📍 ${place}` : null,
+    ),
   };
 }
 
@@ -58,7 +71,7 @@ function membershipInvite(m: { id: string; name: string }, place: string | null)
     itemType: 'membership',
     itemId: m.id,
     title: `Join me at ${place ?? m.name}`,
-    message: `Hi! I've joined ${m.name}${at(place)}. Care to join me?`,
+    message: lines(`Hi! I've joined ${bold(m.name)}`, place ? `📍 ${place}` : null),
   };
 }
 
@@ -95,7 +108,10 @@ export function inviteForCourts(
     itemType: 'venue',
     itemId: venue.id,
     title: `Play with me at ${venue.name}`,
-    message: `Hi! I've booked ${listOf(courts)} at ${venue.name} for ${formatDayAtTime(firstSlots[0]!.startAt, venue.timeZone)}. Care to join me?`,
+    message: lines(
+      `Hi! I've booked ${listOf(courts)} at ${bold(venue.name)}`,
+      `📅 ${formatDayAtTime(firstSlots[0]!.startAt, venue.timeZone)}`,
+    ),
   };
 }
 

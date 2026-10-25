@@ -20,17 +20,19 @@ import { sql, type SQL } from 'drizzle-orm';
  * copied, where there is no sheet), `dismissed` (sheet closed),
  * `unavailable` / `failed` (nothing happened), or, from the mobile app,
  * `unknown` (the sheet opened but the platform could not say what the person
- * did with it). Only the first two are known to have put a link in someone's
- * hands, so only they count as shares. The web app's "Invite friends" on a
- * booking logs the same `share`, against the listing its link opens (the
- * event, the venue for a court, the plan), with `props.from` set to `booking`
- * or `checkout`; it counts like any other share of that listing.
+ * did with it). "Invite friends" on a booking (both clients) logs the same
+ * `share`, against the listing its link opens (the event, the venue for a
+ * court, the plan), with `props.from` set to `booking` or `checkout`; its
+ * WhatsApp button logs the outcome `whatsapp` (WhatsApp opened with the note
+ * ready). `shared`, `copied` and `whatsapp` put the link in someone's hands
+ * as far as the app can tell, so those three count as shares; like a copied
+ * link, a WhatsApp chat can still be abandoned unsent.
  *
  * LIKES are not here: they are read from `wishlist_items`, which both clients
  * write through the wishlist API, rather than from `like` / `unlike` activity
  * rows (which only say when a heart was tapped, not what is liked now).
  */
-export const COMPLETED_SHARE_OUTCOMES = ['shared', 'copied'] as const;
+export const COMPLETED_SHARE_OUTCOMES = ['shared', 'copied', 'whatsapp'] as const;
 
 /**
  * The event type an incoming activity event is stored under: a view named
