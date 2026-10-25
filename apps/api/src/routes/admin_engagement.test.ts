@@ -61,6 +61,11 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
   let seriesPastId: string;
   let seriesNextId: string;
   let endedId: string;
+  let seriesQueuedId: string;
+  let staleReviewId: string;
+  let freePlanId: string;
+  let paidPlanId: string;
+  const STALE = `stale${SUFFIX}`;
   let cancelledId: string;
   let rejectedId: string;
 
@@ -126,6 +131,12 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     // A weekly series in Boston: last week's date and next week's.
     seriesPastId = await insertEvent(`${TAG} Weekly`, 'completed', { inDays: -7, series: seriesId, tz: 'America/New_York' });
     seriesNextId = await insertEvent(`${TAG} Weekly`, 'published', { inDays: 7, series: seriesId, tz: 'America/New_York' });
+    // A date added to the series, sooner than the next live one but still
+    // awaiting review: the live date must still stand for the series.
+    seriesQueuedId = await insertEvent(`${TAG} Weekly`, 'pending_review', { inDays: 3, series: seriesId, tz: 'America/New_York' });
+    // Never approved, and its date has passed: still in the review queue, so
+    // Active, not Completed. Named apart so the TAG listings stay as they are.
+    staleReviewId = await insertEvent(`${STALE} Review`, 'pending_review', { inDays: -3 });
     // Off the default Active shelf: one that ran (still `published`, the sweep
     // has not reached it), one called off and one Circls turned down.
     endedId = await insertEvent(`${TAG} Ended`, 'published', { inDays: -3 });
@@ -190,6 +201,30 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       VALUES (${(booked as unknown as { id: string }[])[0]!.id}::uuid,
               ${(tier as unknown as { id: string }[])[0]!.id}::uuid, 3, 0)
     `);
+
+    // Plans: a free one taken in the app, which writes no booking at all, and
+    // a paid one whose purchase carries its booking. Each is one sale.
+    const plans = await db.execute<{ id: string; name: string }>(sql`
+      INSERT INTO memberships (tenant_id, name, duration_days, price_paise, status)
+      VALUES (${tenantAId}::uuid, ${`${TAG} Free Plan`}, 30, 0, 'active'),
+             (${tenantAId}::uuid, ${`${TAG} Paid Plan`}, 30, 50000, 'active')
+      RETURNING id, name
+    `);
+    const planRows = plans as unknown as { id: string; name: string }[];
+    freePlanId = planRows.find((p) => p.name.endsWith('Free Plan'))!.id;
+    paidPlanId = planRows.find((p) => p.name.endsWith('Paid Plan'))!.id;
+    const ums = await db.execute<{ id: string; membership_id: string }>(sql`
+      INSERT INTO user_memberships (membership_id, user_id, starts_at, ends_at, status)
+      VALUES (${freePlanId}::uuid, ${consumerUserId}::uuid, now(), now() + interval '30 days', 'active'),
+             (${paidPlanId}::uuid, ${consumerUserId}::uuid, now(), now() + interval '30 days', 'active')
+      RETURNING id, membership_id
+    `);
+    const paidUm = (ums as unknown as { id: string; membership_id: string }[]).find((u) => u.membership_id === paidPlanId)!;
+    await db.execute(sql`
+      INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id, item_data)
+      VALUES (${tenantAId}::uuid, 'membership', 'circls', 'free', 'confirmed', ${consumerUserId}::uuid,
+              ${JSON.stringify({ membershipId: paidPlanId, userMembershipId: paidUm.id })}::jsonb)
+    `);
   });
 
   afterAll(async () => {
@@ -201,6 +236,11 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     if (tenantAId) {
       await db.execute(sql`DELETE FROM bookings WHERE tenant_id = ${tenantAId}::uuid`);
       await db.execute(sql`DELETE FROM events WHERE tenant_id = ${tenantAId}::uuid`);
+      await db.execute(sql`
+        DELETE FROM user_memberships
+         WHERE membership_id IN (SELECT id FROM memberships WHERE tenant_id = ${tenantAId}::uuid)
+      `);
+      await db.execute(sql`DELETE FROM memberships WHERE tenant_id = ${tenantAId}::uuid`);
     }
     if (platformTenantId) {
       await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
@@ -272,6 +312,25 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     expect(url.get(rejectedId)).toBeNull();
   });
 
+  it('an event still awaiting review stays Active after its date', async () => {
+    const res = await get(`type=event&q=${STALE}`);
+    expect(res.statusCode).toBe(200);
+    const rows = (res.json() as Page).rows;
+    expect(rows.map((r) => r.itemId)).toEqual([staleReviewId]);
+    expect(rows[0]).toMatchObject({ status: 'pending_review', shelf: 'active', url: null });
+    expect((await get(`type=event&q=${STALE}&shelf=completed`)).json()).toMatchObject({ rows: [] });
+  });
+
+  it('counts a free plan sign-up, which has no booking, as a sale', async () => {
+    const res = await get(`type=membership&q=${TAG}`);
+    expect(res.statusCode).toBe(200);
+    const page = res.json() as Page;
+    const sales = new Map(page.rows.map((r) => [r.itemId, r.sales]));
+    expect(sales.get(freePlanId)).toBe(1);
+    expect(sales.get(paidPlanId)).toBe(1); // its booking, not the booking and the sign-up
+    expect(page.totals.sales).toBe(2);
+  });
+
   it('rejects a shelf the type does not have', async () => {
     expect((await get('type=event&shelf=closed')).statusCode).toBe(400);
     expect((await get('type=venue&shelf=completed')).statusCode).toBe(400);
@@ -284,9 +343,9 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     const rows = (res.json() as Page).rows;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      itemId: seriesNextId, // the next date stands for the series
+      itemId: seriesNextId, // the next live date stands for the series, not the sooner one in review
       seriesId,
-      dates: 2,
+      dates: 3,
       status: 'published',
       timeZone: 'America/New_York', // its own zone, not IST
       views: 2, // one per date
@@ -321,6 +380,8 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.headers['content-disposition']).toContain('engagement-events.csv');
     expect(res.body).toContain('"Listing ID","Series ID","Type","Name","Dates"');
+    // The shelf rides last, so an ended event still reading 'published' can be told apart.
+    expect(res.body).toContain('"Shares","Sales","Shelf"');
     expect(res.body).toContain(`${TAG} Hot`);
     expect(res.body).not.toContain(`${TAG} Draft`);
   });

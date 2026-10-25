@@ -46,9 +46,8 @@ export function bookingUnitsSql(bookingId: SQL, itemType: SQL): SQL {
 /**
  * A booking that stands: confirmed, completed or no-show. `cancelled` fell
  * through and `pending` has not happened yet — an abandoned checkout is not a
- * sale. The "Sales" counts dated by when a booking was made (the partner
- * dashboard, the admin dashboard, the admin tenant and partner-user lists, the
- * engagement report) count only these, in {@link bookingUnitsSql} units.
+ * sale. sales_ledger.ts, behind every "Sales" count dated by when the sale was
+ * made, reads only these.
  *
  * @param alias Table alias of a `bookings` row.
  */

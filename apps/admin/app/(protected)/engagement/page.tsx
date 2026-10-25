@@ -62,10 +62,10 @@ function eventDate(startsAt: string, timeZone: string | null): string {
   }).format(new Date(startsAt));
 }
 
-/** The status pill. An event that ran keeps `published` until the nightly
- *  sweep marks it completed, so it reads "ended" in the meantime. */
+/** The status pill. A published event that ran keeps `published` until the
+ *  nightly sweep marks it completed, so it reads "ended" in the meantime. */
 function statusLabel(r: AdminEngagementRow): string {
-  if (r.shelf === 'completed' && r.status !== 'completed') return 'ended';
+  if (r.shelf === 'completed' && r.status === 'published') return 'ended';
   return r.status.replace(/_/g, ' ');
 }
 
@@ -232,12 +232,12 @@ export default function EngagementPage() {
       <p className="text-xs text-slate-400">
         Active means live or awaiting review. Shares count links sent or copied, not dismissed share sheets. Likes
         are what is on wishlists now. Views and shares from people who never signed in are not recorded. App sales
-        count tickets, court bookings and plans. Who liked and shared what is on the{' '}
+        count tickets, court bookings and plans, free sign-ups included. Who liked and shared what is on the{' '}
         <Link href="/users" className="underline">
           Consumers
         </Link>{' '}
-        report. A listing customers can open links to its page on circls.app. CSV export applies the current
-        filters and is capped to the first 10,000 rows.
+        report. A listing customers can open links to its page on the consumer site. CSV export applies the
+        current filters and is capped to the first 10,000 rows.
       </p>
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
@@ -314,7 +314,7 @@ export default function EngagementPage() {
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.viewers}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.likes}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.shares}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.sales}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.sales ?? '—'}</td>
               </tr>
             ))}
           </tbody>

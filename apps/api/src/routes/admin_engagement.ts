@@ -9,10 +9,14 @@ import { assertCap } from '../middleware/require_cap.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
-import { bookingStandsSql, bookingUnitsSql } from '../services/booking_units.js';
 import { isShareSql, isViewSql } from '../services/engagement_signals.js';
 import { consumerLinks } from '../services/consumer_links.js';
-import { itemKeySql } from '../services/item_key.js';
+import {
+  MEMBERSHIP_SHELF_STATUSES,
+  shelfCaseSql,
+  VENUE_SHELF_STATUSES,
+} from '../services/listing_shelves.js';
+import { salesLedgerSql } from '../services/sales_ledger.js';
 
 /**
  * Platform-admin Engagement report, GET /v1/admin/engagement: one row per
@@ -28,10 +32,10 @@ import { itemKeySql } from '../services/item_key.js';
  *     signed-in people behind them.
  *   - likes: people who have the listing on their wishlist now.
  *   - shares: share taps that sent or copied the link.
- *   - sales: what bookings made in the consumer app (channel 'circls') that
- *     went through (confirmed, completed or no-show) sold — tickets for an
- *     event, one per court booking or plan (bookingUnitsSql): the end of the
- *     funnel that starts with a view. A court booking counts against its venue.
+ *   - sales: what customers bought in the consumer app (channel 'circls') —
+ *     tickets for an event, one per court booking or plan, free plan sign-ups
+ *     included (sales_ledger.ts): the end of the funnel that starts with a
+ *     view. A court booking counts against its venue.
  *
  * A RECURRING EVENT IS ONE ROW. Every date of a series is its own events row,
  * and the consumer site shows the series as one card linking to whichever date
@@ -42,7 +46,7 @@ import { itemKeySql } from '../services/item_key.js';
  *
  * Each row carries `url`, its page on the consumer site, when customers can
  * open that page now (see consumer_links.ts); otherwise null. The CSV leaves
- * it out.
+ * it out, and carries the shelf as its last column.
  *
  * `since` narrows every count to what happened at or after it (a like counts
  * from when it was made). Drafts are left out: nobody outside the partner
@@ -63,15 +67,16 @@ type EngagementType = (typeof ENGAGEMENT_TYPES)[number];
 
 /**
  * The shelves each type splits into, as the LISTINGS `shelf` column computes
- * them. 'active' is what is live or on its way (awaiting review), as on the
- * admin tenant tabs. An event that has ended, or that the partner ended early,
- * is 'completed'; a venue the partner closed is 'closed'; a plan they switched
- * off is 'inactive'. 'all' (not listed) is every shelf.
+ * them; 'all' (not listed) is every shelf. Venues and plans use the statuses
+ * of listing_shelves.ts, shared with the admin tenant tabs. An event is
+ * 'active' while live or awaiting review — awaiting review even once its date
+ * has passed, as it is still in the review queue — and 'completed' once it
+ * has run (ended, or ended early by the partner).
  */
 const SHELVES: Record<EngagementType, readonly string[]> = {
   event: ['active', 'completed', 'cancelled', 'rejected'],
-  venue: ['active', 'closed', 'rejected'],
-  membership: ['active', 'inactive', 'rejected'],
+  venue: Object.keys(VENUE_SHELF_STATUSES),
+  membership: Object.keys(MEMBERSHIP_SHELF_STATUSES),
 };
 
 const querySchema = z.object({
@@ -91,7 +96,8 @@ const querySchema = z.object({
  * Every non-draft listing of a type, with the group it is counted under
  * (`grp`), whether it stands for that group (`pick = 1`) and how many listings
  * the group has. Only events group: by series, with the date that stands for
- * it ordered live before cancelled, upcoming before past, then nearest to now.
+ * it ordered cancelled last, upcoming before past, published (the dates
+ * customers can open) before the rest, then nearest to now.
  * An event's time zone is its own (standalone events) or its venue's. `shelf`
  * is one of SHELVES[type]; an event is over once its end has passed, which is
  * when every consumer query stops showing it.
@@ -102,10 +108,12 @@ const LISTINGS: Record<EngagementType, SQL> = {
            e.name, e.tenant_id, e.status::text AS status, e.starts_at,
            coalesce(e.tz_name, v.tz_name) AS tz_name,
            CASE WHEN e.status IN ('cancelled', 'rejected') THEN e.status::text
-                WHEN e.status = 'completed' OR coalesce(e.ends_at, e.starts_at) < now() THEN 'completed'
+                WHEN e.status = 'completed' THEN 'completed'
+                WHEN e.status = 'published' AND coalesce(e.ends_at, e.starts_at) < now() THEN 'completed'
                 ELSE 'active' END AS shelf,
            row_number() OVER (PARTITION BY coalesce(e.series_id, e.id)
                               ORDER BY e.status = 'cancelled', e.starts_at < now(),
+                                       e.status <> 'published',
                                        abs(extract(epoch FROM e.starts_at - now()))) AS pick,
            count(*) OVER (PARTITION BY coalesce(e.series_id, e.id)) AS dates
       FROM events e
@@ -115,8 +123,7 @@ const LISTINGS: Record<EngagementType, SQL> = {
     SELECT v.id AS item_id, v.id AS grp, NULL::uuid AS series_id,
            v.name, v.tenant_id, v.status::text AS status, NULL::timestamptz AS starts_at,
            NULL::text AS tz_name,
-           CASE v.status WHEN 'rejected' THEN 'rejected' WHEN 'suspended' THEN 'closed'
-                ELSE 'active' END AS shelf,
+           ${shelfCaseSql(sql`v.status`, VENUE_SHELF_STATUSES)} AS shelf,
            1 AS pick, 1 AS dates
       FROM venues v
      WHERE v.status <> 'draft'`,
@@ -124,14 +131,13 @@ const LISTINGS: Record<EngagementType, SQL> = {
     SELECT m.id AS item_id, m.id AS grp, NULL::uuid AS series_id,
            m.name, m.tenant_id, m.status::text AS status, NULL::timestamptz AS starts_at,
            NULL::text AS tz_name,
-           CASE m.status WHEN 'rejected' THEN 'rejected' WHEN 'inactive' THEN 'inactive'
-                ELSE 'active' END AS shelf,
+           ${shelfCaseSql(sql`m.status`, MEMBERSHIP_SHELF_STATUSES)} AS shelf,
            1 AS pick, 1 AS dates
       FROM memberships m
      WHERE m.status <> 'draft'`,
 };
 
-/** The bookings.item_type a listing type sells: a venue sells court slots. */
+/** The sales ledger's item_type a listing type sells: a venue sells court slots. */
 const BOOKING_ITEM_TYPE: Record<EngagementType, string> = {
   event: 'event',
   venue: 'slot',
@@ -196,7 +202,6 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
 
     const activitySince = since ? sql`AND ca.created_at >= ${since}::timestamptz` : sql``;
     const likesSince = since ? sql`AND w.created_at >= ${since}::timestamptz` : sql``;
-    const bookingsSince = since ? sql`AND b.created_at >= ${since}::timestamptz` : sql``;
     const like = parsed.data.q ? `%${parsed.data.q.toLowerCase()}%` : null;
     const nameFilter = like ? sql`AND (lower(o.name) LIKE ${like} OR lower(t.name) LIKE ${like})` : sql``;
     const shelfFilter = shelf === 'all' ? sql`` : sql`AND o.shelf = ${shelf}`;
@@ -231,14 +236,19 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
          WHERE w.item_type = ${type}::wishlist_item_type ${likesSince}
          GROUP BY m.grp
       ),
+      -- Materialized so the ledger's union runs once: inlined, the planner can
+      -- put it on the inner side of a loop over every listing and re-run it
+      -- per row (seconds for a thousand plans).
+      app_sales AS MATERIALIZED (
+        SELECT sl.item_id, sl.units
+          FROM (${salesLedgerSql(since ? { since: sql`${since}::timestamptz` } : {})}) sl
+         WHERE sl.item_type = ${BOOKING_ITEM_TYPE[type]}
+           AND sl.channel = 'circls'
+      ),
       sold AS (
-        SELECT m.grp, sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}) AS sales
-          FROM bookings b
-          JOIN member m ON m.item_id = ${itemKeySql('b')}
-         WHERE b.item_type = ${BOOKING_ITEM_TYPE[type]}::booking_item_type
-           AND b.channel = 'circls'
-           AND ${bookingStandsSql('b')}
-           ${bookingsSince}
+        SELECT m.grp, sum(s.units) AS sales
+          FROM app_sales s
+          JOIN member m ON m.item_id = s.item_id
          GROUP BY m.grp
       ),
       rows AS (
@@ -294,10 +304,10 @@ export const adminEngagementRoutes: FastifyPluginAsync = async (app) => {
     if (wantCsv) {
       const csv = csvDocument(
         ['Listing ID', 'Series ID', 'Type', 'Name', 'Dates', 'Status', 'Starts', 'Time zone',
-         'Organiser', 'Organiser ID', 'Views', 'Viewers', 'Likes', 'Shares', 'Sales'],
+         'Organiser', 'Organiser ID', 'Views', 'Viewers', 'Likes', 'Shares', 'Sales', 'Shelf'],
         rows.map((r) => [
           r.itemId, r.seriesId, r.itemType, r.name, r.dates, r.status, r.startsAt, r.timeZone,
-          r.tenantName, r.tenantId, r.views, r.viewers, r.likes, r.shares, r.sales,
+          r.tenantName, r.tenantId, r.views, r.viewers, r.likes, r.shares, r.sales, r.shelf,
         ]),
       );
       return reply

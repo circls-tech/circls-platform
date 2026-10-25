@@ -185,8 +185,9 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     }
   });
 
-  it('GET /v1/admin/tenants — sales30d counts bookings that stand; minSales30d filters on it', async () => {
-    // B sells one; its abandoned checkout and cancelled booking are not sales.
+  it('GET /v1/admin/tenants — sales30d counts bookings that stand and free sign-ups; minSales30d filters on it', async () => {
+    // B sells one booking; its abandoned checkout and cancelled booking are
+    // not sales.
     const inserted = await db.execute<{ id: string }>(sql`
       INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, item_data)
       VALUES (${tenantBId}::uuid, 'event', 'circls', 'free', 'confirmed', '{}'::jsonb),
@@ -195,6 +196,17 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
       RETURNING id
     `);
     const ids = (inserted as unknown as { id: string }[]).map((r) => r.id);
+    // And one free plan sign-up, which writes no booking.
+    const plan = await db.execute<{ id: string }>(sql`
+      INSERT INTO memberships (tenant_id, name, duration_days, price_paise, status)
+      VALUES (${tenantBId}::uuid, 'Free Sales Plan', 30, 0, 'active')
+      RETURNING id
+    `);
+    const planId = (plan as unknown as { id: string }[])[0]!.id;
+    await db.execute(sql`
+      INSERT INTO user_memberships (membership_id, user_id, starts_at, ends_at, status)
+      VALUES (${planId}::uuid, ${adminUserId}::uuid, now(), now() + interval '30 days', 'active')
+    `);
     try {
       const res = await app.inject({
         method: 'GET',
@@ -205,10 +217,12 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
       const page = res.json() as TenantListPage;
       // A has sold nothing.
       expect(page.rows.some((r) => r.id === tenantAId)).toBe(false);
-      expect(page.rows.find((r) => r.id === tenantBId)?.sales30d).toBe(1);
+      expect(page.rows.find((r) => r.id === tenantBId)?.sales30d).toBe(2);
       expect(page.rows.every((r) => r.sales30d >= 1)).toBe(true);
     } finally {
       await db.execute(sql`DELETE FROM bookings WHERE id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`);
+      await db.execute(sql`DELETE FROM user_memberships WHERE membership_id = ${planId}::uuid`);
+      await db.execute(sql`DELETE FROM memberships WHERE id = ${planId}::uuid`);
     }
   });
 

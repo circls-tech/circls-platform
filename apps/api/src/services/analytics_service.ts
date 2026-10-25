@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { bookingStandsSql, bookingUnitsSql } from './booking_units.js';
+import { bookingStandsSql } from './booking_units.js';
+import { salesLedgerSql } from './sales_ledger.js';
 
 /**
  * Tenant analytics — the partner dashboard's Overview tiles and 7-day chart.
@@ -151,64 +152,27 @@ function moneyLedger(tenantId: string) {
 }
 
 /**
- * One row per sale, dated and in its currency — courts, events and
- * memberships alike, which is what the Activity feed lists. The tile answers
- * "what did I sell", so only bookings that stand are counted.
- *
- * Nearly all of it is the `bookings` ledger. The exception is a free,
- * coupon-less membership purchase: memberships_service skips the synthetic
- * booking for those, so they exist only as `user_memberships` rows. The feed
- * unions them in for exactly that reason, and so must this, or a plan with a
- * free tier would list its sign-ups on the Activity page and never move the
- * dashboard's count.
- *
- * The union mirrors the feed's shape, including its inner join on `users`: a
- * member the partner added by hand has no account behind them and appears on
- * neither. It parts from the feed on one point — a cancelled membership is
- * left out, as a cancelled booking is.
+ * One row per sale, dated by its IST day and in its currency — courts, events
+ * and memberships alike, which is what the Activity feed lists. The tile
+ * answers "what did I sell"; what counts as a sale is sales_ledger.ts.
  */
 function salesLedger(tenantId: string) {
   return sql`
-    select ${istDay(sql`b.created_at`)} as d,
-           b.currency                   as currency,
-           ${bookingUnitsSql(sql`b.id`, sql`b.item_type`)} as units
-      from bookings b
-     where b.tenant_id = ${tenantId}
-       and b.created_at >= ${WINDOW_FLOOR}
-       and ${BOOKING_STANDS}
-    union all
-    select ${istDay(sql`um.created_at`)} as d,
-           -- These carry no money and so no currency of their own. The
-           -- tenant's country decides which series they are counted under,
-           -- the same mapping lib/gateway.ts uses.
-           case when upper(btrim(coalesce(t.country, '')))
-                     in ('USA', 'US', 'UNITED STATES', 'UNITED STATES OF AMERICA')
-                then 'USD' else 'INR' end as currency,
-           1 as units
-      from user_memberships um
-      join memberships m on m.id = um.membership_id
-      join tenants t     on t.id = m.tenant_id
-      join users u       on u.id = um.user_id
-     where m.tenant_id = ${tenantId}
-       and um.created_at >= ${WINDOW_FLOOR}
-       and um.status <> 'cancelled'
-       and not exists (
-         select 1 from bookings b2
-          where b2.tenant_id = ${tenantId}
-            and b2.item_type = 'membership'
-            and b2.item_data->>'userMembershipId' = um.id::text
-       )
+    select ${istDay(sql`sl.created_at`)} as d,
+           sl.currency                   as currency,
+           sl.units                      as units
+      from (${salesLedgerSql({ tenantId: sql`${tenantId}::uuid`, since: WINDOW_FLOOR })}) sl
   `;
 }
 
 export async function getAnalytics(tenantId: string): Promise<Analytics> {
   // ---- Counts: bookingsToday (all item types) / occupancy7dPct (slots only).
+  // The ledger is a CTE read twice, so Postgres scans it once.
   const scalarRows = await db.execute<Record<string, unknown>>(sql`
+    with sales as (${salesLedger(tenantId)})
     select
-      (select count(*) from (${salesLedger(tenantId)}) sales
-        where sales.d = ${TODAY})                                                         as bookings_today,
-      (select coalesce(sum(sales.units), 0) from (${salesLedger(tenantId)}) sales
-        where sales.d = ${TODAY})                                                         as sales_today,
+      (select count(*) from sales where sales.d = ${TODAY})                               as bookings_today,
+      (select coalesce(sum(sales.units), 0) from sales where sales.d = ${TODAY})          as sales_today,
       (select round(
          100.0 * count(*) filter (where s.status = 'booked')
          / nullif(count(*) filter (where s.status in ('open', 'held', 'booked')), 0)

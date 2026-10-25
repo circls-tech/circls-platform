@@ -17,10 +17,10 @@ export interface AdminStats {
   tenantsTotal: number;
   tenantsActive: number;
   tenantsSuspended: number;
-  /** What bookings that stand sold (tickets for an event, one per court
-   *  booking or plan), by when they were made. */
-  sales24h: number;
-  sales7d: number;
+  /** What was sold (tickets for an event, one per court booking or plan,
+   *  free plan sign-ups included), by when it was sold. Optional: absent from an API older than this portal (mid-deploy). */
+  sales24h?: number;
+  sales7d?: number;
   // Users / accounts.
   usersTotal: number;
   usersNew24h: number;
@@ -61,9 +61,9 @@ export interface AdminTenantListItem {
   status: 'active' | 'suspended';
   subscriptionStatus: string;
   createdAt: string;
-  /** What the last 30 days of bookings that stand sold: tickets for an event,
-   *  one per court booking or plan. */
-  sales30d: number;
+  /** What the org sold in the last 30 days: tickets for an event, one per
+   *  court booking or plan, free plan sign-ups included. Optional: absent from an API older than this portal (mid-deploy). */
+  sales30d?: number;
   /** Optional: absent from an API older than this portal (mid-deploy). */
   commissionWaiver?: CommissionWaiver;
 }
@@ -630,9 +630,9 @@ export interface AdminEngagementRow {
   likes: number;
   /** Share taps that sent or copied the link. */
   shares: number;
-  /** What app bookings that went through (confirmed, completed or no-show)
-   *  sold: tickets for an event, one per court booking or plan. */
-  sales: number;
+  /** What customers bought in the consumer app: tickets for an event, one
+   *  per court booking or plan, free plan sign-ups included. Optional: absent from an API older than this portal (mid-deploy). */
+  sales?: number;
 }
 
 export interface AdminEngagementTotals {
@@ -640,7 +640,8 @@ export interface AdminEngagementTotals {
   views: number;
   likes: number;
   shares: number;
-  sales: number;
+  /** Optional: absent from an API older than this portal (mid-deploy). */
+  sales?: number;
 }
 
 export interface AdminEngagementPage {
@@ -665,8 +666,8 @@ export interface AdminPartnerUserRow {
   subscriptionStatus: string;
   teamSize: number;
   venueCount: number;
-  /** What the org's last 30 days of bookings that stand sold. */
-  tenantSales30d: number;
+  /** What the org sold in the last 30 days. Optional: absent from an API older than this portal (mid-deploy). */
+  tenantSales30d?: number;
   /** Partner-portal logins only (login_events.source = 'partners'). */
   loginCount: number;
   lastLoginAt: string | null;

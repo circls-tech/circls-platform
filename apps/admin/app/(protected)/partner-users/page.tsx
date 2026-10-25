@@ -220,7 +220,7 @@ export default function PartnerUsersPage() {
                 <td className="px-4 py-2.5 text-xs text-slate-600">{m.subscriptionStatus}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.teamSize}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.venueCount}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.tenantSales30d}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.tenantSales30d ?? '—'}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.loginCount}</td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">
                   {m.lastLoginAt ? IST_DATETIME.format(new Date(m.lastLoginAt)) : '—'}

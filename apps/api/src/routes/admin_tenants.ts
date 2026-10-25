@@ -16,8 +16,9 @@ import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currencyForCountry } from '../lib/gateway.js';
 import { getPlatformRevenue, getTenantItemRevenue } from '../services/revenue_service.js';
-import { bookingStandsSql, bookingUnitsSql } from '../services/booking_units.js';
 import { consumerLinks } from '../services/consumer_links.js';
+import { MEMBERSHIP_SHELF_STATUSES, VENUE_SHELF_STATUSES } from '../services/listing_shelves.js';
+import { salesCountSql, salesLedgerSql } from '../services/sales_ledger.js';
 import {
   countEventsChargingCommission,
   dayIn,
@@ -46,8 +47,8 @@ interface AdminTenantListItem {
   status: string;
   subscriptionStatus: string;
   createdAt: string;
-  /** What the last 30 days of bookings that stand sold: tickets for an event,
-   *  one per court booking or plan. */
+  /** What the org sold in the last 30 days (sales_ledger.ts): tickets for an
+   *  event, one per court booking or plan, free plan sign-ups included. */
   sales30d: number;
   commissionWaiver: CommissionWaiver;
 }
@@ -137,14 +138,15 @@ const membershipsListQuerySchema = z.object({
   shelf: z.enum(['active', 'inactive', 'all']).optional(),
 });
 
+// The tabs fold rejected into closed / inactive (listing_shelves.ts).
 const VENUE_STATUS_BY_SHELF = {
-  active: ['pending_review', 'active'],
-  closed: ['suspended', 'rejected'],
+  active: VENUE_SHELF_STATUSES.active,
+  closed: [...VENUE_SHELF_STATUSES.closed, ...VENUE_SHELF_STATUSES.rejected],
 } as const;
 
 const MEMBERSHIP_STATUS_BY_SHELF = {
-  active: ['pending_review', 'active'],
-  inactive: ['inactive', 'rejected'],
+  active: MEMBERSHIP_SHELF_STATUSES.active,
+  inactive: [...MEMBERSHIP_SHELF_STATUSES.inactive, ...MEMBERSHIP_SHELF_STATUSES.rejected],
 } as const;
 
 /** All-optional patch of the tenant billing knobs; must not be empty. */
@@ -265,11 +267,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             -- Date truncates to milliseconds, which makes the keyset comparison
             -- match the row it was built from and re-serve it as the next page.
             to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')     AS created_at_cursor,
-            (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0)
-               FROM bookings b
-               WHERE b.tenant_id = t.id
-                 AND ${bookingStandsSql('b')}
-                 AND b.created_at >= now() - interval '30 days')                          AS sales_30d,
+            ${salesCountSql({ tenantId: sql`t.id`, since: sql`now() - interval '30 days'` })} AS sales_30d,
             ${waiverColumnsSql()}
           FROM tenants t
           WHERE ${whereClause}
@@ -943,18 +941,17 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const ctx = await requireTenantMembership(user.id, platformTenantId);
       assertCap(ctx, 'admin.tenants.read');
       const rows = await db.execute<Record<string, unknown>>(sql`
+        -- The week's sales, read once for both tiles.
+        WITH sales AS (${salesLedgerSql({ since: sql`now() - interval '7 days'` })})
         SELECT
           (SELECT count(*) FROM tenants)                                                  AS tenants_total,
           (SELECT count(*) FROM tenants WHERE status = 'active')                          AS tenants_active,
           (SELECT count(*) FROM tenants WHERE status = 'suspended')                       AS tenants_suspended,
-          -- Sales: what bookings that stand sold (tickets for an event, one
-          -- per court booking or plan), dated by when they were made.
-          (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0) FROM bookings b
-             WHERE ${bookingStandsSql('b')}
-               AND b.created_at >= now() - interval '24 hours')                           AS sales_24h,
-          (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0) FROM bookings b
-             WHERE ${bookingStandsSql('b')}
-               AND b.created_at >= now() - interval '7 days')                             AS sales_7d,
+          -- Sales: tickets for an event, one per court booking or plan, by
+          -- when they were made (sales_ledger.ts).
+          (SELECT coalesce(sum(units) FILTER (WHERE created_at >= now() - interval '24 hours'), 0)
+             FROM sales)                                                                  AS sales_24h,
+          (SELECT coalesce(sum(units), 0) FROM sales)                                     AS sales_7d,
           (SELECT count(*) FROM users)                                                    AS users_total,
           (SELECT count(*) FROM users
              WHERE created_at >= now() - interval '24 hours')                             AS users_new_24h,

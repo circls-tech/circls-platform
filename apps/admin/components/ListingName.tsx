@@ -3,7 +3,8 @@
  * customers can open it there. `url` comes from the API, which applies the
  * consumer site's own visibility rule; when it is null (awaiting review,
  * ended, closed, rejected, or the organiser is suspended or hidden) the name
- * is plain text.
+ * is plain text. The tooltip names the consumer site's own host, which is not
+ * circls.app on stage or in the sandbox.
  */
 export function ListingName({
   name,
@@ -16,7 +17,7 @@ export function ListingName({
 }) {
   if (!url) {
     return (
-      <span className={className} title="Customers can’t open this on circls.app right now">
+      <span className={className} title="Customers can’t open this on the consumer site right now">
         {name}
       </span>
     );
@@ -26,7 +27,7 @@ export function ListingName({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      title="Open on circls.app"
+      title={`Open on ${new URL(url).host}`}
       className={`${className} hover:underline`}
     >
       {name}

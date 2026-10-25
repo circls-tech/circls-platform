@@ -223,7 +223,7 @@ export default function TenantsPage() {
                 <td className="px-4 py-2.5">
                   <Pill tone={STATUS_TONE[t.status] ?? 'bg-slate-100 text-slate-600'} label={t.status} />
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{t.sales30d}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{t.sales30d ?? '—'}</td>
                 <td className="px-4 py-2.5">
                   <WaiverCell waiver={t.commissionWaiver} />
                 </td>

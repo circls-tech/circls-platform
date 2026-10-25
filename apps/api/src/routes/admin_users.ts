@@ -10,7 +10,7 @@ import { requireAuth } from '../middleware/require_auth.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { isShareSql, isViewSql } from '../services/engagement_signals.js';
-import { bookingStandsSql, bookingUnitsSql } from '../services/booking_units.js';
+import { salesCountSql } from '../services/sales_ledger.js';
 
 /**
  * Platform-admin user reports. Mounted under /v1/admin/users/*. Platform
@@ -77,8 +77,8 @@ interface AdminPartnerUserRow {
   subscriptionStatus: string;
   teamSize: number;
   venueCount: number;
-  /** What the org's last 30 days of bookings that stand sold: tickets for an
-   *  event, one per court booking or plan. */
+  /** What the org sold in the last 30 days (sales_ledger.ts): tickets for an
+   *  event, one per court booking or plan, free plan sign-ups included. */
   tenantSales30d: number;
   loginCount: number;
   lastLoginAt: string | null;
@@ -303,11 +303,7 @@ export const adminUserRoutes: FastifyPluginAsync = async (app) => {
           t.subscription_status,
           (SELECT count(*) FROM tenant_members tm2 WHERE tm2.tenant_id = t.id)            AS team_size,
           (SELECT count(*) FROM venues v WHERE v.tenant_id = t.id)                        AS venue_count,
-          (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0)
-             FROM bookings b
-             WHERE b.tenant_id = t.id
-               AND ${bookingStandsSql('b')}
-               AND b.created_at >= now() - interval '30 days')                            AS tenant_sales_30d,
+          ${salesCountSql({ tenantId: sql`t.id`, since: sql`now() - interval '30 days'` })} AS tenant_sales_30d,
           (SELECT count(*) FROM login_events le
              WHERE le.user_id = u.id AND le.source = 'partners')                          AS login_count,
           (SELECT max(le.created_at) FROM login_events le
