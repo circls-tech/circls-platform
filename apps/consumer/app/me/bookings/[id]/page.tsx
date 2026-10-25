@@ -82,7 +82,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise, b.currency)}</span>
                 </div>
               </div>
-              {invite && <InviteButton invite={invite} from="booking" className="mt-4" />}
+              {invite && <InviteButton invite={invite} from="booking" label="Invite friends" className="mt-4" />}
             </Card>
 
             {/* Court (slot) booking: list each booked slot */}

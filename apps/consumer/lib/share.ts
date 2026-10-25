@@ -17,6 +17,18 @@ export function listingUrl(origin: string, itemType: WishlistItemType, itemId: s
 }
 
 /**
+ * WhatsApp's own share link: opens a chat picker with `text` ready to send,
+ * in the app on a phone and in WhatsApp Web on a computer. Where WhatsApp
+ * isn't installed it opens a page offering to get it.
+ *
+ * Not the shorter wa.me: its redirect turns every emoji outside the basic
+ * plane (📅, 📍, 👇) into "�" before WhatsApp sees the text.
+ */
+export function whatsappUrl(text: string): string {
+  return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+}
+
+/**
  * Shares a link the way the device prefers: the native share sheet where the
  * browser has one (phones, Safari, Edge), the clipboard everywhere else.
  *
