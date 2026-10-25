@@ -157,7 +157,12 @@ export default function PartnerUsersPage() {
               <th className="px-4 py-2 font-medium">Subscription</th>
               <th className="px-4 py-2 text-right font-medium">Team</th>
               <th className="px-4 py-2 text-right font-medium">Venues</th>
-              <th className="px-4 py-2 text-right font-medium">Bookings (30d)</th>
+              <th
+                className="px-4 py-2 text-right font-medium"
+                title="Tickets, court bookings and plans the organisation sold in the last 30 days, cancellations aside"
+              >
+                Sales (30d)
+              </th>
               <th className="px-4 py-2 text-right font-medium">Logins</th>
               <th className="px-4 py-2 font-medium">Last login</th>
               <th className="px-4 py-2 font-medium">Joined</th>
@@ -215,7 +220,7 @@ export default function PartnerUsersPage() {
                 <td className="px-4 py-2.5 text-xs text-slate-600">{m.subscriptionStatus}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.teamSize}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.venueCount}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.tenantBookings30d}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.tenantSales30d ?? '—'}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{m.loginCount}</td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">
                   {m.lastLoginAt ? IST_DATETIME.format(new Date(m.lastLoginAt)) : '—'}

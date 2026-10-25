@@ -31,14 +31,16 @@ interface Row {
   timeZone: string | null;
   name: string;
   status: string;
+  shelf: string;
+  url: string | null;
   tenantName: string;
   views: number;
   viewers: number;
   likes: number;
   shares: number;
-  bookings: number;
+  sales: number;
 }
-interface Totals { listings: number; views: number; likes: number; shares: number; bookings: number }
+interface Totals { listings: number; views: number; likes: number; shares: number; sales: number }
 interface Page { rows: Row[]; totals: Totals; nextCursor: string | null }
 
 describe.skipIf(!runIntegration)('admin engagement report', () => {
@@ -58,6 +60,14 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
   const seriesId = crypto.randomUUID();
   let seriesPastId: string;
   let seriesNextId: string;
+  let endedId: string;
+  let seriesQueuedId: string;
+  let staleReviewId: string;
+  let freePlanId: string;
+  let paidPlanId: string;
+  const STALE = `stale${SUFFIX}`;
+  let cancelledId: string;
+  let rejectedId: string;
 
   const userId = async (token: string) => {
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(token) });
@@ -121,6 +131,17 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     // A weekly series in Boston: last week's date and next week's.
     seriesPastId = await insertEvent(`${TAG} Weekly`, 'completed', { inDays: -7, series: seriesId, tz: 'America/New_York' });
     seriesNextId = await insertEvent(`${TAG} Weekly`, 'published', { inDays: 7, series: seriesId, tz: 'America/New_York' });
+    // A date added to the series, sooner than the next live one but still
+    // awaiting review: the live date must still stand for the series.
+    seriesQueuedId = await insertEvent(`${TAG} Weekly`, 'pending_review', { inDays: 3, series: seriesId, tz: 'America/New_York' });
+    // Never approved, and its date has passed: still in the review queue, so
+    // Active, not Completed. Named apart so the TAG listings stay as they are.
+    staleReviewId = await insertEvent(`${STALE} Review`, 'pending_review', { inDays: -3 });
+    // Off the default Active shelf: one that ran (still `published`, the sweep
+    // has not reached it), one called off and one Circls turned down.
+    endedId = await insertEvent(`${TAG} Ended`, 'published', { inDays: -3 });
+    cancelledId = await insertEvent(`${TAG} Cancelled`, 'cancelled');
+    rejectedId = await insertEvent(`${TAG} Rejected`, 'rejected');
 
     // The Flutter app's view, through the real ingest, which stores it under
     // the web's name.
@@ -160,14 +181,49 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       VALUES (${consumerUserId}::uuid, 'event', ${hotId}::uuid), (${adminUserId}::uuid, 'event', ${hotId}::uuid),
              (${consumerUserId}::uuid, 'event', ${seriesPastId}::uuid), (${consumerUserId}::uuid, 'event', ${seriesNextId}::uuid)
     `);
-    // One app booking that went through; a pending checkout and a door
-    // walk-in, neither of which is the end of an app funnel.
-    await db.execute(sql`
+    // One app booking that went through, holding three tickets; a pending
+    // checkout and a door walk-in, neither of which is the end of an app funnel.
+    const booked = await db.execute<{ id: string }>(sql`
       INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id, item_data)
       VALUES
         (${tenantAId}::uuid, 'event', 'circls', 'free', 'confirmed', ${consumerUserId}::uuid, ${JSON.stringify({ eventId: hotId })}::jsonb),
         (${tenantAId}::uuid, 'event', 'circls', 'free', 'pending',   ${consumerUserId}::uuid, ${JSON.stringify({ eventId: hotId })}::jsonb),
         (${tenantAId}::uuid, 'event', 'walkin', 'free', 'confirmed', NULL,                     ${JSON.stringify({ eventId: hotId })}::jsonb)
+      RETURNING id
+    `);
+    const tier = await db.execute<{ id: string }>(sql`
+      INSERT INTO event_ticket_tiers (event_id, tenant_id, name)
+      VALUES (${hotId}::uuid, ${tenantAId}::uuid, 'General')
+      RETURNING id
+    `);
+    await db.execute(sql`
+      INSERT INTO event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      VALUES (${(booked as unknown as { id: string }[])[0]!.id}::uuid,
+              ${(tier as unknown as { id: string }[])[0]!.id}::uuid, 3, 0)
+    `);
+
+    // Plans: a free one taken in the app, which writes no booking at all, and
+    // a paid one whose purchase carries its booking. Each is one sale.
+    const plans = await db.execute<{ id: string; name: string }>(sql`
+      INSERT INTO memberships (tenant_id, name, duration_days, price_paise, status)
+      VALUES (${tenantAId}::uuid, ${`${TAG} Free Plan`}, 30, 0, 'active'),
+             (${tenantAId}::uuid, ${`${TAG} Paid Plan`}, 30, 50000, 'active')
+      RETURNING id, name
+    `);
+    const planRows = plans as unknown as { id: string; name: string }[];
+    freePlanId = planRows.find((p) => p.name.endsWith('Free Plan'))!.id;
+    paidPlanId = planRows.find((p) => p.name.endsWith('Paid Plan'))!.id;
+    const ums = await db.execute<{ id: string; membership_id: string }>(sql`
+      INSERT INTO user_memberships (membership_id, user_id, starts_at, ends_at, status)
+      VALUES (${freePlanId}::uuid, ${consumerUserId}::uuid, now(), now() + interval '30 days', 'active'),
+             (${paidPlanId}::uuid, ${consumerUserId}::uuid, now(), now() + interval '30 days', 'active')
+      RETURNING id, membership_id
+    `);
+    const paidUm = (ums as unknown as { id: string; membership_id: string }[]).find((u) => u.membership_id === paidPlanId)!;
+    await db.execute(sql`
+      INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id, item_data)
+      VALUES (${tenantAId}::uuid, 'membership', 'circls', 'free', 'confirmed', ${consumerUserId}::uuid,
+              ${JSON.stringify({ membershipId: paidPlanId, userMembershipId: paidUm.id })}::jsonb)
     `);
   });
 
@@ -180,6 +236,11 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     if (tenantAId) {
       await db.execute(sql`DELETE FROM bookings WHERE tenant_id = ${tenantAId}::uuid`);
       await db.execute(sql`DELETE FROM events WHERE tenant_id = ${tenantAId}::uuid`);
+      await db.execute(sql`
+        DELETE FROM user_memberships
+         WHERE membership_id IN (SELECT id FROM memberships WHERE tenant_id = ${tenantAId}::uuid)
+      `);
+      await db.execute(sql`DELETE FROM memberships WHERE tenant_id = ${tenantAId}::uuid`);
     }
     if (platformTenantId) {
       await db.execute(sql`DELETE FROM tenant_members WHERE tenant_id = ${platformTenantId}::uuid`);
@@ -194,11 +255,12 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
   const get = (query: string, token = 'padmin') =>
     app.inject({ method: 'GET', url: `/v1/admin/engagement?${query}`, headers: bearer(token) });
 
-  it('counts views, viewers, likes, shares and app bookings per event, busiest first', async () => {
+  it('counts views, viewers, likes, shares and app sales per event, busiest first', async () => {
     const res = await get(`type=event&q=${TAG}`);
     expect(res.statusCode).toBe(200);
     const page = res.json() as Page;
-    // The draft is left out; the series is one row, under its next date; the
+    // Active by default, so the draft and the ended, cancelled and rejected
+    // events are left out; the series is one row, under its next date; the
     // cold event is listed with zeros.
     expect(page.rows.map((r) => r.itemId)).toEqual([hotId, seriesNextId, coldId]);
     const hot = page.rows[0]!;
@@ -206,6 +268,7 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       itemType: 'event',
       name: `${TAG} Hot`,
       status: 'published',
+      shelf: 'active',
       tenantName: `Co ${slugA}`,
       seriesId: null,
       dates: 1,
@@ -214,11 +277,64 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       viewers: 2,
       likes: 2,
       shares: 3, // shared, copied and WhatsApp; the dismissed sheet is not a share
-      bookings: 1, // pending and walk-in left out
+      sales: 3, // the confirmed app booking's three tickets; pending and walk-in left out
     });
-    expect(page.rows[2]).toMatchObject({ views: 0, viewers: 0, likes: 0, shares: 0, bookings: 0 });
-    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 3, bookings: 1 });
+    expect(page.rows[2]).toMatchObject({ views: 0, viewers: 0, likes: 0, shares: 0, sales: 0 });
+    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 3, sales: 3 });
     expect(page.nextCursor).toBeNull();
+  });
+
+  it('shelf picks which events are listed', async () => {
+    const ids = async (shelf: string) => {
+      const res = await get(`type=event&q=${TAG}&shelf=${shelf}`);
+      expect(res.statusCode).toBe(200);
+      return (res.json() as Page).rows.map((r) => r.itemId);
+    };
+    // The series stays Active: its next date stands for it, though last
+    // week's is already completed.
+    expect(await ids('completed')).toEqual([endedId]);
+    expect(await ids('cancelled')).toEqual([cancelledId]);
+    expect(await ids('rejected')).toEqual([rejectedId]);
+    expect((await ids('all')).sort()).toEqual(
+      [hotId, coldId, seriesNextId, endedId, cancelledId, rejectedId].sort(),
+    );
+  });
+
+  it('links only what customers can open on the consumer site', async () => {
+    const res = await get(`type=event&q=${TAG}&shelf=all`);
+    expect(res.statusCode).toBe(200);
+    const url = new Map((res.json() as Page).rows.map((r) => [r.itemId, r.url]));
+    expect(url.get(hotId)).toMatch(new RegExp(`/events/${hotId}$`));
+    // A series links the date that stands for it.
+    expect(url.get(seriesNextId)).toMatch(new RegExp(`/events/${seriesNextId}$`));
+    expect(url.get(endedId)).toBeNull();
+    expect(url.get(cancelledId)).toBeNull();
+    expect(url.get(rejectedId)).toBeNull();
+  });
+
+  it('an event still awaiting review stays Active after its date', async () => {
+    const res = await get(`type=event&q=${STALE}`);
+    expect(res.statusCode).toBe(200);
+    const rows = (res.json() as Page).rows;
+    expect(rows.map((r) => r.itemId)).toEqual([staleReviewId]);
+    expect(rows[0]).toMatchObject({ status: 'pending_review', shelf: 'active', url: null });
+    expect((await get(`type=event&q=${STALE}&shelf=completed`)).json()).toMatchObject({ rows: [] });
+  });
+
+  it('counts a free plan sign-up, which has no booking, as a sale', async () => {
+    const res = await get(`type=membership&q=${TAG}`);
+    expect(res.statusCode).toBe(200);
+    const page = res.json() as Page;
+    const sales = new Map(page.rows.map((r) => [r.itemId, r.sales]));
+    expect(sales.get(freePlanId)).toBe(1);
+    expect(sales.get(paidPlanId)).toBe(1); // its booking, not the booking and the sign-up
+    expect(page.totals.sales).toBe(2);
+  });
+
+  it('rejects a shelf the type does not have', async () => {
+    expect((await get('type=event&shelf=closed')).statusCode).toBe(400);
+    expect((await get('type=venue&shelf=completed')).statusCode).toBe(400);
+    expect((await get('type=membership&shelf=inactive')).statusCode).toBe(200);
   });
 
   it('counts a recurring event once, across all its dates', async () => {
@@ -227,9 +343,9 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     const rows = (res.json() as Page).rows;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      itemId: seriesNextId, // the next date stands for the series
+      itemId: seriesNextId, // the next live date stands for the series, not the sooner one in review
       seriesId,
-      dates: 2,
+      dates: 3,
       status: 'published',
       timeZone: 'America/New_York', // its own zone, not IST
       views: 2, // one per date
@@ -264,6 +380,8 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.headers['content-disposition']).toContain('engagement-events.csv');
     expect(res.body).toContain('"Listing ID","Series ID","Type","Name","Dates"');
+    // The shelf rides last, so an ended event still reading 'published' can be told apart.
+    expect(res.body).toContain('"Shares","Sales","Shelf"');
     expect(res.body).toContain(`${TAG} Hot`);
     expect(res.body).not.toContain(`${TAG} Draft`);
   });

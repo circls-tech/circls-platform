@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
+import { bookingStandsSql } from './booking_units.js';
+import { salesLedgerSql } from './sales_ledger.js';
 
 /**
  * Tenant analytics — the partner dashboard's Overview tiles and 7-day chart.
@@ -59,6 +61,8 @@ export interface MoneyByCurrency {
 export interface AnalyticsTrendPoint {
   date: string; // 'YYYY-MM-DD' (IST)
   bookings: number; // bookings made that IST day, in this currency
+  /** What those bookings sold: tickets for an event, one otherwise. */
+  sales: number;
   revenuePaise: number; // net money taken that IST day, in the series' currency minor units
 }
 
@@ -71,6 +75,12 @@ export interface AnalyticsTrendSeries {
 export interface Analytics {
   /** Bookings made today — courts, events and memberships. */
   bookingsToday: number;
+  /**
+   * What today's bookings sold: tickets for an event, one per court booking
+   * or plan (see bookingUnitsSql). The web dashboard's "Sales today";
+   * `bookingsToday` stays for the Flutter partner app.
+   */
+  salesToday: number;
   /** One entry per currency with money taken today; [] when none. */
   revenueToday: MoneyByCurrency[];
   /** One entry per currency with money taken in the 7-day window; [] when none. */
@@ -105,7 +115,7 @@ const WINDOW_FLOOR = sql`
  * happened yet — an abandoned checkout is not a sale, and counting one would
  * put a booking on the dashboard that no money will ever follow.
  */
-const BOOKING_STANDS = sql`b.status in ('confirmed', 'completed', 'no_show')`;
+const BOOKING_STANDS = bookingStandsSql('b');
 
 /**
  * Every movement of money for a tenant, one row per movement: the IST day it
@@ -142,60 +152,27 @@ function moneyLedger(tenantId: string) {
 }
 
 /**
- * One row per sale, dated and in its currency — courts, events and
- * memberships alike, which is what the Activity feed lists. The tile answers
- * "what did I sell", so only bookings that stand are counted.
- *
- * Nearly all of it is the `bookings` ledger. The exception is a free,
- * coupon-less membership purchase: memberships_service skips the synthetic
- * booking for those, so they exist only as `user_memberships` rows. The feed
- * unions them in for exactly that reason, and so must this, or a plan with a
- * free tier would list its sign-ups on the Activity page and never move the
- * dashboard's count.
- *
- * The union mirrors the feed's shape, including its inner join on `users`: a
- * member the partner added by hand has no account behind them and appears on
- * neither. It parts from the feed on one point — a cancelled membership is
- * left out, as a cancelled booking is.
+ * One row per sale, dated by its IST day and in its currency — courts, events
+ * and memberships alike, which is what the Activity feed lists. The tile
+ * answers "what did I sell"; what counts as a sale is sales_ledger.ts.
  */
 function salesLedger(tenantId: string) {
   return sql`
-    select ${istDay(sql`b.created_at`)} as d,
-           b.currency                   as currency
-      from bookings b
-     where b.tenant_id = ${tenantId}
-       and b.created_at >= ${WINDOW_FLOOR}
-       and ${BOOKING_STANDS}
-    union all
-    select ${istDay(sql`um.created_at`)} as d,
-           -- These carry no money and so no currency of their own. The
-           -- tenant's country decides which series they are counted under,
-           -- the same mapping lib/gateway.ts uses.
-           case when upper(btrim(coalesce(t.country, '')))
-                     in ('USA', 'US', 'UNITED STATES', 'UNITED STATES OF AMERICA')
-                then 'USD' else 'INR' end as currency
-      from user_memberships um
-      join memberships m on m.id = um.membership_id
-      join tenants t     on t.id = m.tenant_id
-      join users u       on u.id = um.user_id
-     where m.tenant_id = ${tenantId}
-       and um.created_at >= ${WINDOW_FLOOR}
-       and um.status <> 'cancelled'
-       and not exists (
-         select 1 from bookings b2
-          where b2.tenant_id = ${tenantId}
-            and b2.item_type = 'membership'
-            and b2.item_data->>'userMembershipId' = um.id::text
-       )
+    select ${istDay(sql`sl.created_at`)} as d,
+           sl.currency                   as currency,
+           sl.units                      as units
+      from (${salesLedgerSql({ tenantId: sql`${tenantId}::uuid`, since: WINDOW_FLOOR })}) sl
   `;
 }
 
 export async function getAnalytics(tenantId: string): Promise<Analytics> {
   // ---- Counts: bookingsToday (all item types) / occupancy7dPct (slots only).
+  // The ledger is a CTE read twice, so Postgres scans it once.
   const scalarRows = await db.execute<Record<string, unknown>>(sql`
+    with sales as (${salesLedger(tenantId)})
     select
-      (select count(*) from (${salesLedger(tenantId)}) sales
-        where sales.d = ${TODAY})                                                         as bookings_today,
+      (select count(*) from sales where sales.d = ${TODAY})                               as bookings_today,
+      (select coalesce(sum(sales.units), 0) from sales where sales.d = ${TODAY})          as sales_today,
       (select round(
          100.0 * count(*) filter (where s.status = 'booked')
          / nullif(count(*) filter (where s.status in ('open', 'held', 'booked')), 0)
@@ -245,7 +222,7 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
        group by 1, 2
     ),
     bday as (
-      select d, currency, count(*) as n
+      select d, currency, count(*) as n, sum(units) as units
         from (${salesLedger(tenantId)}) sales
        where d between ${TODAY} - 6 and ${TODAY}
        group by 1, 2
@@ -258,6 +235,7 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
     select curs.currency                          as currency,
            to_char(days.d, 'YYYY-MM-DD')          as date,
            coalesce(bday.n, 0)                    as bookings,
+           coalesce(bday.units, 0)                as sales,
            coalesce(mday.amount, 0)               as revenue_paise
       from days cross join curs
       left join mday on mday.d = days.d and mday.currency = curs.currency
@@ -272,6 +250,7 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
     days.push({
       date: row['date'] as string,
       bookings: Number(row['bookings']),
+      sales: Number(row['sales']),
       revenuePaise: Number(row['revenue_paise']),
     });
     seriesByCurrency.set(currency, days);
@@ -282,6 +261,7 @@ export async function getAnalytics(tenantId: string): Promise<Analytics> {
 
   return {
     bookingsToday: Number(scalar['bookings_today'] ?? 0),
+    salesToday: Number(scalar['sales_today'] ?? 0),
     revenueToday,
     revenue7d,
     // occupancy is null only when there are no bookable slots → 0 per contract.

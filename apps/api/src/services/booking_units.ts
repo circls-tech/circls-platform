@@ -42,3 +42,15 @@ export function bookingUnitsSql(bookingId: SQL, itemType: SQL): SQL {
                    else 1
               end)`;
 }
+
+/**
+ * A booking that stands: confirmed, completed or no-show. `cancelled` fell
+ * through and `pending` has not happened yet — an abandoned checkout is not a
+ * sale. sales_ledger.ts, behind every "Sales" count dated by when the sale was
+ * made, reads only these.
+ *
+ * @param alias Table alias of a `bookings` row.
+ */
+export function bookingStandsSql(alias: string): SQL {
+  return sql`${sql.raw(alias)}.status in ('confirmed', 'completed', 'no_show')`;
+}

@@ -17,8 +17,10 @@ export interface AdminStats {
   tenantsTotal: number;
   tenantsActive: number;
   tenantsSuspended: number;
-  bookings24h: number;
-  bookings7d: number;
+  /** What was sold (tickets for an event, one per court booking or plan,
+   *  free plan sign-ups included), by when it was sold. Optional: absent from an API older than this portal (mid-deploy). */
+  sales24h?: number;
+  sales7d?: number;
   // Users / accounts.
   usersTotal: number;
   usersNew24h: number;
@@ -59,8 +61,9 @@ export interface AdminTenantListItem {
   status: 'active' | 'suspended';
   subscriptionStatus: string;
   createdAt: string;
-  venueCount: number;
-  bookingCount30d: number;
+  /** What the org sold in the last 30 days: tickets for an event, one per
+   *  court booking or plan, free plan sign-ups included. Optional: absent from an API older than this portal (mid-deploy). */
+  sales30d?: number;
   /** Optional: absent from an API older than this portal (mid-deploy). */
   commissionWaiver?: CommissionWaiver;
 }
@@ -143,6 +146,9 @@ export type AdminTenantEventScope = 'active' | 'unarchived' | 'archived' | 'all'
 export interface AdminTenantEventBillingItem {
   id: string;
   name: string;
+  /** Its page on the consumer site, while customers can open it; null
+   *  otherwise. Optional: absent from an API older than this portal. */
+  url?: string | null;
   startsAt: string | null;
   /** ISO-8601 — the event's end, so a row reads on its own. */
   endsAt: string | null;
@@ -174,6 +180,9 @@ export type AdminTenantVenueShelf = 'active' | 'closed' | 'all';
 export interface AdminTenantVenueItem {
   id: string;
   name: string;
+  /** Its page on the consumer site, while customers can open it; null
+   *  otherwise. Optional: absent from an API older than this portal. */
+  url?: string | null;
   status: 'pending_review' | 'active' | 'suspended' | 'rejected';
   tzName: string;
   city: string | null;
@@ -192,6 +201,9 @@ export type AdminTenantMembershipShelf = 'active' | 'inactive' | 'all';
 export interface AdminTenantMembershipItem {
   id: string;
   name: string;
+  /** Its page on the consumer site, while customers can open it; null
+   *  otherwise. Optional: absent from an API older than this portal. */
+  url?: string | null;
   description: string | null;
   status: 'pending_review' | 'active' | 'inactive' | 'rejected';
   /** Null = org-wide plan. */
@@ -580,6 +592,14 @@ export interface AdminConsumerUsersPage {
 
 export type AdminEngagementType = 'event' | 'venue' | 'membership';
 
+/**
+ * Where a listing sits on the Engagement report. 'active' is live or awaiting
+ * review. Events end ('completed') or are called off ('cancelled'); venues are
+ * closed by the partner; plans are switched off ('inactive'). Any type can be
+ * 'rejected' by Circls.
+ */
+export type AdminEngagementShelf = 'active' | 'completed' | 'cancelled' | 'closed' | 'inactive' | 'rejected';
+
 /** One listing on the Engagement report (GET /v1/admin/engagement). */
 export interface AdminEngagementRow {
   itemType: AdminEngagementType;
@@ -591,6 +611,11 @@ export interface AdminEngagementRow {
   dates: number;
   name: string;
   status: string;
+  /** Which shelf it is on (see AdminEngagementShelf). */
+  shelf: AdminEngagementShelf;
+  /** Its page on the consumer site, when customers can open it now; null
+   *  otherwise (awaiting review, ended, closed, rejected, organiser hidden). */
+  url: string | null;
   /** Events only. */
   startsAt: string | null;
   /** IANA zone the event's date reads in. Events only. */
@@ -605,8 +630,9 @@ export interface AdminEngagementRow {
   likes: number;
   /** Share taps that sent or copied the link. */
   shares: number;
-  /** App bookings that went through (confirmed, completed or no-show). */
-  bookings: number;
+  /** What customers bought in the consumer app: tickets for an event, one
+   *  per court booking or plan, free plan sign-ups included. Optional: absent from an API older than this portal (mid-deploy). */
+  sales?: number;
 }
 
 export interface AdminEngagementTotals {
@@ -614,7 +640,8 @@ export interface AdminEngagementTotals {
   views: number;
   likes: number;
   shares: number;
-  bookings: number;
+  /** Optional: absent from an API older than this portal (mid-deploy). */
+  sales?: number;
 }
 
 export interface AdminEngagementPage {
@@ -639,7 +666,8 @@ export interface AdminPartnerUserRow {
   subscriptionStatus: string;
   teamSize: number;
   venueCount: number;
-  tenantBookings30d: number;
+  /** What the org sold in the last 30 days. Optional: absent from an API older than this portal (mid-deploy). */
+  tenantSales30d?: number;
   /** Partner-portal logins only (login_events.source = 'partners'). */
   loginCount: number;
   lastLoginAt: string | null;

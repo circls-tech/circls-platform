@@ -175,7 +175,8 @@ function TrendChart({ trend, currency }: { trend: AnalyticsTrendDay[]; currency:
     <div className="flex gap-3 pt-2">
       {trend.map((day) => {
         const taken = day.revenuePaise;
-        const tooltipText = `${dayLabel(day.date)}: ${formatMoney(taken, currency)} · ${day.bookings} booking${day.bookings === 1 ? '' : 's'}`;
+        const sales = day.sales ?? day.bookings;
+        const tooltipText = `${dayLabel(day.date)}: ${formatMoney(taken, currency)} · ${sales} sale${sales === 1 ? '' : 's'}`;
 
         return (
           <div key={day.date} className="flex flex-1 flex-col items-center gap-1">
@@ -627,7 +628,8 @@ export default function DashboardPage() {
     !buckets || buckets.length === 0
       ? formatMoney(0, currency)
       : buckets.map((b) => formatMoney(b.amountMinor, asCurrencyCode(b.currency))).join(' · ');
-  const bookingsToday = analytics?.bookingsToday ?? 0;
+  // Tickets, not bookings: an event booking can hold several.
+  const salesToday = analytics?.salesToday ?? analytics?.bookingsToday ?? 0;
   const revenueToday = fmtBuckets(analytics?.revenueToday);
 
   return (
@@ -652,9 +654,9 @@ export default function DashboardPage() {
             below already carries the week. */}
         <div className="grid gap-4 sm:grid-cols-2">
           <StatCard
-            label="Bookings today"
-            value={String(bookingsToday)}
-            sublabel="Booked today — courts, events and memberships"
+            label="Sales today"
+            value={String(salesToday)}
+            sublabel="Sold today — event tickets, courts and memberships"
             loading={analyticsLoading && Boolean(activeTenantId)}
             petal="#FCE38A"
             icon="calendar"
@@ -693,7 +695,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : analytics && analytics.trend7d.length === 0 ? (
-              <p className="text-sm text-slate-400 py-2">No bookings in the last 7 days yet.</p>
+              <p className="text-sm text-slate-400 py-2">No sales in the last 7 days yet.</p>
             ) : analytics ? (
               // One chart per currency with revenue — usually exactly one.
               <div className="flex flex-col gap-4">

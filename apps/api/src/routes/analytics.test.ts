@@ -25,6 +25,7 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 interface TrendPoint {
   date: string;
   bookings: number;
+  sales: number;
   revenuePaise: number;
 }
 interface MoneyByCurrency {
@@ -33,6 +34,7 @@ interface MoneyByCurrency {
 }
 interface AnalyticsResponse {
   bookingsToday: number;
+  salesToday: number;
   revenueToday: MoneyByCurrency[];
   revenue7d: MoneyByCurrency[];
   occupancy7dPct: number;
@@ -319,6 +321,8 @@ describe.skipIf(!runIntegration)('tenant analytics', () => {
     // booking. The cancelled desk sale, the failed checkout and the open one
     // are all excluded.
     expect(a.bookingsToday).toBe(4);
+    // None of them holds ticket lines, so each sold one.
+    expect(a.salesToday).toBe(4);
   });
 
   it('revenueToday is money taken today, less refunds made today', async () => {
@@ -448,6 +452,34 @@ describe.skipIf(!runIntegration)('tenant analytics vs the activity feed', () => 
     `);
     const a = await analyticsFor(s.tenantId);
     expect(a.bookingsToday).toBe(1);
+  });
+
+  it('salesToday counts the tickets on an event booking; bookingsToday the booking', async () => {
+    const s = await setup(app, 'owner', `antix-${Date.now()}`);
+    const bookingId = await insertPaidBooking(s.tenantId, { offsetDays: 0, itemType: 'event', chargePaise: 36000 });
+    const ev = await db.execute<{ id: string }>(sql`
+      insert into events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name)
+      values (${s.tenantId}::uuid, 'Three seats', now() + interval '7 days',
+              now() + interval '7 days 2 hours', 'published', '{"city":"Pune"}'::jsonb, 'Asia/Kolkata')
+      returning id
+    `);
+    const tier = await db.execute<{ id: string }>(sql`
+      insert into event_ticket_tiers (event_id, tenant_id, name, price_paise)
+      values (${(ev as unknown as { id: string }[])[0]!.id}::uuid, ${s.tenantId}::uuid, 'General', 12000)
+      returning id
+    `);
+    await db.execute(sql`
+      insert into event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      values (${bookingId}::uuid, ${(tier as unknown as { id: string }[])[0]!.id}::uuid, 3, 12000)
+    `);
+    // A court booking sells one.
+    await insertPaidBooking(s.tenantId, { offsetDays: 0, chargePaise: 25000 });
+
+    const a = await analyticsFor(s.tenantId);
+    expect(a.bookingsToday).toBe(2);
+    expect(a.salesToday).toBe(4);
+    const today = a.trend7d[0]!.days[6]!;
+    expect(today).toMatchObject({ bookings: 2, sales: 4 });
   });
 
   it('an organiser who sells no court time still sees their revenue', async () => {
