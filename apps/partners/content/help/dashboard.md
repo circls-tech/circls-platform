@@ -17,19 +17,21 @@ Two things make up the total:
 
 **A refund is dated the day you made it, not the day of the sale.** Refund a booking from last Tuesday and Tuesday keeps its revenue; today goes down by the refund instead. Your past never silently changes, and a day with more refunds than sales shows a negative figure — which is the truth about that day.
 
-A registration you gave away free adds nothing here, but it still counts under **Bookings today**.
+A registration you gave away free adds nothing here, but it still counts under **Sales today**.
 
 If you sell in more than one currency, each gets its own figure rather than being added together.
 
 **This is the full amount your customers paid, not your payout.** circls' commission and the gateway's charges have not come out of it. For what will actually be transferred to you, see [Earnings](/help/earnings), which reports net figures for any period you choose.
 
-## Bookings today
+## Sales today
 
-**Everything booked today** — courts, events and memberships — whether paid online, taken at the desk, or free. A cancelled booking is not counted, and neither is a checkout still in progress.
+**Everything sold today** — event tickets, court bookings and memberships — whether paid online, taken at the desk, or free. A cancelled booking is not counted, and neither is a checkout still in progress.
+
+**Event tickets are counted one by one.** A customer who books three seats in one go adds three, not one, so the count matches the money beside it. A court booking or a membership counts as one. [Earnings](/help/earnings) counts event sales per ticket too.
 
 ## The 7-day chart
 
-One bar per day, showing the money taken that day, with the number of bookings in the tooltip. Days where you refunded more than you took hang below the line.
+One bar per day, showing the money taken that day, with the number of sales in the tooltip. Days where you refunded more than you took hang below the line.
 
 ## Your venues, events and memberships
 

@@ -28,8 +28,7 @@ interface TenantListItem {
   status: string;
   subscriptionStatus: string;
   createdAt: string;
-  venueCount: number;
-  bookingCount30d: number;
+  sales30d: number;
 }
 interface TenantListPage { rows: TenantListItem[]; nextCursor: string | null }
 
@@ -115,8 +114,7 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     }
     // counts present
     for (const r of page.rows) {
-      expect(typeof r.venueCount).toBe('number');
-      expect(typeof r.bookingCount30d).toBe('number');
+      expect(typeof r.sales30d).toBe('number');
     }
   });
 
@@ -187,17 +185,31 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     }
   });
 
-  it('GET /v1/admin/tenants — minVenues filters on the computed count', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/v1/admin/tenants?limit=200&minVenues=1',
-      headers: bearer('padmin'),
-    });
-    expect(res.statusCode).toBe(200);
-    const page = res.json() as TenantListPage;
-    // Both fixture tenants were created without venues.
-    expect(page.rows.some((r) => r.id === tenantAId)).toBe(false);
-    expect(page.rows.every((r) => r.venueCount >= 1)).toBe(true);
+  it('GET /v1/admin/tenants — sales30d counts bookings that stand; minSales30d filters on it', async () => {
+    // B sells one; its abandoned checkout and cancelled booking are not sales.
+    const inserted = await db.execute<{ id: string }>(sql`
+      INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, item_data)
+      VALUES (${tenantBId}::uuid, 'event', 'circls', 'free', 'confirmed', '{}'::jsonb),
+             (${tenantBId}::uuid, 'event', 'circls', 'free', 'pending',   '{}'::jsonb),
+             (${tenantBId}::uuid, 'event', 'circls', 'free', 'cancelled', '{}'::jsonb)
+      RETURNING id
+    `);
+    const ids = (inserted as unknown as { id: string }[]).map((r) => r.id);
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/admin/tenants?limit=200&minSales30d=1',
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      const page = res.json() as TenantListPage;
+      // A has sold nothing.
+      expect(page.rows.some((r) => r.id === tenantAId)).toBe(false);
+      expect(page.rows.find((r) => r.id === tenantBId)?.sales30d).toBe(1);
+      expect(page.rows.every((r) => r.sales30d >= 1)).toBe(true);
+    } finally {
+      await db.execute(sql`DELETE FROM bookings WHERE id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`);
+    }
   });
 
   it('GET /v1/admin/tenants — sort=created_asc reverses order and pages forwards', async () => {
@@ -298,8 +310,8 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(typeof body['tenantsTotal']).toBe('number');
     expect(typeof body['tenantsActive']).toBe('number');
     expect(typeof body['tenantsSuspended']).toBe('number');
-    expect(typeof body['bookings24h']).toBe('number');
-    expect(typeof body['bookings7d']).toBe('number');
+    expect(typeof body['sales24h']).toBe('number');
+    expect(typeof body['sales7d']).toBe('number');
     expect(typeof body['usersTotal']).toBe('number');
     expect(typeof body['usersNew24h']).toBe('number');
     expect(typeof body['usersNew7d']).toBe('number');
@@ -845,6 +857,8 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(row!['venueId']).toBeNull();
     expect(row!['seriesId']).toBeNull();
     expect(row!['tzName']).toBe('Asia/Kolkata');
+    // Over, so customers can't open it: no consumer-site link.
+    expect(row!['url']).toBeNull();
     expect((await listed('?scope=archived')).some((r) => r['id'] === eventId)).toBe(false);
 
     const bad = await app.inject({
@@ -855,6 +869,33 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(bad.statusCode).toBe(400);
 
     await db.execute(sql`delete from events where id = ${eventId}::uuid`);
+  });
+
+  it('a live event links to its consumer page; one awaiting review does not', async () => {
+    const evRows = await db.execute<{ id: string; status: string }>(sql`
+      INSERT INTO events (tenant_id, name, starts_at, ends_at, status, address_json, tz_name)
+      VALUES (${tenantAId}::uuid, 'Live Meetup', now() + interval '9 days',
+              now() + interval '9 days 2 hours', 'published', '{"city":"Nagpur"}'::jsonb, 'Asia/Kolkata'),
+             (${tenantAId}::uuid, 'Queued Meetup', now() + interval '9 days',
+              now() + interval '9 days 2 hours', 'pending_review', '{"city":"Nagpur"}'::jsonb, 'Asia/Kolkata')
+      RETURNING id, status
+    `);
+    const inserted = evRows as unknown as { id: string; status: string }[];
+    const liveId = inserted.find((e) => e.status === 'published')!.id;
+    const queuedId = inserted.find((e) => e.status === 'pending_review')!.id;
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/admin/tenants/${tenantAId}/events`,
+        headers: bearer('padmin'),
+      });
+      expect(res.statusCode).toBe(200);
+      const rows = (res.json() as { rows: Array<Record<string, unknown>> }).rows;
+      expect(rows.find((r) => r['id'] === liveId)!['url']).toMatch(new RegExp(`/events/${liveId}$`));
+      expect(rows.find((r) => r['id'] === queuedId)!['url']).toBeNull();
+    } finally {
+      await db.execute(sql`delete from events where id in (${liveId}::uuid, ${queuedId}::uuid)`);
+    }
   });
 
   it('events GET needs only the read cap; editing overrides still needs billing', async () => {
@@ -924,9 +965,13 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(live['city']).toBe('Nagpur');
     expect(live['state']).toBe('MH');
     expect(live['tags']).toEqual(['indoor']);
+    // Only the live venue is on the consumer site.
+    expect(live['url']).toMatch(new RegExp(`/venues/${byStatus('active')}$`));
+    expect(active.find((r) => r['id'] === byStatus('pending_review'))!['url']).toBeNull();
 
     const closed = await listed('?shelf=closed');
     expect(closed.map((r) => r['status']).sort()).toEqual(['rejected', 'suspended']);
+    expect(closed.every((r) => r['url'] === null)).toBe(true);
 
     expect((await listed('?shelf=all')).length).toBe(4);
 
@@ -983,6 +1028,9 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(tiered['venueId']).toBeNull();
     // Tenant A was created with country 'India'.
     expect(tiered['currency']).toBe('INR');
+    // Live, so it links to its consumer page; the one awaiting review does not.
+    expect(tiered['url']).toMatch(new RegExp(`/memberships/${tieredId}$`));
+    expect(active.find((r) => r['id'] === legacyId)!['url']).toBeNull();
 
     // No tiers: the plan's own legacy price stands in.
     const legacy = active.find((r) => r['id'] === legacyId)!;

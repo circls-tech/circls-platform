@@ -16,6 +16,8 @@ import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
 import { currencyForCountry } from '../lib/gateway.js';
 import { getPlatformRevenue, getTenantItemRevenue } from '../services/revenue_service.js';
+import { bookingStandsSql, bookingUnitsSql } from '../services/booking_units.js';
+import { consumerLinks } from '../services/consumer_links.js';
 import {
   countEventsChargingCommission,
   dayIn,
@@ -44,8 +46,9 @@ interface AdminTenantListItem {
   status: string;
   subscriptionStatus: string;
   createdAt: string;
-  venueCount: number;
-  bookingCount30d: number;
+  /** What the last 30 days of bookings that stand sold: tickets for an event,
+   *  one per court booking or plan. */
+  sales30d: number;
   commissionWaiver: CommissionWaiver;
 }
 
@@ -74,9 +77,9 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
 
 /**
  * `status` defaults to 'active' so suspended orgs stay out of the way until
- * they're asked for. `minVenues` / `minBookings30d` filter the two count
- * columns; those are correlated subqueries in the SELECT list, so they can't be
- * filtered in the same WHERE and are applied to a wrapping query instead.
+ * they're asked for. `minSales30d` filters the sales column; that is a
+ * correlated subquery in the SELECT list, so it can't be filtered in the same
+ * WHERE and is applied to a wrapping query instead.
  * `sort` only offers created-at, which is what the keyset cursor is built on.
  */
 const listQuerySchema = z.object({
@@ -84,8 +87,7 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   q: z.string().min(1).max(200).optional(),
   status: z.enum(['active', 'suspended', 'all']).optional(),
-  minVenues: z.coerce.number().int().min(0).optional(),
-  minBookings30d: z.coerce.number().int().min(0).optional(),
+  minSales30d: z.coerce.number().int().min(0).optional(),
   sort: z.enum(['created_desc', 'created_asc']).optional(),
 });
 
@@ -237,14 +239,11 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       }
       const whereClause = conditions.reduce((acc, c) => sql`${acc} AND ${c}`);
 
-      // Filters on the two computed counts; applied outside the inner select
+      // Filters on the computed count; applied outside the inner select
       // because a correlated subquery alias isn't visible to its own WHERE.
       const countConditions: ReturnType<typeof sql>[] = [sql`1=1`];
-      if (parsed.data.minVenues !== undefined) {
-        countConditions.push(sql`s.venue_count >= ${parsed.data.minVenues}`);
-      }
-      if (parsed.data.minBookings30d !== undefined) {
-        countConditions.push(sql`s.booking_count_30d >= ${parsed.data.minBookings30d}`);
+      if (parsed.data.minSales30d !== undefined) {
+        countConditions.push(sql`s.sales_30d >= ${parsed.data.minSales30d}`);
       }
       const countClause = countConditions.reduce((acc, c) => sql`${acc} AND ${c}`);
 
@@ -266,10 +265,11 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
             -- Date truncates to milliseconds, which makes the keyset comparison
             -- match the row it was built from and re-serve it as the next page.
             to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')     AS created_at_cursor,
-            (SELECT count(*) FROM venues v WHERE v.tenant_id = t.id)                     AS venue_count,
-            (SELECT count(*) FROM bookings b
+            (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0)
+               FROM bookings b
                WHERE b.tenant_id = t.id
-                 AND b.created_at >= now() - interval '30 days')                          AS booking_count_30d,
+                 AND ${bookingStandsSql('b')}
+                 AND b.created_at >= now() - interval '30 days')                          AS sales_30d,
             ${waiverColumnsSql()}
           FROM tenants t
           WHERE ${whereClause}
@@ -290,8 +290,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         status: r['status'] as string,
         subscriptionStatus: r['subscription_status'] as string,
         createdAt: new Date(r['created_at'] as string).toISOString(),
-        venueCount: Number(r['venue_count'] ?? 0),
-        bookingCount30d: Number(r['booking_count_30d'] ?? 0),
+        sales30d: Number(r['sales_30d'] ?? 0),
         commissionWaiver: waiverFromRow(r),
       }));
 
@@ -683,10 +682,13 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
       const last = page[page.length - 1];
+      const links = await consumerLinks('event', page.map((e) => e.id));
       return {
         rows: page.map((e) => ({
           id: e.id,
           name: e.name,
+          // Its page on the consumer site, while customers can open it.
+          url: links.get(e.id) ?? null,
           startsAt: e.startsAt ? new Date(e.startsAt).toISOString() : null,
           endsAt: e.endsAt ? new Date(e.endsAt).toISOString() : null,
           status: e.status,
@@ -750,9 +752,12 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         .where(and(...conditions))
         .orderBy(desc(venues.createdAt), desc(venues.id));
 
+      const links = await consumerLinks('venue', rows.map((v) => v.id));
       return rows.map((v) => ({
         id: v.id,
         name: v.name,
+        // Its page on the consumer site, while customers can open it.
+        url: links.get(v.id) ?? null,
         status: v.status,
         tzName: v.tzName,
         // Structured columns first; older venues only have the address blob.
@@ -831,11 +836,14 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         .where(and(...conditions))
         .orderBy(desc(memberships.createdAt), desc(memberships.id));
 
+      const links = await consumerLinks('membership', rows.map((m) => m.id));
       return rows.map((m) => {
         const tierCount = m.tierCount ?? 0;
         return {
           id: m.id,
           name: m.name,
+          // Its page on the consumer site, while customers can open it.
+          url: links.get(m.id) ?? null,
           description: m.description,
           status: m.status,
           venueId: m.venueId ?? null,
@@ -939,10 +947,14 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
           (SELECT count(*) FROM tenants)                                                  AS tenants_total,
           (SELECT count(*) FROM tenants WHERE status = 'active')                          AS tenants_active,
           (SELECT count(*) FROM tenants WHERE status = 'suspended')                       AS tenants_suspended,
-          (SELECT count(*) FROM bookings
-             WHERE created_at >= now() - interval '24 hours')                             AS bookings_24h,
-          (SELECT count(*) FROM bookings
-             WHERE created_at >= now() - interval '7 days')                               AS bookings_7d,
+          -- Sales: what bookings that stand sold (tickets for an event, one
+          -- per court booking or plan), dated by when they were made.
+          (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0) FROM bookings b
+             WHERE ${bookingStandsSql('b')}
+               AND b.created_at >= now() - interval '24 hours')                           AS sales_24h,
+          (SELECT coalesce(sum(${bookingUnitsSql(sql`b.id`, sql`b.item_type`)}), 0) FROM bookings b
+             WHERE ${bookingStandsSql('b')}
+               AND b.created_at >= now() - interval '7 days')                             AS sales_7d,
           (SELECT count(*) FROM users)                                                    AS users_total,
           (SELECT count(*) FROM users
              WHERE created_at >= now() - interval '24 hours')                             AS users_new_24h,
@@ -988,8 +1000,8 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
         tenantsTotal: Number(r['tenants_total'] ?? 0),
         tenantsActive: Number(r['tenants_active'] ?? 0),
         tenantsSuspended: Number(r['tenants_suspended'] ?? 0),
-        bookings24h: Number(r['bookings_24h'] ?? 0),
-        bookings7d: Number(r['bookings_7d'] ?? 0),
+        sales24h: Number(r['sales_24h'] ?? 0),
+        sales7d: Number(r['sales_7d'] ?? 0),
         usersTotal: Number(r['users_total'] ?? 0),
         usersNew24h: Number(r['users_new_24h'] ?? 0),
         usersNew7d: Number(r['users_new_7d'] ?? 0),

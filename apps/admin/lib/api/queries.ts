@@ -10,6 +10,7 @@ import type {
   AdminConsumerUsersPage,
   AdminCouponStats,
   AdminEngagementPage,
+  AdminEngagementShelf,
   AdminEngagementType,
   AdminListingDetail,
   AdminListingListResponse,
@@ -138,8 +139,7 @@ export interface AdminTenantFilters {
   q?: string;
   /** Omitted means the API's default, which is active only. */
   status?: 'active' | 'suspended' | 'all';
-  minVenues?: number;
-  minBookings30d?: number;
+  minSales30d?: number;
   sort?: 'created_desc' | 'created_asc';
 }
 
@@ -329,6 +329,8 @@ export interface AdminEngagementFilters {
   q?: string;
   /** ISO instant; count only activity at/after it. */
   since?: string;
+  /** Omitted means the API's default, which is active only. */
+  shelf?: AdminEngagementShelf | 'all';
 }
 
 export function useAdminEngagement(filters: AdminEngagementFilters) {

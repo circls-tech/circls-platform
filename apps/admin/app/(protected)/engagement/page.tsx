@@ -2,15 +2,41 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { ListingName } from '@/components/ListingName';
 import { ApiError, apiDownload } from '@/lib/api/client';
 import { useAdminEngagement } from '@/lib/api/queries';
-import type { AdminEngagementType } from '@/lib/api/types';
+import type { AdminEngagementRow, AdminEngagementShelf, AdminEngagementType } from '@/lib/api/types';
 
 const TYPES: { key: AdminEngagementType; label: string; plural: string }[] = [
   { key: 'event', label: 'Events', plural: 'events' },
   { key: 'venue', label: 'Venues', plural: 'venues' },
   { key: 'membership', label: 'Memberships', plural: 'memberships' },
 ];
+
+type ShelfChoice = AdminEngagementShelf | 'all';
+
+/** The status filter's choices per type, as the API splits them. */
+const SHELVES: Record<AdminEngagementType, { key: ShelfChoice; label: string }[]> = {
+  event: [
+    { key: 'active', label: 'Active' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'cancelled', label: 'Cancelled' },
+    { key: 'rejected', label: 'Rejected' },
+    { key: 'all', label: 'All' },
+  ],
+  venue: [
+    { key: 'active', label: 'Active' },
+    { key: 'closed', label: 'Closed' },
+    { key: 'rejected', label: 'Rejected' },
+    { key: 'all', label: 'All' },
+  ],
+  membership: [
+    { key: 'active', label: 'Active' },
+    { key: 'inactive', label: 'Inactive' },
+    { key: 'rejected', label: 'Rejected' },
+    { key: 'all', label: 'All' },
+  ],
+};
 
 const RANGES = [
   { key: 'all', label: 'All time', hours: null },
@@ -36,7 +62,17 @@ function eventDate(startsAt: string, timeZone: string | null): string {
   }).format(new Date(startsAt));
 }
 
+/** The status pill. An event that ran keeps `published` until the nightly
+ *  sweep marks it completed, so it reads "ended" in the meantime. */
+function statusLabel(r: AdminEngagementRow): string {
+  if (r.shelf === 'completed' && r.status !== 'completed') return 'ended';
+  return r.status.replace(/_/g, ' ');
+}
+
 const NUMBER = new Intl.NumberFormat('en-IN');
+
+const SELECT =
+  'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none';
 
 function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -68,16 +104,26 @@ function Stat({ label, value, petal }: { label: string; value: number | undefine
 
 export default function EngagementPage() {
   const [type, setType] = useState<AdminEngagementType>('event');
+  // One choice per tab, each starting on Active.
+  const [shelves, setShelves] = useState<Record<AdminEngagementType, ShelfChoice>>({
+    event: 'active',
+    venue: 'active',
+    membership: 'active',
+  });
   const [range, setRange] = useState<RangeKey>('all');
   const [searchInput, setSearchInput] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const search = useDebounced(searchInput, 300);
+  const shelf = shelves[type];
 
   // `since` is pinned per change of range (not per request) so the offset
   // cursor keeps paging the same result set.
   const since = useMemo(() => sinceForRange(range), [range]);
-  const filters = useMemo(() => ({ type, q: search.trim() || undefined, since }), [type, search, since]);
+  const filters = useMemo(
+    () => ({ type, shelf, q: search.trim() || undefined, since }),
+    [type, shelf, search, since],
+  );
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } =
     useAdminEngagement(filters);
@@ -85,12 +131,15 @@ export default function EngagementPage() {
   const rows = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data]);
   const totals = data?.pages[0]?.totals;
   const typeInfo = TYPES.find((t) => t.key === type)!;
+  const shelfInfo = SHELVES[type].find((s) => s.key === shelf)!;
+  // "Active events", "Closed venues"; plain "Events" for All.
+  const listedLabel = shelf === 'all' ? typeInfo.label : `${shelfInfo.label} ${typeInfo.plural}`;
 
   async function downloadCsv() {
     setDownloading(true);
     setDownloadError(null);
     try {
-      const sp = new URLSearchParams({ type, format: 'csv' });
+      const sp = new URLSearchParams({ type, shelf, format: 'csv' });
       if (filters.q) sp.set('q', filters.q);
       if (filters.since) sp.set('since', filters.since);
       const stamp = new Date().toISOString().slice(0, 10);
@@ -107,13 +156,13 @@ export default function EngagementPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[#17151D]">Engagement</h1>
-          <p className="text-sm text-slate-500">Views, likes, shares and app bookings per listing.</p>
+          <p className="text-sm text-slate-500">Views, likes, shares and app sales per listing.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <select
             value={range}
             onChange={(e) => setRange(e.target.value as RangeKey)}
-            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
+            className={SELECT}
             aria-label="Activity range"
           >
             {RANGES.map((r) => (
@@ -139,40 +188,56 @@ export default function EngagementPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Listing type">
-        {TYPES.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={type === t.key}
-            onClick={() => setType(t.key)}
-            className={
-              type === t.key
-                ? 'rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900'
-                : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Listing type">
+          {TYPES.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={type === t.key}
+              onClick={() => setType(t.key)}
+              className={
+                type === t.key
+                  ? 'rounded-md border border-[#17151D] bg-brand-600 px-3 py-1 text-xs font-medium text-slate-900'
+                  : 'rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={shelf}
+          onChange={(e) => setShelves((s) => ({ ...s, [type]: e.target.value as ShelfChoice }))}
+          className={SELECT}
+          aria-label={`${typeInfo.label} status`}
+        >
+          {SHELVES[type].map((s) => (
+            <option key={s.key} value={s.key}>
+              Status: {s.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label={typeInfo.label} value={totals?.listings} petal="#A9C9F2" />
+        <Stat label={listedLabel} value={totals?.listings} petal="#A9C9F2" />
         <Stat label="Views" value={totals?.views} petal="#BCE3A0" />
         <Stat label="Likes" value={totals?.likes} petal="#FFB0A3" />
         <Stat label="Shares" value={totals?.shares} petal="#CDBBF7" />
-        <Stat label="App bookings" value={totals?.bookings} petal="#FCE38A" />
+        <Stat label="App sales" value={totals?.sales} petal="#FCE38A" />
       </div>
 
       <p className="text-xs text-slate-400">
-        Shares count links sent or copied, not dismissed share sheets. Likes are what is on wishlists now. Views and
-        shares from people who never signed in are not recorded. Who liked and shared what is on the{' '}
+        Active means live or awaiting review. Shares count links sent or copied, not dismissed share sheets. Likes
+        are what is on wishlists now. Views and shares from people who never signed in are not recorded. App sales
+        count tickets, court bookings and plans. Who liked and shared what is on the{' '}
         <Link href="/users" className="underline">
           Consumers
         </Link>{' '}
-        report. CSV export applies the current filters and is capped to the first 10,000 rows.
+        report. A listing customers can open links to its page on circls.app. CSV export applies the current
+        filters and is capped to the first 10,000 rows.
       </p>
       {downloadError && <p className="text-sm text-red-600">CSV download failed: {downloadError}</p>}
 
@@ -191,9 +256,9 @@ export default function EngagementPage() {
               <th className="px-4 py-2 text-right font-medium">Shares</th>
               <th
                 className="px-4 py-2 text-right font-medium"
-                title="Bookings made in the consumer app that went through (confirmed, completed or no-show)"
+                title="Tickets, court bookings and plans sold in the consumer app that went through (confirmed, completed or no-show)"
               >
-                Bookings
+                Sales
               </th>
             </tr>
           </thead>
@@ -217,14 +282,14 @@ export default function EngagementPage() {
             {!isLoading && !isError && rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">
-                  No {typeInfo.plural} found.
+                  No {listedLabel.toLowerCase()} found.
                 </td>
               </tr>
             )}
             {rows.map((r) => (
               <tr key={r.itemId}>
                 <td className="px-4 py-2.5">
-                  <div className="font-medium text-slate-900">{r.name}</div>
+                  <ListingName name={r.name} url={r.url} />
                   {r.startsAt && (
                     <div className="text-xs text-slate-400">
                       {/* The API stands a series by its next date, or its last once all have passed. */}
@@ -242,14 +307,14 @@ export default function EngagementPage() {
                 </td>
                 <td className="px-4 py-2.5">
                   <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                    {r.status.replace(/_/g, ' ')}
+                    {statusLabel(r)}
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.views}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.viewers}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.likes}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.shares}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.bookings}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{r.sales}</td>
               </tr>
             ))}
           </tbody>

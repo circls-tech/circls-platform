@@ -153,10 +153,10 @@ export default function AdminDashboard() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Bookings</h2>
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Sales</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Tile label="Last 24 hours" petal="#FFD2A1" value={data.bookings24h} />
-          <Tile label="Last 7 days" petal="#FFD2A1" value={data.bookings7d} />
+          <Tile label="Last 24 hours" petal="#FFD2A1" value={data.sales24h} sub="tickets, courts and plans" />
+          <Tile label="Last 7 days" petal="#FFD2A1" value={data.sales7d} sub="tickets, courts and plans" />
         </div>
       </section>
     </div>

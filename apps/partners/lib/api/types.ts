@@ -422,6 +422,9 @@ export interface AnalyticsTrendDay {
   date: string;
   /** Bookings made that day — courts, events and memberships. */
   bookings: number;
+  /** What those bookings sold: tickets for an event, one per court booking or
+   *  plan. Optional: absent from an API older than this portal (mid-deploy). */
+  sales?: number;
   /** Money taken that day, less refunds made that day. Negative on a day whose
    *  refunds outweighed its sales. */
   revenuePaise: number;
@@ -450,6 +453,9 @@ export interface AnalyticsTrendSeries {
 export interface Analytics {
   /** Bookings made today, across courts, events and memberships. */
   bookingsToday: number;
+  /** What today's bookings sold: tickets for an event, one per court booking
+   *  or plan. Optional: absent from an API older than this portal (mid-deploy). */
+  salesToday?: number;
   /** One entry per currency with money taken today; [] when none. */
   revenueToday: MoneyByCurrency[];
   /** One entry per currency with money taken in the window; [] when none. */

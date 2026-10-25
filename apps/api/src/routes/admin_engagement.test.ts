@@ -31,14 +31,16 @@ interface Row {
   timeZone: string | null;
   name: string;
   status: string;
+  shelf: string;
+  url: string | null;
   tenantName: string;
   views: number;
   viewers: number;
   likes: number;
   shares: number;
-  bookings: number;
+  sales: number;
 }
-interface Totals { listings: number; views: number; likes: number; shares: number; bookings: number }
+interface Totals { listings: number; views: number; likes: number; shares: number; sales: number }
 interface Page { rows: Row[]; totals: Totals; nextCursor: string | null }
 
 describe.skipIf(!runIntegration)('admin engagement report', () => {
@@ -58,6 +60,9 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
   const seriesId = crypto.randomUUID();
   let seriesPastId: string;
   let seriesNextId: string;
+  let endedId: string;
+  let cancelledId: string;
+  let rejectedId: string;
 
   const userId = async (token: string) => {
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(token) });
@@ -121,6 +126,11 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
     // A weekly series in Boston: last week's date and next week's.
     seriesPastId = await insertEvent(`${TAG} Weekly`, 'completed', { inDays: -7, series: seriesId, tz: 'America/New_York' });
     seriesNextId = await insertEvent(`${TAG} Weekly`, 'published', { inDays: 7, series: seriesId, tz: 'America/New_York' });
+    // Off the default Active shelf: one that ran (still `published`, the sweep
+    // has not reached it), one called off and one Circls turned down.
+    endedId = await insertEvent(`${TAG} Ended`, 'published', { inDays: -3 });
+    cancelledId = await insertEvent(`${TAG} Cancelled`, 'cancelled');
+    rejectedId = await insertEvent(`${TAG} Rejected`, 'rejected');
 
     // The Flutter app's view, through the real ingest, which stores it under
     // the web's name.
@@ -160,14 +170,25 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       VALUES (${consumerUserId}::uuid, 'event', ${hotId}::uuid), (${adminUserId}::uuid, 'event', ${hotId}::uuid),
              (${consumerUserId}::uuid, 'event', ${seriesPastId}::uuid), (${consumerUserId}::uuid, 'event', ${seriesNextId}::uuid)
     `);
-    // One app booking that went through; a pending checkout and a door
-    // walk-in, neither of which is the end of an app funnel.
-    await db.execute(sql`
+    // One app booking that went through, holding three tickets; a pending
+    // checkout and a door walk-in, neither of which is the end of an app funnel.
+    const booked = await db.execute<{ id: string }>(sql`
       INSERT INTO bookings (tenant_id, item_type, channel, payment_method, status, customer_user_id, item_data)
       VALUES
         (${tenantAId}::uuid, 'event', 'circls', 'free', 'confirmed', ${consumerUserId}::uuid, ${JSON.stringify({ eventId: hotId })}::jsonb),
         (${tenantAId}::uuid, 'event', 'circls', 'free', 'pending',   ${consumerUserId}::uuid, ${JSON.stringify({ eventId: hotId })}::jsonb),
         (${tenantAId}::uuid, 'event', 'walkin', 'free', 'confirmed', NULL,                     ${JSON.stringify({ eventId: hotId })}::jsonb)
+      RETURNING id
+    `);
+    const tier = await db.execute<{ id: string }>(sql`
+      INSERT INTO event_ticket_tiers (event_id, tenant_id, name)
+      VALUES (${hotId}::uuid, ${tenantAId}::uuid, 'General')
+      RETURNING id
+    `);
+    await db.execute(sql`
+      INSERT INTO event_booking_tickets (booking_id, tier_id, quantity, unit_price_paise)
+      VALUES (${(booked as unknown as { id: string }[])[0]!.id}::uuid,
+              ${(tier as unknown as { id: string }[])[0]!.id}::uuid, 3, 0)
     `);
   });
 
@@ -194,11 +215,12 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
   const get = (query: string, token = 'padmin') =>
     app.inject({ method: 'GET', url: `/v1/admin/engagement?${query}`, headers: bearer(token) });
 
-  it('counts views, viewers, likes, shares and app bookings per event, busiest first', async () => {
+  it('counts views, viewers, likes, shares and app sales per event, busiest first', async () => {
     const res = await get(`type=event&q=${TAG}`);
     expect(res.statusCode).toBe(200);
     const page = res.json() as Page;
-    // The draft is left out; the series is one row, under its next date; the
+    // Active by default, so the draft and the ended, cancelled and rejected
+    // events are left out; the series is one row, under its next date; the
     // cold event is listed with zeros.
     expect(page.rows.map((r) => r.itemId)).toEqual([hotId, seriesNextId, coldId]);
     const hot = page.rows[0]!;
@@ -206,6 +228,7 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       itemType: 'event',
       name: `${TAG} Hot`,
       status: 'published',
+      shelf: 'active',
       tenantName: `Co ${slugA}`,
       seriesId: null,
       dates: 1,
@@ -214,11 +237,45 @@ describe.skipIf(!runIntegration)('admin engagement report', () => {
       viewers: 2,
       likes: 2,
       shares: 3, // shared, copied and WhatsApp; the dismissed sheet is not a share
-      bookings: 1, // pending and walk-in left out
+      sales: 3, // the confirmed app booking's three tickets; pending and walk-in left out
     });
-    expect(page.rows[2]).toMatchObject({ views: 0, viewers: 0, likes: 0, shares: 0, bookings: 0 });
-    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 3, bookings: 1 });
+    expect(page.rows[2]).toMatchObject({ views: 0, viewers: 0, likes: 0, shares: 0, sales: 0 });
+    expect(page.totals).toEqual({ listings: 3, views: 6, likes: 3, shares: 3, sales: 3 });
     expect(page.nextCursor).toBeNull();
+  });
+
+  it('shelf picks which events are listed', async () => {
+    const ids = async (shelf: string) => {
+      const res = await get(`type=event&q=${TAG}&shelf=${shelf}`);
+      expect(res.statusCode).toBe(200);
+      return (res.json() as Page).rows.map((r) => r.itemId);
+    };
+    // The series stays Active: its next date stands for it, though last
+    // week's is already completed.
+    expect(await ids('completed')).toEqual([endedId]);
+    expect(await ids('cancelled')).toEqual([cancelledId]);
+    expect(await ids('rejected')).toEqual([rejectedId]);
+    expect((await ids('all')).sort()).toEqual(
+      [hotId, coldId, seriesNextId, endedId, cancelledId, rejectedId].sort(),
+    );
+  });
+
+  it('links only what customers can open on the consumer site', async () => {
+    const res = await get(`type=event&q=${TAG}&shelf=all`);
+    expect(res.statusCode).toBe(200);
+    const url = new Map((res.json() as Page).rows.map((r) => [r.itemId, r.url]));
+    expect(url.get(hotId)).toMatch(new RegExp(`/events/${hotId}$`));
+    // A series links the date that stands for it.
+    expect(url.get(seriesNextId)).toMatch(new RegExp(`/events/${seriesNextId}$`));
+    expect(url.get(endedId)).toBeNull();
+    expect(url.get(cancelledId)).toBeNull();
+    expect(url.get(rejectedId)).toBeNull();
+  });
+
+  it('rejects a shelf the type does not have', async () => {
+    expect((await get('type=event&shelf=closed')).statusCode).toBe(400);
+    expect((await get('type=venue&shelf=completed')).statusCode).toBe(400);
+    expect((await get('type=membership&shelf=inactive')).statusCode).toBe(200);
   });
 
   it('counts a recurring event once, across all its dates', async () => {

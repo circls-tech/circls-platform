@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ListingName } from '@/components/ListingName';
 import {
   useAdminTenantEvents,
   useAdminTenantMemberships,
@@ -296,7 +297,7 @@ export function VenuesTab({ tenantId }: { tenantId: string }) {
             {rows.map((v) => (
               <tr key={v.id}>
                 <td className="px-4 py-2.5 text-slate-800">
-                  {v.name}
+                  <ListingName name={v.name} url={v.url} className="text-slate-800" />
                   <span className="block font-mono text-[10px] text-slate-400">{v.id}</span>
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-600">
@@ -396,7 +397,7 @@ export function EventsTab({ tenantId }: { tenantId: string }) {
             {rows.map((ev) => (
               <tr key={ev.id}>
                 <td className="px-4 py-2.5 text-slate-800">
-                  {ev.name}
+                  <ListingName name={ev.name} url={ev.url} className="text-slate-800" />
                   <span className="block font-mono text-[10px] text-slate-400">{ev.id}</span>
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-600">
@@ -506,7 +507,7 @@ export function MembershipsTab({ tenantId }: { tenantId: string }) {
             {rows.map((m) => (
               <tr key={m.id}>
                 <td className="px-4 py-2.5 text-slate-800">
-                  {m.name}
+                  <ListingName name={m.name} url={m.url} className="text-slate-800" />
                   {m.description && (
                     <span className="block text-xs text-slate-400">{m.description}</span>
                   )}
