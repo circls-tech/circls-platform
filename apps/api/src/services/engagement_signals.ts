@@ -22,11 +22,13 @@ import { sql, type SQL } from 'drizzle-orm';
  * `unknown` (the sheet opened but the platform could not say what the person
  * did with it). "Invite friends" on a booking (both clients) logs the same
  * `share`, against the listing its link opens (the event, the venue for a
- * court, the plan), with `props.from` set to `booking` or `checkout`; its
- * WhatsApp button logs the outcome `whatsapp` (WhatsApp opened with the note
+ * court, the plan), with `props.from` set to `booking` or `checkout`. Its
+ * short-lived WhatsApp button (#258, since folded back into the one share
+ * button) logged the outcome `whatsapp` (WhatsApp opened with the note
  * ready). `shared`, `copied` and `whatsapp` put the link in someone's hands
  * as far as the app can tell, so those three count as shares; like a copied
- * link, a WhatsApp chat can still be abandoned unsent.
+ * link, a WhatsApp chat can still be abandoned unsent. Share booking's ticket
+ * links are not logged here: they hand over a ticket, not the listing.
  *
  * LIKES are not here: they are read from `wishlist_items`, which both clients
  * write through the wishlist API, rather than from `like` / `unlike` activity

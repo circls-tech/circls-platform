@@ -16,16 +16,9 @@ export function listingUrl(origin: string, itemType: WishlistItemType, itemId: s
   return `${origin}${LISTING_ROOT[itemType]}/${itemId}`;
 }
 
-/**
- * WhatsApp's own share link: opens a chat picker with `text` ready to send,
- * in the app on a phone and in WhatsApp Web on a computer. Where WhatsApp
- * isn't installed it opens a page offering to get it.
- *
- * Not the shorter wa.me: its redirect turns every emoji outside the basic
- * plane (📅, 📍, 👇) into "�" before WhatsApp sees the text.
- */
-export function whatsappUrl(text: string): string {
-  return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+/** A shared ticket's link on `origin`: the page where a friend adds it to their bookings. */
+export function ticketLinkUrl(origin: string, token: string): string {
+  return `${origin}/tickets/${encodeURIComponent(token)}`;
 }
 
 /**

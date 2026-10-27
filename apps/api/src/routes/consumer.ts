@@ -44,6 +44,13 @@ import {
   scratchPreviewAllows,
 } from '../services/listing_preview_service.js';
 import {
+  claimTicketShare,
+  previewTicketShare,
+  shareTicket,
+  TOKEN_PATTERN,
+  withdrawTicketShare,
+} from '../services/ticket_share_service.js';
+import {
   addToWishlist,
   getWishlist,
   listWishlistIds,
@@ -465,5 +472,49 @@ export const consumerRoutes: FastifyPluginAsync = async (app) => {
     if (!params.success) throw new NotFound('Booking not found', 'booking_not_found');
     const user = await currentUser(req);
     return { booking: await getMyBookingDetail(user.id, params.data.id) };
+  });
+
+  // ── Share booking: hand tickets to friends (see ticket_share_service) ─────
+  const ticketParams = z.object({ id: z.string().uuid(), ticketId: z.string().uuid() });
+  const parseTicket = (raw: unknown) => {
+    const p = ticketParams.safeParse(raw);
+    if (!p.success) throw new NotFound('Ticket not found', 'ticket_not_found');
+    return p.data;
+  };
+  const parseToken = (raw: unknown) => {
+    const token = (raw as { token?: unknown }).token;
+    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) {
+      throw new NotFound('This link is not valid', 'ticket_share_not_found');
+    }
+    return token;
+  };
+
+  /** A link for one ticket of the caller's own booking (the same link again while unaccepted). */
+  app.post('/v1/consumer/me/bookings/:id/tickets/:ticketId/share', { preHandler: [requireAuth, perUserLimit] }, async (req) => {
+    const { id, ticketId } = parseTicket(req.params);
+    const user = await currentUser(req);
+    return shareTicket(user.id, id, ticketId);
+  });
+
+  /** Withdraw a ticket's link nobody has accepted yet. */
+  app.delete('/v1/consumer/me/bookings/:id/tickets/:ticketId/share', { preHandler: [requireAuth, perUserLimit] }, async (req) => {
+    const { id, ticketId } = parseTicket(req.params);
+    const user = await currentUser(req);
+    await withdrawTicketShare(user.id, id, ticketId);
+    return { withdrawn: true };
+  });
+
+  /** What a share link is, for the page that offers to accept it. */
+  app.get('/v1/consumer/ticket-shares/:token', { preHandler: requireAuth }, async (req) => {
+    const token = parseToken(req.params);
+    const user = await currentUser(req);
+    return { share: await previewTicketShare(user.id, token) };
+  });
+
+  /** Accept a share link: the booking joins the caller's My Bookings. */
+  app.post('/v1/consumer/ticket-shares/:token/claim', { preHandler: [requireAuth, perUserLimit] }, async (req) => {
+    const token = parseToken(req.params);
+    const user = await currentUser(req);
+    return claimTicketShare(user.id, token);
   });
 };

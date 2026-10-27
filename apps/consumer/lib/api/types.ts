@@ -339,6 +339,9 @@ export interface MyBooking {
   currency: string;
   /** ISO-8601 */
   createdAt: string;
+  /** A friend's booking they shared a ticket of with you: their first name
+   *  (and totalPaise is 0, the price being theirs). Null for your own. */
+  sharedBy: string | null;
 }
 
 /** One booked slot within a court (slot) booking. */
@@ -369,6 +372,41 @@ export interface QrTicket {
   maxScans: number | null;
   scanCount: number;
   status: 'active' | 'used' | 'revoked';
+  /** Where it stands with friends, on your own booking (null on a friend's view, or never shared). */
+  share: TicketShare | null;
+}
+
+/** A ticket shared through "Share booking", as its booker sees it. */
+export interface TicketShare {
+  /** pending: a link is out and nobody has accepted it; accepted: a friend has it. */
+  state: 'pending' | 'accepted';
+  /** The pending link's token, to send it again; null once accepted. */
+  token: string | null;
+  /** The friend's first name, once accepted. */
+  acceptedBy: string | null;
+}
+
+/** A share link, as the person opening it sees it (GET /v1/consumer/ticket-shares/:token). */
+export interface TicketSharePreview {
+  /** available: you can add it; yours: you did; own: it's your booking; taken:
+   *  someone else added it; withdrawn: the link was taken back; inactive: the
+   *  booking was cancelled or is over, or the ticket was used. */
+  state: 'available' | 'yours' | 'own' | 'taken' | 'withdrawn' | 'inactive';
+  /** Set when you can open the booking (yours / own). */
+  bookingId: string | null;
+  /** The booker's first name. */
+  sharedBy: string | null;
+  itemType: string;
+  /** The event's name, or the venue's for a court booking. */
+  title: string;
+  /** The venue, for an event at one. */
+  place: string | null;
+  /** ISO-8601; the event's start or the first booked slot's. */
+  startsAt: string | null;
+  /** IANA zone the booking happens in. */
+  timeZone: string;
+  /** The ticket's label ("General · 2 of 3", a court's name). */
+  ticketLabel: string | null;
 }
 
 /**
@@ -417,8 +455,15 @@ export interface MyBookingDetail {
     /** ISO-8601; when the membership runs out. Null until it exists. */
     endsAt: string | null;
   } | null;
-  /** Scannable entry tickets; [] until the booking is confirmed. */
+  /** Scannable entry tickets; [] until the booking is confirmed. On a booking
+   *  a friend shared with you, only the tickets you accepted. */
   qrTickets: QrTicket[];
+  /** A friend's booking they shared tickets of with you: their first name.
+   *  Your view then leaves out their price, payment, contact, note and
+   *  answers. Null on your own booking. */
+  sharedBy: string | null;
+  /** Whether you can share this booking's tickets ("Share booking"). */
+  canShare: boolean;
 }
 
 /**

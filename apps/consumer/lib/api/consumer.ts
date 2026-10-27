@@ -9,6 +9,7 @@ import type {
   MembershipPurchaseResult,
   MyBooking,
   MyBookingDetail,
+  TicketSharePreview,
   MyProfile,
   PostBookingRedirect,
   PublicEvent,
@@ -409,5 +410,58 @@ export function useMyBooking(id: string) {
       apiFetch<{ booking: MyBookingDetail }>(`/v1/consumer/me/bookings/${id}`),
     enabled: Boolean(user) && Boolean(id),
     select: (data) => data.booking,
+  });
+}
+
+// ── Share booking: hand tickets to friends ─────────────────────────────────
+
+/** A link for one ticket of your booking (the same link again while nobody has accepted it). */
+export function useShareTicket(bookingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: string) =>
+      apiFetch<{ token: string }>(`/v1/consumer/me/bookings/${bookingId}/tickets/${ticketId}/share`, {
+        method: 'POST',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-booking'] }),
+  });
+}
+
+/** Withdraw a ticket's link nobody has accepted yet. */
+export function useWithdrawTicketShare(bookingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: string) =>
+      apiFetch<{ withdrawn: boolean }>(`/v1/consumer/me/bookings/${bookingId}/tickets/${ticketId}/share`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-booking'] }),
+  });
+}
+
+/** What a share link is, for the page that offers to add it. */
+export function useTicketSharePreview(token: string) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['ticket-share', user?.uid, token],
+    queryFn: () => apiFetch<{ share: TicketSharePreview }>(`/v1/consumer/ticket-shares/${encodeURIComponent(token)}`),
+    enabled: Boolean(user) && Boolean(token),
+    select: (data) => data.share,
+    retry: false,
+  });
+}
+
+/** Add a shared ticket to your bookings. */
+export function useClaimTicketShare(token: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ bookingId: string }>(`/v1/consumer/ticket-shares/${encodeURIComponent(token)}/claim`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['my-bookings'] });
+      void qc.invalidateQueries({ queryKey: ['ticket-share'] });
+    },
   });
 }

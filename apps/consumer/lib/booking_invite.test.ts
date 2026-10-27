@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { MyBookingDetail } from '@/lib/api/types';
-import { inviteForBooking, inviteForCourts, inviteForEvent, inviteForMembership, inviteText } from './booking_invite';
+import {
+  inviteForBooking,
+  inviteForCourts,
+  inviteForEvent,
+  inviteForMembership,
+  inviteText,
+  ticketShareNote,
+} from './booking_invite';
 
 // Saturday 7 Nov 2026: 7:00 pm in Bengaluru, 8:30 am in Boston.
 const SAT = '2026-11-07T13:30:00.000Z';
@@ -26,6 +33,8 @@ function booking(overrides: Partial<MyBookingDetail>): MyBookingDetail {
     event: null,
     membership: null,
     qrTickets: [],
+    sharedBy: null,
+    canShare: true,
     ...overrides,
   };
 }
@@ -183,5 +192,30 @@ describe('inviteForBooking', () => {
   it('has nothing to say once the membership has run out, though its booking stays confirmed', () => {
     const membership = { id: 'mem_1', name: 'Gold Monthly', durationDays: 30, description: null, endsAt: '2026-02-01T00:00:00.000Z' };
     expect(inviteForBooking(booking({ itemType: 'membership', membership }), NOW)).toBeNull();
+  });
+});
+
+describe('ticketShareNote', () => {
+  it('tells a friend the event ticket is theirs, when and where, and to tap the link', () => {
+    expect(ticketShareNote(booking({ event }), 'General · 2 of 3', NOW)).toEqual({
+      title: 'Your ticket for Sunday Smash',
+      message:
+        "Hi! Here's your ticket for *Sunday Smash*\n📅 Sat, 7 Nov at 7:00 pm\n📍 Smash Arena\nTap to add it to your Circls bookings 👇",
+    });
+  });
+
+  it('names the court of a court ticket and the next slot still to come', () => {
+    const slots = [
+      slot('Court 1', '2026-10-24T12:30:00.000Z', '2026-10-24T13:30:00.000Z'),
+      slot('Court 2', SAT, '2026-11-07T14:30:00.000Z'),
+    ];
+    expect(ticketShareNote(booking({ itemType: 'slot', slots }), 'Court 2', NOW)?.message).toBe(
+      "Hi! Here's your pass for Court 2 at *Smash Arena*\n📅 Sat, 7 Nov at 7:00 pm\nTap to add it to your Circls bookings 👇",
+    );
+  });
+
+  it('has nothing for a membership, which stays personal', () => {
+    const membership = { id: 'mem_1', name: 'Gold', durationDays: 30, description: null, endsAt: null };
+    expect(ticketShareNote(booking({ itemType: 'membership', membership }), null, NOW)).toBeNull();
   });
 });
