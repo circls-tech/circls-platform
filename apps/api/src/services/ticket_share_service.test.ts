@@ -113,7 +113,7 @@ describe.skipIf(!runIntegration)('share booking (ticket shares)', () => {
     tickets = await ticketsFor(bookingId, 3);
     const [pb] = await db.insert(bookings).values(eventBooking(pastEventId)).returning({ id: bookings.id });
     pastBookingId = pb!.id;
-    [pastTicket] = await ticketsFor(pastBookingId, 1);
+    pastTicket = (await ticketsFor(pastBookingId, 1))[0]!;
 
     const [m] = await db
       .insert(memberships)
@@ -134,7 +134,7 @@ describe.skipIf(!runIntegration)('share booking (ticket shares)', () => {
       })
       .returning({ id: bookings.id });
     membershipBookingId = mb!.id;
-    [membershipTicket] = await ticketsFor(membershipBookingId, 1, 'membership');
+    membershipTicket = (await ticketsFor(membershipBookingId, 1, 'membership'))[0]!;
   });
 
   afterAll(async () => {
