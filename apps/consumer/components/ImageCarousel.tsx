@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Chevron } from '@/components/Chevron';
 import type { ImageRef } from '@/lib/api/types';
 import { stepIndex, swipeStep } from '@/lib/carousel';
 
@@ -52,18 +53,7 @@ function ArrowButton({ dir, onClick }: { dir: 'left' | 'right'; onClick: () => v
       aria-label={left ? 'Previous photo' : 'Next photo'}
       className={`absolute top-1/2 ${left ? 'left-2' : 'right-2'} flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full! bg-ink/60 text-white transition-colors hover:bg-ink/85 ${FOCUS_CLASS}`}
     >
-      <svg
-        viewBox="0 0 24 24"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d={left ? 'm15 6-6 6 6 6' : 'm9 6 6 6-6 6'} />
-      </svg>
+      <Chevron dir={dir} className="h-5 w-5" />
     </button>
   );
 }
