@@ -71,8 +71,9 @@ export default function MyBookingsPage() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <StatusPill status={b.status} />
+                      {/* A friend's booking they shared a ticket of: the price is theirs. */}
                       <span className="text-sm font-medium text-ink">
-                        {formatPaise(b.totalPaise, b.currency)}
+                        {b.sharedBy ? `Shared by ${b.sharedBy}` : formatPaise(b.totalPaise, b.currency)}
                       </span>
                     </div>
                   </div>

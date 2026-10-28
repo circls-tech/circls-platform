@@ -505,6 +505,13 @@
       "when": 1784900000000,
       "tag": "0072_commission_waiver",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785060000000,
+      "tag": "0074_booking_ticket_shares",
+      "breakpoints": true
     }
   ]
 }

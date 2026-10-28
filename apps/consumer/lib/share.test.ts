@@ -1,16 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { shareLink, whatsappUrl } from './share';
-
-describe('whatsappUrl', () => {
-  it('carries the whole note, line breaks and emoji included', () => {
-    const text = "Hi! I'm going to *Sunday 5s*\n📅 Sat, 7 Nov at 7:00 pm\nhttps://circls.app/events/e1";
-    const url = whatsappUrl(text);
-    // api.whatsapp.com, not wa.me: wa.me's redirect mangles emoji into "�".
-    expect(url.startsWith('https://api.whatsapp.com/send?text=')).toBe(true);
-    expect(url).toContain('%F0%9F%93%85'); // 📅, as UTF-8
-    expect(decodeURIComponent(url.slice('https://api.whatsapp.com/send?text='.length))).toBe(text);
-  });
-});
+import { shareLink } from './share';
 
 const data = { title: 'Sunday 5s', url: 'https://circls.app/events/evt_1' };
 

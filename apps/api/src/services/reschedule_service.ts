@@ -38,6 +38,7 @@ import { parseTstzRange } from '../lib/tstzrange.js';
 import { claimSlots } from './booking_service.js';
 import { onBookingRescheduled } from './notification_hooks.js';
 import { issueQrTicketsForBooking, revokeQrTicketsForBooking } from './qr_ticket_service.js';
+import { carryTicketSharesOver } from './ticket_share_service.js';
 import { reholdForBooking } from './settlement_hold_service.js';
 
 export interface RescheduleInput {
@@ -241,8 +242,10 @@ export async function rescheduleBooking(input: RescheduleInput): Promise<Resched
     await reholdForBooking(booking.id, tx);
 
     // 5. Entry passes cover a span; the old ones no longer describe it.
+    //    Tickets the customer handed to friends follow onto the new passes.
     await revokeQrTicketsForBooking(booking.id, tx);
     await issueQrTicketsForBooking(booking.id, tx);
+    await carryTicketSharesOver(booking.id, tx);
 
     const ctx: AuditCtx = { tenantId: booking.tenantId, actorUserId: input.actorUserId };
     await writeAudit(

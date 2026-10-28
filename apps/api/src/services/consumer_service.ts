@@ -34,7 +34,8 @@ import { assertNotObjectionable } from '../lib/objectionable.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
 import { writeAudit } from '../lib/audit.js';
-import { ownBookingCondition } from './booking_ownership.js';
+import { myBookingsCondition, ownBookingCondition } from './booking_ownership.js';
+import { bookingStillOnSql, canShareBooking, firstNameOf, releaseTicketSharesOf } from './ticket_share_service.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type {
   PrepareOnlineBookingResult,
@@ -1269,6 +1270,12 @@ export interface MyBookingItem {
   /** ISO 4217 — totalPaise is in this currency's minor units. */
   currency: string;
   createdAt: string;
+  /**
+   * For a booking a friend shared tickets of with this user: the friend's
+   * first name (and `totalPaise` is 0, the price being theirs). Null for the
+   * user's own bookings.
+   */
+  sharedBy: string | null;
 }
 
 /**
@@ -1286,27 +1293,36 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
       b.status,
       b.total_paise,
       b.currency,
-      b.created_at
+      b.created_at,
+      ${ownBookingCondition(userId)} as is_own,
+      (select su.display_name from booking_ticket_shares s join users su on su.id = s.shared_by_user_id
+        where s.booking_id = b.id and s.claimed_by_user_id = ${userId}::uuid and s.withdrawn_at is null
+        limit 1) as shared_by_name
     from bookings b
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
-    -- The customer's bookings (see ownBookingCondition).
-    where ${ownBookingCondition(userId)}
+    -- The customer's bookings (see ownBookingCondition), and bookings friends
+    -- shared tickets of with them.
+    where ${myBookingsCondition(userId)}
     order by b.created_at desc
     limit 100
   `);
   const rows = raw as unknown as Record<string, unknown>[];
-  return rows.map((r) => ({
-    id: r['id'] as string,
-    venueId: (r['venue_id'] as string | null) ?? null,
-    venueName: r['title'] as string,
-    itemType: r['item_type'] as string,
-    status: r['status'] as string,
-    totalPaise: Number(r['total_paise']),
-    currency: r['currency'] as string,
-    createdAt: new Date(r['created_at'] as string).toISOString(),
-  }));
+  return rows.map((r) => {
+    const own = Boolean(r['is_own']);
+    return {
+      id: r['id'] as string,
+      venueId: (r['venue_id'] as string | null) ?? null,
+      venueName: r['title'] as string,
+      itemType: r['item_type'] as string,
+      status: r['status'] as string,
+      totalPaise: own ? Number(r['total_paise']) : 0,
+      currency: r['currency'] as string,
+      createdAt: new Date(r['created_at'] as string).toISOString(),
+      sharedBy: own ? null : firstNameOf(r['shared_by_name'] as string | null),
+    };
+  });
 }
 
 /** One booked slot within a court (slot) booking, oldest-first. */
@@ -1371,8 +1387,28 @@ export interface MyBookingDetail {
     endsAt: string | null;
   } | null;
   /** QR entry tickets issued for this booking (empty when the listing has QR
-   *  tickets disabled or the booking isn't confirmed yet). */
+   *  tickets disabled or the booking isn't confirmed yet). A friend the
+   *  booking was shared with gets only the tickets they accepted. */
   qrTickets: MyBookingQrTicket[];
+  /**
+   * For a friend the booking was shared with: the customer's first name. Their
+   * view leaves out the price, payment, contact, note and registration
+   * answers, which are the customer's. Null on the customer's own view.
+   */
+  sharedBy: string | null;
+  /** Whether the viewer can share this booking's tickets (their own event or
+   *  court booking, confirmed and not over). */
+  canShare: boolean;
+}
+
+/** Where a ticket stands with friends, on its customer's own view. */
+export interface MyBookingTicketShare {
+  /** pending: a link is out, nobody has accepted it; accepted: a friend has it. */
+  state: 'pending' | 'accepted';
+  /** The pending link's token, to send it again; null once accepted. */
+  token: string | null;
+  /** The friend's first name, once accepted. */
+  acceptedBy: string | null;
 }
 
 /** One issued QR ticket, as shown on the consumer's booking page. */
@@ -1388,6 +1424,8 @@ export interface MyBookingQrTicket {
   maxScans: number | null;
   scanCount: number;
   status: string;
+  /** Its share, on the customer's own view; always null on a friend's. */
+  share: MyBookingTicketShare | null;
 }
 
 /**
@@ -1429,14 +1467,19 @@ export async function getMyBookingDetail(
       mm.description             as membership_description,
       mm.duration_days           as membership_duration_days,
       um.ends_at                 as membership_ends_at,
-      coalesce(v.tz_name, ev.tz_name, 'Asia/Kolkata') as tz_name
+      coalesce(v.tz_name, ev.tz_name, 'Asia/Kolkata') as tz_name,
+      ${ownBookingCondition(userId)} as is_own,
+      ${bookingStillOnSql('b')} as still_on,
+      (select su.display_name from booking_ticket_shares s join users su on su.id = s.shared_by_user_id
+        where s.booking_id = b.id and s.claimed_by_user_id = ${userId}::uuid and s.withdrawn_at is null
+        limit 1) as shared_by_name
     from bookings b
     left join venues v on v.id = b.venue_id
     left join memberships mm on mm.id = nullif(b.item_data->>'membershipId', '')::uuid
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     left join user_memberships um on um.id = nullif(b.item_data->>'userMembershipId', '')::uuid
     where b.id = ${bookingId}
-      and ${ownBookingCondition(userId)}
+      and ${myBookingsCondition(userId)}
     limit 1
   `);
   const arr = rows as unknown as Record<string, unknown>[];
@@ -1444,6 +1487,9 @@ export async function getMyBookingDetail(
   if (!r) throw new NotFound('Booking not found', 'booking_not_found');
 
   const itemType = r['item_type'] as string;
+  // A friend the booking was shared with gets friendView of it below; what
+  // is loaded here is the customer's own view.
+  const own = Boolean(r['is_own']);
 
   let bookingSlots: MyBookingSlot[] = [];
   if (itemType === 'slot') {
@@ -1470,13 +1516,16 @@ export async function getMyBookingDetail(
 
   let event: MyBookingDetail['event'] = null;
   if (itemType === 'event' && r['event_id'] != null) {
-    const answerRows = await db.execute<Record<string, unknown>>(sql`
-      select era.question_label, era.answer
-      from event_registration_answers era
-      left join event_registration_questions q on q.id = era.question_id
-      where era.booking_id = ${bookingId}
-      order by q.sort_order, era.created_at
-    `);
+    // The customer's answers; never loaded for a friend.
+    const answerRows = own
+      ? await db.execute<Record<string, unknown>>(sql`
+          select era.question_label, era.answer
+          from event_registration_answers era
+          left join event_registration_questions q on q.id = era.question_id
+          where era.booking_id = ${bookingId}
+          order by q.sort_order, era.created_at
+        `)
+      : [];
     event = {
       id: r['event_id'] as string,
       name: r['event_name'] as string,
@@ -1496,13 +1545,19 @@ export async function getMyBookingDetail(
 
   // Issued QR tickets for this booking. Membership tickets are keyed on the
   // user_membership (the plain-free path has no booking), so match either way.
+  // A friend gets only the tickets they accepted; the customer gets every
+  // ticket, with where each stands with friends.
   const userMembershipId = (r['user_membership_id'] as string | null) ?? null;
   const qrRaw = await db.execute<Record<string, unknown>>(sql`
-    select id, label, code, valid_from, valid_until, multi_use, max_scans, scan_count, status
-    from qr_tickets
-    where booking_id = ${bookingId}
-       or user_membership_id = nullif(${userMembershipId ?? ''}, '')::uuid
-    order by created_at, label
+    select t.id, t.label, t.code, t.valid_from, t.valid_until, t.multi_use, t.max_scans, t.scan_count, t.status,
+           s.token as share_token, s.claimed_at as share_claimed_at, cu.display_name as share_claimed_by
+    from qr_tickets t
+    left join booking_ticket_shares s on s.qr_ticket_id = t.id and s.withdrawn_at is null
+    left join users cu on cu.id = s.claimed_by_user_id
+    where (t.booking_id = ${bookingId}
+       or t.user_membership_id = nullif(${userMembershipId ?? ''}, '')::uuid)
+      ${own ? sql`` : sql`and s.claimed_by_user_id = ${userId}::uuid`}
+    order by t.created_at, t.label
   `);
   const qrTicketRows: MyBookingQrTicket[] = (qrRaw as unknown as Record<string, unknown>[]).map(
     (q) => ({
@@ -1516,6 +1571,12 @@ export async function getMyBookingDetail(
       maxScans: q['max_scans'] == null ? null : Number(q['max_scans']),
       scanCount: Number(q['scan_count']),
       status: q['status'] as string,
+      share:
+        q['share_token']
+          ? q['share_claimed_at']
+            ? { state: 'accepted', token: null, acceptedBy: firstNameOf(q['share_claimed_by'] as string | null) }
+            : { state: 'pending', token: q['share_token'] as string, acceptedBy: null }
+          : null,
     }),
   );
 
@@ -1530,7 +1591,7 @@ export async function getMyBookingDetail(
         }
       : null;
 
-  return {
+  const detail: MyBookingDetail = {
     id: r['id'] as string,
     venueId: (r['venue_id'] as string | null) ?? null,
     venueName: r['title'] as string,
@@ -1549,6 +1610,64 @@ export async function getMyBookingDetail(
     event,
     membership,
     qrTickets: qrTicketRows,
+    sharedBy: null,
+    canShare:
+      canShareBooking(itemType, r['status'] as string, Boolean(r['still_on'])) &&
+      qrTicketRows.some((t) => t.status === 'active'),
+  };
+  return own ? detail : friendView(detail, firstNameOf(r['shared_by_name'] as string | null));
+}
+
+/**
+ * What a friend sees of a booking whose tickets were shared with them: what
+ * it is, when and where, and their own tickets (the query loaded no others),
+ * never the customer's price, payment, contact, note or answers. Every field
+ * is spelled out rather than copied, so a field added to MyBookingDetail
+ * reaches friends only once it has been decided here.
+ */
+function friendView(d: MyBookingDetail, sharedBy: string | null): MyBookingDetail {
+  return {
+    id: d.id,
+    venueId: d.venueId,
+    venueName: d.venueName,
+    itemType: d.itemType,
+    status: d.status,
+    channel: '',
+    paymentMethod: '',
+    totalPaise: 0,
+    currency: d.currency,
+    note: null,
+    customerName: null,
+    customerContact: null,
+    createdAt: d.createdAt,
+    timeZone: d.timeZone,
+    slots: d.slots.map((s) => ({ id: s.id, startAt: s.startAt, endAt: s.endAt, pricePaise: 0, arenaName: s.arenaName })),
+    event: d.event && {
+      id: d.event.id,
+      name: d.event.name,
+      startsAt: d.event.startsAt,
+      endsAt: d.event.endsAt,
+      description: d.event.description,
+      answers: [],
+      postBookingRedirect: d.event.postBookingRedirect,
+    },
+    // Memberships are never shared.
+    membership: null,
+    qrTickets: d.qrTickets.map((t) => ({
+      id: t.id,
+      label: t.label,
+      qrData: t.qrData,
+      code: t.code,
+      validFrom: t.validFrom,
+      validUntil: t.validUntil,
+      multiUse: t.multiUse,
+      maxScans: t.maxScans,
+      scanCount: t.scanCount,
+      status: t.status,
+      share: null,
+    })),
+    sharedBy,
+    canShare: false,
   };
 }
 
@@ -1854,6 +1973,9 @@ export async function deleteMyAccount(
       // So is the wishlist: the users row is kept as a tombstone, so the FK
       // cascade never fires for a self-service deletion.
       await tx.delete(wishlistItems).where(eq(wishlistItems.userId, row.id));
+      // Ticket links it sent and nobody took are withdrawn, and tickets it
+      // took go back to whoever shared them.
+      await releaseTicketSharesOf(row.id, tx);
 
       // Support tickets stay (the org's record of the issue) but lose the
       // free text, which routinely carries phone numbers/addresses the user

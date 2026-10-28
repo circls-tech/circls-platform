@@ -29,7 +29,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { userBlocks } from '../db/schema/user_blocks.js';
 import { users } from '../db/schema/users.js';
 import { can, isSuspendedTenant } from '../lib/authz/can.js';
-import { ownBookingCondition } from './booking_ownership.js';
+import { myBookingsCondition } from './booking_ownership.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { assertNotObjectionable } from '../lib/objectionable.js';
@@ -528,8 +528,9 @@ async function deriveSubjectFromBooking(booking: {
  * Create a thread from the consumer Help-widget interview (design doc
  * 2026-07-18-support-context-threads §3). Visibility is forced `private`;
  * `origin='support'`; the interview's category/transcript are stored for
- * staff. With a booking: the booking must belong to the caller
- * (by the rule of the consumer's own bookings list — else 404 `booking_not_found`;
+ * staff. With a booking: the booking must be one of the caller's
+ * (one their My bookings lists: their own, or one a friend shared a ticket
+ * of with them — else 404 `booking_not_found`;
  * cancelled bookings are ALLOWED — refund concerns are precisely about
  * cancelled bookings, and the thread must route to the org that owes the
  * refund), the subject is derived from the booking's item, the tenant is the
@@ -561,8 +562,8 @@ export async function createSupportThread(input: {
       .where(
         and(
           eq(bookings.id, input.bookingId),
-          // The caller's own booking, as "My bookings" decides it.
-          ownBookingCondition(input.userId, 'bookings'),
+          // A booking in the caller's My bookings (their own, or shared with them).
+          myBookingsCondition(input.userId, 'bookings'),
         ),
       )
       .limit(1);

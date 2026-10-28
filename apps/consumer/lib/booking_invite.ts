@@ -46,8 +46,18 @@ const listOf = (names: string[]) =>
  */
 const bold = (s: string) => `*${s.replace(/\*/g, '').trim()}*`;
 
-/** The note, one line each: who's going to what, when, where, and the ask (the link follows on the next line). */
-const lines = (...ls: (string | null)[]) => [...ls.filter(Boolean), 'Care to join me? 👇'].join('\n');
+/** A note, one line each: what, when, where, and the ask (the link follows on the next line). */
+const note = (ask: string, ...ls: (string | null)[]) => [...ls.filter(Boolean), ask].join('\n');
+const lines = (...ls: (string | null)[]) => note('Care to join me? 👇', ...ls);
+
+/** The next slot still to come, and every court booked for its time. */
+function nextCourtSlots(slots: CourtSlot[], now: Date): { startAt: string; courts: string[] } | null {
+  const upcoming = slots.filter((s) => Date.parse(s.endAt) > now.getTime());
+  if (upcoming.length === 0) return null;
+  const first = Math.min(...upcoming.map((s) => Date.parse(s.startAt)));
+  const firstSlots = upcoming.filter((s) => Date.parse(s.startAt) === first);
+  return { startAt: firstSlots[0]!.startAt, courts: [...new Set(firstSlots.map((s) => s.arenaName))] };
+}
 
 function eventInvite(
   e: { id: string; name: string; startsAt: string },
@@ -99,20 +109,55 @@ export function inviteForCourts(
   slots: CourtSlot[],
   now: Date = new Date(),
 ): BookingInvite | null {
-  const upcoming = slots.filter((s) => Date.parse(s.endAt) > now.getTime());
-  if (upcoming.length === 0) return null;
-  const first = Math.min(...upcoming.map((s) => Date.parse(s.startAt)));
-  const firstSlots = upcoming.filter((s) => Date.parse(s.startAt) === first);
-  const courts = [...new Set(firstSlots.map((s) => s.arenaName))];
+  const next = nextCourtSlots(slots, now);
+  if (!next) return null;
   return {
     itemType: 'venue',
     itemId: venue.id,
     title: `Play with me at ${venue.name}`,
     message: lines(
-      `Hi! I've booked ${listOf(courts)} at ${bold(venue.name)}`,
-      `📅 ${formatDayAtTime(firstSlots[0]!.startAt, venue.timeZone)}`,
+      `Hi! I've booked ${listOf(next.courts)} at ${bold(venue.name)}`,
+      `📅 ${formatDayAtTime(next.startAt, venue.timeZone)}`,
     ),
   };
+}
+
+/**
+ * What "Share booking" sends with one ticket's link: a note telling the
+ * friend the ticket is theirs (what, when, where) and to tap the link to add
+ * it to their bookings. `ticketLabel` names a court ticket's court. Null for
+ * a booking whose tickets can't be shared (not an event or court booking).
+ */
+export function ticketShareNote(
+  b: MyBookingDetail,
+  ticketLabel: string | null,
+  now: Date = new Date(),
+): { title: string; message: string } | null {
+  const ask = 'Tap to add it to your Circls bookings 👇';
+  if (b.itemType === 'event' && b.event) {
+    const place = placeOf(b.venueId, b.venueName);
+    return {
+      title: `Your ticket for ${b.event.name}`,
+      message: note(
+        ask,
+        `Hi! Here's your ticket for ${bold(b.event.name)}`,
+        `📅 ${formatDayAtTime(b.event.startsAt, b.timeZone)}`,
+        place ? `📍 ${place}` : null,
+      ),
+    };
+  }
+  if (b.itemType === 'slot') {
+    const next = nextCourtSlots(b.slots, now);
+    return {
+      title: `Your court at ${b.venueName}`,
+      message: note(
+        ask,
+        `Hi! Here's your pass for ${ticketLabel ? `${ticketLabel} at ` : ''}${bold(b.venueName)}`,
+        next ? `📅 ${formatDayAtTime(next.startAt, b.timeZone)}` : null,
+      ),
+    };
+  }
+  return null;
 }
 
 /** What goes on the clipboard where there is no share sheet: the note, then the link. */

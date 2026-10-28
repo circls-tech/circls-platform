@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { formatDate, formatDateTime, formatPaise, formatTime } from '@/lib/format';
 import { PostBookingRedirectPanel } from '@/components/PostBookingRedirect';
 import { InviteButton } from '@/components/InviteButton';
+import { ShareBookingButton, ticketHolder } from '@/components/ShareBooking';
 import { inviteForBooking } from '@/lib/booking_invite';
 import { QrTicketCard } from '@/lib/QrTicketCard';
 import { Card, StatusPill } from '@/lib/ui';
@@ -47,6 +48,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
 
   const b = bookingQ.data;
   const invite = b ? inviteForBooking(b) : null;
+  // A booking a friend shared a ticket of with you: their price, payment and
+  // contact aren't yours to see, and only they can share or cancel it.
+  const guest = Boolean(b?.sharedBy);
 
   return (
     <div className="min-h-screen">
@@ -76,13 +80,23 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <p className="mt-0.5 text-sm text-text-secondary">
                     {ITEM_TYPE_LABELS[b.itemType] ?? b.itemType}
                   </p>
+                  {guest && (
+                    <p className="mt-1 text-sm font-semibold text-ink">Shared with you by {b.sharedBy}</p>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <StatusPill status={b.status} />
-                  <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise, b.currency)}</span>
+                  {!guest && (
+                    <span className="text-lg font-semibold text-ink">{formatPaise(b.totalPaise, b.currency)}</span>
+                  )}
                 </div>
               </div>
-              {invite && <InviteButton invite={invite} from="booking" label="Invite friends" className="mt-4" />}
+              {(invite || b.canShare) && (
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  {invite && <InviteButton invite={invite} from="booking" />}
+                  {b.canShare && <ShareBookingButton booking={b} />}
+                </div>
+              )}
             </Card>
 
             {/* Court (slot) booking: list each booked slot */}
@@ -97,7 +111,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                           {formatDate(s.startAt)} · {formatTime(s.startAt)} – {formatTime(s.endAt)}
                         </p>
                       </div>
-                      <span className="text-sm font-medium text-ink">{formatPaise(s.pricePaise, b.currency)}</span>
+                      {!guest && (
+                        <span className="text-sm font-medium text-ink">{formatPaise(s.pricePaise, b.currency)}</span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -155,10 +171,17 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
 
             {/* Entry tickets (only once the booking is confirmed) */}
             {b.status !== 'pending' && b.qrTickets.length > 0 && (
-              <Card title="Your tickets" subtitle="Show these at the venue to check in">
+              <Card
+                title={guest && b.qrTickets.length === 1 ? 'Your ticket' : 'Your tickets'}
+                subtitle={guest ? 'Show it at the venue to check in' : 'Show these at the venue to check in'}
+              >
                 <div className="grid gap-4 sm:grid-cols-2">
                   {b.qrTickets.map((t) => (
-                    <QrTicketCard key={t.id} ticket={t} />
+                    <div key={t.id} className="flex flex-col gap-2">
+                      <QrTicketCard ticket={t} />
+                      {/* Your own booking: who has each ticket you shared. */}
+                      {t.share && <p className="text-center text-xs font-semibold text-ink">{ticketHolder(t)}</p>}
+                    </div>
                   ))}
                 </div>
               </Card>
@@ -167,11 +190,17 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             {/* Booking metadata */}
             <Card title="Booking details">
               <div className="flex flex-col divide-y divide-ink/15">
-                <DetailRow label="Booked on" value={formatDateTime(b.createdAt)} />
-                <DetailRow label="Payment" value={PAYMENT_METHOD_LABELS[b.paymentMethod] ?? b.paymentMethod} />
-                {b.customerName && <DetailRow label="Name" value={b.customerName} />}
-                {b.customerContact && <DetailRow label="Contact" value={b.customerContact} />}
-                {b.note && <DetailRow label="Note" value={b.note} />}
+                {guest ? (
+                  <DetailRow label="Shared by" value={b.sharedBy} />
+                ) : (
+                  <>
+                    <DetailRow label="Booked on" value={formatDateTime(b.createdAt)} />
+                    <DetailRow label="Payment" value={PAYMENT_METHOD_LABELS[b.paymentMethod] ?? b.paymentMethod} />
+                    {b.customerName && <DetailRow label="Name" value={b.customerName} />}
+                    {b.customerContact && <DetailRow label="Contact" value={b.customerContact} />}
+                    {b.note && <DetailRow label="Note" value={b.note} />}
+                  </>
+                )}
                 <DetailRow label="Reference" value={<span className="font-mono text-xs">{b.id}</span>} />
               </div>
             </Card>
