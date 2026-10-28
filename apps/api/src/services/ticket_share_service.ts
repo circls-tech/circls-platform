@@ -17,7 +17,10 @@ import { ownBookingCondition } from './booking_ownership.js';
  *   - the booking must be confirmed and not yet over, the ticket still active;
  *   - one live share per ticket; an accepted share is final, a link nobody has
  *     accepted can be withdrawn;
- *   - the customer can't accept their own link.
+ *   - the customer can't accept their own link;
+ *   - a share follows its ticket when a rescheduled booking gets new ones
+ *     (carryTicketSharesOver), and ends with an account that is deleted
+ *     (releaseTicketSharesOf).
  */
 
 export const SHAREABLE_ITEM_TYPES = ['event', 'slot'] as const;
@@ -34,18 +37,6 @@ export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 export function firstNameOf(displayName: string | null | undefined): string | null {
   const first = displayName?.trim().split(/\s+/)[0];
   return first ? first : null;
-}
-
-/**
- * `<alias>` (a bookings row) is shared with `userId`: they accepted one of its
- * tickets. `alias` is a constant from code, never input.
- */
-export function sharedWithCondition(userId: string, alias = 'b'): SQL {
-  return sql`exists (
-    select 1 from booking_ticket_shares s
-    where s.booking_id = ${sql.raw(alias)}.id
-      and s.claimed_by_user_id = ${userId}::uuid
-      and s.withdrawn_at is null)`;
 }
 
 /**
@@ -143,6 +134,70 @@ export async function withdrawTicketShare(userId: string, bookingId: string, tic
   throw new NotFound('No link to withdraw for this ticket', 'ticket_share_not_found');
 }
 
+type Executor = Pick<typeof db, 'execute'>;
+
+/**
+ * A rescheduled booking's QR tickets are revoked and new ones issued over the
+ * new span (reschedule_service). Its live shares move onto the new tickets, so
+ * a friend who has a ticket keeps one, and a link still out keeps working: a
+ * ticket goes to the new one with the same label (the same court), else to
+ * the next new ticket nobody has. A link left over with no ticket to move to
+ * is withdrawn; a friend's accepted share stays on its revoked ticket, which
+ * their view shows as cancelled.
+ *
+ * Call it in the same transaction, after the new tickets are issued.
+ */
+export async function carryTicketSharesOver(bookingId: string, tx: Executor): Promise<void> {
+  const moving = rowsOf(
+    await tx.execute(sql`
+      select s.id, t.label, s.claimed_at
+      from booking_ticket_shares s
+      join qr_tickets t on t.id = s.qr_ticket_id
+      where s.booking_id = ${bookingId}::uuid and s.withdrawn_at is null and t.status = 'revoked'
+      order by t.created_at, t.label
+    `),
+  );
+  if (moving.length === 0) return;
+  const free = rowsOf(
+    await tx.execute(sql`
+      select t.id, t.label
+      from qr_tickets t
+      where t.booking_id = ${bookingId}::uuid and t.status = 'active'
+        and not exists (
+          select 1 from booking_ticket_shares s where s.qr_ticket_id = t.id and s.withdrawn_at is null)
+      order by t.created_at, t.label
+    `),
+  );
+  const take = (pick: (t: Row) => boolean) => {
+    const i = free.findIndex(pick);
+    return i < 0 ? null : free.splice(i, 1)[0]!;
+  };
+  for (const s of moving) {
+    const to = take((t) => t['label'] === s['label']) ?? take(() => true);
+    if (to) {
+      await tx.execute(sql`
+        update booking_ticket_shares set qr_ticket_id = ${to['id'] as string}::uuid where id = ${s['id'] as string}::uuid
+      `);
+    } else if (!s['claimed_at']) {
+      await tx.execute(sql`update booking_ticket_shares set withdrawn_at = now() where id = ${s['id'] as string}::uuid`);
+    }
+  }
+}
+
+/**
+ * Account deletion (consumer_service.deleteMyAccount): links the account sent
+ * that nobody has accepted are withdrawn, and tickets it accepted go back to
+ * their booker, so nobody can add a ticket from, or hold one for, an account
+ * that no longer exists. Tickets it shared that friends accepted stay theirs.
+ */
+export async function releaseTicketSharesOf(userId: string, tx: Executor): Promise<void> {
+  await tx.execute(sql`
+    update booking_ticket_shares set withdrawn_at = now()
+    where shared_by_user_id = ${userId}::uuid and claimed_at is null and withdrawn_at is null
+  `);
+  await tx.execute(sql`delete from booking_ticket_shares where claimed_by_user_id = ${userId}::uuid`);
+}
+
 /**
  * Where a share link stands for the person opening it:
  *   available — they can accept it;   yours — they already did;
@@ -171,12 +226,11 @@ export interface TicketSharePreview {
   ticketLabel: string | null;
 }
 
-async function loadShare(token: string, lock: boolean, tx: Pick<typeof db, 'execute'> = db) {
+async function loadShare(token: string, lock: boolean, tx: Executor = db) {
   return rowsOf(
     await tx.execute(sql`
       select s.id, s.booking_id, s.shared_by_user_id, s.claimed_by_user_id, s.withdrawn_at,
-             b.item_type, b.status, ${bookingStillOnSql('b')} as still_on,
-             b.customer_user_id, b.created_by_user_id, b.channel, b.created_at as booking_created_at,
+             b.item_type, b.status, ${bookingStillOnSql('b')} as still_on, b.customer_user_id,
              t.status as ticket_status, t.label as ticket_label,
              coalesce(ev.name, v.name, 'Booking') as title,
              case when ev.id is not null then v.name end as place,

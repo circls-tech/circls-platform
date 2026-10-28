@@ -7,9 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import { bookings, events, memberships, qrTickets, tenants, users, venues } from '../db/schema/index.js';
 import { getMyBookingDetail, listMyBookings } from './consumer_service.js';
+import { createSupportThread } from './questions_service.js';
 import {
+  carryTicketSharesOver,
   claimTicketShare,
   previewTicketShare,
+  releaseTicketSharesOf,
   shareTicket,
   withdrawTicketShare,
 } from './ticket_share_service.js';
@@ -138,6 +141,8 @@ describe.skipIf(!runIntegration)('share booking (ticket shares)', () => {
   });
 
   afterAll(async () => {
+    await db.execute(sql`delete from question_messages where thread_id in (select id from question_threads where tenant_id = ${tenantId})`);
+    await db.execute(sql`delete from question_threads where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from booking_ticket_shares where booking_id in (select id from bookings where tenant_id = ${tenantId})`);
     await db.execute(sql`delete from qr_tickets where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
@@ -250,5 +255,62 @@ describe.skipIf(!runIntegration)('share booking (ticket shares)', () => {
     await expect(previewTicketShare(priya, 'nope-not-a-real-token-at-all')).rejects.toMatchObject({
       code: 'ticket_share_not_found',
     });
+  });
+
+  it('a friend can ask for help about a booking shared with them', async () => {
+    const thread = await createSupportThread({ userId: priya, category: 'booking_issue', body: 'Which gate do I use?', bookingId });
+    // Routed by the booking: its event, its organiser.
+    expect(thread.thread).toMatchObject({ tenantId, subjectType: 'event', subjectId: eventId });
+    await expect(
+      createSupportThread({ userId: ravi, category: 'booking_issue', body: 'Which gate do I use?', bookingId }),
+    ).rejects.toMatchObject({ code: 'booking_not_found' });
+  });
+
+  it('shares follow their tickets when the booking gets new ones (a reschedule)', async () => {
+    // Priya has ticket 1; ticket 3 has a link out. New passes are issued in
+    // another order, as a reschedule would, and the old ones revoked.
+    const { token: pending } = await shareTicket(asha, bookingId, tickets[2]!);
+    await db.execute(sql`update qr_tickets set status = 'revoked' where booking_id = ${bookingId}::uuid`);
+    const fresh = await db
+      .insert(qrTickets)
+      .values(
+        [3, 2, 1].map((n) => ({
+          tenantId,
+          bookingId,
+          itemType: 'event' as const,
+          label: `General · ${n} of 3`,
+          code: `${tag}-new-${n}`,
+        })),
+      )
+      .returning({ id: qrTickets.id, label: qrTickets.label });
+    await carryTicketSharesOver(bookingId, db);
+
+    const newFirst = fresh.find((t) => t.label === 'General · 1 of 3')!.id;
+    const newThird = fresh.find((t) => t.label === 'General · 3 of 3')!.id;
+    const d = await getMyBookingDetail(priya, bookingId);
+    expect(d.qrTickets.map((t) => [t.id, t.status])).toEqual([[newFirst, 'active']]);
+
+    const own = await getMyBookingDetail(asha, bookingId);
+    expect(own.qrTickets.find((t) => t.id === newFirst)!.share).toMatchObject({ state: 'accepted', acceptedBy: 'Priya' });
+    expect(own.qrTickets.find((t) => t.id === newThird)!.share).toMatchObject({ state: 'pending', token: pending });
+    expect(own.qrTickets.filter((t) => t.status === 'revoked').every((t) => t.share === null)).toBe(true);
+    expect((await previewTicketShare(ravi, pending)).state).toBe('available');
+    tickets = [newFirst, fresh.find((t) => t.label === 'General · 2 of 3')!.id, newThird];
+  });
+
+  it('deleting an account withdraws its links and hands back the tickets it took', async () => {
+    const { token } = await shareTicket(asha, bookingId, tickets[2]!);
+    await claimTicketShare(ravi, token);
+    const { token: out } = await shareTicket(asha, bookingId, tickets[1]!);
+
+    // Priya deletes her account: her ticket goes back to Asha.
+    await releaseTicketSharesOf(priya, db);
+    expect((await listMyBookings(priya)).some((b) => b.id === bookingId)).toBe(false);
+    expect((await getMyBookingDetail(asha, bookingId)).qrTickets.find((t) => t.id === tickets[0])!.share).toBeNull();
+
+    // Asha deletes hers: her link nobody took is withdrawn; Ravi keeps his.
+    await releaseTicketSharesOf(asha, db);
+    expect((await previewTicketShare(priya, out)).state).toBe('withdrawn');
+    expect((await getMyBookingDetail(ravi, bookingId)).qrTickets.map((t) => t.id)).toEqual([tickets[2]]);
   });
 });

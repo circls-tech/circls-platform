@@ -1,7 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MyBookingDetail, QrTicket } from '@/lib/api/types';
-import { useShareTicket, useWithdrawTicketShare } from '@/lib/api/consumer';
+import { useMyBooking, useShareTicket, useWithdrawTicketShare } from '@/lib/api/consumer';
 import { ticketShareNote } from '@/lib/booking_invite';
 import { shareLink, ticketLinkUrl } from '@/lib/share';
 import { Button, Modal } from '@/lib/ui';
@@ -26,12 +26,13 @@ function TicketIcon({ className = '' }: { className?: string }) {
   );
 }
 
-/** Where one ticket stands, in a word or two. */
+/** Where one ticket stands, in a word or two: a cancelled or used ticket says so before who has it. */
 export function ticketHolder(t: QrTicket): string {
-  if (t.share?.state === 'accepted') return `With ${t.share.acceptedBy ?? 'a friend'}`;
-  if (t.share?.state === 'pending') return 'Link sent, not accepted yet';
-  if (t.status === 'used') return 'Used';
   if (t.status === 'revoked') return 'Cancelled';
+  const friend = t.share?.state === 'accepted' ? (t.share.acceptedBy ?? 'a friend') : null;
+  if (t.status === 'used') return friend ? `Used by ${friend}` : 'Used';
+  if (friend) return `With ${friend}`;
+  if (t.share?.state === 'pending') return 'Link sent, not accepted yet';
   return 'With you';
 }
 
@@ -60,14 +61,30 @@ export function ShareBookingButton({ booking, className = '' }: { booking: MyBoo
   );
 }
 
+/** Whether the tap that started this is still live (Safari's share sheet and clipboard need one); unknown counts as yes. */
+function tapStillLive(): boolean {
+  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+  return activation ? activation.isActive : true;
+}
+
 function ShareBookingModal({ booking, onClose }: { booking: MyBookingDetail; onClose: () => void }) {
   const share = useShareTicket(booking.id);
   const withdraw = useWithdrawTicketShare(booking.id);
+  // The links shown were loaded with the page; one may have been withdrawn or
+  // accepted since (in the app, say). Load them again, and send nothing until
+  // they're in.
+  const { refetch, isFetching } = useMyBooking(booking.id);
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The last link sent: a note when it was copied, the text itself when it
-  // could be neither shared nor copied.
-  const [sent, setSent] = useState<{ ticketId: string; copied: boolean; manual: string | null } | null>(null);
+  // What came of the last link sent: copied, the text itself when it could be
+  // neither shared nor copied, or ready when making it took longer than the
+  // tap lasts (the next tap shares it).
+  const [sent, setSent] = useState<{ ticketId: string; outcome: 'copied' | 'manual' | 'ready'; text: string } | null>(
+    null,
+  );
 
   async function send(t: QrTicket) {
     const note = ticketShareNote(booking, t.label);
@@ -75,11 +92,22 @@ function ShareBookingModal({ booking, onClose }: { booking: MyBookingDetail; onC
     setError(null);
     setBusy(t.id);
     try {
-      const token = t.share?.token ?? (await share.mutateAsync(t.id)).token;
+      // A link that's out is shared straight away, so the sheet opens on the
+      // tap; a new one is made first.
+      const cached = t.share?.state === 'pending' ? t.share.token : null;
+      const token = cached ?? (await share.mutateAsync(t.id)).token;
       const url = ticketLinkUrl(window.location.origin, token);
       const text = `${note.message}\n${url}`;
+      if (!cached && !tapStillLive()) {
+        setSent({ ticketId: t.id, outcome: 'ready', text });
+        return;
+      }
       const outcome = await shareLink({ title: note.title, text: note.message, url }, { copy: text });
-      setSent({ ticketId: t.id, copied: outcome === 'copied', manual: outcome === 'unavailable' ? text : null });
+      setSent(
+        outcome === 'copied' || outcome === 'unavailable'
+          ? { ticketId: t.id, outcome: outcome === 'copied' ? 'copied' : 'manual', text }
+          : null,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not share this ticket. Please try again.');
     } finally {
@@ -108,6 +136,7 @@ function ShareBookingModal({ booking, onClose }: { booking: MyBookingDetail; onC
       </p>
       <ul className="mt-4 flex flex-col divide-y divide-ink/15">
         {booking.qrTickets.map((t, i) => {
+          const idle = busy === null && !isFetching;
           const canSend = t.status === 'active' && t.share?.state !== 'accepted';
           const pending = t.share?.state === 'pending';
           return (
@@ -120,22 +149,24 @@ function ShareBookingModal({ booking, onClose }: { booking: MyBookingDetail; onC
                 {canSend && (
                   <div className="flex gap-2">
                     {pending && (
-                      <Button size="sm" variant="ghost" onClick={() => void takeBack(t)} disabled={busy !== null}>
+                      <Button size="sm" variant="ghost" onClick={() => void takeBack(t)} disabled={!idle}>
                         Withdraw
                       </Button>
                     )}
-                    <Button size="sm" onClick={() => void send(t)} loading={busy === t.id} disabled={busy !== null}>
+                    <Button size="sm" onClick={() => void send(t)} loading={busy === t.id} disabled={!idle}>
                       {pending ? 'Send again' : 'Share'}
                     </Button>
                   </div>
                 )}
               </div>
-              {sent?.ticketId === t.id && sent.copied && (
+              {sent?.ticketId === t.id && sent.outcome !== 'manual' && (
                 <p role="status" className="mt-2 text-xs text-text-secondary">
-                  Link copied. Paste it into a chat with your friend.
+                  {sent.outcome === 'copied'
+                    ? 'Link copied. Paste it into a chat with your friend.'
+                    : 'Link ready. Tap Send again to share it.'}
                 </p>
               )}
-              {sent?.ticketId === t.id && sent.manual && <ManualCopy text={sent.manual} />}
+              {sent?.ticketId === t.id && sent.outcome === 'manual' && <ManualCopy text={sent.text} />}
             </li>
           );
         })}

@@ -34,8 +34,8 @@ import { assertNotObjectionable } from '../lib/objectionable.js';
 import { deleteFirebaseUser } from '../lib/firebase_admin.js';
 import { logger } from '../lib/logger.js';
 import { writeAudit } from '../lib/audit.js';
-import { ownBookingCondition } from './booking_ownership.js';
-import { bookingStillOnSql, canShareBooking, firstNameOf, sharedWithCondition } from './ticket_share_service.js';
+import { myBookingsCondition, ownBookingCondition } from './booking_ownership.js';
+import { bookingStillOnSql, canShareBooking, firstNameOf, releaseTicketSharesOf } from './ticket_share_service.js';
 import { prepareOnlineBookingWithPayment, bookEvent, type EventLine } from './booking_service.js';
 import type {
   PrepareOnlineBookingResult,
@@ -1304,7 +1304,7 @@ export async function listMyBookings(userId: string): Promise<MyBookingItem[]> {
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     -- The customer's bookings (see ownBookingCondition), and bookings friends
     -- shared tickets of with them.
-    where ${ownBookingCondition(userId)} or ${sharedWithCondition(userId)}
+    where ${myBookingsCondition(userId)}
     order by b.created_at desc
     limit 100
   `);
@@ -1479,7 +1479,7 @@ export async function getMyBookingDetail(
     left join events ev on ev.id = nullif(b.item_data->>'eventId', '')::uuid
     left join user_memberships um on um.id = nullif(b.item_data->>'userMembershipId', '')::uuid
     where b.id = ${bookingId}
-      and (${ownBookingCondition(userId)} or ${sharedWithCondition(userId)})
+      and ${myBookingsCondition(userId)}
     limit 1
   `);
   const arr = rows as unknown as Record<string, unknown>[];
@@ -1487,8 +1487,8 @@ export async function getMyBookingDetail(
   if (!r) throw new NotFound('Booking not found', 'booking_not_found');
 
   const itemType = r['item_type'] as string;
-  // A friend the booking was shared with sees the booking and their own
-  // tickets, not the customer's price, payment, contact or answers.
+  // A friend the booking was shared with gets friendView of it below; what
+  // is loaded here is the customer's own view.
   const own = Boolean(r['is_own']);
 
   let bookingSlots: MyBookingSlot[] = [];
@@ -1509,32 +1509,33 @@ export async function getMyBookingDetail(
       id: s['id'] as string,
       startAt: new Date(s['start_at'] as string).toISOString(),
       endAt: new Date(s['end_at'] as string).toISOString(),
-      pricePaise: own ? Number(s['price_paise']) : 0,
+      pricePaise: Number(s['price_paise']),
       arenaName: s['arena_name'] as string,
     }));
   }
 
   let event: MyBookingDetail['event'] = null;
   if (itemType === 'event' && r['event_id'] != null) {
-    const answerRows = await db.execute<Record<string, unknown>>(sql`
-      select era.question_label, era.answer
-      from event_registration_answers era
-      left join event_registration_questions q on q.id = era.question_id
-      where era.booking_id = ${bookingId}
-      order by q.sort_order, era.created_at
-    `);
+    // The customer's answers; never loaded for a friend.
+    const answerRows = own
+      ? await db.execute<Record<string, unknown>>(sql`
+          select era.question_label, era.answer
+          from event_registration_answers era
+          left join event_registration_questions q on q.id = era.question_id
+          where era.booking_id = ${bookingId}
+          order by q.sort_order, era.created_at
+        `)
+      : [];
     event = {
       id: r['event_id'] as string,
       name: r['event_name'] as string,
       startsAt: new Date(r['event_starts_at'] as string).toISOString(),
       endsAt: new Date(r['event_ends_at'] as string).toISOString(),
       description: (r['event_description'] as string | null) ?? null,
-      answers: own
-        ? (answerRows as unknown as Record<string, unknown>[]).map((a) => ({
-            label: a['question_label'] as string,
-            answer: a['answer'] as string,
-          }))
-        : [],
+      answers: (answerRows as unknown as Record<string, unknown>[]).map((a) => ({
+        label: a['question_label'] as string,
+        answer: a['answer'] as string,
+      })),
       postBookingRedirect:
         (r['status'] as string) === 'confirmed'
           ? ((r['event_post_booking_redirect'] as PostBookingRedirect | null) ?? null)
@@ -1571,7 +1572,7 @@ export async function getMyBookingDetail(
       scanCount: Number(q['scan_count']),
       status: q['status'] as string,
       share:
-        own && q['share_token']
+        q['share_token']
           ? q['share_claimed_at']
             ? { state: 'accepted', token: null, acceptedBy: firstNameOf(q['share_claimed_by'] as string | null) }
             : { state: 'pending', token: q['share_token'] as string, acceptedBy: null }
@@ -1590,30 +1591,83 @@ export async function getMyBookingDetail(
         }
       : null;
 
-  return {
+  const detail: MyBookingDetail = {
     id: r['id'] as string,
     venueId: (r['venue_id'] as string | null) ?? null,
     venueName: r['title'] as string,
     itemType,
     status: r['status'] as string,
-    channel: own ? (r['channel'] as string) : '',
-    paymentMethod: own ? (r['payment_method'] as string) : '',
-    totalPaise: own ? Number(r['total_paise']) : 0,
+    channel: r['channel'] as string,
+    paymentMethod: r['payment_method'] as string,
+    totalPaise: Number(r['total_paise']),
     currency: r['currency'] as string,
-    note: own ? ((r['note'] as string | null) ?? null) : null,
-    customerName: own ? ((r['customer_name'] as string | null) ?? null) : null,
-    customerContact: own ? ((r['customer_contact'] as string | null) ?? null) : null,
+    note: (r['note'] as string | null) ?? null,
+    customerName: (r['customer_name'] as string | null) ?? null,
+    customerContact: (r['customer_contact'] as string | null) ?? null,
     createdAt: new Date(r['created_at'] as string).toISOString(),
     timeZone: r['tz_name'] as string,
     slots: bookingSlots,
     event,
     membership,
     qrTickets: qrTicketRows,
-    sharedBy: own ? null : firstNameOf(r['shared_by_name'] as string | null),
+    sharedBy: null,
     canShare:
-      own &&
       canShareBooking(itemType, r['status'] as string, Boolean(r['still_on'])) &&
       qrTicketRows.some((t) => t.status === 'active'),
+  };
+  return own ? detail : friendView(detail, firstNameOf(r['shared_by_name'] as string | null));
+}
+
+/**
+ * What a friend sees of a booking whose tickets were shared with them: what
+ * it is, when and where, and their own tickets (the query loaded no others),
+ * never the customer's price, payment, contact, note or answers. Every field
+ * is spelled out rather than copied, so a field added to MyBookingDetail
+ * reaches friends only once it has been decided here.
+ */
+function friendView(d: MyBookingDetail, sharedBy: string | null): MyBookingDetail {
+  return {
+    id: d.id,
+    venueId: d.venueId,
+    venueName: d.venueName,
+    itemType: d.itemType,
+    status: d.status,
+    channel: '',
+    paymentMethod: '',
+    totalPaise: 0,
+    currency: d.currency,
+    note: null,
+    customerName: null,
+    customerContact: null,
+    createdAt: d.createdAt,
+    timeZone: d.timeZone,
+    slots: d.slots.map((s) => ({ id: s.id, startAt: s.startAt, endAt: s.endAt, pricePaise: 0, arenaName: s.arenaName })),
+    event: d.event && {
+      id: d.event.id,
+      name: d.event.name,
+      startsAt: d.event.startsAt,
+      endsAt: d.event.endsAt,
+      description: d.event.description,
+      answers: [],
+      postBookingRedirect: d.event.postBookingRedirect,
+    },
+    // Memberships are never shared.
+    membership: null,
+    qrTickets: d.qrTickets.map((t) => ({
+      id: t.id,
+      label: t.label,
+      qrData: t.qrData,
+      code: t.code,
+      validFrom: t.validFrom,
+      validUntil: t.validUntil,
+      multiUse: t.multiUse,
+      maxScans: t.maxScans,
+      scanCount: t.scanCount,
+      status: t.status,
+      share: null,
+    })),
+    sharedBy,
+    canShare: false,
   };
 }
 
@@ -1919,6 +1973,9 @@ export async function deleteMyAccount(
       // So is the wishlist: the users row is kept as a tombstone, so the FK
       // cascade never fires for a self-service deletion.
       await tx.delete(wishlistItems).where(eq(wishlistItems.userId, row.id));
+      // Ticket links it sent and nobody took are withdrawn, and tickets it
+      // took go back to whoever shared them.
+      await releaseTicketSharesOf(row.id, tx);
 
       // Support tickets stay (the org's record of the issue) but lose the
       // free text, which routinely carries phone numbers/addresses the user
