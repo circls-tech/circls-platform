@@ -13,6 +13,7 @@ import { SuperAdminBanner } from '@/components/SuperAdminBanner';
 import { SuspendedBanner } from '@/components/SuspendedBanner';
 import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
 import { OrgSelectorModal } from '@/components/OrgSelectorModal';
+import { PlatformFeedback } from '@/components/PlatformFeedback';
 import { TimezoneSelect } from '@/components/TimezoneSelect';
 import { BrandMark } from '@/lib/ui';
 
@@ -323,7 +324,13 @@ function GatedContent({ children, pathname }: { children: React.ReactNode; pathn
   const activeTenant = tenants?.find((t) => t.id === activeTenantId);
   const helpPath = pathname === '/help' || pathname.startsWith('/help/');
   if (tenantNeedsTermsGate(activeTenant) && !helpPath) return <TermsGate />;
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {/* The platform survey nudge, once the org is past the Terms gate. */}
+      <PlatformFeedback />
+    </>
+  );
 }
 
 function LayoutWithOrg({ children, pathname }: { children: React.ReactNode; pathname: string }) {

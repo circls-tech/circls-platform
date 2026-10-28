@@ -12,6 +12,9 @@ import type {
   AdminEngagementPage,
   AdminEngagementShelf,
   AdminEngagementType,
+  AdminFeedbackPage,
+  AdminFeedbackView,
+  AdminRatingKind,
   AdminListingDetail,
   AdminListingListResponse,
   AdminListingPreview,
@@ -341,6 +344,25 @@ export function useAdminEngagement(filters: AdminEngagementFilters) {
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       apiFetch<AdminEngagementPage>(`/v1/admin/engagement${qs({ limit: 50, cursor: pageParam, ...filters })}`),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+export interface AdminFeedbackFilters {
+  view: AdminFeedbackView;
+  /** Ratings only: one kind, or all three when omitted. */
+  kind?: AdminRatingKind;
+}
+
+/** The Feedback report: ratings, the website surveys and the event-type poll. */
+export function useAdminFeedback(filters: AdminFeedbackFilters) {
+  const { user } = useAuth();
+  return useInfiniteQuery({
+    queryKey: ['admin', 'feedback', filters],
+    enabled: Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<AdminFeedbackPage>(`/v1/admin/feedback${qs({ limit: 50, cursor: pageParam, ...filters })}`),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }

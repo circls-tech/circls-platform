@@ -44,6 +44,7 @@ import { adminChangeRequestRoutes } from './routes/admin_change_requests.js';
 import { adminAuditLogRoutes } from './routes/admin_audit_log.js';
 import { adminUserRoutes } from './routes/admin_users.js';
 import { adminEngagementRoutes } from './routes/admin_engagement.js';
+import { adminFeedbackRoutes } from './routes/admin_feedback.js';
 // Phase 17 — aggregator-facing public API surface.
 import { publicBookingRoutes } from './routes/public_bookings.js';
 import { consumerRoutes } from './routes/consumer.js';
@@ -66,6 +67,7 @@ import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
 import { adminEarningsRoutes, earningsRoutes } from './routes/earnings.js';
 import { questionRoutes } from './routes/questions.js';
+import { feedbackRoutes } from './routes/feedback.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -313,6 +315,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminAuditLogRoutes);
   await app.register(adminUserRoutes);
   await app.register(adminEngagementRoutes);
+  // Admin Feedback report: ratings, website surveys and the event-type poll.
+  await app.register(adminFeedbackRoutes);
   // Phase 17: public aggregator API (Bearer ck_… auth, channel='aggregator').
   await app.register(publicBookingRoutes);
   // Subproject E: consumer portal API (public browse + authed consumer booking).
@@ -335,6 +339,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(adminEarningsRoutes);
   // Questions threads on events / arenas / memberships (consumer + org + admin).
   await app.register(questionRoutes);
+  // Feedback prompts: 1–10 ratings, the event-type poll and the website surveys.
+  await app.register(feedbackRoutes);
 
   return app;
 }

@@ -25,6 +25,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { users, type User } from '../db/schema/users.js';
 import { consumerActivity } from '../db/schema/consumer_activity.js';
 import { wishlistItems } from '../db/schema/wishlist_items.js';
+import { feedbackDismissals, siteFeedback, userFeedback } from '../db/schema/user_feedback.js';
 import { notifications } from '../db/schema/notifications.js';
 import { supportIssues } from '../db/schema/support_issues.js';
 import { tenantMembers } from '../db/schema/tenant_members.js';
@@ -1973,6 +1974,18 @@ export async function deleteMyAccount(
       // So is the wishlist: the users row is kept as a tombstone, so the FK
       // cascade never fires for a self-service deletion.
       await tx.delete(wishlistItems).where(eq(wishlistItems.userId, row.id));
+      // Feedback keeps its scores (they count towards the averages) but loses
+      // the contact snapshots and the free text, which can carry personal
+      // details; pending "Not now" records go entirely.
+      await tx
+        .update(userFeedback)
+        .set({ phoneE164: null, email: null, comment: null })
+        .where(eq(userFeedback.userId, row.id));
+      await tx
+        .update(siteFeedback)
+        .set({ phoneE164: null, email: null, challenges: null, comments: null })
+        .where(eq(siteFeedback.userId, row.id));
+      await tx.delete(feedbackDismissals).where(eq(feedbackDismissals.userId, row.id));
       // Ticket links it sent and nobody took are withdrawn, and tickets it
       // took go back to whoever shared them.
       await releaseTicketSharesOf(row.id, tx);
