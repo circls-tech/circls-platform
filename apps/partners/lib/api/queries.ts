@@ -132,7 +132,9 @@ export function useCreateTenant() {
       documentVersion: string;
     }) =>
       apiFetch<Tenant>('/v1/tenants', { method: 'POST', body: JSON.stringify(input) }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['tenants'] }),
+    // Awaited: onboarding makes the new org the active one straight after, and
+    // an org list without it would switch them back to their first.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenants'] }),
   });
 }
 

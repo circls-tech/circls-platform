@@ -35,7 +35,8 @@ export function useClockTime(): (iso: string) => string {
 /**
  * "Get help from Circls": lets Circls's team into the active org's portal
  * for CIRCLS_HELP_HOURS — on the create-event, create-plan and venues pages,
- * and on the Team page, where it can also be ended. Owners and Managers only
+ * in the onboarding wizard once the org exists, and on the Team page, where
+ * it can also be ended. Owners and Managers only
  * (it's like inviting someone); hidden on the Circls org and for a Circls
  * super admin who is visiting.
  */
