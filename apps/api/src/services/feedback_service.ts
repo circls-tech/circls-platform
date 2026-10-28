@@ -24,9 +24,10 @@ import { myBookingsCondition } from './booking_ownership.js';
  *     dropped with "Not now", nothing older is asked (the next thing to fall
  *     due is), and nothing due more than RATING_WINDOW ago at all.
  *  2. The event-type poll — "What kind of event would you like to see next?"
- *     — once per person ("Not now" drops it too).
- *  3. The website survey, once their account is a day old. "Not now" brings it
- *     back a week later; once answered it is never asked again.
+ *     — once per person, from the account's second day ("Not now" drops it
+ *     too). A brand-new account is asked nothing.
+ *  3. The website survey, once their account is three days old. "Not now"
+ *     brings it back a week later; once answered it is never asked again.
  *
  * Partners: the platform survey, once per organisation, asked of its Owners
  * and Managers (the people who create listings) once the org's first listing
@@ -50,8 +51,11 @@ export const NUDGE_EVERY = '7 days';
 /** Which client sent an answer, as on login_events.source (+ the mobile apps). */
 export const CONSUMER_SOURCES = ['consumer', 'consumer_app'] as const;
 export const PARTNER_SOURCES = ['partners', 'partners_app'] as const;
-/** Nobody is asked about the website on their first day. */
-const SITE_SURVEY_AFTER = '1 day';
+/** How old a consumer account must be before the poll, then the website survey. */
+const POLL_AFTER = '1 day';
+const CONSUMER_SURVEY_AFTER = '3 days';
+/** How old an org's first listing must be before its survey. */
+const PARTNER_SURVEY_AFTER = '1 day';
 
 export interface EventTypeQuestion {
   key: string;
@@ -313,19 +317,23 @@ export async function getFeedbackPrompt(user: Pick<User, 'id'>): Promise<Feedbac
               where x.user_id = ${user.id}::uuid and x.prompt_key = 'site'
                 and x.dismissed_at > now() - ${NUDGE_EVERY}::interval)
         as site_snoozed,
-      (select u.created_at < now() - ${SITE_SURVEY_AFTER}::interval
+      (select u.created_at < now() - ${POLL_AFTER}::interval
+         from users u where u.id = ${user.id}::uuid)
+        as poll_due,
+      (select u.created_at < now() - ${CONSUMER_SURVEY_AFTER}::interval
          from users u where u.id = ${user.id}::uuid)
         as site_due
   `)) as unknown as {
     has_booked: boolean;
     poll_done: boolean;
+    poll_due: boolean | null;
     site_answered: boolean;
     site_snoozed: boolean;
     site_due: boolean | null;
   }[];
   if (!state) return null;
 
-  if (!state.poll_done) {
+  if (!state.poll_done && state.poll_due) {
     return { kind: 'event_type_preference', key: 'poll', question: EVENT_TYPE_QUESTION };
   }
 
@@ -559,7 +567,7 @@ export async function getPartnerFeedbackPrompt(
       f.event_at is not null as events,
       f.venue_at is not null as venues,
       f.membership_at is not null as memberships,
-      coalesce(least(f.event_at, f.venue_at, f.membership_at) < now() - ${SITE_SURVEY_AFTER}::interval, false)
+      coalesce(least(f.event_at, f.venue_at, f.membership_at) < now() - ${PARTNER_SURVEY_AFTER}::interval, false)
         as due,
       exists (select 1 from site_feedback s
               where s.audience = 'partner' and s.tenant_id = ${ctx.tenantId}::uuid) as answered,

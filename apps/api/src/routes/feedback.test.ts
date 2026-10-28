@@ -333,7 +333,8 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
   });
 
   it('then skips the older court booking and membership: only the newest is asked', async () => {
-    expect((await prompt('attendee'))?.kind).toBe('event_type_preference');
+    // Nothing else either: the account is new, so the poll waits a day.
+    expect(await prompt('attendee')).toBeNull();
   });
 
   it('asks about a venue visit with no check-in that fell due since, a day after the slot ended', async () => {
@@ -353,7 +354,7 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     const res = await post('attendee', { key: `venue:${unscannedSlotId}` }, '/v1/consumer/feedback/dismiss');
     expect(res.statusCode).toBe(200);
     // The membership (due three days ago) is older still: skipped too.
-    expect((await prompt('attendee'))?.kind).toBe('event_type_preference');
+    expect(await prompt('attendee')).toBeNull();
   });
 
   it('asks about a membership with no check-in a week after it started', async () => {
@@ -371,7 +372,7 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     expect(res.json().error.code).toBe('feedback_unknown_prompt');
   });
 
-  it('rates the membership, then asks the event-type question', async () => {
+  it('rates the membership, then asks the event-type question once the account is a day old', async () => {
     const res = await post('attendee', { kind: 'membership_feedback', id: userMembershipId, rating: 6 });
     expect(res.statusCode).toBe(200);
     const row = firstRow<Record<string, unknown>>(
@@ -380,8 +381,11 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
         where user_id = ${attendeeId}::uuid and kind = 'membership_feedback'`),
     );
     expect(row).toMatchObject({ user_membership_id: userMembershipId, rating: 6 });
-    // Nothing newer is due (the fresh scan is due tomorrow), so the poll is
-    // next — asked of everyone, bookings or not.
+    // Nothing newer is due (the fresh scan is due tomorrow) and the account is
+    // brand new: nothing to ask.
+    expect(await prompt('attendee')).toBeNull();
+    // A day on, the poll — asked of everyone, bookings or not.
+    await db.execute(sql`update users set created_at = now() - interval '25 hours' where id = ${attendeeId}::uuid`);
     expect(await prompt('attendee')).toEqual({
       kind: 'event_type_preference',
       key: 'poll',
@@ -389,10 +393,12 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     });
   });
 
-  it('"Not now" on the poll drops it; a new account has nothing more to ask', async () => {
+  it('"Not now" on the poll drops it; the website survey waits until day three', async () => {
     const res = await post('attendee', { key: 'poll' }, '/v1/consumer/feedback/dismiss');
     expect(res.statusCode).toBe(200);
-    // No website survey yet either: the account is new.
+    expect(await prompt('attendee')).toBeNull();
+    // Two days old: still too soon for the website survey.
+    await db.execute(sql`update users set created_at = now() - interval '2 days 23 hours' where id = ${attendeeId}::uuid`);
     expect(await prompt('attendee')).toBeNull();
   });
 
@@ -401,8 +407,8 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('asks a day-old account about the website, weekly until answered', async () => {
-    await db.execute(sql`update users set created_at = now() - interval '2 days' where id = ${attendeeId}::uuid`);
+  it('asks a three-day-old account about the website, weekly until answered', async () => {
+    await db.execute(sql`update users set created_at = now() - interval '3 days 1 hour' where id = ${attendeeId}::uuid`);
     expect(await prompt('attendee')).toEqual({ kind: 'site_feedback', key: 'site', hasBooked: true });
 
     await post('attendee', { key: 'site' }, '/v1/consumer/feedback/dismiss');
@@ -439,7 +445,12 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     expect(dup.statusCode).toBe(409);
   });
 
-  it('asks a consumer with no bookings the event-type question too', async () => {
+  it('asks a brand-new account nothing at all', async () => {
+    expect(await prompt('newbie')).toBeNull();
+  });
+
+  it('asks a consumer with no bookings the event-type question too, from day two', async () => {
+    await db.execute(sql`update users set created_at = now() - interval '25 hours' where id = ${newbieId}::uuid`);
     const p = await prompt('newbie');
     expect(p).toEqual({ kind: 'event_type_preference', key: 'poll', question: EVENT_TYPE_QUESTION });
     expect(p.question.question).toBe('What kind of event would you like to see next on Circls?');
@@ -497,9 +508,10 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
       answer: question.options[0],
     });
     expect(dup.statusCode).toBe(409);
-    // Poll answered, account new: nothing to ask; a day on, the website survey.
+    // Poll answered, account a day old: nothing to ask; at three days, the
+    // website survey.
     expect(await prompt('newbie')).toBeNull();
-    await db.execute(sql`update users set created_at = now() - interval '2 days' where id = ${newbieId}::uuid`);
+    await db.execute(sql`update users set created_at = now() - interval '3 days 1 hour' where id = ${newbieId}::uuid`);
     expect(await prompt('newbie')).toEqual({ kind: 'site_feedback', key: 'site', hasBooked: false });
   });
 
