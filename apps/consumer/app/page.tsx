@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { Header } from '@/components/Header';
-import { HScroll } from '@/components/HScroll';
+import { HScroll, railCardClass } from '@/components/HScroll';
 import { OrgCard } from '@/components/cards/OrgCard';
 import { VenueCard } from '@/components/cards/VenueCard';
 import { EventCard } from '@/components/cards/EventCard';
@@ -109,13 +109,13 @@ export default function LandingPage() {
             title="Events around you"
             viewAllHref="/events"
           >
-            {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className="w-[260px] shrink-0 snap-start" />)}
+            {nearbyEvents.map((e) => <EventCard key={e.id} event={e} className={railCardClass} />)}
           </HScroll>
         )}
 
         {nearbyVenues.length > 0 && (
           <HScroll title={venuesTitle} viewAllHref="/venues">
-            {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className="w-[260px] shrink-0 snap-start" />)}
+            {nearbyVenues.map((v) => <VenueCard key={v.id} venue={v} className={railCardClass} />)}
           </HScroll>
         )}
 
@@ -124,13 +124,13 @@ export default function LandingPage() {
             title="Memberships around you"
             viewAllHref="/memberships"
           >
-            {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className="w-[260px] shrink-0 snap-start" />)}
+            {nearbyMemberships.map((m) => <MembershipCard key={m.id} membership={m} className={railCardClass} />)}
           </HScroll>
         )}
 
         {nearbyOrgs.length > 0 && (
           <HScroll title={orgsTitle} viewAllHref="/orgs">
-            {nearbyOrgs.map((o) => <OrgCard key={o.id} org={o} className="w-[260px] shrink-0 snap-start" />)}
+            {nearbyOrgs.map((o) => <OrgCard key={o.id} org={o} className={railCardClass} />)}
           </HScroll>
         )}
       </main>
