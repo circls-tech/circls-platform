@@ -62,6 +62,28 @@ const CIRCLS_TEAM_MANAGEMENT: readonly Capability[] = [
   'members.invite', 'members.role_change', 'members.update', 'members.remove',
 ];
 
+/**
+ * What a super admin may not do in a partner org: run its team or its API
+ * keys, read its Earnings, or change its settings — the profile, logo and
+ * email preferences, and accepting the Terms, which binds the org.
+ */
+const SUPER_ADMIN_WITHHELD: readonly Capability[] = [
+  'members.invite', 'members.role_change', 'members.update', 'members.remove',
+  'integration.api_keys.manage',
+  'financials.read',
+  'tenant.update',
+];
+
+/**
+ * Caps a Circls super admin gets in a partner org they are not a member of:
+ * a Manager's, so they can set up venues, events, memberships and the rest
+ * for the org, less SUPER_ADMIN_WITHHELD. Deleting the org is an Owner's,
+ * not a Manager's, so they never had it.
+ */
+export const SUPER_ADMIN_CAPS: readonly Capability[] = PARTNER_CAPS.manager.filter(
+  (cap) => !SUPER_ADMIN_WITHHELD.includes(cap),
+);
+
 /** Caps each role gets on the *Circls platform* tenant (isPlatform=true). */
 export const PLATFORM_CAPS: Record<TenantRole, readonly Capability[]> = {
   // Founder / CTO: everything platform + everything partner-of-Circls.

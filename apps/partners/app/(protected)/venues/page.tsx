@@ -7,6 +7,7 @@ import { useCan } from '@/lib/use_can';
 import { isVenueOnShelf } from '@/lib/shelf';
 import { Badge, Button, Card, Input, Modal, StatusPill, TagsInput } from '@/lib/ui';
 import type { Venue } from '@/lib/api/types';
+import { CirclsHelp } from '@/components/CirclsHelp';
 
 type VenueShelf = 'open' | 'closed';
 
@@ -258,6 +259,7 @@ export default function VenuesPage() {
           </Button>
         )}
       </div>
+      <CirclsHelp lead="Need a hand setting up your venues?" />
       <VenueList
         tenantId={activeTenantId}
         onAddVenue={canAddVenue ? () => setShowAddVenue(true) : undefined}

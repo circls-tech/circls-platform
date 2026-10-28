@@ -1,5 +1,6 @@
 /**
- * Circls admin-team emails: review request, payout reminders, new organizer.
+ * Circls admin-team emails: review request, payout reminders, new organizer,
+ * help requested.
  * Resend sends them as HTML rendered here (no MSG91 template — see
  * EmailDesign.msg91Slug).
  */
@@ -172,5 +173,48 @@ export const adminOrgSignup: EmailDesign = {
     weekCount: 5,
     weekOne: false,
     orgUrl: 'https://admin.circls.app/tenants/0193a2b4-0000-7000-8000-000000004471',
+  },
+};
+
+// ── Help requested ───────────────────────────────────────────────────────────
+// An org let Circls into its portal ("Get help from Circls"). Variables:
+// tenantName, endsAt, note?, rows[], preheader.
+
+export const adminSupportRequested: EmailDesign = {
+  key: 'admin.support_requested',
+  name: 'Circls · Admin: help requested',
+  subject: '[Help requested] {{tenantName}}',
+  html: emailDocument({
+    preheader: '{{preheader}}',
+    pill: { tone: 'orange', text: 'Help requested' },
+    headline: '{{tenantName}} asked for a hand.',
+    intro: `They've let Circls into their partner portal until ${strong('{{endsAt}}')}. Any super admin can open it from ${strong('Organisations asking for help')} in the org switcher.`,
+    card: cardHero('Organizer', '{{tenantName}}') + cardRows(),
+    boxes: `{{#if note}}${noteBox('yellow', 'What they need', '{{note}}')}{{/if}}`,
+    cta: { href: '{{partnersUrl}}/dashboard', label: 'Open the partner portal', color: 'lilac' },
+    signoff: 'lend them a hand',
+    footerReason: 'Admin notification &middot; help requests from organizers.',
+    footerLinks: [
+      { href: '{{adminUrl}}/tenants', label: 'All organizers' },
+      { href: '{{adminUrl}}/dashboard', label: 'Admin dashboard' },
+    ],
+  }),
+  text:
+    '{{tenantName}} asked Circls for help and let Circls into their partner portal until {{endsAt}}.\n\n' +
+    '{{#if note}}What they need: {{note}}\n\n{{/if}}' +
+    '{{#each rows}}{{label}}: {{value}}\n{{/each}}\n' +
+    'Open it from "Organisations asking for help" in the partner portal: {{partnersUrl}}/dashboard\n',
+  sample: {
+    preheader: 'Pune · access until 4:30 PM IST',
+    tenantName: 'Sunrise Run Club',
+    endsAt: '4:30 PM IST, 28 Oct',
+    note: 'Please set up our Diwali 10K with three ticket tiers.',
+    rows: [
+      { label: 'City', value: 'Pune' },
+      { label: 'Asked by', value: 'Priya Nair' },
+      { label: 'Email', value: 'priya@sunriserun.in' },
+      { label: 'Phone', value: '+91 98200 12345' },
+      { label: 'Org ID', value: 'ORG-4471-9C2E', mono: true },
+    ],
   },
 };

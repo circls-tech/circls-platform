@@ -4,6 +4,8 @@ Creating and changing events — editing, submitting for review, publishing, end
 
 ## Creating an event
 
+Want a hand? **Get help from Circls** on the **New event** page lets the Circls team set it up with you — see [Getting help from Circls](/help/team).
+
 1. Go to **Events** in the sidebar and click **Create event**.
 2. Choose **where** the event happens:
    - **At a venue** — pick one of your venues. The event uses that venue's timezone.

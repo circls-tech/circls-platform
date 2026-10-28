@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '@/lib/api/types';
-import { ROLE_ORDER, roleCan, roleCanActOn, tenantCan } from './roles';
+import { ROLE_ORDER, isSuperAdmin, roleCan, roleCanActOn, tenantCan } from './roles';
 
 describe('roleCan', () => {
   it('mirrors the grants in PARTNER_CAPS', () => {
@@ -54,6 +54,37 @@ describe('tenantCan', () => {
 
   it('grants nothing for an organisation you are not in', () => {
     expect(tenantCan(undefined, 'integration.read')).toBe(false);
+  });
+
+  it("gives a super admin's visit a Manager's controls, bar the team, API keys, Earnings and settings", () => {
+    const visit = (status = 'active') => ({ ...tenant('manager', status), superAdminVisit: true });
+    expect(tenantCan(visit(), 'events.write')).toBe(true);
+    expect(tenantCan(visit(), 'bookings.cancel')).toBe(true);
+    expect(tenantCan(visit(), 'tenant.update')).toBe(false);
+    expect(tenantCan(visit(), 'integration.read')).toBe(true);
+    expect(tenantCan(visit(), 'members.invite')).toBe(false);
+    expect(tenantCan(visit(), 'members.role_change')).toBe(false);
+    expect(tenantCan(visit(), 'integration.api_keys.manage')).toBe(false);
+    expect(tenantCan(visit(), 'financials.read')).toBe(false);
+    expect(tenantCan(visit('suspended'), 'events.write')).toBe(false);
+  });
+});
+
+describe('isSuperAdmin', () => {
+  const row = (isPlatform: boolean, mySuperAdmin: boolean) => ({
+    id: 'x',
+    name: 'x',
+    slug: 'x',
+    subscriptionStatus: 'trial',
+    status: 'active',
+    isPlatform,
+    mySuperAdmin,
+  });
+
+  it('reads the switch on the Circls row only', () => {
+    expect(isSuperAdmin([row(true, true)])).toBe(true);
+    expect(isSuperAdmin([row(true, false), row(false, true)])).toBe(false);
+    expect(isSuperAdmin(undefined)).toBe(false);
   });
 });
 

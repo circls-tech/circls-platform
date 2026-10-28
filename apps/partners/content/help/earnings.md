@@ -10,7 +10,7 @@ Earnings covers all three ways you sell — **events, memberships and venues** �
 
 ## Who can see it
 
-Earnings is visible to **Owners**, **Managers** and **Read-only** members. **Staff** do not see it: they run the desk, and financial reports are not part of that. If your organisation is suspended you can still see what you are owed — suspension stops changes, not visibility.
+Earnings is visible to **Owners**, **Managers** and **Read-only** members. **Staff** do not see it: they run the desk, and financial reports are not part of that. Nor do Circls super admins helping out in your portal (see [Inviting and managing team members](/help/team)). If your organisation is suspended you can still see what you are owed — suspension stops changes, not visibility.
 
 ## Your commission-free period
 

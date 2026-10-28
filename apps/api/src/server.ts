@@ -50,6 +50,9 @@ import { consumerRoutes } from './routes/consumer.js';
 // Team management (subproject D).
 import { invitationRoutes } from './routes/invitations.js';
 import { teamRoutes } from './routes/team.js';
+import { superAdminRoutes } from './routes/super_admin.js';
+import { circlsSupportRoutes } from './routes/circls_support.js';
+import { registerSuperAdminAudit } from './lib/super_admin_audit.js';
 // Support issues (UX issue #20).
 import { supportIssueRoutes } from './routes/support_issues.js';
 // Coupon CRUD routes (org + admin).
@@ -197,6 +200,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.decorateRequest('apiKey', null);
   app.decorateRequest('apiTenantId', null);
 
+  // Every change a Circls super admin makes in a partner org is audited there.
+  registerSuperAdminAudit(app);
+
   // Raw-body-capturing JSON parser, registered ONCE at server scope (L5).
   // Content-type parsers are app-global in Fastify, so registering this inside
   // a route plugin silently replaced JSON parsing for the whole server and was
@@ -291,6 +297,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   // Team management.
   await app.register(invitationRoutes);
   await app.register(teamRoutes);
+  // Circls super admins opening partner orgs in the portal.
+  await app.register(superAdminRoutes);
+  await app.register(circlsSupportRoutes);
   // Phase 14: cancellations + admin refunds.
   await app.register(cancellationRoutes);
   await app.register(adminRefundRoutes);

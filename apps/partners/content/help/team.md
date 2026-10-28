@@ -61,6 +61,32 @@ Owners and managers can remove members: in the **Members** list, click **Remove*
 
 Circls can suspend an organisation — for example over an unpaid bill or a policy issue. While it is suspended, a banner says so at the top of every page, and every member, whatever their role, can still **view** what their role lets them see: bookings, customers, events, memberships, reports, and (for Owners and Managers) API keys and webhooks. Nothing about the organisation can be **changed**: no new bookings or registrations, cancellations or refunds, edits, replies to customer questions, invitations (pending ones can't be accepted either), role changes, API keys or webhooks, and passes can be looked up at the door but not admitted. If the organisation still owes an acceptance of the Partner Terms, that waits until it's reinstated too. Customers can still cancel their own bookings, members can still edit their own name or leave, and you can still raise a support issue with Circls from the Help page.
 
+## Getting help from Circls
+
+If you'd like a hand — say you run the organisation on your own and want Circls to set up an event you've planned together — click **Get help from Circls**. You'll find it on the **New event** and **New plan** pages, on **Venues**, and here on the **Team** page. Add a note about what you need if you like; it goes to the Circls team along with your request.
+
+This lets Circls's team into your partner portal for **3 hours**. Whoever from Circls helps you opens your organisation with their own login — no invitation needed — and gets none of your organisation's emails. While Circls has access:
+
+- **Circls support** appears at the top of your **Members** list, with the names of the people from Circls who have opened your portal and the time their access ends.
+- To end it sooner, click **Remove** next to Circls support. Their access ends at once.
+- Need longer? **3 more hours** restarts the clock from now.
+- After 3 hours it ends by itself — there's nothing to undo.
+
+Only Owners and Managers can let Circls in, extend it, or remove them. Without this, Circls can't open your portal.
+
+While they're in, Circls can do what a **Manager** can — venues, arenas, schedules, pricing, events, memberships, bookings (including cancelling and refunding them), coupons and customer questions — with these exceptions:
+
+- they can't invite anyone, or change, rename or remove members;
+- they can't create or revoke API keys or webhooks;
+- they can't see your **Earnings** page (what circls will pay you);
+- they can't change your organisation's settings: its profile (logo, description, contact details, address) and which emails circls sends you — they can only view them;
+- they can't accept the Partner Terms for you — only your own Owner or Manager can;
+- they can't delete the organisation.
+
+Everything they do goes through the same rules as your own team: a new event or venue still goes to review before customers see it, and a suspended organisation stays view-only for them too.
+
+You can always see what Circls did: **Settings → Activity Log** records letting Circls in, extending and removing them (`tenant.circls_support_granted`, `…_extended`, `…_ended`), each person's first visit (`tenant.super_admin_visited`) and every change they make, with a **Circls** label next to their name. Most changes show under their usual name (`event.created`, say); the ones your log doesn't otherwise record — adding or editing a venue, photos, schedules or prices — show as `tenant.super_admin_change`, with what was changed underneath. The same **Circls** label marks other actions the Circls team takes on your organisation, such as reviewing a listing.
+
 ## Tips
 
 - Keep at least one **owner** on the organisation at all times.

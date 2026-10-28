@@ -30,6 +30,7 @@ import { RestoredFormNotice } from '@/components/RestoredFormNotice';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
+import { CirclsHelp } from '@/components/CirclsHelp';
 import {
   RecurrenceEditor,
   emptyRecurrence,
@@ -156,6 +157,7 @@ function NewTenantEventRoute() {
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">
         {fromId ? 'Duplicate event' : 'New event'}
       </h1>
+      <CirclsHelp lead="Need a hand with this event?" />
 
       {fromId && (
         <p className="rounded-[var(--radius)] border border-[#e5e7eb] bg-slate-50 px-3 py-2 text-sm text-slate-600">

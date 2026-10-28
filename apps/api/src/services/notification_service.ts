@@ -44,6 +44,7 @@ import {
   loadListingDetail,
   orgSignupPayload,
   partnerBookingPayload,
+  supportRequestedPayload,
   refundedPayload,
   type BookingNotifyContext,
   type CancellationMode,
@@ -520,6 +521,17 @@ export async function notifyOrgCreated(tenantId: string): Promise<void> {
     return;
   }
   await notifyAdminTeam('admin.org_signup', payload, tenantId);
+}
+
+/** Email the Circls admin team that an org let Circls in ("Get help from Circls"). */
+export async function notifyCirclsSupportRequested(grantId: string): Promise<void> {
+  if (env.ADMIN_TEAM_EMAILS.length === 0) return;
+  const payload = await supportRequestedPayload(grantId);
+  if (!payload) {
+    logger.warn({ grantId }, 'notify_support_requested_missing');
+    return;
+  }
+  await notifyAdminTeam('admin.support_requested', payload, null);
 }
 
 // ── Questions threads (design doc 2026-07-18) ────────────────────────────────

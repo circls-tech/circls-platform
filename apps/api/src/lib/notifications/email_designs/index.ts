@@ -14,7 +14,12 @@ import Handlebars from 'handlebars';
 import { env } from '../../../config/env.js';
 import { renderTemplate } from '../templates.js';
 import { stripZeroWidth } from '../email_format.js';
-import { adminListingSubmitted, adminOrgSignup, adminPayoutsReminder } from './admin.js';
+import {
+  adminListingSubmitted,
+  adminOrgSignup,
+  adminPayoutsReminder,
+  adminSupportRequested,
+} from './admin.js';
 import { bookingCancelled, bookingConfirmed, bookingRefunded } from './consumer.js';
 import { listingApproved, listingRejected, partnerBookingConfirmed } from './partner.js';
 import type { EmailDesign } from './types.js';
@@ -31,6 +36,7 @@ export const EMAIL_DESIGNS: readonly EmailDesign[] = [
   adminListingSubmitted,
   adminPayoutsReminder,
   adminOrgSignup,
+  adminSupportRequested,
 ];
 
 const BY_KEY = new Map(EMAIL_DESIGNS.map((d) => [d.key, d]));

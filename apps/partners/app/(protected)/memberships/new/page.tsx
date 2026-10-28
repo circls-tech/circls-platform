@@ -9,6 +9,7 @@ import { useCreateMembership, useUploadMembershipCover } from '@/lib/api/members
 import { useMyRole, useTenantProfile, useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
 import { BackLink, Button, Card } from '@/lib/ui';
+import { CirclsHelp } from '@/components/CirclsHelp';
 import { brandOf, scratchMembership } from '@/lib/api/scratch_listing';
 import { ScratchPreview } from '@/components/ScratchPreview';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
@@ -134,6 +135,7 @@ function NewMembershipForm() {
           New plan
         </h1>
       </div>
+      <CirclsHelp lead="Need a hand with this plan?" />
 
       {cannotCreate ? (
         <RoleNotice>Your role can’t create membership plans — Owners and Managers can.</RoleNotice>

@@ -28,6 +28,8 @@ export interface MemberRow {
   displayName: string | null;
   phoneE164: string | null;
   role: TenantRole;
+  /** A Circls super admin (only ever true on the Circls team). */
+  superAdmin: boolean;
   createdAt: Date;
 }
 
@@ -39,6 +41,7 @@ export async function listMembers(tenantId: string): Promise<MemberRow[]> {
       displayName: users.displayName,
       phoneE164: users.phoneE164,
       role: tenantMembers.role,
+      superAdmin: tenantMembers.superAdmin,
       createdAt: tenantMembers.createdAt,
     })
     .from(tenantMembers)
@@ -83,6 +86,7 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
         email: users.email,
         displayName: users.displayName,
         phoneE164: users.phoneE164,
+        superAdmin: tenantMembers.superAdmin,
         createdAt: tenantMembers.createdAt,
       })
       .from(tenantMembers)
@@ -138,6 +142,7 @@ export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<Me
       displayName: current.displayName,
       phoneE164: current.phoneE164,
       role: input.nextRole,
+      superAdmin: current.superAdmin,
       createdAt: current.createdAt,
     };
   });
@@ -169,6 +174,7 @@ export async function updateMemberProfile(input: UpdateMemberProfileInput): Prom
         email: users.email,
         displayName: users.displayName,
         phoneE164: users.phoneE164,
+        superAdmin: tenantMembers.superAdmin,
         createdAt: tenantMembers.createdAt,
       })
       .from(tenantMembers)
@@ -206,8 +212,64 @@ export async function updateMemberProfile(input: UpdateMemberProfileInput): Prom
       displayName: updated.displayName,
       phoneE164: current.phoneE164,
       role: current.role,
+      superAdmin: current.superAdmin,
       createdAt: current.createdAt,
     };
+  });
+}
+
+export interface SetMemberSuperAdminInput {
+  /** The Circls platform tenant (the route refuses any other). */
+  tenantId: string;
+  targetUserId: string;
+  actorUserId: string;
+  superAdmin: boolean;
+}
+
+/**
+ * Turn a Circls team member's super-admin switch on or off: whether they may
+ * open partner orgs that ask Circls for help. Platform Owners only (the route
+ * checks); audited on the Circls tenant when it changes.
+ */
+export async function setMemberSuperAdmin(input: SetMemberSuperAdminInput): Promise<MemberRow> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({
+        role: tenantMembers.role,
+        email: users.email,
+        displayName: users.displayName,
+        phoneE164: users.phoneE164,
+        superAdmin: tenantMembers.superAdmin,
+        createdAt: tenantMembers.createdAt,
+      })
+      .from(tenantMembers)
+      .innerJoin(users, eq(users.id, tenantMembers.userId))
+      .where(
+        and(eq(tenantMembers.tenantId, input.tenantId), eq(tenantMembers.userId, input.targetUserId)),
+      )
+      .limit(1)
+      .for('update', { of: tenantMembers });
+    if (!current) throw new NotFound('Member not found', 'member_not_found');
+
+    if (current.superAdmin !== input.superAdmin) {
+      await tx
+        .update(tenantMembers)
+        .set({ superAdmin: input.superAdmin })
+        .where(
+          and(eq(tenantMembers.tenantId, input.tenantId), eq(tenantMembers.userId, input.targetUserId)),
+        );
+      await writeAudit(
+        tx,
+        { tenantId: input.tenantId, actorUserId: input.actorUserId },
+        input.superAdmin ? 'tenant.member_super_admin_granted' : 'tenant.member_super_admin_revoked',
+        'tenant_member',
+        input.targetUserId,
+        { superAdmin: current.superAdmin },
+        { superAdmin: input.superAdmin },
+      );
+    }
+
+    return { userId: input.targetUserId, ...current, superAdmin: input.superAdmin };
   });
 }
 

@@ -1,7 +1,7 @@
 import { ROLE_RANK, type TenantRole } from '../../db/schema/tenant_members.js';
 import { Forbidden } from '../errors.js';
 import type { Capability } from './capabilities.js';
-import { PARTNER_CAPS, PLATFORM_CAPS } from './role_caps.js';
+import { PARTNER_CAPS, PLATFORM_CAPS, SUPER_ADMIN_CAPS } from './role_caps.js';
 
 export interface AuthzContext {
   role: TenantRole;
@@ -11,6 +11,11 @@ export interface AuthzContext {
    * Required, so a context built by hand has to decide it (see isSuspendedTenant).
    */
   suspended: boolean;
+  /**
+   * A Circls super admin acting in a partner org they don't belong to: they
+   * get SUPER_ADMIN_CAPS whatever `role` says. Absent means a real member.
+   */
+  superAdmin?: boolean;
 }
 
 /** Circls suspended this partner tenant (the platform tenant is never suspended). */
@@ -39,6 +44,7 @@ export function isReadCapability(cap: Capability): boolean {
  */
 export function can(ctx: AuthzContext, cap: Capability): boolean {
   if (ctx.suspended && !isReadCapability(cap)) return false;
+  if (ctx.superAdmin) return !ctx.isPlatform && SUPER_ADMIN_CAPS.includes(cap);
   const map = ctx.isPlatform ? PLATFORM_CAPS : PARTNER_CAPS;
   return map[ctx.role].includes(cap);
 }

@@ -1,6 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { type PortalCapability, isSuspended, tenantCan } from '@/lib/roles';
+import {
+  clearSuperAdminVisit,
+  withSuperAdminVisit,
+  writeSuperAdminVisit,
+} from '@/lib/super_admin_visit';
 import { apiFetch } from './client';
 import type {
   Analytics,
@@ -21,6 +26,8 @@ import type {
   RefundPreview,
   ScheduleTemplate,
   Slot,
+  CirclsSupportStatus,
+  SuperAdminOrgHit,
   SupportIssue,
   TeamMember,
   Tenant,
@@ -50,13 +57,67 @@ export function useMe() {
   });
 }
 
+/**
+ * The signed-in user's organisations — and, for a Circls super admin, the
+ * partner org they have open (marked `superAdminVisit`), so the switcher,
+ * the gates and every page treat it like one of theirs.
+ */
 export function useMyTenants() {
+  const qc = useQueryClient();
   const { user } = useAuth();
+  const uid = user?.uid;
   return useQuery({
-    queryKey: ['tenants', user?.uid],
+    queryKey: ['tenants', uid],
     enabled: Boolean(user),
-    queryFn: () => apiFetch<Tenant[]>('/v1/me/tenants'),
+    queryFn: async () =>
+      withSuperAdminVisit(
+        await apiFetch<Tenant[]>('/v1/me/tenants'),
+        uid,
+        qc.getQueryData<Tenant[]>(['tenants', uid]),
+      ),
+    // While a super admin has an org open, check every minute that the org
+    // still lets Circls in: it drops out once removed or run out.
+    refetchInterval: (query) => (query.state.data?.some((t) => t.superAdminVisit) ? 60_000 : false),
   });
+}
+
+/** The orgs that have let Circls in right now, optionally filtered by name or slug. */
+export function useSuperAdminOrgSearch(q: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['super-admin-orgs', q],
+    enabled,
+    queryFn: () =>
+      apiFetch<SuperAdminOrgHit[]>(`/v1/super-admin/tenants${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Open a partner org as a super admin (it joins the org list; the caller then
+ * makes it the active org), or leave the one that's open.
+ */
+export function useSuperAdminVisit() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const open = useMutation({
+    mutationFn: (tenantId: string) =>
+      apiFetch<Tenant>(`/v1/super-admin/tenants/${tenantId}/visit`, { method: 'POST' }),
+    onSuccess: (row) => {
+      if (!uid) return;
+      writeSuperAdminVisit(uid, row.id);
+      qc.setQueryData<Tenant[]>(['tenants', uid], (old = []) => [
+        ...old.filter((t) => !t.superAdminVisit),
+        row,
+      ]);
+    },
+  });
+  function leave() {
+    if (!uid) return;
+    clearSuperAdminVisit(uid);
+    qc.setQueryData<Tenant[]>(['tenants', uid], (old) => old?.filter((t) => !t.superAdminVisit));
+  }
+  return { open, leave };
 }
 
 export function useCreateTenant() {
@@ -1140,6 +1201,53 @@ export function useUpdateMemberRole(tenantId: string) {
       apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({ role }),
+      }),
+    onSuccess: (_row, { userId }) => refreshMembership(qc, tenantId, userId, me),
+  });
+}
+
+/** Whether the org has let Circls in ("Get help from Circls"), until when, and who came. */
+export function useCirclsSupport(tenantId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['circls-support', tenantId],
+    enabled: Boolean(tenantId) && enabled,
+    queryFn: () => apiFetch<CirclsSupportStatus>(`/v1/tenants/${tenantId}/circls-support`),
+    // The time left counts down: refresh now and then so "ends at" stays true.
+    refetchInterval: 60_000,
+  });
+}
+
+/** Let Circls in for 3 hours (or restart the clock), with an optional note. */
+export function useGrantCirclsSupport(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string | null) =>
+      apiFetch<CirclsSupportStatus>(`/v1/tenants/${tenantId}/circls-support`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+      }),
+    onSuccess: (status) => qc.setQueryData(['circls-support', tenantId], status),
+  });
+}
+
+/** Remove Circls now (the Team page's Remove). */
+export function useEndCirclsSupport(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<void>(`/v1/tenants/${tenantId}/circls-support`, { method: 'DELETE' }),
+    onSuccess: () => qc.setQueryData<CirclsSupportStatus>(['circls-support', tenantId], { active: null }),
+  });
+}
+
+/** Circls team only: a platform Owner turns someone's super-admin switch on or off. */
+export function useSetMemberSuperAdmin(tenantId: string) {
+  const qc = useQueryClient();
+  const { data: me } = useMe();
+  return useMutation({
+    mutationFn: ({ userId, superAdmin }: { userId: string; superAdmin: boolean }) =>
+      apiFetch<TeamMember>(`/v1/tenants/${tenantId}/members/${userId}/super-admin`, {
+        method: 'PATCH',
+        body: JSON.stringify({ superAdmin }),
       }),
     onSuccess: (_row, { userId }) => refreshMembership(qc, tenantId, userId, me),
   });

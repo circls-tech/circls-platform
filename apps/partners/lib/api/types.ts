@@ -24,6 +24,41 @@ export interface Tenant {
   termsAcceptedAt?: string | null;
   /** The signed-in user's own role here — only on /v1/me/tenants rows. */
   myRole?: TenantRole;
+  /** On the Circls org's row: the signed-in user is a Circls super admin. */
+  mySuperAdmin?: boolean;
+  /**
+   * An org the signed-in super admin opened without being a member (from
+   * POST /v1/super-admin/tenants/:id/visit): SUPER_ADMIN_CAPS, not myRole's.
+   */
+  superAdminVisit?: boolean;
+  /** On a super admin's visit: when the org's "Get help from Circls" access ends. */
+  circlsSupportUntil?: string;
+}
+
+/** A partner org that has let Circls in (GET /v1/super-admin/tenants). */
+export interface SuperAdminOrgHit {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  city: string | null;
+  /** When Circls's access ends. */
+  expiresAt: string;
+  /** What the org asked for help with, if it said. */
+  note: string | null;
+}
+
+/** Whether the org has let Circls in (GET /v1/tenants/:id/circls-support). */
+export interface CirclsSupportStatus {
+  active: {
+    grantId: string;
+    expiresAt: string;
+    startedAt: string;
+    note: string | null;
+    requestedByName: string | null;
+    /** The Circls super admins who have opened the org during this access. */
+    helpers: { userId: string; name: string | null }[];
+  } | null;
 }
 
 /** Social handles/URLs an org advertises (PR #107). All optional. */
@@ -555,6 +590,8 @@ export interface AuditLogItem {
   entityId: string | null;
   actorUserId: string | null;
   actorName: string | null;
+  /** The actor is on the Circls team, not this org's (a super admin, or an admin). */
+  actorIsCircls?: boolean;
   before: unknown;
   after: unknown;
   /** ISO-8601 */
@@ -934,6 +971,8 @@ export interface TeamMember {
   displayName: string | null;
   phoneE164: string | null;
   role: TenantRole;
+  /** A Circls super admin (only ever true on the Circls team). */
+  superAdmin?: boolean;
   createdAt: string;
 }
 

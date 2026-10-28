@@ -25,6 +25,7 @@ export * from './membership_tiers.js';
 export * from './api_keys.js';
 export * from './webhooks.js';
 export * from './support_issues.js';
+export * from './circls_support_grants.js';
 export * from './consumer_activity.js';
 export * from './login_events.js';
 export * from './coupons.js';

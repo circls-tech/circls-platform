@@ -3,13 +3,18 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useTimezone } from '@/lib/timezone_context';
 import { BackLink } from '@/lib/ui/BackLink';
+import { CirclsHelp, useClockTime } from '@/components/CirclsHelp';
 import {
+  useCirclsSupport,
   useCreateInvitation,
+  useEndCirclsSupport,
+  useGrantCirclsSupport,
   useMe,
   useMyRole,
   useRemoveMember,
   useResendInvitation,
   useRevokeInvitation,
+  useSetMemberSuperAdmin,
   useTeamInvitations,
   useTeamMembers,
   useUpdateMemberProfile,
@@ -19,8 +24,11 @@ import type { TeamMember, TenantRole } from '@/lib/api/types';
 import { ROLE_INFO, ROLE_ORDER, roleCanActOn } from '@/lib/roles';
 
 export default function TeamPage() {
-  const { activeTenantId } = useOrg();
+  const { activeTenantId, tenants } = useOrg();
   const tenantId = activeTenantId ?? '';
+  // The Circls team: its Owners also name the super admins, who may open any
+  // partner organisation in this portal.
+  const circlsTeam = tenants.find((t) => t.id === activeTenantId)?.isPlatform ?? false;
   const { resolveTz } = useTimezone();
   const { data: me } = useMe();
   // Managing the team needs its own capabilities, and never reaches above your
@@ -58,6 +66,13 @@ export default function TeamPage() {
   const updateRole = useUpdateMemberRole(tenantId);
   const updateProfile = useUpdateMemberProfile(tenantId);
   const removeMember = useRemoveMember(tenantId);
+  const setSuperAdmin = useSetMemberSuperAdmin(tenantId);
+  // Circls's "Get help from Circls" access shows as a member while it lasts.
+  const { data: circlsSupport } = useCirclsSupport(tenantId, !circlsTeam);
+  const circlsAccess = circlsSupport?.active ?? null;
+  const extendCircls = useGrantCirclsSupport(tenantId);
+  const endCircls = useEndCirclsSupport(tenantId);
+  const clock = useClockTime();
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TenantRole>('manager');
@@ -65,16 +80,24 @@ export default function TeamPage() {
   const [lastToken, setLastToken] = useState<string | null>(null);
   // Each list shows the error of its latest action: starting one clears the
   // other's, so an old failure never hides (or outlives) a newer outcome.
-  const memberError = updateRole.error ?? removeMember.error;
+  const memberError =
+    updateRole.error ?? removeMember.error ?? setSuperAdmin.error ?? extendCircls.error ?? endCircls.error;
   const pendingError = resendInvite.error ?? revokeInvite.error;
 
   function changeRole(userId: string, role: TenantRole) {
     removeMember.reset();
+    setSuperAdmin.reset();
     updateRole.mutate({ userId, role });
   }
   function remove(userId: string) {
     updateRole.reset();
+    setSuperAdmin.reset();
     removeMember.mutate(userId);
+  }
+  function toggleSuperAdmin(userId: string, superAdmin: boolean) {
+    updateRole.reset();
+    removeMember.reset();
+    setSuperAdmin.mutate({ userId, superAdmin });
   }
   function resend(invitationId: string) {
     revokeInvite.reset();
@@ -139,6 +162,8 @@ export default function TeamPage() {
           set of rights, described below.
         </p>
       </section>
+
+      <CirclsHelp lead="Need a hand with anything?" onTeamPage />
 
       <section className="rounded border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -262,6 +287,52 @@ export default function TeamPage() {
         </h2>
         {memberError && <p className="mb-2 text-xs text-red-600">{memberError.message}</p>}
         <ul className="divide-y divide-slate-100">
+          {circlsAccess && (
+            <li className="flex items-center justify-between gap-3 py-2 text-sm">
+              <div>
+                <div className="font-medium">
+                  Circls support{' '}
+                  <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-800">
+                    Circls
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  {[
+                    circlsAccess.helpers.length > 0
+                      ? circlsAccess.helpers.map((h) => h.name ?? 'Someone from Circls').join(', ')
+                      : 'No one from Circls has opened your portal yet',
+                    `access ends at ${clock(circlsAccess.expiresAt)}`,
+                  ].join(' · ')}
+                </div>
+                {circlsAccess.note && <div className="text-xs text-slate-500">“{circlsAccess.note}”</div>}
+              </div>
+              <div className="flex items-center gap-2">
+                {canInvite && (
+                  <button
+                    type="button"
+                    onClick={() => extendCircls.mutate(null)}
+                    disabled={extendCircls.isPending}
+                    className="text-xs font-medium text-slate-900 hover:underline"
+                    title="Restart the 3 hours from now"
+                  >
+                    3 more hours
+                  </button>
+                )}
+                {canRemove && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Remove Circls from your portal now?')) endCircls.mutate();
+                    }}
+                    disabled={endCircls.isPending}
+                    className="text-xs text-red-700 hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </li>
+          )}
           {(members ?? []).map((m) => (
             <li key={m.userId} className="flex flex-col gap-2 py-2 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -279,6 +350,30 @@ export default function TeamPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {circlsTeam &&
+                    (canChangeRoles ? (
+                      <label
+                        className="flex items-center gap-1 text-xs text-slate-600"
+                        title="Can open partner organisations that ask Circls for help"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={m.superAdmin ?? false}
+                          disabled={setSuperAdmin.isPending}
+                          onChange={(e) => toggleSuperAdmin(m.userId, e.target.checked)}
+                        />
+                        Super admin
+                      </label>
+                    ) : (
+                      m.superAdmin && (
+                        <span
+                          className="rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-800"
+                          title="Can open partner organisations that ask Circls for help"
+                        >
+                          Super admin
+                        </span>
+                      )
+                    ))}
                   {canChangeRoles && roleCanActOn(myRole, m.role) ? (
                     <select
                       value={m.role}
