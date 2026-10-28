@@ -17,8 +17,10 @@ vi.mock('../lib/firebase_admin.js', () => ({
     const map: Record<string, Record<string, unknown>> = {
       // Phone-auth consumer with bookings and a membership.
       attendee: { uid: `fbuid_attendee_fb_${RUN}`, phone_number: `+9188${tail}` },
-      // Phone-auth consumer with no bookings at all.
+      // Phone-auth consumer with no bookings at all (one abandoned checkout).
       newbie: { uid: `fbuid_newbie_fb_${RUN}`, phone_number: `+9199${tail}` },
+      // Phone-auth consumer whose only purchase is a day pass that has ended.
+      pass: { uid: `fbuid_pass_fb_${RUN}`, phone_number: `+9177${tail}` },
       // Partner org team + a Circls admin.
       owner: { uid: `fbuid_owner_fb_${RUN}`, email: `owner_fb_${RUN}@x.com`, email_verified: true },
       manager: { uid: `fbuid_mgr_fb_${RUN}`, email: `mgr_fb_${RUN}@x.com`, email_verified: true },
@@ -50,6 +52,9 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
   let attendeeId: string;
   let attendeePhone: string;
   let newbieId: string;
+  let passId: string;
+  let passMembershipId: string;
+  let abandonedMembershipId: string;
   let tenantId: string;
   let venueId: string;
   let pastEventId: string;
@@ -160,6 +165,46 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
         RETURNING id`),
     ).id;
 
+    // Abandoned paid checkouts: the user_memberships row is 'active' from the
+    // start, but its purchase booking never left 'pending'. The attendee's would
+    // be due six hours ago (newer than the event) if it counted; the newbie's
+    // would make them "have booked".
+    const abandon = async (userId: string, startedAgo: string) => {
+      const um = firstRow<{ id: string }>(
+        await db.execute(sql`
+          INSERT INTO user_memberships (user_id, membership_id, starts_at, ends_at, status)
+          VALUES (${userId}::uuid, ${membershipId}::uuid, now() - ${startedAgo}::interval,
+                  now() + interval '20 days', 'active')
+          RETURNING id`),
+      ).id;
+      await db.execute(sql`
+        INSERT INTO bookings (tenant_id, venue_id, item_type, channel, payment_method, status,
+                              item_data, customer_user_id, total_paise)
+        VALUES (${tenantId}::uuid, ${venueId}::uuid, 'membership', 'circls', 'razorpay_route', 'pending',
+                jsonb_build_object('membershipId', ${membershipId}::text, 'userMembershipId', ${um}::text),
+                ${userId}::uuid, 99900)`);
+      return um;
+    };
+    abandonedMembershipId = await abandon(attendeeId, '7 days 6 hours');
+    await abandon(newbieId, '1 day');
+
+    // A one-day pass that ended two days ago, never scanned: rated the day
+    // after it ended, not a week after it started.
+    passId = (await get('pass', '/v1/consumer/me')).json().profile.id;
+    const dayPassId = firstRow<{ id: string }>(
+      await db.execute(sql`
+        INSERT INTO memberships (tenant_id, venue_id, name, duration_days, status)
+        VALUES (${tenantId}::uuid, ${venueId}::uuid, 'FB Day Pass', 1, 'active')
+        RETURNING id`),
+    ).id;
+    passMembershipId = firstRow<{ id: string }>(
+      await db.execute(sql`
+        INSERT INTO user_memberships (user_id, membership_id, starts_at, ends_at, status)
+        VALUES (${passId}::uuid, ${dayPassId}::uuid, now() - interval '3 days',
+                now() - interval '2 days', 'expired')
+        RETURNING id`),
+    ).id;
+
     // Partner org: Owner via the API, a Manager and Staff added directly; its
     // first listing (a venue) is two days old. A second org's venue is new.
     const created = await post('owner', {
@@ -237,6 +282,18 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     // Checked in two hours ago: rated from tomorrow, not today.
     const scanned = await post('attendee', { kind: 'venue_feedback', id: freshScanSlotId, rating: 7 });
     expect(scanned.statusCode).toBe(404);
+  });
+
+  it('never counts an abandoned membership checkout', async () => {
+    // Its purchase booking is still pending: nothing to rate.
+    const res = await post('attendee', { kind: 'membership_feedback', id: abandonedMembershipId, rating: 7 });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('feedback_not_eligible');
+  });
+
+  it('only takes a known client as the source', async () => {
+    const res = await post('attendee', { kind: 'event_feedback', id: pastEventId, rating: 7, source: 'web' });
+    expect(res.statusCode).toBe(400);
   });
 
   it('only takes whole ratings from 1 to 10', async () => {
@@ -446,6 +503,14 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
     expect(await prompt('newbie')).toEqual({ kind: 'site_feedback', key: 'site', hasBooked: false });
   });
 
+  it('asks about a day pass the day after it ended, not a week after it started', async () => {
+    expect(await prompt('pass')).toMatchObject({
+      kind: 'membership_feedback',
+      key: `membership:${passMembershipId}`,
+      subject: { name: 'FB Day Pass' },
+    });
+  });
+
   describe('partner survey', () => {
     const url = () => `/v1/tenants/${partnerTenantId}/feedback`;
 
@@ -544,6 +609,14 @@ describe.skipIf(!runIntegration)('feedback prompts', () => {
       const row = res.json().rows.find((r: { tenant: { id: string } | null }) => r.tenant?.id === partnerTenantId);
       expect(row).toMatchObject({ overallRating: 7, venueCreationRating: 9, eventCreationRating: null });
       expect(res.json().summary.count).toBeGreaterThanOrEqual(1);
+    });
+
+    it('only the first page carries the summary', async () => {
+      const first = await get('padmin', '/v1/admin/feedback?view=ratings&limit=1');
+      expect(first.json().summary).not.toBeNull();
+      const second = await get('padmin', '/v1/admin/feedback?view=ratings&limit=1&cursor=1');
+      expect(second.statusCode).toBe(200);
+      expect(second.json().summary).toBeNull();
     });
 
     it('rejects an unknown view', async () => {

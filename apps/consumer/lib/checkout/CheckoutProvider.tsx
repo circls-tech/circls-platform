@@ -23,6 +23,8 @@ export interface CheckoutOptions {
 
 interface CheckoutContextValue {
   openCheckout: (item: CheckoutItem, prefill?: CheckoutPrefill, opts?: CheckoutOptions) => void;
+  /** A checkout is on screen — e.g. so feedback prompts don't open over it. */
+  isOpen: boolean;
 }
 const CheckoutContext = createContext<CheckoutContextValue | null>(null);
 
@@ -80,7 +82,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   }, [user, router, pathname]);
 
   return (
-    <CheckoutContext.Provider value={{ openCheckout }}>
+    <CheckoutContext.Provider value={{ openCheckout, isOpen: open != null }}>
       {children}
       {open && (
         <CheckoutModal

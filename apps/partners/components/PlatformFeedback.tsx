@@ -18,12 +18,12 @@ import { Button, Modal } from '@/lib/ui';
  * creating events, venues and membership plans was, challenges, overall ease,
  * anything else). The server decides who is asked and when (see
  * feedback_service); one answer covers the whole organisation. "Not now"
- * brings it back a week later, and it is shown at most once per session.
+ * brings it back a week later; closing the survey only puts it away for this
+ * visit. It is shown at most once per session and organisation, and never on
+ * Check-in or a create form (whose live preview sits in the same corner).
  */
 
 const HANDLED_KEY = 'circls.feedbackHandled';
-/** Door staff scanning tickets shouldn't have a card over the scanner. */
-const QUIET_PATHS = ['/check-in'];
 
 const NOT_TRIED = 'not_tried' as const;
 type ScaleValue = number | typeof NOT_TRIED | null;
@@ -104,14 +104,11 @@ function Scale({
 function Survey({
   prompt,
   tenantId,
-  onAnswered,
   onDone,
   onDismiss,
 }: {
   prompt: PartnerFeedbackPrompt;
   tenantId: string;
-  /** Sent: closing now must not count as "Not now". */
-  onAnswered: () => void;
   onDone: () => void;
   onDismiss: () => void;
 }) {
@@ -140,7 +137,6 @@ function Survey({
         ...(challenges.trim() ? { challenges: challenges.trim() } : {}),
         ...(comments.trim() ? { comments: comments.trim() } : {}),
       });
-      onAnswered();
       setThanks(true);
     } catch (e) {
       // A teammate answered first — the org is covered, nothing left to ask.
@@ -214,9 +210,15 @@ function Survey({
   );
 }
 
-function handledThisSession(): boolean {
+/** Door staff scanning tickets, and the New event / New plan forms with their
+ *  live preview in the bottom-right corner. */
+function quietPath(pathname: string): boolean {
+  return pathname === '/check-in' || pathname.startsWith('/check-in/') || pathname.endsWith('/new');
+}
+
+function handledThisSession(tenantId: string): boolean {
   try {
-    return sessionStorage.getItem(HANDLED_KEY) != null;
+    return sessionStorage.getItem(`${HANDLED_KEY}:${tenantId}`) != null;
   } catch {
     return false;
   }
@@ -231,7 +233,6 @@ export function PlatformFeedback() {
   // to null, which mustn't pull the survey away mid-"thanks".
   const [prompt, setPrompt] = useState<PartnerFeedbackPrompt | null>(null);
   const [open, setOpen] = useState(false);
-  const [answered, setAnswered] = useState(false);
 
   // Switching organisation drops the other org's survey.
   useEffect(() => {
@@ -240,26 +241,26 @@ export function PlatformFeedback() {
   }, [activeTenantId]);
 
   useEffect(() => {
-    if (live && !prompt && !handledThisSession()) setPrompt(live);
-  }, [live, prompt]);
+    if (live && activeTenantId && !prompt && !handledThisSession(activeTenantId)) setPrompt(live);
+  }, [live, prompt, activeTenantId]);
 
+  /** Put it away for this visit; nothing is recorded server-side. */
   const close = useCallback(() => {
     try {
-      sessionStorage.setItem(HANDLED_KEY, '1');
+      if (activeTenantId) sessionStorage.setItem(`${HANDLED_KEY}:${activeTenantId}`, '1');
     } catch {
       // Storage unavailable — the server-side "Not now" still holds.
     }
     setOpen(false);
     setPrompt(null);
-    setAnswered(false);
-  }, []);
+  }, [activeTenantId]);
 
   function dismiss() {
     dismissMutation.mutate();
     close();
   }
 
-  const quiet = QUIET_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const quiet = quietPath(pathname);
   if (!prompt || !activeTenantId) return null;
 
   return (
@@ -284,12 +285,11 @@ export function PlatformFeedback() {
           </div>
         </div>
       )}
-      <Modal open={open} onClose={answered ? close : dismiss} title="How’s Circls working for you?">
+      <Modal open={open} onClose={close} title="How’s Circls working for you?">
         <Survey
           prompt={prompt}
           tenantId={activeTenantId}
           onDismiss={dismiss}
-          onAnswered={() => setAnswered(true)}
           onDone={close}
         />
       </Modal>

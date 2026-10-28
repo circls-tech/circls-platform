@@ -18,10 +18,11 @@ import { requireTenantMembership } from '../middleware/tenant_context.js';
  *   - view=consumer / view=partner: the website surveys.
  *   - view=poll: answers to the event-type poll.
  *
- * Every row names who answered, with the phone (and email) snapshotted when
- * they did, so it needs admin.users.read like the Consumers report. Newest
- * first; `cursor` is the offset of the next page. The first page's `summary`
- * covers every matching answer, not just the page.
+ * Every row names who answered, with the phone and email snapshotted when
+ * they did (their current ones where nothing was snapshotted), so it needs
+ * admin.users.read like the Consumers report. Newest first; `cursor` is the
+ * offset of the next page. Only the first page carries `summary`, covering
+ * every matching answer; later pages return null.
  */
 
 const querySchema = z.object({
@@ -70,6 +71,8 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
     const limit = parsed.data.limit ?? 50;
     const offset = Number(parsed.data.cursor ?? 0);
     const page = sql`order by f.created_at desc, f.id desc limit ${limit + 1} offset ${offset}`;
+    // The summary tiles read the first page's; "Load more" pages skip the aggregates.
+    const firstPage = offset === 0;
 
     const finish = <T>(rows: Row[], map: (r: Row) => T) => {
       const hasMore = rows.length > limit;
@@ -86,7 +89,7 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
       const rows = (await db.execute(sql`
         select f.id, f.kind, f.rating, f.comment, f.source, f.created_at,
                f.user_id, u.display_name, coalesce(f.phone_e164, u.phone_e164) as phone_e164,
-               u.email, f.tenant_id, t.name as tenant_name,
+               coalesce(f.email, u.email) as email, f.tenant_id, t.name as tenant_name,
                coalesce(ev.name, m.name, v.name) as subject_name,
                case f.kind when 'event_feedback' then ev.starts_at
                            when 'membership_feedback' then um.starts_at
@@ -120,6 +123,7 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
           date: iso(r['subject_date']),
         },
       }));
+      if (!firstPage) return { view, ...out, summary: null };
       const [s] = (await db.execute(sql`
         select count(*) as count, avg(f.rating) as average,
                count(*) filter (where f.kind = 'event_feedback') as event_count,
@@ -149,7 +153,8 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
     if (view === 'poll') {
       const rows = (await db.execute(sql`
         select f.id, f.question, f.answer, f.comment as other, f.source, f.created_at,
-               f.user_id, u.display_name, coalesce(f.phone_e164, u.phone_e164) as phone_e164, u.email
+               f.user_id, u.display_name, coalesce(f.phone_e164, u.phone_e164) as phone_e164,
+               coalesce(f.email, u.email) as email
         from user_feedback f
         join users u on u.id = f.user_id
         where f.kind = 'event_type_preference'
@@ -165,6 +170,7 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
         createdAt: iso(r['created_at']),
         person: person(r),
       }));
+      if (!firstPage) return { view, ...out, summary: null };
       const answers = (await db.execute(sql`
         select f.answer, count(*) as count from user_feedback f
         where f.kind = 'event_type_preference'
@@ -207,6 +213,7 @@ export const adminFeedbackRoutes: FastifyPluginAsync = async (app) => {
         ? { id: r['tenant_id'] as string, name: r['tenant_name'] as string }
         : null,
     }));
+    if (!firstPage) return { view, ...out, summary: null };
     const [s] = (await db.execute(sql`
       select count(*) as count, avg(overall_rating) as overall,
              avg(discovery_rating) as discovery, avg(booking_rating) as booking,

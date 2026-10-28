@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS "user_feedback" (
 	-- E.164 snapshot of users.phone_e164 at submission time; users.id stays the
 	-- canonical FK, the phone is the stable human key requested for exports.
 	"phone_e164" text,
+	"email" text,
 	"kind" user_feedback_kind NOT NULL,
 	-- The org whose listing was rated (null for the poll), for admin filters.
 	"tenant_id" uuid,
@@ -124,6 +125,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "user_feedback_membership_uq"
 CREATE UNIQUE INDEX IF NOT EXISTS "user_feedback_pref_uq"
   ON "user_feedback" ("user_id")
   WHERE "kind" = 'event_type_preference';
+--> statement-breakpoint
+-- "Has this person rated this / answered the poll yet?" on every prompt fetch.
+CREATE INDEX IF NOT EXISTS "user_feedback_user_kind_idx"
+  ON "user_feedback" ("user_id", "kind");
 --> statement-breakpoint
 -- Admin list (newest first, by kind) + phone-keyed exports.
 CREATE INDEX IF NOT EXISTS "user_feedback_kind_created_idx"

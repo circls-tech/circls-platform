@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { feedbackDismissals, siteFeedback, userFeedback } from '../db/schema/user_feedback.js';
@@ -32,20 +32,24 @@ import { myBookingsCondition } from './booking_ownership.js';
  * and Managers (the people who create listings) once the org's first listing
  * is a day old, a week apart until someone on the team answers.
  *
- * Every answer snapshots the person's phone number (and, for the website
- * surveys, email) so feedback stays attached to them in the database.
+ * Every answer snapshots the person's phone number and email so feedback
+ * stays attached to them in the database.
  */
 
 export const RATING_MIN = 1;
 export const RATING_MAX = 10;
 /** How long after check-in a venue visit or membership is rated. */
 const CHECK_IN_DELAY = '1 day';
-/** No check-in at all: how long after a membership starts it is rated. */
+/** No check-in at all: how long after a membership starts it is rated — or
+ *  CHECK_IN_DELAY after it ends, if that is sooner (a day pass). */
 const MEMBERSHIP_NO_CHECK_IN_DELAY = '7 days';
 /** Past this, a visit is too old to ask about. */
 const RATING_WINDOW = '30 days';
 /** The website surveys come back this long after each "Not now". */
 export const NUDGE_EVERY = '7 days';
+/** Which client sent an answer, as on login_events.source (+ the mobile apps). */
+export const CONSUMER_SOURCES = ['consumer', 'consumer_app'] as const;
+export const PARTNER_SOURCES = ['partners', 'partners_app'] as const;
 /** Nobody is asked about the website on their first day. */
 const SITE_SURVEY_AFTER = '1 day';
 
@@ -134,13 +138,38 @@ interface DueRow {
 }
 
 /**
+ * `<um>` (a user_memberships row) was really bought. A paid purchase inserts
+ * its row as 'active' before the customer pays (see memberships_service), so a
+ * row whose purchase booking never confirmed is an abandoned checkout. Rows
+ * with no purchase booking — free sign-ups, members a partner added — count.
+ * `um` and `tenant` are aliases from code, never input.
+ */
+function boughtMembershipSql(um: string, tenant: string) {
+  return sql.raw(`not exists (
+    select 1 from bookings mb
+    where mb.tenant_id = ${tenant}
+      and mb.item_type = 'membership'
+      and mb.item_data->>'userMembershipId' = ${um}.id::text
+      and mb.status not in ('confirmed', 'completed'))`);
+}
+
+/**
  * Everything `userId` could rate, with when it falls due: one row per event
  * (however many bookings they hold for it), per court booking and per
  * membership purchase. Bookings are theirs or shared with them (My bookings),
  * confirmed or completed — never cancelled or no-shows, never a walk-in staff
- * entered for someone else. Cancelled events and cancelled memberships drop out.
+ * entered for someone else. Cancelled events, cancelled memberships and
+ * abandoned membership checkouts drop out.
+ *
+ * With `recent` (picking the prompt), each branch also drops what can no
+ * longer fall due inside RATING_WINDOW, so a regular's years of court bookings
+ * aren't checked on every fetch: an event that ended before the window, a
+ * court booking whose slots ended before it (a check-in can't come much
+ * later), a membership that ended before it. Submitting a rating leaves it
+ * off, so a slow answer still lands.
  */
-function dueRatingsSql(userId: string) {
+function dueRatingsSql(userId: string, { recent }: { recent: boolean }) {
+  const within = (cond: SQL) => (recent ? sql`and ${cond}` : sql``);
   return sql`
     with mine as materialized (
       select b.id, b.item_type, b.item_data, b.venue_id, b.tenant_id, b.time_range, b.created_at
@@ -158,6 +187,7 @@ function dueRatingsSql(userId: string) {
     join tenants t on t.id = ev.tenant_id
     left join venues v on v.id = ev.venue_id
     where b.item_type = 'event' and ev.status <> 'cancelled'
+      ${within(sql`coalesce(ev.ends_at, ev.starts_at) > now() - ${RATING_WINDOW}::interval`)}
     group by ev.id, v.name, t.name
     union all
     select 'venue_feedback', b.id,
@@ -176,10 +206,13 @@ function dueRatingsSql(userId: string) {
       from slots s where s.booking_id = b.id
     ) slot
     where b.item_type = 'slot'
+      ${within(sql`(upper(b.time_range) is null
+           or upper(b.time_range) > now() - ${RATING_WINDOW}::interval - interval '2 days')`)}
     union all
     select 'membership_feedback', um.id,
            coalesce(scan.at + ${CHECK_IN_DELAY}::interval,
-                    um.starts_at + ${MEMBERSHIP_NO_CHECK_IN_DELAY}::interval),
+                    least(um.starts_at + ${MEMBERSHIP_NO_CHECK_IN_DELAY}::interval,
+                          um.ends_at + ${CHECK_IN_DELAY}::interval)),
            m.name, v.name, t.name, um.starts_at,
            null, m.tenant_id, m.venue_id, m.id
     from user_memberships um
@@ -190,6 +223,8 @@ function dueRatingsSql(userId: string) {
       select min(q.first_scanned_at) as at from qr_tickets q where q.user_membership_id = um.id
     ) scan
     where um.user_id = ${userId}::uuid and um.status in ('active', 'expired')
+      ${within(sql`um.ends_at > now() - ${RATING_WINDOW}::interval - ${CHECK_IN_DELAY}::interval`)}
+      and ${boughtMembershipSql('um', 'm.tenant_id')}
   `;
 }
 
@@ -200,7 +235,7 @@ const DUE_KEY_SQL = sql.raw(`(case d.kind when 'event_feedback' then 'event:'
 /** Whether `userId` already rated the due row `d`. */
 const RATED_SQL = (userId: string) => sql`exists (
   select 1 from user_feedback f
-  where f.user_id = ${userId}::uuid and f.kind::text = d.kind
+  where f.user_id = ${userId}::uuid and f.kind = d.kind::user_feedback_kind
     and d.ref_id = case d.kind when 'event_feedback' then f.event_id
                                when 'venue_feedback' then f.booking_id
                                else f.user_membership_id end)`;
@@ -236,7 +271,7 @@ async function nextRatingPrompt(userId: string): Promise<RatingPrompt | null> {
              or exists (select 1 from feedback_dismissals x
                         where x.user_id = ${userId}::uuid and x.prompt_key = ${DUE_KEY_SQL})
              as handled
-    from (${dueRatingsSql(userId)}) d
+    from (${dueRatingsSql(userId, { recent: true })}) d
     where d.due_at <= now()
       and d.due_at > now() - ${RATING_WINDOW}::interval
     order by d.due_at desc
@@ -256,8 +291,15 @@ export async function getFeedbackPrompt(user: Pick<User, 'id'>): Promise<Feedbac
 
   const [state] = (await db.execute(sql`
     select
-      exists (select 1 from bookings b where ${myBookingsCondition(user.id, 'b')})
-        or exists (select 1 from user_memberships um where um.user_id = ${user.id}::uuid)
+      -- Went through, as elsewhere (confirmed, completed, no-show): an
+      -- abandoned checkout's pending booking doesn't make them a booker.
+      exists (select 1 from bookings b
+              where ${myBookingsCondition(user.id, 'b')}
+                and b.status in ('confirmed', 'completed', 'no_show'))
+        or exists (select 1 from user_memberships um
+                   join memberships m on m.id = um.membership_id
+                   where um.user_id = ${user.id}::uuid
+                     and ${boughtMembershipSql('um', 'm.tenant_id')})
         as has_booked,
       exists (select 1 from user_feedback f
               where f.user_id = ${user.id}::uuid and f.kind = 'event_type_preference')
@@ -321,7 +363,7 @@ export async function submitRating(
   },
 ): Promise<SubmittedFeedback> {
   const rows = (await db.execute(sql`
-    select d.* from (${dueRatingsSql(user.id)}) d
+    select d.* from (${dueRatingsSql(user.id, { recent: false })}) d
     where d.kind = ${input.kind} and d.ref_id = ${input.id}::uuid and d.due_at <= now()
     limit 1
   `)) as unknown as DueRow[];
@@ -335,6 +377,7 @@ export async function submitRating(
       .values({
         userId: user.id,
         phoneE164: user.phoneE164,
+        email: user.email,
         kind: input.kind,
         tenantId: due.tenant_id,
         eventId: input.kind === 'event_feedback' ? due.ref_id : null,
@@ -389,6 +432,7 @@ export async function submitEventTypePreference(
       .values({
         userId: user.id,
         phoneE164: user.phoneE164,
+        email: user.email,
         kind: 'event_type_preference',
         questionKey: question.key,
         question: question.question,

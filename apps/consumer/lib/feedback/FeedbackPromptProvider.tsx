@@ -3,6 +3,7 @@ import { usePathname } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api/client';
 import { useDismissFeedback, useFeedbackPrompt, useSubmitFeedback } from '@/lib/api/feedback';
+import { useCheckoutModal } from '@/lib/checkout/CheckoutProvider';
 import type { FeedbackPrompt, RatingKind, SubmitFeedbackInput } from '@/lib/api/types';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { Button, Modal } from '@/lib/ui';
@@ -18,10 +19,12 @@ import { NOT_TRIED, NoteField, RatingScale, type ScaleValue, scaleToRating } fro
  *    account pages (never over a detail page's booking bar) that opens the
  *    survey when they choose to.
  *
- * "Not now" (or closing) is recorded server-side: a rating or the poll is not
- * asked again, the website survey comes back a week later on any device. At
- * most one prompt is handled per browser session, so answering one never
- * chains straight into the next.
+ * "Not now" is recorded server-side: a rating or the poll is not asked again,
+ * the website survey comes back a week later on any device. Closing the modal
+ * (the X, the backdrop, Escape) only puts it away for this visit. At most one
+ * prompt is handled per browser session and account, so answering one never
+ * chains straight into the next — and none opens once a checkout has, so a
+ * purchase is never interrupted (signing in mid-booking resumes checkout).
  */
 
 const HANDLED_KEY = 'circls:feedback-handled';
@@ -33,17 +36,18 @@ function nudgePath(pathname: string): boolean {
 }
 const OPEN_DELAY_MS = 1500;
 
-function handledThisSession(): boolean {
+function handledThisSession(uid: string): boolean {
   try {
-    return sessionStorage.getItem(HANDLED_KEY) != null;
+    return sessionStorage.getItem(`${HANDLED_KEY}:${uid}`) != null;
   } catch {
     return false;
   }
 }
 
-function markHandled(): void {
+function markHandled(uid: string | null): void {
+  if (!uid) return;
   try {
-    sessionStorage.setItem(HANDLED_KEY, '1');
+    sessionStorage.setItem(`${HANDLED_KEY}:${uid}`, '1');
   } catch {
     // Storage unavailable (private mode) — the server-side dismissal still holds.
   }
@@ -54,7 +58,8 @@ const DATE = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric'
 const RATING_TITLE: Record<RatingKind, (name: string) => string> = {
   event_feedback: (name) => `How was ${name}?`,
   venue_feedback: (name) => `How was your visit to ${name}?`,
-  membership_feedback: (name) => `How's your ${name} membership?`,
+  // Asked while it runs or the day after a short pass ends: "been" fits both.
+  membership_feedback: (name) => `How's your ${name} membership been?`,
 };
 
 function title(prompt: FeedbackPrompt): string {
@@ -96,17 +101,28 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
 
   const uid = user?.uid ?? null;
   useEffect(() => {
-    setHandled(uid ? handledThisSession() : true);
-    if (!uid) {
-      setPrompt(null);
-      setOpen(false);
-    }
+    setHandled(uid ? handledThisSession(uid) : true);
+    setPrompt(null);
+    setOpen(false);
   }, [uid]);
 
-  // Take up what the server asks, with a fresh form — until one prompt has
-  // been handled this session.
+  // A checkout opening (by hand, or resumed after signing in) ends prompting
+  // for this session: nothing pops up over, or straight after, a purchase.
+  const { isOpen: checkoutOpen } = useCheckoutModal();
   useEffect(() => {
-    if (handled) return;
+    if (!checkoutOpen || handled) return;
+    markHandled(uid);
+    setHandled(true);
+    setPrompt(null);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to checkout opening
+  }, [checkoutOpen]);
+
+  // Take up what the server asks, with a fresh form — until one prompt has
+  // been handled this session. Never swapped while one is open: a refetch
+  // mid-answer (e.g. on reconnect) must not throw away what they typed.
+  useEffect(() => {
+    if (handled || open) return;
     if (!live) {
       setPrompt(null);
       setOpen(false);
@@ -125,7 +141,7 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
     setChallenges('');
     setComments('');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the prompt's identity
-  }, [handled, live?.key]);
+  }, [handled, open, live?.key]);
 
   // Ratings and the poll open by themselves, a moment after the page settles;
   // never on quiet pages.
@@ -139,11 +155,12 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
   const nudge =
     prompt?.kind === 'site_feedback' && !handled && !open && !quiet && nudgePath(pathname);
 
+  /** Put it away for this visit; nothing is recorded server-side. */
   function close() {
     setOpen(false);
     setThanks(false);
     setPrompt(null);
-    markHandled();
+    markHandled(uid);
     setHandled(true);
   }
 
@@ -152,7 +169,7 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
     if (!thanks) return;
     const t = setTimeout(close, 1800);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- close only touches state setters
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close only sets state and the session flag
   }, [thanks]);
 
   function dismiss() {
@@ -190,7 +207,7 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
     try {
       await submit.mutateAsync(input);
       // Handled before the refetch lands, so the next prompt waits for a new session.
-      markHandled();
+      markHandled(uid);
       setHandled(true);
       setThanks(true);
     } catch (e) {
@@ -236,7 +253,7 @@ export function FeedbackPromptProvider({ children }: { children: ReactNode }) {
         </div>
       )}
       {prompt && (
-        <Modal open={open} onClose={dismiss} title={thanks ? 'Thank you!' : title(prompt)}>
+        <Modal open={open} onClose={close} title={thanks ? 'Thank you!' : title(prompt)}>
           {thanks ? (
             <p className="text-sm text-ink">
               {prompt.kind === 'event_type_preference'

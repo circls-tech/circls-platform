@@ -7,10 +7,12 @@ import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import {
+  CONSUMER_SOURCES,
   dismissConsumerPrompt,
   dismissPartnerPrompt,
   getFeedbackPrompt,
   getPartnerFeedbackPrompt,
+  PARTNER_SOURCES,
   RATING_MAX,
   RATING_MIN,
   submitConsumerSiteFeedback,
@@ -23,7 +25,9 @@ const rating = z.number().int().min(RATING_MIN).max(RATING_MAX);
 /** An area rating; null = "Haven't tried yet". */
 const areaRating = rating.nullable().optional();
 const note = z.string().max(2000).optional();
-const source = z.string().max(40).optional();
+/** The submitting client (see CONSUMER_SOURCES / PARTNER_SOURCES). */
+const source = z.enum(CONSUMER_SOURCES).optional();
+const partnerSource = z.enum(PARTNER_SOURCES).optional();
 
 const ratingBody = (kind: 'event_feedback' | 'venue_feedback' | 'membership_feedback') =>
   z.object({ kind: z.literal(kind), id: z.string().uuid(), rating, comment: note, source });
@@ -58,7 +62,7 @@ const partnerBody = z.object({
   membershipCreationRating: areaRating,
   challenges: note,
   comments: note,
-  source,
+  source: partnerSource,
 });
 
 const dismissBody = z.object({ key: z.string().min(1).max(80) });

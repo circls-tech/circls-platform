@@ -1979,7 +1979,7 @@ export async function deleteMyAccount(
       // details; pending "Not now" records go entirely.
       await tx
         .update(userFeedback)
-        .set({ phoneE164: null, comment: null })
+        .set({ phoneE164: null, email: null, comment: null })
         .where(eq(userFeedback.userId, row.id));
       await tx
         .update(siteFeedback)

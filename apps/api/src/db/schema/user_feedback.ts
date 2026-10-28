@@ -50,6 +50,8 @@ export const userFeedback = pgTable(
      * or the row is merged. users.id remains the canonical FK.
      */
     phoneE164: text('phone_e164'),
+    /** users.email snapshot at submission time, as on site_feedback. */
+    email: text('email'),
     kind: userFeedbackKind('kind').notNull(),
     /** The org whose listing was rated (null for the poll). */
     tenantId: uuid('tenant_id').references(() => tenants.id),

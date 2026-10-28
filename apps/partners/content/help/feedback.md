@@ -14,8 +14,8 @@ A day after your organisation's first venue, event or membership plan was create
 Things to know:
 
 - **One answer covers your whole organisation.** As soon as anyone on the team sends it, nobody else in the org is asked again.
-- **Not now** (or closing the survey) hides it for a week, for you only — a teammate may still see it. It comes back weekly until someone answers.
-- It shows at most once per visit, and never on the **Check-in** page.
+- **Not now** hides it for a week, for you only — a teammate may still see it. It comes back weekly until someone answers. Closing the survey without answering just puts it away until your next visit.
+- It shows at most once per visit, and never on the **Check-in** page or the **New event** and **New plan** forms.
 - **Staff** and **Read-only** members aren't asked, and neither is anyone from circls using [Get help from Circls](/help/team).
 
 ## What your customers are asked
@@ -26,6 +26,6 @@ Customers signed in to the circls website are asked to rate, from 1 to 10 with a
 | --- | --- |
 | An **event** they registered for | Once it has ended |
 | A **court booking** at your venue | A day after they checked in with their [QR ticket](/help/qr-tickets) — or, if the ticket was never scanned, a day after the booking ended |
-| A **membership** they bought | A day after their first check-in — or, if they never checked in, a week after it started |
+| A **membership** they bought | A day after their first check-in — or, if they never checked in, a week after it started (the day after it ends, for a pass shorter than that) |
 
-A customer is only asked about the **most recent** of these, once. After they rate it or say **Not now**, nothing older is asked about. Whatever they do next is, and nothing more than 30 days old ever is. So a customer who came to several of your events in a row may only be asked about the latest one. Cancelled bookings, no-shows, cancelled events and cancelled memberships are never rated. Ratings go to the circls team; they aren't shown in the portal.
+A customer is only asked about the **most recent** of these, once. After they rate it or say **Not now**, nothing older is asked about. Whatever they do next is, and nothing more than 30 days old ever is. So a customer who came to several of your events in a row may only be asked about the latest one. Cancelled bookings, no-shows, cancelled events, cancelled memberships and membership checkouts that were never paid are never rated. Ratings go to the circls team; they aren't shown in the portal.

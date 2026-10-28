@@ -259,7 +259,8 @@ function PollTable({ rows }: { rows: AdminPollRow[] }) {
 }
 
 function Summary({ page }: { page: AdminFeedbackPage | undefined }) {
-  if (!page) {
+  // Only the first page carries the summary.
+  if (!page || !page.summary) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Responses" value={undefined} petal="#A9C9F2" />
@@ -399,7 +400,8 @@ export default function FeedbackPage() {
         {view === 'consumer' || view === 'partner'
           ? ' Scores run from 1 to 10; a dash means they haven’t tried that part yet.'
           : ''}{' '}
-        Phone numbers and emails are as they were when the person answered.
+        Phone numbers and emails are as they were when the person answered, or their current ones where none
+        was saved then.
       </p>
 
       <div className="overflow-x-auto rounded-lg border-2 border-[#17151D] bg-white shadow-[4px_4px_0_#17151D]">

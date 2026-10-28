@@ -1166,7 +1166,8 @@ export type AdminFeedbackPage =
       view: 'ratings';
       rows: AdminRatingRow[];
       nextCursor: string | null;
-      summary: FeedbackAverage & { events: FeedbackAverage; venues: FeedbackAverage; memberships: FeedbackAverage };
+      /** First page only; null on "Load more" pages. */
+      summary: (FeedbackAverage & { events: FeedbackAverage; venues: FeedbackAverage; memberships: FeedbackAverage }) | null;
     }
   | {
       view: 'consumer' | 'partner';
@@ -1180,11 +1181,11 @@ export type AdminFeedbackPage =
         eventCreation: number | null;
         venueCreation: number | null;
         membershipCreation: number | null;
-      };
+      } | null;
     }
   | {
       view: 'poll';
       rows: AdminPollRow[];
       nextCursor: string | null;
-      summary: { count: number; answers: { answer: string; count: number }[] };
+      summary: { count: number; answers: { answer: string; count: number }[] } | null;
     };
