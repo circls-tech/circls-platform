@@ -46,3 +46,5 @@ export * from './event_change_requests.js';
 export * from './platform_settings.js';
 // Consumer likes / wishlist (events, memberships, venues).
 export * from './wishlist_items.js';
+// Consumer + partner feedback (listing ratings, website surveys, nudges).
+export * from './user_feedback.js';

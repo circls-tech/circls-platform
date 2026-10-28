@@ -157,6 +157,14 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     order: 14,
   },
   {
+    slug: 'feedback',
+    title: 'Sharing feedback with circls',
+    category: 'Support',
+    summary:
+      'The weekly portal survey Owners and Managers are asked until someone in your organisation answers (how easy creating events, venues and plans was, challenges, overall ease), and the 1–10 ratings your customers are asked after an event, a court booking or a membership check-in.',
+    order: 18,
+  },
+  {
     slug: 'coupons',
     title: 'Creating and managing discount coupons',
     category: 'Discounts',

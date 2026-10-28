@@ -1098,3 +1098,93 @@ export interface TenantPayoutItem {
   paidAt: string | null;
   paidReference: string | null;
 }
+
+// ── Feedback report (GET /v1/admin/feedback) ─────────────────────────────────
+
+export type AdminFeedbackView = 'ratings' | 'consumer' | 'partner' | 'poll';
+export type AdminRatingKind = 'event_feedback' | 'venue_feedback' | 'membership_feedback';
+
+/** Who answered, with the phone/email snapshotted when they did. */
+export interface AdminFeedbackPerson {
+  userId: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+export interface AdminRatingRow {
+  id: string;
+  kind: AdminRatingKind;
+  /** 1–10. */
+  rating: number;
+  comment: string | null;
+  source: string;
+  createdAt: string;
+  person: AdminFeedbackPerson;
+  tenant: { id: string; name: string } | null;
+  /** Event name, venue name, or membership plan name; its venue; when it was. */
+  subject: { name: string | null; place: string | null; date: string | null };
+}
+
+/** A website survey answer. Area ratings are null for "Haven't tried yet". */
+export interface AdminSiteFeedbackRow {
+  id: string;
+  overallRating: number;
+  discoveryRating: number | null;
+  bookingRating: number | null;
+  eventCreationRating: number | null;
+  venueCreationRating: number | null;
+  membershipCreationRating: number | null;
+  challenges: string | null;
+  comments: string | null;
+  source: string;
+  createdAt: string;
+  person: AdminFeedbackPerson;
+  /** Partner answers: the org answered for. */
+  tenant: { id: string; name: string } | null;
+}
+
+export interface AdminPollRow {
+  id: string;
+  question: string;
+  answer: string;
+  /** What they typed when they chose "Other". */
+  other: string | null;
+  source: string;
+  createdAt: string;
+  person: AdminFeedbackPerson;
+}
+
+interface FeedbackAverage {
+  count: number;
+  /** One decimal; null when nobody answered. */
+  average: number | null;
+}
+
+export type AdminFeedbackPage =
+  | {
+      view: 'ratings';
+      rows: AdminRatingRow[];
+      nextCursor: string | null;
+      summary: FeedbackAverage & { events: FeedbackAverage; venues: FeedbackAverage; memberships: FeedbackAverage };
+    }
+  | {
+      view: 'consumer' | 'partner';
+      rows: AdminSiteFeedbackRow[];
+      nextCursor: string | null;
+      summary: {
+        count: number;
+        overall: number | null;
+        discovery: number | null;
+        booking: number | null;
+        eventCreation: number | null;
+        venueCreation: number | null;
+        membershipCreation: number | null;
+      };
+    }
+  | {
+      view: 'poll';
+      rows: AdminPollRow[];
+      nextCursor: string | null;
+      summary: { count: number; answers: { answer: string; count: number }[] };
+    };

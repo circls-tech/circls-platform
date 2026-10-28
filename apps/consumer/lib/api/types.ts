@@ -680,3 +680,62 @@ export interface Wishlist {
   memberships: (PublicMembershipWithScope & { likedAt: string })[];
   venues: (PublicVenue & { likedAt: string })[];
 }
+
+// ── Feedback prompts ──────────────────────────────────────────────────────────
+
+/** The event-type poll: "What kind of event would you like to see next?" */
+export interface EventTypeQuestion {
+  key: string;
+  question: string;
+  options: string[];
+  /** The option that asks them to type what they mean (sent as `other`). */
+  otherOption: string;
+}
+
+/** What a 1–10 rating is about: an event, a venue visit or a membership. */
+export type RatingKind = 'event_feedback' | 'venue_feedback' | 'membership_feedback';
+
+export interface RatingSubject {
+  /** Event id, court booking id, or membership purchase id. */
+  id: string;
+  /** Event name, venue name, or membership plan name. */
+  name: string;
+  /** The venue, when it isn't already the name. */
+  place: string | null;
+  orgName: string;
+  /** When it happened (ISO): the event start, the first slot, the membership start. */
+  date: string | null;
+}
+
+/**
+ * What GET /v1/consumer/feedback/prompt asks this consumer right now: a 1–10
+ * rating of something they booked, the event-type poll (once per person), the
+ * website survey, or null (nothing to ask). `key` is what "Not now" sends.
+ */
+export type FeedbackPrompt =
+  | { kind: RatingKind; key: string; subject: RatingSubject }
+  | { kind: 'event_type_preference'; key: 'poll'; question: EventTypeQuestion }
+  | { kind: 'site_feedback'; key: 'site'; hasBooked: boolean };
+
+/** Body of POST /v1/consumer/feedback. Errors: 404 `feedback_not_eligible`,
+ *  409 `feedback_exists`, 400 `feedback_unknown_question`/`feedback_invalid_answer`/
+ *  `feedback_other_required` ("Other" chosen with nothing typed).
+ *  Area ratings are null for "Haven't tried yet". */
+export type SubmitFeedbackInput =
+  | { kind: RatingKind; id: string; rating: number; comment?: string }
+  | { kind: 'event_type_preference'; questionKey: string; answer: string; other?: string }
+  | {
+      kind: 'site_feedback';
+      overallRating: number;
+      discoveryRating: number | null;
+      bookingRating: number | null;
+      challenges?: string;
+      comments?: string;
+    };
+
+/** Result of POST /v1/consumer/feedback. */
+export interface SubmittedFeedback {
+  id: string;
+  kind: RatingKind | 'event_type_preference' | 'site_feedback';
+  createdAt: string;
+}

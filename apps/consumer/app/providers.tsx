@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AuthProvider } from '@/lib/firebase/auth_context';
 import { ActivityProvider } from '@/lib/activity/ActivityProvider';
 import { CheckoutProvider } from '@/lib/checkout/CheckoutProvider';
+import { FeedbackPromptProvider } from '@/lib/feedback/FeedbackPromptProvider';
 import { LocationProvider } from '@/lib/location/LocationProvider';
 import { NavDepthTracker } from '@/lib/nav/NavDepthTracker';
 
@@ -18,7 +19,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <LocationProvider>
             <CheckoutProvider>
               <NavDepthTracker />
-              {children}
+              <FeedbackPromptProvider>{children}</FeedbackPromptProvider>
             </CheckoutProvider>
           </LocationProvider>
         </ActivityProvider>

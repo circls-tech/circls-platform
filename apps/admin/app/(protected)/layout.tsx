@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: '/tenants', label: 'Tenants', petal: '#FCE38A', icon: 'tenants' },
   { href: '/users', label: 'Consumers', petal: '#BCE3A0', icon: 'consumers' },
   { href: '/engagement', label: 'Engagement', petal: '#FFD2A1', icon: 'engagement' },
+  { href: '/feedback', label: 'Feedback', petal: '#CDBBF7', icon: 'feedback' },
   { href: '/partner-users', label: 'Partner users', petal: '#9CE0D4', icon: 'partner-users' },
   { href: '/payouts', label: 'Payouts', petal: '#F9B4D4', icon: 'payouts' },
   { href: '/payments', label: 'Payments', petal: '#CDBBF7', icon: 'payments' },
@@ -140,6 +141,13 @@ function NavIcon({ name }: { name: NavIconName }) {
       return (
         <svg {...common}>
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      );
+    // A star: ratings and survey answers.
+    case 'feedback':
+      return (
+        <svg {...common}>
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
       );
     default:
