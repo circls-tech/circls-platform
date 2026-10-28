@@ -42,6 +42,10 @@ describe.skipIf(!runIntegration)('super admins', () => {
   const call = (token: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
     app.inject({ method, url, headers: bearer(token), ...(payload ? { payload } : {}) });
 
+  const supportUrl = () => `/v1/tenants/${partnerTenantId}/circls-support`;
+  const visitUrl = () => `/v1/super-admin/tenants/${partnerTenantId}/visit`;
+  const HOUR = 60 * 60 * 1000;
+
   const setSuperAdmin = (token: string, userId: string, superAdmin: boolean, tenantId = platformTenantId) =>
     call(token, 'PATCH', `/v1/tenants/${tenantId}/members/${userId}/super-admin`, { superAdmin });
 
@@ -127,22 +131,42 @@ describe.skipIf(!runIntegration)('super admins', () => {
     expect(mine.find((t) => t.id === platformTenantId)?.mySuperAdmin).toBe(true);
   });
 
-  it('a super admin finds partner orgs, never the Circls one', async () => {
-    const hits = (await call('sadmin', 'GET', `/v1/super-admin/tenants?q=${encodeURIComponent(`solo sports ${SUFFIX}`)}`)).json() as {
-      id: string;
-    }[];
-    expect(hits.map((h) => h.id)).toEqual([partnerTenantId]);
-    const circls = (await call('sadmin', 'GET', `/v1/super-admin/tenants?q=${PLATFORM_SLUG}`)).json() as unknown[];
-    expect(circls).toEqual([]);
+  it('a super admin stays out of an org until it lets Circls in', async () => {
+    const hits = (await call('sadmin', 'GET', '/v1/super-admin/tenants')).json() as { id: string }[];
+    expect(hits.map((h) => h.id)).not.toContain(partnerTenantId);
+    expect(errorCode(await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`))).toBe('tenant_forbidden');
+    const visit = await call('sadmin', 'POST', visitUrl());
+    expect(errorCode(visit)).toBe('circls_support_not_granted');
+    expect((await call('owner', 'GET', supportUrl())).json()).toEqual({ active: null });
+  });
+
+  it('the org lets Circls in for 3 hours, and its request shows in the picker', async () => {
+    const before = Date.now();
+    const res = await call('owner', 'POST', supportUrl(), { note: 'Set up our Diwali cup' });
+    expect(res.statusCode).toBe(200);
+    const active = res.json().active as { note: string; expiresAt: string };
+    expect(active.note).toBe('Set up our Diwali cup');
+    const left = new Date(active.expiresAt).getTime() - before;
+    expect(left).toBeGreaterThan(2.9 * HOUR);
+    expect(left).toBeLessThan(3.1 * HOUR);
+
+    const hits = (
+      await call('sadmin', 'GET', `/v1/super-admin/tenants?q=${encodeURIComponent(`solo sports ${SUFFIX}`)}`)
+    ).json();
+    expect(hits).toEqual([
+      expect.objectContaining({ id: partnerTenantId, note: 'Set up our Diwali cup', expiresAt: active.expiresAt }),
+    ]);
+    // Never the Circls org itself.
     const visitCircls = await call('sadmin', 'POST', `/v1/super-admin/tenants/${platformTenantId}/visit`);
     expect(visitCircls.statusCode).toBe(404);
   });
 
-  it('opening an org logs one visit on its audit log, not one per reload', async () => {
-    const first = await call('sadmin', 'POST', `/v1/super-admin/tenants/${partnerTenantId}/visit`);
+  it('opening the org logs one visit per grant and names the helper on the Team page', async () => {
+    const first = await call('sadmin', 'POST', visitUrl());
     expect(first.statusCode).toBe(200);
     expect(first.json()).toMatchObject({ id: partnerTenantId, myRole: 'manager', superAdminVisit: true });
-    await call('sadmin', 'POST', `/v1/super-admin/tenants/${partnerTenantId}/visit`);
+    expect(first.json().circlsSupportUntil).toEqual(expect.any(String));
+    await call('sadmin', 'POST', visitUrl());
 
     const visits = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM audit_log
@@ -151,6 +175,11 @@ describe.skipIf(!runIntegration)('super admins', () => {
          AND action = 'tenant.super_admin_visited'
     `);
     expect((visits as unknown as { n: number }[])[0]!.n).toBe(1);
+
+    const status = (await call('owner', 'GET', supportUrl())).json() as {
+      active: { helpers: { userId: string }[] };
+    };
+    expect(status.active.helpers.map((h) => h.userId)).toEqual([userIds['sadmin']]);
   });
 
   it('a super admin sets the org up like a Manager, without joining its team', async () => {
@@ -197,6 +226,9 @@ describe.skipIf(!runIntegration)('super admins', () => {
     expect(errorCode(earnings)).toBe('forbidden_capability');
     const waiver = await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}/commission-waiver`);
     expect(errorCode(waiver)).toBe('forbidden_capability');
+    // Nor keep themselves in: only the org extends or ends Circls's access.
+    expect(errorCode(await call('sadmin', 'POST', supportUrl(), {}))).toBe('forbidden_capability');
+    expect(errorCode(await call('sadmin', 'DELETE', supportUrl()))).toBe('forbidden_capability');
   });
 
   it("the org's audit log marks the super admin's actions as Circls", async () => {
@@ -256,7 +288,44 @@ describe.skipIf(!runIntegration)('super admins', () => {
     expect(await changeRows()).toHaveLength(before + 1);
   });
 
+  it('asking again restarts the clock on the same grant', async () => {
+    await db.execute(sql`
+      UPDATE circls_support_grants SET expires_at = now() + interval '10 minutes'
+       WHERE tenant_id = ${partnerTenantId}::uuid AND ended_at IS NULL
+    `);
+    const res = await call('owner', 'POST', supportUrl(), {});
+    const active = res.json().active as { note: string; expiresAt: string };
+    expect(new Date(active.expiresAt).getTime() - Date.now()).toBeGreaterThan(2.9 * HOUR);
+    expect(active.note).toBe('Set up our Diwali cup');
+    const grants = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM circls_support_grants WHERE tenant_id = ${partnerTenantId}::uuid
+    `);
+    expect((grants as unknown as { n: number }[])[0]!.n).toBe(1);
+  });
+
+  it('the org removes Circls, and the access ends at once', async () => {
+    expect((await call('owner', 'DELETE', supportUrl())).statusCode).toBe(204);
+    expect(errorCode(await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`))).toBe('tenant_forbidden');
+    expect(errorCode(await call('sadmin', 'POST', visitUrl()))).toBe('circls_support_not_granted');
+    expect((await call('owner', 'GET', supportUrl())).json()).toEqual({ active: null });
+    expect(errorCode(await call('owner', 'DELETE', supportUrl()))).toBe('circls_support_not_active');
+  });
+
+  it('the access runs out by itself', async () => {
+    await call('owner', 'POST', supportUrl(), {});
+    expect((await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`)).statusCode).toBe(200);
+    await db.execute(sql`
+      UPDATE circls_support_grants SET expires_at = now() - interval '1 second'
+       WHERE tenant_id = ${partnerTenantId}::uuid AND ended_at IS NULL
+    `);
+    expect(errorCode(await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`))).toBe('tenant_forbidden');
+    const hits = (await call('sadmin', 'GET', '/v1/super-admin/tenants')).json() as { id: string }[];
+    expect(hits.map((h) => h.id)).not.toContain(partnerTenantId);
+  });
+
   it('turning the switch off ends the access at once', async () => {
+    await call('owner', 'POST', supportUrl(), {});
+    expect((await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`)).statusCode).toBe(200);
     const off = await setSuperAdmin('powner', userIds['sadmin']!, false);
     expect(off.json().superAdmin).toBe(false);
     const res = await call('sadmin', 'GET', `/v1/tenants/${partnerTenantId}`);

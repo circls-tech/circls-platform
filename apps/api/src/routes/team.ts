@@ -91,8 +91,8 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // Circls team only: the super-admin switch (open any partner org in the
-  // portal). Platform Owners only — it rides members.role_change, which on the
+  // Circls team only: the super-admin switch (open partner orgs that ask
+  // Circls for help). Platform Owners only — it rides members.role_change, which on the
   // Circls tenant only Owners hold.
   app.patch(
     '/v1/tenants/:tenantId/members/:userId/super-admin',

@@ -18,6 +18,7 @@ import {
   notifyBookingConfirmed,
   notifyBookingRefunded,
   notifyBookingRescheduled,
+  notifyCirclsSupportRequested,
   notifyEventCancelled,
   notifyListingReviewed,
   notifyListingSubmitted,
@@ -163,6 +164,16 @@ export async function onListingReviewed(
     await notifyListingReviewed(type, id, decision, reason);
   } catch (err) {
     logger.warn({ err, type, id, decision }, 'on_listing_reviewed_hook_failed');
+  }
+}
+
+/** Call after an org lets Circls into its portal. Alerts the Circls admin
+ *  team. Never throws. */
+export async function onCirclsSupportRequested(grantId: string): Promise<void> {
+  try {
+    await notifyCirclsSupportRequested(grantId);
+  } catch (err) {
+    logger.warn({ err, grantId }, 'on_circls_support_requested_hook_failed');
   }
 }
 

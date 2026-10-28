@@ -519,6 +519,13 @@
       "when": 1785060000000,
       "tag": "0074_booking_ticket_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785140000000,
+      "tag": "0075_circls_support_grants",
+      "breakpoints": true
     }
   ]
 }

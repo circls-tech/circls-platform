@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type TenantMember, tenantMembers } from '../db/schema/index.js';
 import { tenants } from '../db/schema/tenants.js';
@@ -31,9 +31,10 @@ export interface TenantContext {
  * Every tenant-scoped service takes a resolved tenantId and filters by it
  * explicitly — a missing membership is a 403, never a cross-tenant leak.
  *
- * The one exception: a Circls super admin may act in any partner tenant
- * without a membership (never in the Circls tenant itself, where they are
- * members anyway). Their own membership, where they have one, wins.
+ * The one exception: a Circls super admin may act in a partner tenant without
+ * a membership while that tenant has let Circls in (circls_support_grants;
+ * never the Circls tenant itself, where they are members anyway). Their own
+ * membership, where they have one, wins.
  */
 export async function requireTenantMembership(
   userId: string,
@@ -68,14 +69,27 @@ export async function requireTenantMembership(
   return visit;
 }
 
-/** The context a super admin gets in a partner tenant they don't belong to, or null. */
+/**
+ * The context a super admin gets in a partner tenant they don't belong to,
+ * or null — also when the tenant hasn't let Circls in right now.
+ */
 async function superAdminContext(userId: string, tenantId: string): Promise<TenantContext | null> {
   if (!(await isSuperAdmin(userId))) return null;
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.id, tenantId),
-    columns: { isPlatform: true, status: true, termsVersion: true, termsAcceptedAt: true },
-  });
-  if (!tenant || tenant.isPlatform) return null;
+  const [tenant] = await db
+    .select({
+      isPlatform: tenants.isPlatform,
+      status: tenants.status,
+      termsVersion: tenants.termsVersion,
+      termsAcceptedAt: tenants.termsAcceptedAt,
+      letIn: sql<boolean>`exists (
+        select 1 from circls_support_grants g
+         where g.tenant_id = ${tenantId}::uuid and g.ended_at is null and g.expires_at > now()
+      )`,
+    })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+  if (!tenant || tenant.isPlatform || !tenant.letIn) return null;
   // So whatever this request changes shows in the org's Activity Log.
   noteSuperAdminAccess(userId, tenantId);
   return {

@@ -18,8 +18,9 @@ export const tenantMembers = pgTable(
     role: tenantRole('role').notNull(),
     permissionsOverride: jsonb('permissions_override'),
     /**
-     * A Circls super admin: may open any partner organisation in the partner
-     * portal without being its member (see requireTenantMembership). Only
+     * A Circls super admin: may open a partner organisation that asked Circls
+     * for help in the partner portal, without being its member (see
+     * requireTenantMembership and circls_support_grants). Only
      * meaningful on the Circls platform tenant's rows; platform Owners set it.
      */
     superAdmin: boolean('super_admin').notNull().default(false),

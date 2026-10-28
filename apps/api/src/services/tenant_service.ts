@@ -84,7 +84,7 @@ export async function createTenant(ownerUserId: string, input: CreateTenantInput
  * Tenants the user is a member of, each with the user's own role there
  * (`myRole`), so the portals can tell which controls to offer without
  * fetching the whole team. `mySuperAdmin` is only ever true on the Circls
- * row: the user may open any partner org (see listing/visiting below).
+ * row: the user may open partner orgs that ask Circls for help.
  */
 export async function listTenantsForUser(
   userId: string,

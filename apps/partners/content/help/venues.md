@@ -4,6 +4,8 @@ Adding and editing venues and arenas — details, photos, QR ticket rules, and c
 
 ## Adding a venue
 
+Want a hand? **Get help from Circls** on the **Venues** page lets the Circls team set it up with you — see [Getting help from Circls](/help/team).
+
 1. Go to **Venues** in the sidebar and click **+ Add venue**.
 2. Fill in:
    - **Venue name** (required).

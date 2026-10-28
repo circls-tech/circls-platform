@@ -905,3 +905,43 @@ export async function orgSignupPayload(tenantId: string, now: Date = new Date())
     orgUrl: `${adminUrl()}/tenants/${tenantId}`,
   };
 }
+
+/** The Circls admin-team email for an org that let Circls in ("Get help from Circls"). */
+export async function supportRequestedPayload(grantId: string): Promise<Record<string, unknown> | null> {
+  const [r] = (await db.execute<Row>(sql`
+    select g.tenant_id, g.note, g.expires_at, tn.name, tn.city,
+           u.display_name as requester_name, u.email as requester_email, u.phone_e164 as requester_phone
+      from circls_support_grants g
+      join tenants tn on tn.id = g.tenant_id
+      join users u on u.id = g.requested_by_user_id
+     where g.id = ${grantId}
+  `)) as unknown as Row[];
+  if (!r) return null;
+  const name = str(r['name']) ?? 'An organizer';
+  const city = str(r['city']);
+  // The Circls team works in India time.
+  const endsAt = `${new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(String(r['expires_at'])))} IST`;
+  const rows: DetailRow[] = [];
+  if (city) rows.push({ label: 'City', value: city });
+  const requester = str(r['requester_name']);
+  if (requester) rows.push({ label: 'Asked by', value: requester });
+  const email = str(r['requester_email']);
+  if (email) rows.push({ label: 'Email', value: email });
+  const phone = str(r['requester_phone']);
+  if (phone) rows.push({ label: 'Phone', value: phone });
+  rows.push({ label: 'Org ID', value: shortRef('ORG', String(r['tenant_id'])), mono: true });
+  const note = str(r['note']);
+  return {
+    preheader: [city, `access until ${endsAt}`].filter(Boolean).join(' · '),
+    tenantName: name,
+    endsAt,
+    ...(note ? { note } : {}),
+    rows,
+  };
+}

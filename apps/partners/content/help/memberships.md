@@ -4,6 +4,8 @@ Creating and editing plans, activating and deactivating them, and their artwork 
 
 ## Creating a membership plan
 
+Want a hand? **Get help from Circls** on the **New plan** page lets the Circls team set it up with you — see [Getting help from Circls](/help/team).
+
 1. Go to **Memberships** in the sidebar and click **New plan**.
 2. Fill in the plan details:
    - **Name** (required) — e.g. *Monthly Unlimited*.

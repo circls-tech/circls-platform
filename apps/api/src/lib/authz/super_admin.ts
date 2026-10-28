@@ -1,4 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm';
+import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { tenantMembers } from '../../db/schema/tenant_members.js';
 import { tenants } from '../../db/schema/tenants.js';
@@ -8,6 +9,8 @@ import { Forbidden } from '../errors.js';
 /**
  * Whether the user is a Circls super admin: on the Circls team, with the
  * switch a platform Owner turns on. Leaving the team ends it (the row goes).
+ * The Circls tenant is found like getPlatformTenantId finds it (slug and
+ * is_platform), without throwing when it isn't bootstrapped: then nobody is.
  */
 export async function isSuperAdmin(userId: string): Promise<boolean> {
   const [row] = await db
@@ -20,6 +23,7 @@ export async function isSuperAdmin(userId: string): Promise<boolean> {
         eq(tenantMembers.userId, userId),
         eq(tenantMembers.superAdmin, true),
         eq(tenants.isPlatform, true),
+        eq(tenants.slug, process.env['CIRCLS_INTERNAL_TENANT_SLUG'] ?? env.CIRCLS_INTERNAL_TENANT_SLUG),
         eq(users.status, 'active'),
         isNull(users.deletedAt),
       ),

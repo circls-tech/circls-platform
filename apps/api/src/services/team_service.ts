@@ -228,7 +228,7 @@ export interface SetMemberSuperAdminInput {
 
 /**
  * Turn a Circls team member's super-admin switch on or off: whether they may
- * open any partner org in the partner portal. Platform Owners only (the route
+ * open partner orgs that ask Circls for help. Platform Owners only (the route
  * checks); audited on the Circls tenant when it changes.
  */
 export async function setMemberSuperAdmin(input: SetMemberSuperAdminInput): Promise<MemberRow> {

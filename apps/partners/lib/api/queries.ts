@@ -26,6 +26,7 @@ import type {
   RefundPreview,
   ScheduleTemplate,
   Slot,
+  CirclsSupportStatus,
   SuperAdminOrgHit,
   SupportIssue,
   TeamMember,
@@ -74,10 +75,13 @@ export function useMyTenants() {
         uid,
         qc.getQueryData<Tenant[]>(['tenants', uid]),
       ),
+    // While a super admin has an org open, check every minute that the org
+    // still lets Circls in: it drops out once removed or run out.
+    refetchInterval: (query) => (query.state.data?.some((t) => t.superAdminVisit) ? 60_000 : false),
   });
 }
 
-/** Partner orgs a super admin can open, by name or slug. */
+/** The orgs that have let Circls in right now, optionally filtered by name or slug. */
 export function useSuperAdminOrgSearch(q: string, enabled: boolean) {
   return useQuery({
     queryKey: ['super-admin-orgs', q],
@@ -1199,6 +1203,39 @@ export function useUpdateMemberRole(tenantId: string) {
         body: JSON.stringify({ role }),
       }),
     onSuccess: (_row, { userId }) => refreshMembership(qc, tenantId, userId, me),
+  });
+}
+
+/** Whether the org has let Circls in ("Get help from Circls"), until when, and who came. */
+export function useCirclsSupport(tenantId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['circls-support', tenantId],
+    enabled: Boolean(tenantId) && enabled,
+    queryFn: () => apiFetch<CirclsSupportStatus>(`/v1/tenants/${tenantId}/circls-support`),
+    // The time left counts down: refresh now and then so "ends at" stays true.
+    refetchInterval: 60_000,
+  });
+}
+
+/** Let Circls in for 3 hours (or restart the clock), with an optional note. */
+export function useGrantCirclsSupport(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string | null) =>
+      apiFetch<CirclsSupportStatus>(`/v1/tenants/${tenantId}/circls-support`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+      }),
+    onSuccess: (status) => qc.setQueryData(['circls-support', tenantId], status),
+  });
+}
+
+/** Remove Circls now (the Team page's Remove). */
+export function useEndCirclsSupport(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<void>(`/v1/tenants/${tenantId}/circls-support`, { method: 'DELETE' }),
+    onSuccess: () => qc.setQueryData<CirclsSupportStatus>(['circls-support', tenantId], { active: null }),
   });
 }
 

@@ -51,6 +51,7 @@ import { consumerRoutes } from './routes/consumer.js';
 import { invitationRoutes } from './routes/invitations.js';
 import { teamRoutes } from './routes/team.js';
 import { superAdminRoutes } from './routes/super_admin.js';
+import { circlsSupportRoutes } from './routes/circls_support.js';
 import { registerSuperAdminAudit } from './lib/super_admin_audit.js';
 // Support issues (UX issue #20).
 import { supportIssueRoutes } from './routes/support_issues.js';
@@ -298,6 +299,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(teamRoutes);
   // Circls super admins opening partner orgs in the portal.
   await app.register(superAdminRoutes);
+  await app.register(circlsSupportRoutes);
   // Phase 14: cancellations + admin refunds.
   await app.register(cancellationRoutes);
   await app.register(adminRefundRoutes);

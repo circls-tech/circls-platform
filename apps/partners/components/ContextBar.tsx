@@ -181,7 +181,7 @@ function OrgSwitcher({
   onSelect: (id: string) => void;
   /** The org a super admin has open (badged Circls). */
   visitId: string | null;
-  /** Super admins only: open any partner org. */
+  /** Super admins only: open a partner org that asked for help. */
   onOpenAny: (() => void) | null;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -247,7 +247,7 @@ function OrgSwitcher({
             >
               ⌕
             </span>
-            Open any organisation
+            Organisations asking for help
           </button>
         )}
         <Link

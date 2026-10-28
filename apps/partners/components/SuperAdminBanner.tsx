@@ -3,12 +3,14 @@
 import { useRouter } from 'next/navigation';
 import { useSuperAdminVisit } from '@/lib/api/queries';
 import { useOrg } from '@/lib/org_context';
+import { useClockTime } from './CirclsHelp';
 
 /** Shown on every page while a Circls super admin works in an org they opened. */
 export function SuperAdminBanner() {
   const router = useRouter();
   const { activeTenantId, tenants } = useOrg();
   const { leave } = useSuperAdminVisit();
+  const clock = useClockTime();
   const tenant = tenants.find((t) => t.id === activeTenantId);
   if (!tenant?.superAdminVisit) return null;
 
@@ -24,8 +26,14 @@ export function SuperAdminBanner() {
       className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-violet-200 bg-violet-50 px-6 py-2 text-sm text-violet-900"
     >
       <span>
-        You&apos;re working in <strong>{tenant.name}</strong> as a Circls super admin. Your visit and
-        every change you make show in their audit log.
+        You&apos;re working in <strong>{tenant.name}</strong> as a Circls super admin
+        {tenant.circlsSupportUntil ? (
+          <>
+            {' '}
+            until <strong>{clock(tenant.circlsSupportUntil)}</strong>
+          </>
+        ) : null}
+        . Your visit and every change you make show in their audit log.
       </span>
       <button type="button" onClick={handleLeave} className="font-semibold underline hover:no-underline">
         Leave this organisation

@@ -10,7 +10,7 @@ import { isSuperAdmin } from '@/lib/roles';
 const keyFor = (uid: string) => `circls.superAdminVisit.${uid}`;
 
 /** The API's answers that mean the visit is over, not just failed this time. */
-const VISIT_REFUSALS = ['super_admin_required', 'tenant_not_found', 'bad_request'];
+const VISIT_REFUSALS = ['super_admin_required', 'circls_support_not_granted', 'tenant_not_found', 'bad_request'];
 
 export function readSuperAdminVisit(uid: string): string | null {
   try {
