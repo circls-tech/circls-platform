@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useEvent } from '@/lib/api/events';
 import { FormAutosaveScope } from '@/lib/use_form_autosave';
@@ -34,6 +35,9 @@ function NewTenantEventRoute() {
   // the active organisation.
   const tenantId = params.get('tenantId') || activeTenantId || '';
   const { data: source, error: sourceError } = useEvent(tenantId, fromId);
+  // Saved, but a photo didn't upload: said here, where they can read it,
+  // rather than lost in the move to the event's page.
+  const [uploadProblem, setUploadProblem] = useState<{ eventId: string; message: string } | null>(null);
 
   if (!tenantId) {
     return <p className="text-sm text-slate-500">Select an organization first.</p>;
@@ -66,16 +70,26 @@ function NewTenantEventRoute() {
         </p>
       )}
 
-      {!sourcePending && (
-        <FormAutosaveScope>
-          <NewEventForm
-            key={`${tenantId}:${source?.id ?? 'blank'}`}
-            tenantId={tenantId}
-            source={source ?? null}
-            // A photo that didn't upload is added from the event's page.
-            onCreated={(eventId, photoError) => router.push(photoError ? `/events/${eventId}` : '/events')}
-          />
-        </FormAutosaveScope>
+      {uploadProblem ? (
+        <div role="alert" className="flex flex-col items-start gap-2 rounded-[var(--radius)] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p>{uploadProblem.message}</p>
+          <Link href={`/events/${uploadProblem.eventId}`} className="font-semibold underline hover:no-underline">
+            Open the event
+          </Link>
+        </div>
+      ) : (
+        !sourcePending && (
+          <FormAutosaveScope>
+            <NewEventForm
+              key={`${tenantId}:${source?.id ?? 'blank'}`}
+              tenantId={tenantId}
+              source={source ?? null}
+              onCreated={(eventId, photoError) =>
+                photoError ? setUploadProblem({ eventId, message: photoError }) : router.push('/events')
+              }
+            />
+          </FormAutosaveScope>
+        )
       )}
     </div>
   );

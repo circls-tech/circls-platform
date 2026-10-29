@@ -6,7 +6,7 @@ You'll need a circls Partner account. If a colleague invited you, follow your in
 
 When you sign up with an email and password we send a **verification link** to that address. You can use the portal right away, but until you click the link a banner reminds you, and your email isn't shown to teammates or used to match your account (for example when someone invites that address). If it didn't arrive, check your spam or junk folder first, then use **Resend email** in the banner. Each resend replaces the previous link, so always open the **newest** email — an older link shows "expired or already used". Once you've clicked the link, come back to the portal tab and the banner clears on its own (or press **I've verified**).
 
-If you step away mid-way — **Back**, a link, a reload — the wizard keeps your place and what you'd typed in the current step, so coming back picks up where you were (a note says so; **Start over** clears that step's form after asking). The Terms box is the one thing you tick again. All of it is kept only in this browser, for a week after your last change. Your place is dropped when you leave the wizard for the dashboard, open the event or plan you've just saved, or sign out; leaving for the schedule builder keeps it, so **Back** returns you to the last step. If you're no longer a member of the organisation you were setting up, the wizard starts from the beginning.
+If you step away mid-way — **Back**, a link, a reload — the wizard keeps your place and what you'd typed in the current step, so coming back picks up where you were (a note says so; **Start over** clears that step's form after asking). The Terms box is the one thing you tick again. All of it is kept only in this browser, for a week after your last change. Your place is dropped when you leave the wizard for the dashboard, open the event or plan you've just saved, or sign out; leaving for the schedule builder keeps it, so **Back** returns you to the last step. If you're no longer a member of the organisation you were setting up, or you've switched to another organisation since, the wizard starts from the beginning — and **Add organisation** (in the organisation menu at the top) always does. If the Partner Terms have changed since you started, you're asked to accept the new version before carrying on.
 
 ## Step 1 — Create your organisation
 
@@ -38,8 +38,8 @@ From this step on, the wizard shows **Get help from Circls**. Click it if you'd 
 
 You get the same form as **Events → New event** (see [Creating and publishing events](/help/events)). Only a **name** is needed to save a draft; dates, location and ticket tiers can follow.
 
-- A new organisation has no venue yet, so **Where** starts on **No venue — enter address**. If you added a venue in the wizard first, it starts at that venue instead.
-- Click **Save draft**. The last step confirms your event is saved as a draft. Click **Open your event** to finish it — anything you left for later, then **Submit for review** on the event's page — or **Finish — go to dashboard**.
+- A new organisation has no venue yet, so **Where** starts on **No venue — enter address**, with **Country** set to your organisation's and the **Timezone** to match: India's, or in the US your browser's own (Eastern if your browser is elsewhere). Event times are read in that timezone, so check it before you enter dates. If you added a venue in the wizard first, the event starts at that venue instead, in its timezone.
+- Click **Save draft**. **Back** can't be used while it saves. The last step confirms your event is saved as a draft. Click **Open your event** to finish it — anything you left for later, then **Submit for review** on the event's page — or **Finish — go to dashboard**.
 
 Circls approves every event before customers can see it.
 
@@ -82,7 +82,7 @@ Like venues, arenas start as **pending review**. Each arena has a default slot l
 The last step links you to the schedule builder, where you define opening hours and release bookable slots.
 
 - Click **Open schedule builder** to jump straight in, or **Finish — go to dashboard** to do it later.
-- If you skipped the arena step, you'll be sent to the dashboard; you can build schedules any time from the Venues page.
+- If you skipped the arena step there's nothing to schedule yet: click **Go to dashboard**, and build schedules any time from the Venues page once the venue has an arena.
 
 For the full walkthrough, see [Setting up schedules and slot pricing](/help/schedule).
 

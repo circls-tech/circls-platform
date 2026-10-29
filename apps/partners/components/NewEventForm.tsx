@@ -43,33 +43,16 @@ import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/
 import { Button, Card, Input } from '@/lib/ui';
 import { brandOf, scratchEvent } from '@/lib/api/scratch_listing';
 import { ScratchPreview } from '@/components/ScratchPreview';
-
-/** Re-interpret a datetime-local value in the given tz as a UTC ISO string. */
-function localToTzIso(local: string, tz: string): string {
-  if (!local) return '';
-  const asIfUtc = new Date(`${local}:00Z`);
-  const wall = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(asIfUtc);
-  const [datePart, timePart] = wall.split(', ');
-  const wallIso = `${datePart}T${timePart}Z`;
-  const offsetMs = new Date(wallIso).getTime() - asIfUtc.getTime();
-  return new Date(asIfUtc.getTime() - offsetMs).toISOString();
-}
+import { localToTzIso } from '@/lib/time';
 
 type Scope = 'venue' | 'standalone';
 
-/** Where a blank form's "Where" starts. */
+/** Where a blank form's "Where" starts: a venue, or an address in a country and timezone. */
 export interface EventStartAt {
   scope: Scope;
   venueId?: string;
+  country?: string;
+  tz?: string;
 }
 
 /** What the form autosaves: every field but the photos, which are files. */
@@ -116,8 +99,8 @@ function eventFieldsFrom(seed: DuplicateDraft | null, startAt: EventStartAt | un
     city: seed?.address.city ?? '',
     stateRegion: seed?.address.state ?? '',
     pincode: seed?.address.pincode ?? '',
-    country: seed?.address.country ?? '',
-    tz: seed?.address.tz ?? 'Asia/Kolkata',
+    country: seed?.address.country ?? startAt?.country ?? '',
+    tz: seed?.address.tz ?? startAt?.tz ?? 'Asia/Kolkata',
     coords: seed?.address.coords ?? null,
   };
 }
@@ -131,6 +114,7 @@ export function NewEventForm({
   tenantId,
   source,
   startAt,
+  autosaveAs = 'event-new',
   onCreated,
   onBack,
 }: {
@@ -139,6 +123,12 @@ export function NewEventForm({
   source: VenueEvent | null;
   /** Where a blank form starts; by default at a venue, none picked yet. */
   startAt?: EventStartAt;
+  /**
+   * The name its typing is kept under. A form whose blank starts elsewhere
+   * (`startAt`) needs its own: a copy restored into another blank would
+   * undo the start, and never read as blank there once emptied.
+   */
+  autosaveAs?: string;
   /** Saved: the event (a series' first date), and why a photo didn't upload if one didn't. */
   onCreated: (eventId: string, photoError: string | null) => void;
   /** Shows Back in place of Cancel, which leaves for Events and forgets the form. */
@@ -152,7 +142,7 @@ export function NewEventForm({
   // changes, so there is no later patch to race the organiser's edits. What
   // they typed on an earlier visit wins over the event being copied, and a
   // duplicate keeps its own copy, apart from the blank form's.
-  const autosave = useFormAutosave('event-new', [tenantId, source?.id], () =>
+  const autosave = useFormAutosave(autosaveAs, [tenantId, source?.id], () =>
     eventFieldsFrom(source ? duplicateDraftFromEvent(source) : null, startAt),
   );
   const initial = autosave.initial;
@@ -504,7 +494,8 @@ export function NewEventForm({
 
           <div className="flex justify-end gap-2 pt-2">
             {onBack ? (
-              <Button type="button" variant="secondary" onClick={onBack}>
+              // Not while saving: the save would land after they'd moved on.
+              <Button type="button" variant="secondary" disabled={busy} onClick={onBack}>
                 Back
               </Button>
             ) : (

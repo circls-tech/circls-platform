@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { BackLink } from '@/lib/ui';
 import { CirclsHelp } from '@/components/CirclsHelp';
@@ -18,6 +20,9 @@ export default function NewMembershipPage() {
   const router = useRouter();
   const { activeTenantId } = useOrg();
   const tenantId = activeTenantId ?? '';
+  // Saved, but the artwork didn't upload: said here, where they can read it,
+  // rather than lost in the move to the plan's page.
+  const [uploadProblem, setUploadProblem] = useState<{ planId: string; message: string } | null>(null);
   return (
     // The docked preview sets the room it needs while it is open.
     <div className="flex flex-col gap-4 xl:pr-[var(--scratch-preview-w,0px)]">
@@ -29,16 +34,26 @@ export default function NewMembershipPage() {
       </div>
       <CirclsHelp lead="Need a hand with this plan?" />
 
-      {/* Keyed on the organisation: switching it opens that one's form, blank
-          or as it was left. An artwork that didn't upload is added from the
-          plan's page, where both outcomes land. */}
-      <FormAutosaveScope>
-        <NewPlanForm
-          key={tenantId}
-          tenantId={tenantId}
-          onCreated={(planId) => router.push(`/memberships/${planId}`)}
-        />
-      </FormAutosaveScope>
+      {uploadProblem ? (
+        <div role="alert" className="flex flex-col items-start gap-2 rounded-[var(--radius)] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p>{uploadProblem.message}</p>
+          <Link href={`/memberships/${uploadProblem.planId}`} className="font-semibold underline hover:no-underline">
+            Open the plan
+          </Link>
+        </div>
+      ) : (
+        // Keyed on the organisation: switching it opens that one's form,
+        // blank or as it was left.
+        <FormAutosaveScope>
+          <NewPlanForm
+            key={tenantId}
+            tenantId={tenantId}
+            onCreated={(planId, { artworkError }) =>
+              artworkError ? setUploadProblem({ planId, message: artworkError }) : router.push(`/memberships/${planId}`)
+            }
+          />
+        </FormAutosaveScope>
+      )}
     </div>
   );
 }

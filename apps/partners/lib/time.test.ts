@@ -5,6 +5,7 @@ import {
   calendarDateInTz,
   canonicalTz,
   isCalendarDate,
+  localToTzIso,
   dayBoundsInTz,
   rangeBoundsInTz,
 } from './time';
@@ -167,5 +168,20 @@ describe('input contract', () => {
   it('rejects a well-shaped but impossible date', () => {
     expect(() => boundsOfCalendarDateInTz('2026-02-30', 'UTC')).not.toThrow(); // Feb 30 rolls to Mar 2
     expect(() => boundsOfCalendarDateInTz('2026-13-01', 'UTC')).toThrow(/expected a YYYY-MM-DD/);
+  });
+});
+
+describe('localToTzIso', () => {
+  it('reads the input as the zone’s wall clock', () => {
+    expect(localToTzIso('2026-11-20T18:00', 'Asia/Kolkata')).toBe('2026-11-20T12:30:00.000Z');
+    expect(localToTzIso('2026-07-01T00:00', 'America/New_York')).toBe('2026-07-01T04:00:00.000Z');
+    expect(localToTzIso('', 'Asia/Kolkata')).toBe('');
+  });
+
+  it('takes the offset in force at the wall time, not at that time read as UTC', () => {
+    // US clocks went forward at 2 am on 8 Mar 2026: 3:30 am is EDT (−4).
+    expect(localToTzIso('2026-03-08T03:30', 'America/New_York')).toBe('2026-03-08T07:30:00.000Z');
+    // Back an hour at 2 am on 1 Nov 2026: 3:30 am is EST (−5).
+    expect(localToTzIso('2026-11-01T03:30', 'America/New_York')).toBe('2026-11-01T08:30:00.000Z');
   });
 });

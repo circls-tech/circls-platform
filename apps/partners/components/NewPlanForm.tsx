@@ -147,7 +147,14 @@ export function NewPlanForm({
 
             <div className="flex justify-end gap-2">
               {onBack ? (
-                <Button type="button" variant="secondary" size="sm" onClick={onBack}>
+                // Not while saving: the save would land after they'd moved on.
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={createMembership.isPending || uploadCover.isPending}
+                  onClick={onBack}
+                >
                   Back
                 </Button>
               ) : (

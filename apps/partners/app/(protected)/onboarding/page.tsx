@@ -1,19 +1,24 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useCreateArena, useCreateTenant, useCreateVenue } from '@/lib/api/queries';
 import { inferSport } from '@/lib/api/sport_inference';
 import { useOrg } from '@/lib/org_context';
+import { defaultTzForCountry } from '@/lib/countries';
 import { Badge, Button, Card, Input, TagsInput } from '@/lib/ui';
+import { INK_RAISED } from '@/lib/ui/Button';
 import type { Tenant } from '@/lib/api/types';
 import { TermsAcceptance } from '@/components/TermsAcceptance';
+import { TermsGate, tenantNeedsTermsGate } from '@/components/TermsGate';
+import { SuspendedBanner } from '@/components/SuspendedBanner';
 import { RestoredFormNotice } from '@/components/RestoredFormNotice';
 import { CirclsHelp } from '@/components/CirclsHelp';
-import { NewEventForm } from '@/components/NewEventForm';
+import { NavIcon, type NavIconName } from '@/components/NavIcon';
+import { NewEventForm, type EventStartAt } from '@/components/NewEventForm';
 import { NewPlanForm } from '@/components/NewPlanForm';
 import { FormAutosaveScope, useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
-import { CURRENT_TERMS_VERSION, type TermsCountry } from '@/lib/terms/constants';
+import { CURRENT_TERMS_VERSION, termsCountryFor, type TermsCountry } from '@/lib/terms/constants';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -253,68 +258,30 @@ function Step1Org({ onDone }: { onDone: (tenant: Tenant) => void }) {
 
 // ─── Step 2: Start with ──────────────────────────────────────────────────────
 
-const START_OPTIONS: { path: StartWith; title: string; blurb: string; petal: string }[] = [
+/** Each with the sidebar's icon and pastel for the same thing. */
+const START_OPTIONS: { path: StartWith; title: string; blurb: string; icon: NavIconName; petal: string }[] = [
   {
     path: 'event',
     title: 'An event',
     blurb: 'A run, a class, a meetup — once or every week — with tickets people book.',
+    icon: 'events',
     petal: '#9CE0D4',
   },
   {
     path: 'membership',
     title: 'A membership',
     blurb: 'A pass people buy — monthly unlimited, a 10-class pack, a season pass.',
+    icon: 'memberships',
     petal: '#F9B4D4',
   },
   {
     path: 'venue',
     title: 'A venue',
     blurb: 'A place with courts, pitches or rooms that people book by the slot.',
+    icon: 'venues',
     petal: '#BCE3A0',
   },
 ];
-
-/** The sidebar's icon for each (Events, Memberships, Venues). */
-function StartWithIcon({ path }: { path: StartWith }) {
-  const common = {
-    width: 18,
-    height: 18,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 2,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true,
-  };
-  switch (path) {
-    case 'event':
-      return (
-        <svg {...common}>
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-      );
-    case 'membership':
-      return (
-        <svg {...common}>
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      );
-    case 'venue':
-      return (
-        <svg {...common}>
-          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          <polyline points="9 22 9 12 15 12 15 22" />
-        </svg>
-      );
-  }
-}
 
 function Step2StartWith({ onChoose }: { onChoose: (path: StartWith) => void }) {
   return (
@@ -332,13 +299,17 @@ function Step2StartWith({ onChoose }: { onChoose: (path: StartWith) => void }) {
             key={o.path}
             type="button"
             onClick={() => onChoose(o.path)}
-            className="flex flex-col items-start gap-2 rounded-[var(--radius)] border-2 border-[#17151D] bg-white p-4 text-left shadow-[3px_3px_0_#17151D] transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-[1px_1px_0_#17151D]"
+            className={[
+              INK_RAISED,
+              'flex flex-col items-start gap-2 rounded-[var(--radius)] bg-white p-4 text-left',
+              'transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-[1px_1px_0_#17151D]',
+            ].join(' ')}
           >
             <span
               className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-[#17151D] text-[#17151D]"
               style={{ backgroundColor: o.petal }}
             >
-              <StartWithIcon path={o.path} />
+              <NavIcon name={o.icon} />
             </span>
             <span className="text-sm font-bold text-[#17151D]">{o.title}</span>
             <span className="text-xs text-slate-500">{o.blurb}</span>
@@ -442,7 +413,7 @@ function StepArena({
   onDone,
   onSkip,
 }: {
-  venueId: string | null;
+  venueId: string;
   onDone: (arenaId: string) => void;
   onSkip: () => void;
 }) {
@@ -457,7 +428,7 @@ function StepArena({
   const [tags, setTags] = useState<string[]>(init.tags);
   const [error, setError] = useState<string | null>(null);
   useAutosave(autosave, { name, sport, tags });
-  const createArena = useCreateArena(venueId ?? '');
+  const createArena = useCreateArena(venueId);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const inferredSport = !sport ? inferSport(tags) : null;
@@ -465,20 +436,6 @@ function StepArena({
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
-
-  if (!venueId) {
-    return (
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-1">
-          <h3 className="text-base font-semibold text-slate-900">Add an arena</h3>
-          <p className="text-sm text-slate-500">No venue was created — skipping arena setup.</p>
-        </div>
-        <div className="flex justify-end pt-2">
-          <Button variant="primary" onClick={onSkip}>Continue</Button>
-        </div>
-      </div>
-    );
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -704,13 +661,41 @@ interface WizardProgress {
   saved: { id: string; draft: boolean } | null;
 }
 
+/** Whether a saved place still makes sense to resume, in `activeTenantId`. */
+function resumable(p: WizardProgress, activeTenantId: string | null): boolean {
+  // A copy from before the paths numbered its steps: start over.
+  if (!Object.hasOwn(STEP_LABELS, p.step)) return false;
+  if (p.path !== null && !Object.hasOwn(PATH_STEPS, p.path)) return false;
+  if (p.step === 'org') return true;
+  // Past the first step, only for the organisation they're now working in:
+  // one they've left, or switched away from since, starts over.
+  if (p.tenantId === null || p.tenantId !== activeTenantId) return false;
+  if (p.step === 'start') return true;
+  if (p.path === null || !PATH_STEPS[p.path].includes(p.step)) return false;
+  if (p.step === 'arena' && p.venueId === null) return false;
+  return p.step !== 'done' || p.saved !== null;
+}
+
 export default function OnboardingPage() {
+  // useSearchParams needs a Suspense boundary on a statically-rendered route.
+  return (
+    <Suspense fallback={null}>
+      <OnboardingWizard />
+    </Suspense>
+  );
+}
+
+function OnboardingWizard() {
   const router = useRouter();
-  const { activeTenantId, setActiveTenantId, tenants } = useOrg();
+  const params = useSearchParams();
+  const { activeTenantId, tenants } = useOrg();
+  // "Add organisation" (`?new=1`) means a new one: a wizard left half-way
+  // through for another organisation gives way rather than resuming.
+  const [startFresh] = useState(() => params.get('new') === '1');
   // Where they had got to, so going Back to the wizard (from the schedule
   // builder, say) resumes it instead of offering to create the organisation
-  // again. Not for an organisation they no longer belong to: that starts over.
-  // (The layout only renders this once their organisations have loaded.)
+  // again. (The layout only renders this once their organisations have
+  // loaded, and OrgProvider has dropped an active one they've left.)
   const progress = useFormAutosave(
     'onboarding',
     [],
@@ -722,15 +707,13 @@ export default function OnboardingPage() {
       arenaId: null,
       saved: null,
     }),
-    (p) =>
-      // A copy from before the paths numbered its steps: start over.
-      p.step in STEP_LABELS &&
-      (p.tenantId === null || tenants.some((t) => t.id === p.tenantId)) &&
-      (p.step === 'org' || p.tenantId !== null) &&
-      (p.step === 'org' || p.step === 'start' || p.path !== null) &&
-      (p.step !== 'done' || p.saved !== null),
+    (p) => !startFresh && resumable(p, activeTenantId),
   );
   const resumed = progress.initial;
+  // Drop `?new=1` once read, so a reload resumes what they start now.
+  useEffect(() => {
+    if (startFresh) router.replace('/onboarding');
+  }, [startFresh, router]);
 
   const [step, setStep] = useState<Step>(resumed.step);
   const [tenantId, setTenantId] = useState<string | null>(resumed.tenantId);
@@ -741,18 +724,22 @@ export default function OnboardingPage() {
   const [uploadProblem, setUploadProblem] = useState<string | null>(null);
   useAutosave<WizardProgress>(progress, { step, tenantId, path, venueId, arenaId, saved });
 
-  // The help button, and the currency the event and plan forms price in, go
-  // by the active organisation: keep it the one being set up.
-  useEffect(() => {
-    if (step === 'org' || !tenantId || tenantId === activeTenantId) return;
-    if (tenants.some((t) => t.id === tenantId)) setActiveTenantId(tenantId);
-  }, [step, tenantId, activeTenantId, tenants, setActiveTenantId]);
-
   // If the user already has an active tenant and somehow lands here, still let
   // them proceed (they can add more venues/arenas). Only step 1 guards exit.
   const canLeaveSafely = step !== 'org' || tenantId !== null;
   const labels = stepLabels(path);
   const current = stepIndex(path, step);
+  // Past the first step the organisation being set up is the active one
+  // (creating it switches to it; a resume is only for the active one), so the
+  // portal-wide gates and the help button read the right one.
+  const tenant = step === 'org' ? undefined : tenants.find((t) => t.id === tenantId);
+  // A new event's address starts in the organisation's own country and time.
+  const country = termsCountryFor(tenant?.country);
+  const eventStartAt: EventStartAt = venueId
+    ? { scope: 'venue', venueId }
+    : country
+      ? { scope: 'standalone', country, tz: defaultTzForCountry(country) }
+      : { scope: 'standalone' };
 
   function handleOrgDone(tenant: Tenant) {
     setTenantId(tenant.id);
@@ -796,102 +783,111 @@ export default function OnboardingPage() {
     handleLeave('/dashboard');
   }
 
+  // The rest of the portal stops at this gate too (it's outside the layout's):
+  // a resumed wizard for an organisation that owes the current Terms accepts
+  // them before going on, rather than meeting the server's refusal on save.
+  if (tenantNeedsTermsGate(tenant)) return <TermsGate />;
+
   return (
-    // The event and plan forms' docked preview sets the room it needs while it
-    // is open; the wizard moves over for it.
-    <div className="px-4 xl:pr-[calc(var(--scratch-preview-w,0px)_+_1rem)]">
-      <div className="mx-auto flex max-w-2xl flex-col gap-8 py-8">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Welcome to circls</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Let&apos;s get your account set up in a few quick steps.
-            </p>
+    <>
+      {tenant && <SuspendedBanner />}
+      {/* The event and plan forms' docked preview sets the room it needs while
+          it is open; the wizard moves over for it. */}
+      <div className="px-4 xl:pr-[calc(var(--scratch-preview-w,0px)_+_1rem)]">
+        <div className="mx-auto flex max-w-2xl flex-col gap-8 py-8">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">Welcome to circls</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Let&apos;s get your account set up in a few quick steps.
+              </p>
+            </div>
+            <Badge tone="neutral" className="shrink-0 whitespace-nowrap" label={`Step ${current + 1} of ${labels.length}`} />
           </div>
-          <Badge tone="neutral" className="shrink-0 whitespace-nowrap" label={`Step ${current + 1} of ${labels.length}`} />
-        </div>
 
-        {/* Stepper */}
-        <StepperHeader labels={labels} current={current} />
+          {/* Stepper */}
+          <StepperHeader labels={labels} current={current} />
 
-        {step !== 'org' && <CirclsHelp lead={HELP_LEAD[step]} />}
+          {step !== 'org' && <CirclsHelp lead={HELP_LEAD[step]} />}
 
-        {/* Step: the event and plan forms bring their own cards. */}
-        {step === 'event' && tenantId ? (
-          <FormAutosaveScope>
-            <NewEventForm
-              tenantId={tenantId}
-              source={null}
-              // A new organisation has no venue unless it made one here first.
-              startAt={venueId ? { scope: 'venue', venueId } : { scope: 'standalone' }}
-              onCreated={(id, photoError) => handleSaved(id, true, photoError)}
-              onBack={handleBackToStart}
-            />
-          </FormAutosaveScope>
-        ) : step === 'plan' && tenantId ? (
-          <FormAutosaveScope>
-            <NewPlanForm
-              tenantId={tenantId}
-              onCreated={(id, { draft, artworkError }) => handleSaved(id, draft, artworkError)}
-              onBack={handleBackToStart}
-            />
-          </FormAutosaveScope>
-        ) : (
-          <Card>
-            {step === 'org' && (
-              <FormAutosaveScope>
-                <Step1Org onDone={handleOrgDone} />
-              </FormAutosaveScope>
-            )}
-            {step === 'start' && <Step2StartWith onChoose={handleChoose} />}
-            {step === 'venue' && tenantId && (
-              <FormAutosaveScope>
-                <StepVenue tenantId={tenantId} onDone={handleVenueDone} onBack={handleBackToStart} />
-              </FormAutosaveScope>
-            )}
-            {step === 'arena' && (
-              <FormAutosaveScope>
-                <StepArena
-                  venueId={venueId}
-                  onDone={handleArenaDone}
-                  onSkip={() => setStep('schedule')}
-                />
-              </FormAutosaveScope>
-            )}
-            {step === 'schedule' && (
-              <StepSchedule arenaId={arenaId} onFinish={handleFinish} onAnother={handleBackToStart} />
-            )}
-            {step === 'done' && saved && (path === 'event' || path === 'membership') && (
-              <StepDone
-                path={path}
-                saved={saved}
-                uploadProblem={uploadProblem}
-                onOpen={handleLeave}
-                onFinish={handleFinish}
-                onAnother={handleBackToStart}
+          {/* Step: the event and plan forms bring their own cards. */}
+          {step === 'event' && tenantId ? (
+            <FormAutosaveScope>
+              <NewEventForm
+                tenantId={tenantId}
+                source={null}
+                // A new organisation has no venue unless it made one here first.
+                startAt={eventStartAt}
+                autosaveAs="onboarding-event"
+                onCreated={(id, photoError) => handleSaved(id, true, photoError)}
+                onBack={handleBackToStart}
               />
-            )}
-          </Card>
-        )}
-
-        {/* Persistent escape hatch (disabled until org is created) */}
-        <div className="text-center">
-          {canLeaveSafely ? (
-            <button
-              type="button"
-              onClick={handleFinish}
-              className="text-sm text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
-            >
-              Do this later — go to dashboard
-            </button>
+            </FormAutosaveScope>
+          ) : step === 'plan' && tenantId ? (
+            <FormAutosaveScope>
+              <NewPlanForm
+                tenantId={tenantId}
+                onCreated={(id, { draft, artworkError }) => handleSaved(id, draft, artworkError)}
+                onBack={handleBackToStart}
+              />
+            </FormAutosaveScope>
           ) : (
-            <span className="text-xs text-slate-300">
-              Create your organisation first to access the dashboard.
-            </span>
+            <Card>
+              {step === 'org' && (
+                <FormAutosaveScope>
+                  <Step1Org onDone={handleOrgDone} />
+                </FormAutosaveScope>
+              )}
+              {step === 'start' && <Step2StartWith onChoose={handleChoose} />}
+              {step === 'venue' && tenantId && (
+                <FormAutosaveScope>
+                  <StepVenue tenantId={tenantId} onDone={handleVenueDone} onBack={handleBackToStart} />
+                </FormAutosaveScope>
+              )}
+              {step === 'arena' && venueId && (
+                <FormAutosaveScope>
+                  <StepArena
+                    venueId={venueId}
+                    onDone={handleArenaDone}
+                    onSkip={() => setStep('schedule')}
+                  />
+                </FormAutosaveScope>
+              )}
+              {step === 'schedule' && (
+                <StepSchedule arenaId={arenaId} onFinish={handleFinish} onAnother={handleBackToStart} />
+              )}
+              {step === 'done' && saved && (path === 'event' || path === 'membership') && (
+                <StepDone
+                  path={path}
+                  saved={saved}
+                  uploadProblem={uploadProblem}
+                  onOpen={handleLeave}
+                  onFinish={handleFinish}
+                  onAnother={handleBackToStart}
+                />
+              )}
+            </Card>
           )}
+
+          {/* Persistent escape hatch (disabled until org is created) */}
+          <div className="text-center">
+            {canLeaveSafely ? (
+              <button
+                type="button"
+                onClick={handleFinish}
+                className="text-sm text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+              >
+                Do this later — go to dashboard
+              </button>
+            ) : (
+              <span className="text-xs text-slate-300">
+                Create your organisation first to access the dashboard.
+              </span>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

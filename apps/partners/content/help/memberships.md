@@ -22,7 +22,7 @@ Want a hand? **Get help from Circls** on the **New plan** page lets the Circls t
    - **Description** (optional) and **Benefits** — add structured perks with **Add benefit**: each row has a **label** (e.g. *Priority booking*) and an optional **detail** line. These render as a clean list on the consumer plan page when the tier is selected.
 
    Use **+ Add tier** for more tiers (up to 20) and **Remove tier** to drop one. A plan needs at least one tier.
-4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the form. It uploads automatically when the plan is created.
+4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the form. It uploads automatically when the plan is created. If it fails to upload, the plan is still created: the page says so and links to it, where you can add the artwork again.
 5. Click **Create plan**.
 
 Artwork can also be added or changed later while editing the plan (see below).

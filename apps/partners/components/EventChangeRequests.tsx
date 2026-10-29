@@ -12,6 +12,7 @@ import { useVenues } from '@/lib/api/queries';
 import { useCurrency } from '@/lib/currency';
 import { useCan } from '@/lib/use_can';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { localToTzIso } from '@/lib/time';
 import type { AddressSuggestion } from '@/lib/api/geocode';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
@@ -50,26 +51,6 @@ function friendlyFields(patch: EventChangeRequestInput): string[] {
 function sameAddress(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   return [...keys].every((k) => a[k] === b[k]);
-}
-
-/** Convert a `datetime-local` value (interpreted in `tzName`) to UTC ISO. */
-function localToTzIso(local: string, tzName: string): string {
-  if (!local) return '';
-  const asIfUtc = new Date(`${local}:00Z`);
-  const wall = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tzName,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(asIfUtc);
-  const [datePart, timePart] = wall.split(', ');
-  const wallIso = `${datePart}T${timePart}Z`;
-  const offsetMs = new Date(wallIso).getTime() - asIfUtc.getTime();
-  return new Date(asIfUtc.getTime() - offsetMs).toISOString();
 }
 
 /** Convert a UTC ISO string into a `datetime-local` value in `tzName`. */
