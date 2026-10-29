@@ -62,6 +62,7 @@ import {
 } from '@/components/MaxPerUserField';
 import type { PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
 import { useTimezone } from '@/lib/timezone_context';
+import { localToTzIso } from '@/lib/time';
 import { BackLink, Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
 /** Display a UTC instant in the given zone (the event's own tz, or the
@@ -77,30 +78,6 @@ function fmt(iso: string, tz: string) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(iso));
-}
-
-/**
- * Convert a `<input type="datetime-local">` value (interpreted in `tzName`) into
- * a UTC ISO string. Mirrors the venue event pages so edits round-trip through
- * the same tz convention.
- */
-function localToTzIso(local: string, tzName: string): string {
-  if (!local) return '';
-  const asIfUtc = new Date(`${local}:00Z`);
-  const wall = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tzName,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(asIfUtc);
-  const [datePart, timePart] = wall.split(', ');
-  const wallIso = `${datePart}T${timePart}Z`;
-  const offsetMs = new Date(wallIso).getTime() - asIfUtc.getTime();
-  return new Date(asIfUtc.getTime() - offsetMs).toISOString();
 }
 
 /** Convert a UTC ISO string into a `datetime-local` value in `tzName`. */

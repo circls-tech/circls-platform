@@ -5,7 +5,7 @@
 // The portal-wide "viewing timezone" lives in `timezone_context.tsx`; these
 // functions take the resolved tz explicitly so they stay testable and usable
 // outside React. Nothing here changes how times are stored or how events are
-// scheduled — display only.
+// scheduled — display only, apart from localToTzIso.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** Fallback tz used during SSR or when the runtime can't resolve one. */
@@ -200,6 +200,23 @@ function startOfCalendarDateInTz(ymd: string, tz: string): number {
   const wallAsUtc = Date.UTC(y, m - 1, d);
   const firstPass = wallAsUtc - tzOffsetMsAt(wallAsUtc, tz);
   return wallAsUtc - tzOffsetMsAt(firstPass, tz);
+}
+
+/**
+ * A `datetime-local` value ('YYYY-MM-DDTHH:mm') read as `tz`'s wall clock, as
+ * a UTC ISO string ('' stays ''). The event forms send what they're given
+ * through this, so unlike the rest of this file it does decide stored times.
+ *
+ * The same two passes as startOfCalendarDateInTz. The single pass the event
+ * forms used to share sampled the offset at the wall time read as UTC, which
+ * for a zone west of UTC is hours away: on a US spring-forward day, 3:30 am
+ * came out as 4:30 am.
+ */
+export function localToTzIso(local: string, tz: string): string {
+  if (!local) return '';
+  const wallAsUtc = new Date(`${local}:00Z`).getTime();
+  const firstPass = wallAsUtc - tzOffsetMsAt(wallAsUtc, tz);
+  return new Date(wallAsUtc - tzOffsetMsAt(firstPass, tz)).toISOString();
 }
 
 /**

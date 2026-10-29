@@ -23,10 +23,10 @@ export interface HelpArticleMeta {
 export const HELP_ARTICLES: HelpArticleMeta[] = [
   {
     slug: 'onboarding',
-    title: 'Getting started: create your organisation and first venue',
+    title: 'Getting started: create your organisation and set up your first listing',
     category: 'Setup',
     summary:
-      'A step-by-step walkthrough of the onboarding wizard — creating an organisation, adding a venue, setting up arenas, and releasing your first slots.',
+      'A step-by-step walkthrough of the onboarding wizard — creating an organisation, then starting with an event, a membership plan or a venue (with its arenas and first slots), and getting help from Circls along the way.',
     quickLink: true,
     order: 1,
   },

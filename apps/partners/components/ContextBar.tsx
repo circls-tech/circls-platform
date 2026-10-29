@@ -250,8 +250,9 @@ function OrgSwitcher({
             Organisations asking for help
           </button>
         )}
+        {/* `new`: a wizard left half-done for another org mustn't stand in the way. */}
         <Link
-          href="/onboarding"
+          href="/onboarding?new=1"
           onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
           className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
         >

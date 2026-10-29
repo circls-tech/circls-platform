@@ -63,7 +63,7 @@ Circls can suspend an organisation — for example over an unpaid bill or a poli
 
 ## Getting help from Circls
 
-If you'd like a hand — say you run the organisation on your own and want Circls to set up an event you've planned together — click **Get help from Circls**. You'll find it on the **New event** and **New plan** pages, on **Venues**, and here on the **Team** page. Add a note about what you need if you like; it goes to the Circls team along with your request.
+If you'd like a hand — say you run the organisation on your own and want Circls to set up an event you've planned together — click **Get help from Circls**. You'll find it in the onboarding wizard once your organisation is created, on the **New event** and **New plan** pages, on **Venues**, and here on the **Team** page. Add a note about what you need if you like; it goes to the Circls team along with your request.
 
 This lets Circls's team into your partner portal for **3 hours**. Whoever from Circls helps you opens your organisation with their own login — no invitation needed — and gets none of your organisation's emails. While Circls has access:
 

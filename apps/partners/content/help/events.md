@@ -15,7 +15,7 @@ Want a hand? **Get help from Circls** on the **New event** page lets the Circls 
    - **Description** (optional).
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
    - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
-   - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
+   - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. If one fails to upload, the event is still created: the page says so and links to it, where you can add the photo again. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
 4. Click **Save draft**. Only the **name** is needed to save — the dates, the location and the ticket tiers can follow.
 
 Before you do, **Preview** (next to **Create event**, available once the event has a name and a start) shows the event's page on the customer site exactly as the form stands — name, description, date, venue or address, photos and ticket tiers — and keeps up with every edit you make. Nothing is created until you press **Save draft**; on a wide screen the preview sits beside the form, on a narrower one it opens over it and **Back to the form** returns you to editing. See [Previewing as a customer](#previewing-as-a-customer) for what the page shows.

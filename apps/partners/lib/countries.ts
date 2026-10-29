@@ -1,3 +1,5 @@
+import { FALLBACK_TZ, browserTz, canonicalTz } from '@/lib/time';
+
 /**
  * Countries the product serves. Must stay in sync with the API geocoder's
  * recognised countries (apps/api/src/lib/geocoding/gazetteer.ts) — an unlisted
@@ -14,3 +16,15 @@ export const COUNTRY_CENTROIDS: Record<string, { lat: number; lng: number }> = {
   India: { lat: 22.9734, lng: 78.6569 },
   USA: { lat: 39.8283, lng: -98.5795 },
 };
+
+/**
+ * The timezone a listing's address in `country` starts on before anyone
+ * picks one: India has just the one; for the USA, the browser's own zone when
+ * it's American (the partner is most likely where their first event is), else
+ * Eastern.
+ */
+export function defaultTzForCountry(country: (typeof SERVED_COUNTRIES)[number]): string {
+  if (country === 'India') return FALLBACK_TZ;
+  const tz = canonicalTz(browserTz());
+  return tz.startsWith('America/') || tz === 'Pacific/Honolulu' ? tz : 'America/New_York';
+}
