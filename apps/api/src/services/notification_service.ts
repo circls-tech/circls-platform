@@ -173,11 +173,13 @@ export async function partnerRecipients(tenantId: string): Promise<PartnerRecipi
 }
 
 /** Email every partner recipient of a tenant, each greeted by name, unless
- *  the org switched this kind of email off. Returns how many were addressed. */
+ *  the org switched this kind of email off. Returns how many were addressed.
+ *  `queue` leaves the sending to the worker (see DispatchInput.queue). */
 async function notifyPartner(
   tenantId: string,
   templateKey: string,
   payload: Record<string, unknown> | (() => Promise<Record<string, unknown>>),
+  opts: { queue?: boolean } = {},
 ): Promise<number> {
   if (!(await partnerWantsEmail(tenantId, templateKey))) return 0;
   const recipients = await partnerRecipients(tenantId);
@@ -191,6 +193,7 @@ async function notifyPartner(
       recipient: r.email,
       templateKey,
       payload: { ...body, greetingName: r.greetingName },
+      queue: opts.queue,
     });
   }
   return recipients.length;
@@ -543,6 +546,8 @@ const QUESTION_EXCERPT_LEN = 280;
  * org's other emails). The Circls platform tenant (support questions with no
  * booking) keeps to its contact email — skipped when unset — since its owners
  * are Circls staff, not an inbox. `messageId` null ⇒ the root message.
+ * Queued for the worker: the customer's ask or reply request doesn't wait on
+ * one send per owner.
  */
 async function notifyQuestionOrg(
   threadId: string,
@@ -584,7 +589,7 @@ async function notifyQuestionOrg(
     portalUrl: `${env.PARTNERS_BASE_URL}/questions/${threadId}`,
   };
   if (!r['is_platform']) {
-    await notifyPartner(tenantId, templateKey, payload);
+    await notifyPartner(tenantId, templateKey, payload, { queue: true });
     return;
   }
 
@@ -597,6 +602,7 @@ async function notifyQuestionOrg(
     recipient: contactEmail,
     templateKey,
     payload: { ...payload, greetingName: (r['tenant_name'] as string | null) ?? 'there' },
+    queue: true,
   });
 }
 

@@ -60,6 +60,7 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
   let platformTenantId: string;
   let ownerUserId: string;
   let askerUserId: string;
+  let otherUserId: string;
   let venueId: string;
   let arenaId: string;
   const ownerEmail = `owner-${Date.now()}@circls.test`;
@@ -77,6 +78,11 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
       .values({ firebaseUid: `notif-asker-${Date.now()}`, displayName: 'Asha Asker' })
       .returning();
     askerUserId = asker!.id;
+    const [other] = await db
+      .insert(users)
+      .values({ firebaseUid: `notif-other-${Date.now()}`, displayName: 'Omar Other' })
+      .returning();
+    otherUserId = other!.id;
     const [t] = await db
       .insert(tenants)
       .values({ name: 'Admin Alert Co', slug: `admin-alert-${Date.now()}`, country: 'India' })
@@ -113,7 +119,7 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
     await db.execute(sql`delete from venues where id = ${venueId}`);
     await db.execute(sql`delete from tenant_members where tenant_id in ${ids}`);
     await db.execute(sql`delete from tenants where id in ${ids}`);
-    await db.execute(sql`delete from users where id in (${ownerUserId}, ${askerUserId})`);
+    await db.execute(sql`delete from users where id in (${ownerUserId}, ${askerUserId}, ${otherUserId})`);
     await closeDb();
   });
 
@@ -150,14 +156,14 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
       .from(notifications)
       .where(sql`tenant_id = ${tenantId} and template_key = ${key} and ${where}`);
 
-  async function askQuestion(onTenant: string, body: string) {
+  async function askQuestion(onTenant: string, body: string, visibility: 'public' | 'private' = 'private') {
     const [t] = await db
       .insert(questionThreads)
       .values({
         tenantId: onTenant,
         subjectType: onTenant === tenantId ? 'arena' : 'general',
         arenaId: onTenant === tenantId ? arenaId : null,
-        visibility: 'private',
+        visibility,
         authorUserId: askerUserId,
       })
       .returning();
@@ -172,6 +178,8 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
     expect(rows).toHaveLength(1);
     expect(rows[0]!.recipient).toBe(ownerEmail);
     expect(rows[0]!.payload).toMatchObject({ greetingName: 'Olivia', subjectName: 'Court A', excerpt: 'Is there parking?' });
+    // Queued for the worker, not sent inside the asker's request.
+    expect(rows[0]!.status).toBe('pending');
 
     // The Circls tenant keeps to its contact email: none, so no email.
     const general = await askQuestion(platformTenantId, 'How do refunds work?');
@@ -196,15 +204,20 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
   });
 
   it('the asker following up emails the org once per org reply', async () => {
-    const threadId = await askQuestion(tenantId, 'Can I bring a friend?');
+    const threadId = await askQuestion(tenantId, 'Can I bring a friend?', 'public');
     const followUps = () =>
       db.select().from(notifications).where(sql`template_key = 'question.followed_up' and payload->>'portalUrl' like ${'%' + threadId}`);
 
     // Before the org has replied, the question email already covers it.
     await addConsumerMessage({ threadId, userId: askerUserId, body: 'Also, is there a changing room?' });
+    await addConsumerMessage({ threadId, userId: otherUserId, body: 'Same question here.' });
     expect(await followUps()).toHaveLength(0);
 
     await addOrgMessage({ tenantId, threadId, userId: ownerUserId, body: 'Yes to both.' });
+    // Another customer writing after the org's reply is not a follow-up.
+    await addConsumerMessage({ threadId, userId: otherUserId, body: 'Thanks!' });
+    expect(await followUps()).toHaveLength(0);
+
     await addConsumerMessage({ threadId, userId: askerUserId, body: 'Great, and towels?' });
     const rows = await followUps();
     expect(rows.map((r) => r.recipient)).toEqual(['front-desk@circls.test']);
@@ -212,6 +225,12 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
 
     // A second follow-up before the org replies again sends nothing more.
     await addConsumerMessage({ threadId, userId: askerUserId, body: 'Or should I bring my own?' });
+    expect(await followUps()).toHaveLength(1);
+
+    // An org reply Circls has since hidden doesn't count as a reply.
+    const hidden = await addOrgMessage({ tenantId, threadId, userId: ownerUserId, body: 'Bring your own.' });
+    await db.update(questionMessages).set({ hiddenAt: new Date(), hiddenByKind: 'circls' }).where(sql`id = ${hidden.message.id}`);
+    await addConsumerMessage({ threadId, userId: askerUserId, body: 'Sorry, what did you say?' });
     expect(await followUps()).toHaveLength(1);
   });
 

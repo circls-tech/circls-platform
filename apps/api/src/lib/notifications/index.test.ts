@@ -70,6 +70,11 @@ describe.skipIf(!runIntegration)('notifications dispatcher integration', () => {
   });
 
   it('processPending picks up due rows and skips future-scheduled ones', async () => {
+    // Drain rows other files queued (e.g. question emails) first: the batch
+    // takes the oldest, so a backlog would crowd out the row seeded here.
+    while ((await getNotifications().processPending(100)) > 0) {
+      // each pass moves its rows out of pending (sent or failed)
+    }
     // Seed two rows: one due now (no scheduledFor) and one scheduled in the future.
     const [dueRow] = await db
       .insert(notifications)

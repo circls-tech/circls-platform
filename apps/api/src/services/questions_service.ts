@@ -1142,12 +1142,14 @@ async function insertReply(
     const next = nextStatusOnReply(locked.status, kind, isThreadAuthor);
     // Has the org (or Circls) replied since the asker last wrote? The asker
     // always has the root message, so a staff reply after it is a new one.
+    // A reply Circls has since hidden doesn't count.
     let followsStaffReply = false;
     if (isFollowUp) {
       const [seen] = await tx
         .select({
           followsStaffReply: sql<boolean>`coalesce(
-            max(${questionMessages.createdAt}) filter (where ${questionMessages.authorKind} <> 'consumer')
+            max(${questionMessages.createdAt})
+              filter (where ${questionMessages.authorKind} <> 'consumer' and ${questionMessages.hiddenAt} is null)
               > max(${questionMessages.createdAt}) filter (where ${questionMessages.authorUserId} = ${userId}),
             false)`,
         })
@@ -1157,7 +1159,16 @@ async function insertReply(
     }
     const [m] = await tx
       .insert(questionMessages)
-      .values({ threadId: t.id, authorUserId: userId, authorKind: kind, body })
+      .values({
+        threadId: t.id,
+        authorUserId: userId,
+        authorKind: kind,
+        body,
+        // Stamped while holding the thread lock (not now(), the transaction's
+        // start), so replies are ordered as they were written — which the
+        // follow-up check above relies on.
+        createdAt: sql`clock_timestamp()`,
+      })
       .returning();
     if (!m) throw new Error('question_message_insert_failed');
     await tx
