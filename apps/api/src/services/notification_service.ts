@@ -145,9 +145,8 @@ export async function partnerWantsEmail(tenantId: string, templateKey: string): 
 }
 
 /**
- * Where an org's email goes: its `contact_email` when set (the same address
- * the question alerts use), else the account email of every owner. Deleted
- * accounts are skipped. Empty ⇒ nothing is sent.
+ * Where an org's email goes: its `contact_email` when set, else the account
+ * email of every owner. Deleted accounts are skipped. Empty ⇒ nothing is sent.
  */
 export async function partnerRecipients(tenantId: string): Promise<PartnerRecipient[]> {
   const rows = (await db.execute<Record<string, unknown>>(sql`
@@ -539,58 +538,89 @@ export async function notifyCirclsSupportRequested(grantId: string): Promise<voi
 const QUESTION_EXCERPT_LEN = 280;
 
 /**
- * Email the owning org about a brand-new question thread. Recipient is the
- * tenant's `contact_email` — silently skipped when unset. Called via the
- * best-effort `onQuestionAsked` hook (never throws through to the write path).
+ * Email the org that owns a question thread about one of the asker's
+ * messages: its `contact_email`, else every owner (partnerRecipients, like the
+ * org's other emails). The Circls platform tenant (support questions with no
+ * booking) keeps to its contact email — skipped when unset — since its owners
+ * are Circls staff, not an inbox. `messageId` null ⇒ the root message.
  */
-export async function notifyQuestionAsked(threadId: string): Promise<void> {
+async function notifyQuestionOrg(
+  threadId: string,
+  templateKey: 'question.asked' | 'question.followed_up',
+  messageId: string | null,
+): Promise<void> {
+  const message = messageId
+    ? sql`select qm.body from question_messages qm where qm.id = ${messageId} and qm.thread_id = t.id`
+    : sql`select qm.body from question_messages qm where qm.thread_id = t.id
+           order by qm.created_at asc, qm.id asc limit 1`;
   const res = await db.execute<Record<string, unknown>>(sql`
     select t.tenant_id                        as tenant_id,
            t.visibility                       as visibility,
+           tn.name                            as tenant_name,
+           tn.is_platform                     as is_platform,
            tn.contact_email                   as contact_email,
            coalesce(e.name, a.name, m.name)   as subject_name,
-           root.body                          as root_body
+           msg.body                           as body
       from question_threads t
       join tenants tn on tn.id = t.tenant_id
       left join events e on e.id = t.event_id
       left join arenas a on a.id = t.arena_id
       left join memberships m on m.id = t.membership_id
-      join lateral (
-        select qm.body from question_messages qm
-         where qm.thread_id = t.id
-         order by qm.created_at asc, qm.id asc limit 1
-      ) root on true
+      join lateral (${message}) msg on true
      where t.id = ${threadId}
      limit 1
   `);
   const arr = res as unknown as Record<string, unknown>[];
   const r = arr[0];
   if (!r) {
-    logger.warn({ threadId }, 'notify_question_asked_missing');
+    logger.warn({ threadId, messageId, templateKey }, 'notify_question_org_missing');
     return;
   }
+  const tenantId = r['tenant_id'] as string;
+  const payload = {
+    subjectName: (r['subject_name'] as string | null) ?? 'your listing',
+    excerpt: String(r['body'] ?? '').slice(0, QUESTION_EXCERPT_LEN),
+    visibility: r['visibility'] as string,
+    portalUrl: `${env.PARTNERS_BASE_URL}/questions/${threadId}`,
+  };
+  if (!r['is_platform']) {
+    await notifyPartner(tenantId, templateKey, payload);
+    return;
+  }
+
   const contactEmail = (r['contact_email'] as string | null) ?? null;
   if (!contactEmail || !isEmail(contactEmail)) return;
-
   await safeDispatch({
-    tenantId: r['tenant_id'] as string,
+    tenantId,
     userId: null,
     channel: 'email' as NotificationChannel,
     recipient: contactEmail,
-    templateKey: 'question.asked',
-    payload: {
-      subjectName: (r['subject_name'] as string | null) ?? 'your listing',
-      excerpt: String(r['root_body'] ?? '').slice(0, QUESTION_EXCERPT_LEN),
-      visibility: r['visibility'] as string,
-      portalUrl: `${env.PARTNERS_BASE_URL}/questions/${threadId}`,
-    },
+    templateKey,
+    payload: { ...payload, greetingName: (r['tenant_name'] as string | null) ?? 'there' },
   });
 }
 
 /**
+ * Email the owning org about a brand-new question thread. Called via the
+ * best-effort `onQuestionAsked` hook (never throws through to the write path).
+ */
+export async function notifyQuestionAsked(threadId: string): Promise<void> {
+  await notifyQuestionOrg(threadId, 'question.asked', null);
+}
+
+/**
+ * Email the owning org that the asker followed up on their thread. Called via
+ * the best-effort `onQuestionFollowedUp` hook.
+ */
+export async function notifyQuestionFollowedUp(threadId: string, messageId: string): Promise<void> {
+  await notifyQuestionOrg(threadId, 'question.followed_up', messageId);
+}
+
+/**
  * Email the thread author when the org or the Circls team replies. Recipient
- * is the author's `users.email` — silently skipped when unset. Consumer
- * replies on public threads never email anyone (spec §4).
+ * is the author's `users.email` — silently skipped when unset. Other
+ * customers' replies on public threads never email anyone (spec §4); the
+ * asker's own follow-ups email the org (notifyQuestionFollowedUp).
  */
 export async function notifyQuestionReplied(threadId: string, messageId: string): Promise<void> {
   const res = await db.execute<Record<string, unknown>>(sql`

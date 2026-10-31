@@ -25,7 +25,8 @@ Each switch saves straight away and applies to everyone who'd get that email. Bo
 | **New booking** | A customer books one of your arenas, events or membership plans through circls (the website, the app, a partner site, or your own website via the API). Bookings your team enters at the desk don't echo back to you. | Organisation contact (see above) |
 | **Listing approved** | The circls team approves a venue, arena, event or membership plan you submitted. It's live for customers from that moment. | Organisation contact |
 | **Listing needs changes** | The circls team can't approve a listing. The email lists what to fix, and **Edit & resubmit** opens the listing. Make the fixes there and press **Submit again** — it goes back to review, usually within 24 hours. You don't need to duplicate or re-add it (see [fixing a rejected venue or arena](/help/venues#fixing-a-rejected-venue-or-arena)). | Organisation contact |
-| **New question** | A customer asks a question on one of your listings — see [Answering customer questions](/help/questions). | Organisation contact email only (nothing is sent if it's empty) |
+| **New question** | A customer asks a question on one of your listings — see [Answering customer questions](/help/questions). | Organisation contact |
+| **Question follow-up** | The customer who asked writes back after your team (or circls) replied. Several messages before your next reply send one email. | Organisation contact |
 | **Team invitation** | Someone on your team invites a person to join your organisation. | The invited person |
 
 ## What your customers receive

@@ -84,8 +84,9 @@ Question access follows your [team roles](/help/team):
 
 ## Email notifications
 
-- When a customer asks a new question, an email goes to your **organisation's contact email** (set in [your organisation profile](/help/organisation) — no email is sent if it's empty).
-- When you reply, the customer who asked is notified by email. Replies from other customers on public threads don't trigger emails.
+- When a customer asks a new question, an email goes to your **organisation's contact email** (set in [your organisation profile](/help/organisation)). If that's empty, it goes to the account email of each **Owner** instead — see [Emails circls sends you](/help/emails).
+- When you reply, the customer who asked is notified by email.
+- When that customer writes back after your reply, you get a **follow-up** email, sent to the same place. If they send several messages before you reply again, you get one email; the thread shows them all. Replies from other customers on public threads don't trigger emails.
 
 ## Tips
 

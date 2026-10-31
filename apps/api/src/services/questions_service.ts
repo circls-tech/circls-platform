@@ -33,7 +33,7 @@ import { myBookingsCondition } from './booking_ownership.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, Conflict, Forbidden, NotFound, RateLimit } from '../lib/errors.js';
 import { assertNotObjectionable } from '../lib/objectionable.js';
-import { onQuestionAsked, onQuestionReplied } from './notification_hooks.js';
+import { onQuestionAsked, onQuestionFollowedUp, onQuestionReplied } from './notification_hooks.js';
 import {
   applyAuthorStatusPatch,
   nextStatusOnReply,
@@ -1120,8 +1120,9 @@ async function insertReply(
   opts: { staff: boolean },
 ): Promise<AddMessageResult> {
   const isThreadAuthor = userId === t.authorUserId;
+  const isFollowUp = kind === 'consumer' && isThreadAuthor;
 
-  const { message, newStatus } = await db.transaction(async (tx) => {
+  const { message, newStatus, followsStaffReply } = await db.transaction(async (tx) => {
     // Re-read under lock: the callers' closed pre-check is a fast path that
     // races with a concurrent close/reply between the check and this write.
     // The transition is computed from the locked row, never the stale one.
@@ -1139,6 +1140,21 @@ async function insertReply(
       throw new Conflict('This question is closed', 'question_closed');
     }
     const next = nextStatusOnReply(locked.status, kind, isThreadAuthor);
+    // Has the org (or Circls) replied since the asker last wrote? The asker
+    // always has the root message, so a staff reply after it is a new one.
+    let followsStaffReply = false;
+    if (isFollowUp) {
+      const [seen] = await tx
+        .select({
+          followsStaffReply: sql<boolean>`coalesce(
+            max(${questionMessages.createdAt}) filter (where ${questionMessages.authorKind} <> 'consumer')
+              > max(${questionMessages.createdAt}) filter (where ${questionMessages.authorUserId} = ${userId}),
+            false)`,
+        })
+        .from(questionMessages)
+        .where(eq(questionMessages.threadId, t.id));
+      followsStaffReply = Boolean(seen?.followsStaffReply);
+    }
     const [m] = await tx
       .insert(questionMessages)
       .values({ threadId: t.id, authorUserId: userId, authorKind: kind, body })
@@ -1152,13 +1168,20 @@ async function insertReply(
         status: next,
       })
       .where(eq(questionThreads.id, t.id));
-    return { message: m, newStatus: next };
+    return { message: m, newStatus: next, followsStaffReply };
   });
 
   // Org/Circls replies email the thread author (best-effort; no email when the
   // author replies to their own thread).
   if ((kind === 'org' || kind === 'circls') && !isThreadAuthor) {
     await onQuestionReplied(t.id, message.id);
+  }
+  // The asker writing again emails the org, once per org/Circls reply: a run
+  // of follow-ups is one email (the inbox shows them all), so the asker's own
+  // message allowance can't turn into as many emails. Other customers'
+  // replies on public threads never email the org.
+  if (isFollowUp && followsStaffReply) {
+    await onQuestionFollowedUp(t.id, message.id);
   }
 
   const tenantName = await loadTenantName(t.tenantId);

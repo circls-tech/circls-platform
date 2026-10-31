@@ -17,7 +17,7 @@ Use **Upload logo** to add your brand logo. Accepted formats are **JPEG, PNG and
 
 Add a public **contact email** and **phone**, your **website**, and any social handles or URLs (**Instagram**, **Facebook**, **X**, **YouTube**). Leave any field blank to omit it.
 
-The **contact email** is also where circls sends your new-booking and listing-review emails — leave it blank and those go to each Owner's account email instead — and the only place customer-question emails go. You can switch booking and review emails off in **Settings → Notifications**; see [Emails circls sends you](/help/emails).
+The **contact email** is also where circls sends your new-booking, listing-review and customer-question emails — leave it blank and those go to each Owner's account email instead. You can switch booking and review emails off in **Settings → Notifications**; see [Emails circls sends you](/help/emails).
 
 ## Address
 

@@ -13,6 +13,8 @@ import {
   arenas,
   bookings,
   notifications,
+  questionMessages,
+  questionThreads,
   tenantMembers,
   tenants,
   users,
@@ -27,9 +29,11 @@ import {
   notifyListingReviewed,
   notifyListingSubmitted,
   notifyOrgCreated,
+  notifyQuestionAsked,
   partnerEmailKind,
   partnerRecipients,
 } from './notification_service.js';
+import { addConsumerMessage, addOrgMessage } from './questions_service.js';
 import { updateTenantProfile } from './tenant_service.js';
 import { resolveEmailPrefs } from '../db/schema/tenants.js';
 
@@ -53,7 +57,9 @@ const runIntegration = Boolean(process.env.RUN_INTEGRATION);
 
 describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', () => {
   let tenantId: string;
+  let platformTenantId: string;
   let ownerUserId: string;
+  let askerUserId: string;
   let venueId: string;
   let arenaId: string;
   const ownerEmail = `owner-${Date.now()}@circls.test`;
@@ -66,12 +72,25 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
       .values({ firebaseUid: `notif-admin-${Date.now()}`, email: ownerEmail, displayName: 'Olivia Owner' })
       .returning();
     ownerUserId = u!.id;
+    const [asker] = await db
+      .insert(users)
+      .values({ firebaseUid: `notif-asker-${Date.now()}`, displayName: 'Asha Asker' })
+      .returning();
+    askerUserId = asker!.id;
     const [t] = await db
       .insert(tenants)
       .values({ name: 'Admin Alert Co', slug: `admin-alert-${Date.now()}`, country: 'India' })
       .returning();
     tenantId = t!.id;
     await db.insert(tenantMembers).values({ userId: ownerUserId, tenantId, role: 'owner' });
+    // A stand-in Circls tenant (random slug, so nothing else resolves it as
+    // the real one) with the same owner and no contact email.
+    const [p] = await db
+      .insert(tenants)
+      .values({ name: 'Circls Test', slug: `circls-test-${Date.now()}`, country: 'India', isPlatform: true })
+      .returning();
+    platformTenantId = p!.id;
+    await db.insert(tenantMembers).values({ userId: ownerUserId, tenantId: platformTenantId, role: 'owner' });
     const [v] = await db
       .insert(venues)
       .values({ tenantId, name: 'Alert Arena', tzName: 'Asia/Kolkata' })
@@ -82,14 +101,19 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from notifications where tenant_id = ${tenantId}`);
+    const ids = sql`(${tenantId}, ${platformTenantId})`;
+    await db.execute(sql`delete from notifications where tenant_id in ${ids}`);
     await db.execute(sql`delete from audit_log where tenant_id = ${tenantId}`);
+    await db.execute(
+      sql`delete from question_messages where thread_id in (select id from question_threads where tenant_id in ${ids})`,
+    );
+    await db.execute(sql`delete from question_threads where tenant_id in ${ids}`);
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from arenas where id = ${arenaId}`);
     await db.execute(sql`delete from venues where id = ${venueId}`);
-    await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
-    await db.execute(sql`delete from tenants where id = ${tenantId}`);
-    await db.execute(sql`delete from users where id = ${ownerUserId}`);
+    await db.execute(sql`delete from tenant_members where tenant_id in ${ids}`);
+    await db.execute(sql`delete from tenants where id in ${ids}`);
+    await db.execute(sql`delete from users where id in (${ownerUserId}, ${askerUserId})`);
     await closeDb();
   });
 
@@ -126,12 +150,69 @@ describe.skipIf(!runIntegration)('partner + admin-team emails (integration)', ()
       .from(notifications)
       .where(sql`tenant_id = ${tenantId} and template_key = ${key} and ${where}`);
 
+  async function askQuestion(onTenant: string, body: string) {
+    const [t] = await db
+      .insert(questionThreads)
+      .values({
+        tenantId: onTenant,
+        subjectType: onTenant === tenantId ? 'arena' : 'general',
+        arenaId: onTenant === tenantId ? arenaId : null,
+        visibility: 'private',
+        authorUserId: askerUserId,
+      })
+      .returning();
+    await db.insert(questionMessages).values({ threadId: t!.id, authorUserId: askerUserId, authorKind: 'consumer', body });
+    await notifyQuestionAsked(t!.id);
+    return t!.id;
+  }
+
+  it('notifyQuestionAsked emails the owners when the org has no contact email', async () => {
+    const threadId = await askQuestion(tenantId, 'Is there parking?');
+    const rows = await db.select().from(notifications).where(sql`template_key = 'question.asked' and payload->>'portalUrl' like ${'%' + threadId}`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.recipient).toBe(ownerEmail);
+    expect(rows[0]!.payload).toMatchObject({ greetingName: 'Olivia', subjectName: 'Court A', excerpt: 'Is there parking?' });
+
+    // The Circls tenant keeps to its contact email: none, so no email.
+    const general = await askQuestion(platformTenantId, 'How do refunds work?');
+    expect(
+      await db.select().from(notifications).where(sql`template_key = 'question.asked' and payload->>'portalUrl' like ${'%' + general}`),
+    ).toHaveLength(0);
+  });
+
   it('partnerRecipients prefers contact_email and falls back to the owners, greeted by name', async () => {
     expect(await partnerRecipients(tenantId)).toEqual([{ email: ownerEmail, greetingName: 'Olivia' }]);
     await db.update(tenants).set({ contactEmail: 'front-desk@circls.test' }).where(sql`id = ${tenantId}`);
     expect(await partnerRecipients(tenantId)).toEqual([
       { email: 'front-desk@circls.test', greetingName: 'Admin Alert Co' },
     ]);
+  });
+
+  it('notifyQuestionAsked emails only the contact email once it is set', async () => {
+    const threadId = await askQuestion(tenantId, 'Do you rent rackets?');
+    const rows = await db.select().from(notifications).where(sql`template_key = 'question.asked' and payload->>'portalUrl' like ${'%' + threadId}`);
+    expect(rows.map((r) => r.recipient)).toEqual(['front-desk@circls.test']);
+    expect(rows[0]!.payload).toMatchObject({ greetingName: 'Admin Alert Co' });
+  });
+
+  it('the asker following up emails the org once per org reply', async () => {
+    const threadId = await askQuestion(tenantId, 'Can I bring a friend?');
+    const followUps = () =>
+      db.select().from(notifications).where(sql`template_key = 'question.followed_up' and payload->>'portalUrl' like ${'%' + threadId}`);
+
+    // Before the org has replied, the question email already covers it.
+    await addConsumerMessage({ threadId, userId: askerUserId, body: 'Also, is there a changing room?' });
+    expect(await followUps()).toHaveLength(0);
+
+    await addOrgMessage({ tenantId, threadId, userId: ownerUserId, body: 'Yes to both.' });
+    await addConsumerMessage({ threadId, userId: askerUserId, body: 'Great, and towels?' });
+    const rows = await followUps();
+    expect(rows.map((r) => r.recipient)).toEqual(['front-desk@circls.test']);
+    expect(rows[0]!.payload).toMatchObject({ excerpt: 'Great, and towels?', subjectName: 'Court A' });
+
+    // A second follow-up before the org replies again sends nothing more.
+    await addConsumerMessage({ threadId, userId: askerUserId, body: 'Or should I bring my own?' });
+    expect(await followUps()).toHaveLength(1);
   });
 
   it('notifyBookingConfirmed emails the org about a customer booking, not a desk booking', async () => {
