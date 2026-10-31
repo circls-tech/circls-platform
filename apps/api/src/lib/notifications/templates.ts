@@ -62,7 +62,9 @@ interface TemplateDef {
  *                        booking.refunded also has amount
  *   otp.login          → code
  *   tenant.invitation  → tenantName, inviterName, role, inviteUrl, expiresAtIso
- *   question.asked     → subjectName, excerpt, visibility, portalUrl
+ *   question.asked,
+ *   question.followed_up → subjectName, excerpt, visibility, portalUrl,
+ *                        greetingName
  *   question.replied   → subjectName, excerpt, authorName, link
  *   admin.daily_digest → dateLabel, summary (pre-rendered text)
  *
@@ -153,8 +155,22 @@ const TEMPLATES: Record<string, TemplateDef> = {
     email: {
       subject: 'New question on {{subjectName}}',
       body:
-        'Hello,\n\n' +
+        'Hi {{greetingName}},\n\n' +
         'A customer asked a new {{visibility}} question on {{subjectName}}:\n\n' +
+        '"{{excerpt}}"\n\n' +
+        'Reply from your Questions inbox:\n' +
+        '{{portalUrl}}\n\n' +
+        '— Circls\n',
+    },
+  },
+
+  // The asker wrote again after the org (or Circls) replied — once per reply.
+  'question.followed_up': {
+    email: {
+      subject: 'New follow-up on {{subjectName}}',
+      body:
+        'Hi {{greetingName}},\n\n' +
+        'The customer who asked about {{subjectName}} followed up on their question:\n\n' +
         '"{{excerpt}}"\n\n' +
         'Reply from your Questions inbox:\n' +
         '{{portalUrl}}\n\n' +

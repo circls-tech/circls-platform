@@ -725,12 +725,21 @@ describe.skipIf(!runIntegration)('questions threads', () => {
     expect(msgs.some((m) => m.authorKind === 'circls')).toBe(true);
   });
 
-  it('question.asked and question.replied ledger rows were written', async () => {
+  it('question.asked, question.followed_up and question.replied ledger rows were written', async () => {
     const asked = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM notifications
       WHERE template_key = 'question.asked' AND recipient = ${'org_qt_' + RUN + '@x.com'}
     `);
     expect(firstRow<{ n: number }>(asked).n).toBeGreaterThanOrEqual(2);
+
+    // Exactly one on the public thread: the asker's reply after the org
+    // answered (the reopen above) — not rando's or the readonly member's posts.
+    const followedUp = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM notifications
+      WHERE template_key = 'question.followed_up' AND recipient = ${'org_qt_' + RUN + '@x.com'}
+        AND payload->>'portalUrl' LIKE ${'%' + publicThreadId}
+    `);
+    expect(firstRow<{ n: number }>(followedUp).n).toBe(1);
 
     const replied = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM notifications

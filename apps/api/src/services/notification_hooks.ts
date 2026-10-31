@@ -24,6 +24,7 @@ import {
   notifyListingSubmitted,
   notifyOrgCreated,
   notifyQuestionAsked,
+  notifyQuestionFollowedUp,
   notifyQuestionReplied,
   type BookingCancelledOptions,
   type BookingRefundedInput,
@@ -54,13 +55,25 @@ export async function onBookingConfirmed(bookingId: string): Promise<void> {
 
 /**
  * Call after a question thread is created (thread + root message committed).
- * Emails the owning org's contact_email. Never throws.
+ * Emails the owning org (contact email, else its owners). Never throws.
  */
 export async function onQuestionAsked(threadId: string): Promise<void> {
   try {
     await notifyQuestionAsked(threadId);
   } catch (err) {
     logger.warn({ err, threadId }, 'on_question_asked_hook_failed');
+  }
+}
+
+/**
+ * Call after the asker follows up on their thread. Emails the owning org,
+ * like onQuestionAsked. Never throws.
+ */
+export async function onQuestionFollowedUp(threadId: string, messageId: string): Promise<void> {
+  try {
+    await notifyQuestionFollowedUp(threadId, messageId);
+  } catch (err) {
+    logger.warn({ err, threadId, messageId }, 'on_question_followed_up_hook_failed');
   }
 }
 
