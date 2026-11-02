@@ -9,10 +9,13 @@ interface ApiErrorBody {
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  /** The server's `error.details` (e.g. zod issues), when it sent any. */
+  readonly details?: unknown;
+  constructor(code: string, message: string, status: number, details?: unknown) {
     super(message);
     this.code = code;
     this.status = status;
+    if (details !== undefined) this.details = details;
   }
 }
 
@@ -35,6 +38,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       e?.code ?? 'request_failed',
       e?.message ?? `Request failed (${res.status})`,
       res.status,
+      e?.details,
     );
   }
   return body as T;

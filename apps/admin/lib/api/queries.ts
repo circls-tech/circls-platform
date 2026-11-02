@@ -52,6 +52,13 @@ import type {
   SupportIssueStatus,
   SupportIssuePriority,
   AdminPayoutBreakdown,
+  AdminScreenDetail,
+  AdminScreenRow,
+  AdminScreenSummary,
+  SduiApp,
+  SduiFlags,
+  SduiMinBuild,
+  SduiUpdateNotice,
 } from './types';
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -861,5 +868,125 @@ export function useDeleteAdminCoupon() {
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/v1/admin/coupons/${id}`, { method: 'DELETE' }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'coupons'] }),
+  });
+}
+
+// ── Server-driven UI (admin → Screens) ──────────────────────────────────────
+
+export function useAdminScreens(app: SduiApp) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'screens', app],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<{ screens: AdminScreenSummary[] }>(`/v1/admin/screens${qs({ app })}`),
+  });
+}
+
+export function useAdminScreenDetail(app: SduiApp, key: string | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'screens', app, key],
+    enabled: Boolean(user) && Boolean(key),
+    queryFn: () => apiFetch<AdminScreenDetail>(`/v1/admin/screens/${app}/${key}`),
+    // A new screen has no rows yet: the editor starts from a blank draft.
+    retry: false,
+  });
+}
+
+export function useAdminScreenVersion(app: SduiApp, key: string, version: number | null) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'screens', app, key, 'version', version],
+    enabled: Boolean(user) && version !== null,
+    queryFn: () => apiFetch<AdminScreenRow>(`/v1/admin/screens/${app}/${key}/versions/${version}`),
+  });
+}
+
+function useScreenMutation<TArgs, TResult>(
+  app: SduiApp,
+  key: string,
+  run: (args: TArgs) => Promise<TResult>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: run,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'screens', app, key] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'screens', app] });
+    },
+  });
+}
+
+export function useSaveScreenDraft(app: SduiApp, key: string) {
+  return useScreenMutation(app, key, (args: { body: unknown; minBuild?: SduiMinBuild; note?: string }) =>
+    apiFetch<AdminScreenRow>(`/v1/admin/screens/${app}/${key}/draft`, {
+      method: 'PUT',
+      body: JSON.stringify(args),
+    }),
+  );
+}
+
+export function usePublishScreen(app: SduiApp, key: string) {
+  return useScreenMutation(app, key, () =>
+    apiFetch<AdminScreenRow>(`/v1/admin/screens/${app}/${key}/publish`, { method: 'POST' }),
+  );
+}
+
+export function useRollbackScreen(app: SduiApp, key: string) {
+  return useScreenMutation(app, key, (version: number) =>
+    apiFetch<AdminScreenRow>(`/v1/admin/screens/${app}/${key}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ version }),
+    }),
+  );
+}
+
+export function useDeleteScreenDraft(app: SduiApp, key: string) {
+  return useScreenMutation(app, key, () =>
+    apiFetch<void>(`/v1/admin/screens/${app}/${key}/draft`, { method: 'DELETE' }),
+  );
+}
+
+export function useSduiFlags(app: SduiApp) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'sdui-flags', app],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<{ app: SduiApp; flags: SduiFlags }>(`/v1/admin/screens/${app}/flags`),
+  });
+}
+
+/** Replace the whole flag map for an app. */
+export function useSetSduiFlags(app: SduiApp) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (flags: SduiFlags) =>
+      apiFetch<{ app: SduiApp; flags: SduiFlags }>(`/v1/admin/screens/${app}/flags`, {
+        method: 'PUT',
+        body: JSON.stringify({ flags }),
+      }),
+    onSuccess: (res) => qc.setQueryData(['admin', 'sdui-flags', app], res),
+  });
+}
+
+export function useSduiUpdateNotice(app: SduiApp) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin', 'sdui-update', app],
+    enabled: Boolean(user),
+    queryFn: () => apiFetch<{ app: SduiApp; update: SduiUpdateNotice | null }>(`/v1/admin/screens/${app}/update`),
+  });
+}
+
+/** Set, or with null clear, the app's update notice. */
+export function useSetSduiUpdateNotice(app: SduiApp) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (update: SduiUpdateNotice | null) =>
+      apiFetch<{ app: SduiApp; update: SduiUpdateNotice | null }>(`/v1/admin/screens/${app}/update`, {
+        method: 'PUT',
+        body: JSON.stringify({ update }),
+      }),
+    onSuccess: (res) => qc.setQueryData(['admin', 'sdui-update', app], res),
   });
 }
