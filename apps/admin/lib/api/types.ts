@@ -1189,3 +1189,49 @@ export type AdminFeedbackPage =
       nextCursor: string | null;
       summary: { count: number; answers: { answer: string; count: number }[] } | null;
     };
+
+// ── Server-driven UI (admin → Screens) ──────────────────────────────────────
+
+export type SduiApp = 'consumer' | 'partners';
+export type SduiPlatform = 'ios' | 'android';
+/** Lowest app build per platform ('ios' | 'android' | '*') that may render a layout. */
+export type SduiMinBuild = Partial<Record<SduiPlatform | '*', number>>;
+
+export interface AdminScreenSummary {
+  app: SduiApp;
+  key: string;
+  publishedVersion: number | null;
+  draftVersion: number | null;
+  updatedAt: string;
+}
+
+export interface AdminScreenHead {
+  id: string;
+  app: SduiApp;
+  key: string;
+  version: number;
+  status: 'draft' | 'published' | 'archived';
+  schemaVersion: number;
+  minBuild: SduiMinBuild;
+  note: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface AdminScreenRow extends AdminScreenHead {
+  body: Record<string, unknown>;
+}
+
+export interface AdminScreenDetail {
+  published: AdminScreenRow | null;
+  draft: AdminScreenRow | null;
+  history: AdminScreenHead[];
+}
+
+export type SduiFlags = Record<string, boolean>;
+
+export interface SduiUpdateNotice {
+  minSupportedBuild: SduiMinBuild;
+  message: { title: string; body: string; url: string };
+}

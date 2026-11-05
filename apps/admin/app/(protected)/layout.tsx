@@ -23,6 +23,7 @@ const NAV_LINKS = [
   { href: '/audit-log', label: 'Audit log', petal: '#FFB0A3', icon: 'audit' },
   { href: '/support-issues', label: 'Support issues', petal: '#FCE38A', icon: 'support' },
   { href: '/questions', label: 'Questions', petal: '#BCE3A0', icon: 'questions' },
+  { href: '/screens', label: 'Screens', petal: '#A9C9F2', icon: 'screens' },
 ] as const;
 
 type NavIconName = (typeof NAV_LINKS)[number]['icon'];
@@ -141,6 +142,14 @@ function NavIcon({ name }: { name: NavIconName }) {
       return (
         <svg {...common}>
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      );
+    // A phone: the mobile apps' server-driven screens.
+    case 'screens':
+      return (
+        <svg {...common}>
+          <rect x="6" y="2" width="12" height="20" rx="2" />
+          <line x1="10" y1="18" x2="14" y2="18" />
         </svg>
       );
     // A star: ratings and survey answers.

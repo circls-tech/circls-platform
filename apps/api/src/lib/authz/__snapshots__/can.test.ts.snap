@@ -4,6 +4,8 @@ exports[`can() — authz matrix > partner-tenant matrix is stable 1`] = `
 {
   "manager": {
     "admin.audit.read": false,
+    "admin.content.read": false,
+    "admin.content.write": false,
     "admin.coupons.read": false,
     "admin.coupons.write": false,
     "admin.listings.review": false,
@@ -50,6 +52,8 @@ exports[`can() — authz matrix > partner-tenant matrix is stable 1`] = `
   },
   "owner": {
     "admin.audit.read": false,
+    "admin.content.read": false,
+    "admin.content.write": false,
     "admin.coupons.read": false,
     "admin.coupons.write": false,
     "admin.listings.review": false,
@@ -96,6 +100,8 @@ exports[`can() — authz matrix > partner-tenant matrix is stable 1`] = `
   },
   "readonly": {
     "admin.audit.read": false,
+    "admin.content.read": false,
+    "admin.content.write": false,
     "admin.coupons.read": false,
     "admin.coupons.write": false,
     "admin.listings.review": false,
@@ -142,6 +148,8 @@ exports[`can() — authz matrix > partner-tenant matrix is stable 1`] = `
   },
   "staff": {
     "admin.audit.read": false,
+    "admin.content.read": false,
+    "admin.content.write": false,
     "admin.coupons.read": false,
     "admin.coupons.write": false,
     "admin.listings.review": false,
@@ -193,6 +201,8 @@ exports[`can() — authz matrix > platform-tenant matrix is stable 1`] = `
 {
   "manager": {
     "admin.audit.read": true,
+    "admin.content.read": true,
+    "admin.content.write": true,
     "admin.coupons.read": true,
     "admin.coupons.write": true,
     "admin.listings.review": true,
@@ -239,6 +249,8 @@ exports[`can() — authz matrix > platform-tenant matrix is stable 1`] = `
   },
   "owner": {
     "admin.audit.read": true,
+    "admin.content.read": true,
+    "admin.content.write": true,
     "admin.coupons.read": true,
     "admin.coupons.write": true,
     "admin.listings.review": true,
@@ -285,6 +297,8 @@ exports[`can() — authz matrix > platform-tenant matrix is stable 1`] = `
   },
   "readonly": {
     "admin.audit.read": true,
+    "admin.content.read": true,
+    "admin.content.write": false,
     "admin.coupons.read": true,
     "admin.coupons.write": false,
     "admin.listings.review": false,
@@ -331,6 +345,8 @@ exports[`can() — authz matrix > platform-tenant matrix is stable 1`] = `
   },
   "staff": {
     "admin.audit.read": true,
+    "admin.content.read": true,
+    "admin.content.write": false,
     "admin.coupons.read": true,
     "admin.coupons.write": false,
     "admin.listings.review": true,
