@@ -573,10 +573,13 @@ export async function validateQrTicket(
       customerName = b?.customerName ?? null;
     }
     if (!customerName && t.userMembershipId) {
+      // A member with a Circls account has a display name; one added at the
+      // desk (`addExternalMember`) has no user row and carries the name
+      // staff typed instead.
       const raw = await tx.execute<Record<string, unknown>>(sql`
-        select u.display_name as display_name
+        select coalesce(u.display_name, um.external_name) as display_name
         from user_memberships um
-        join users u on u.id = um.user_id
+        left join users u on u.id = um.user_id
         where um.id = ${t.userMembershipId}
         limit 1
       `);
