@@ -1,14 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useOrg } from '@/lib/org_context';
 import { useMemberships } from '@/lib/api/memberships';
 import { useVenues } from '@/lib/api/queries';
 import { useVenueCurrencies } from '@/lib/currency';
 import { planSummary } from '@/lib/plan_summary';
+import { isMembershipOnShelf } from '@/lib/shelf';
 import type { Membership } from '@/lib/api/types';
 import { useCan } from '@/lib/use_can';
 import { Button, Card, StatusPill } from '@/lib/ui';
+
+/** Same split the Venues and Events pages make: what is selling (or on its
+ *  way there) on the default tab, what was withdrawn on the other. */
+type PlanShelf = 'active' | 'inactive';
+
+const SHELF_TABS: { key: PlanShelf; label: string }[] = [
+  { key: 'active', label: 'Active' },
+  { key: 'inactive', label: 'Inactive' },
+];
 
 /**
  * One line describing a plan's tiers, e.g. "3 tiers · ₹500–₹2,000".
@@ -26,6 +37,18 @@ export default function MembershipsPage() {
   const { data: venues } = useVenues(tenantId);
   const { currencyFor } = useVenueCurrencies();
   const canCreate = useCan('memberships.write', tenantId);
+  const [shelf, setShelf] = useState<PlanShelf>('active');
+
+  // `isMembershipOnShelf` keeps drafts and pending plans with the active ones:
+  // the partner is still working on those. Inactive, rejected and suspended
+  // plans sit on the other tab, reachable but out of the way.
+  const plans = memberships ?? [];
+  const offShelf = plans.filter((m) => !isMembershipOnShelf(m));
+  const shown = shelf === 'inactive' ? offShelf : plans.filter(isMembershipOnShelf);
+  const counts: Record<PlanShelf, number> = {
+    active: plans.length - offShelf.length,
+    inactive: offShelf.length,
+  };
 
   function venueName(id: string | null) {
     if (!id) return 'Org-wide';
@@ -66,12 +89,42 @@ export default function MembershipsPage() {
           </p>
         )}
         {!isLoading && memberships && memberships.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-1" role="tablist" aria-label="Plan shelf">
+              {SHELF_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={shelf === t.key}
+                  onClick={() => setShelf(t.key)}
+                  className={[
+                    'rounded-[var(--radius)] border-2 px-3 py-1 text-sm font-bold transition-colors',
+                    shelf === t.key
+                      ? 'border-[#17151D] bg-[#F9B4D4] text-[#17151D] shadow-[2px_2px_0_#17151D]'
+                      : 'border-transparent text-slate-500 hover:bg-white hover:text-[#17151D]',
+                  ].join(' ')}
+                >
+                  {t.label} <span className="font-normal text-slate-500">({counts[t.key]})</span>
+                </button>
+              ))}
+            </div>
+
+            {shown.length === 0 && (
+              <p className="text-sm text-slate-500">
+                {shelf === 'inactive'
+                  ? 'No inactive plans.'
+                  : 'No active plans. Inactive ones are on the other tab.'}
+              </p>
+            )}
+
+            {shown.length > 0 && (
           <>
             {/* Phones: one card per plan. The four-column table wrapped names
                 onto three or four lines, cut Tiers mid-price and pushed Status
                 off-screen entirely. Mirrors the members list on a plan page. */}
             <ul className="flex flex-col gap-2 md:hidden">
-              {memberships.map((m) => (
+              {shown.map((m) => (
                 <li key={m.id} className="rounded-[var(--radius)] border border-[#e5e7eb] p-3">
                   <div className="flex items-start justify-between gap-2">
                     <Link
@@ -111,7 +164,7 @@ export default function MembershipsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f5f9]">
-                  {memberships.map((m) => (
+                  {shown.map((m) => (
                     <tr key={m.id}>
                       <td className="py-2.5 pr-4 font-medium">
                         {/* The row's only action: everything a plan can do lives
@@ -145,6 +198,8 @@ export default function MembershipsPage() {
               </table>
             </div>
           </>
+            )}
+          </div>
         )}
       </Card>
     </div>
