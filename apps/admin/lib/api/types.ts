@@ -99,6 +99,7 @@ export interface AdminTenantDetail {
     status: AdminTenantListItem['status'];
     /** Off everything consumers see (demo / test orgs). */
     hiddenFromCatalog: boolean;
+    autoApproveListings: boolean;
     // Billing knobs (basis points, 100 bps = 1%).
     commissionBps: number;
     consumerCommissionBps: number;

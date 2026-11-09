@@ -293,8 +293,10 @@ export default function VenuePage() {
             {createArena.isPending ? 'Adding…' : 'Add arena'}
           </button>
           {created && (
-            <p className="text-sm text-amber-700">
-              Arena created. It’s now pending review by Circls before it goes live.
+            <p className={`text-sm ${createArena.data?.status === 'active' ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {createArena.data?.status === 'active'
+                ? 'Arena created and live.'
+                : 'Arena created. It’s now pending review by Circls before it goes live.'}
             </p>
           )}
           {err && <p className="text-sm text-red-600">{err}</p>}

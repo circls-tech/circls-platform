@@ -48,6 +48,25 @@ pnpm install
 pnpm dev                      # Currently a stub — wired up in Phase 1
 ```
 
+## Tenant listing auto-approval
+
+On the admin portal's tenant detail page, enable **Automatically approve this
+tenant’s listings and later changes** under **Listing approval**. The setting
+defaults to off and can only be changed by platform admins with tenant-management
+permission; changes are recorded in the tenant audit log.
+
+For enabled tenants, submitting a complete event publishes it, and submitting a
+venue, arena or membership activates it. Drafts remain drafts until submitted.
+Later event change requests are validated and applied immediately, with their
+approved history retained. Existing rules still apply, including membership
+deactivation before editing and protections for sold tickets. Automatic approvals
+send neither review-queue emails nor approval-outcome emails.
+
+Existing pending reviews are unchanged. Turning the setting off restores review
+for future submissions and event change requests; already-live listings stay live.
+Apply database migration `0079_tenant_auto_approve_listings` before deploying the
+updated API.
+
 ## License
 
 MIT - see [LICENSE](./LICENSE).

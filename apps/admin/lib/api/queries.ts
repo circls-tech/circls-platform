@@ -205,6 +205,20 @@ export function useSetTenantCatalogHidden() {
   });
 }
 
+export function useSetTenantListingApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      apiFetch<{ autoApproveListings: boolean }>(`/v1/admin/tenants/${id}/listing-approval`, {
+        method: 'PATCH',
+        body: JSON.stringify({ autoApproveListings: enabled }),
+      }),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+    },
+  });
+}
+
 export function useReactivateTenant() {
   const qc = useQueryClient();
   return useMutation({
