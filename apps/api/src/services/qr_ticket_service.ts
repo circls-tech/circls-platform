@@ -466,21 +466,67 @@ export interface QrScanResult {
 }
 
 /**
- * Atomic check-and-consume of a scanned code, tenant-scoped (a code from
+ * What identifies the pass being validated: the scanned `code`, or — when door
+ * staff found the person by name instead of scanning — the booking or the
+ * user membership the pass was issued for. Partner-facing booking and member
+ * rows never carry codes (they are the credential), so a desk lookup has only
+ * these ids to offer.
+ */
+export type QrScanSubject = { code: string } | { bookingId: string } | { userMembershipId: string };
+
+/**
+ * Lock the ticket a subject refers to, tenant-scoped. A code is unique; a
+ * booking may own several passes (one per seat / per arena), so it resolves to
+ * the first still-active one — a party of three checks in with three picks of
+ * the same name — and, once none is active, to any of them so the verdict reads
+ * `already_used` / `expired` / `revoked` rather than `not_found`. A user
+ * membership owns at most one.
+ */
+async function lockTicketFor(
+  tx: Tx,
+  tenantId: string,
+  subject: QrScanSubject,
+): Promise<QrTicket | null> {
+  if ('code' in subject) {
+    const [t] = await tx
+      .select()
+      .from(qrTickets)
+      .where(eq(qrTickets.code, subject.code))
+      .for('update');
+    return t && t.tenantId === tenantId ? t : null;
+  }
+  const bySubject =
+    'bookingId' in subject
+      ? eq(qrTickets.bookingId, subject.bookingId)
+      : eq(qrTickets.userMembershipId, subject.userMembershipId);
+  const [t] = await tx
+    .select()
+    .from(qrTickets)
+    .where(and(eq(qrTickets.tenantId, tenantId), bySubject))
+    .orderBy(sql`case when ${qrTickets.status} = 'active' then 0 else 1 end`, qrTickets.createdAt)
+    .limit(1)
+    .for('update');
+  return t ?? null;
+}
+
+/**
+ * Atomic check-and-consume of a pass, tenant-scoped (a code or id from
  * another tenant reads as not_found — no cross-tenant probing). `consume:false`
  * peeks without spending a scan. Single-use tickets flip to `used` on their
- * first valid scan; capped multi-use ones when the cap is reached.
+ * first valid scan; capped multi-use ones when the cap is reached. A bare
+ * string is the scanned code; see [QrScanSubject] for the desk-lookup forms.
  */
 export async function validateQrTicket(
   ctx: AuditCtx,
-  code: string,
+  subject: string | QrScanSubject,
   opts: { consume?: boolean } = {},
 ): Promise<QrScanResult> {
   const consume = opts.consume ?? true;
+  const by: QrScanSubject = typeof subject === 'string' ? { code: subject } : subject;
 
   return db.transaction(async (tx) => {
-    const [t] = await tx.select().from(qrTickets).where(eq(qrTickets.code, code)).for('update');
-    if (!t || t.tenantId !== ctx.tenantId) return { outcome: 'not_found', ticket: null };
+    const t = await lockTicketFor(tx, ctx.tenantId, by);
+    if (!t) return { outcome: 'not_found', ticket: null };
 
     const now = new Date();
     let outcome: QrScanOutcome = 'valid';
@@ -511,6 +557,8 @@ export async function validateQrTicket(
         outcome,
         scanCount: nextCount,
         bookingId: t.bookingId,
+        // How the pass was found: a scan / typed code, or a desk lookup.
+        via: 'code' in by ? 'code' : 'bookingId' in by ? 'booking' : 'membership',
       });
     }
 

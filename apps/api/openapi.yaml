@@ -2333,15 +2333,45 @@ paths:
           description: Default Response
   /v1/tenants/{tenantId}/qr-tickets/validate:
     post:
+      description: >-
+        Door check-in. Validates (and by default consumes) a QR ticket found by
+        exactly one of: its scanned `code`, the `bookingId` it was issued for
+        (first still-active seat; `already_used` once none is), or the
+        `userMembershipId` of a membership pass. Any tenant member may call it;
+        codes and ids from other tenants read as `not_found`.
       parameters:
         - schema:
             type: string
           in: path
           name: tenantId
           required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                bookingId:
+                  type: string
+                  format: uuid
+                userMembershipId:
+                  type: string
+                  format: uuid
+                consume:
+                  type: boolean
+                  default: true
+                  description: false peeks without spending a scan.
       responses:
         '200':
-          description: Default Response
+          description: >-
+            `{ outcome, ticket }` — outcome is one of valid, not_found, revoked,
+            expired, not_yet_valid, already_used; ticket is null only for
+            not_found.
   /v1/tenants/{tenantId}/activity:
     get:
       parameters:
