@@ -9,6 +9,7 @@ import {
   useAdminTenantEvents,
   useReactivateTenant,
   useSetTenantCatalogHidden,
+  useSetTenantListingApproval,
   useSuspendTenant,
   useUpdateEventBilling,
   useUpdateTenantBilling,
@@ -107,6 +108,7 @@ export default function TenantDetailPage() {
   const suspend = useSuspendTenant();
   const reactivate = useReactivateTenant();
   const catalog = useSetTenantCatalogHidden();
+  const listingApproval = useSetTenantListingApproval();
 
   if (isLoading) {
     return (
@@ -201,6 +203,33 @@ export default function TenantDetailPage() {
           Full audit timeline
         </Link>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-900">Listing approval</h2>
+        <label className="mt-3 flex items-start gap-3 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            checked={t.autoApproveListings}
+            disabled={listingApproval.isPending}
+            onChange={(event) => listingApproval.mutate({ id: t.id, enabled: event.target.checked })}
+            className="mt-0.5 h-4 w-4 accent-slate-900"
+          />
+          <span>
+            Automatically approve this tenant’s listings and later changes
+            <span className="mt-1 block text-xs text-slate-500">
+              Events, memberships, venues and arenas go live when submitted, without admin review
+              or review emails. Drafts and all existing validation rules still apply. Existing
+              pending reviews are unchanged. Untick to require review for future submissions.
+            </span>
+          </span>
+        </label>
+        {listingApproval.isPending && <p role="status" className="mt-2 text-xs text-slate-500">Saving…</p>}
+        {listingApproval.isError && (
+          <p role="alert" className="mt-2 text-sm text-red-600">
+            {listingApproval.error instanceof Error ? listingApproval.error.message : 'Could not save listing approval.'}
+          </p>
+        )}
+      </section>
 
       {/* Tabs */}
       <div className="overflow-x-auto border-b border-slate-200">

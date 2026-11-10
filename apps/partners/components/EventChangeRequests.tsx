@@ -246,9 +246,10 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
   return (
     <Card title="Request changes">
       <p className="mb-4 text-xs text-slate-500">
-        The name, date &amp; time, location, and ticket tiers of a live event change only after the
-        circls team approves the request — what people already booked stays protected. One request
-        can be open at a time.
+        Submit changes to the name, date &amp; time, location, or ticket tiers here. Circls reviews
+        the request unless your organisation has automatic approval enabled, in which case valid
+        changes apply immediately. Existing bookings stay protected. One request can await review
+        at a time.
       </p>
 
       {pending && (

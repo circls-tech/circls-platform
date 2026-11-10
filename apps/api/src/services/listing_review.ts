@@ -11,7 +11,7 @@
  */
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { arenas, auditLog, events, memberships, venues } from '../db/schema/index.js';
+import { arenas, auditLog, events, memberships, tenants, venues } from '../db/schema/index.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict } from '../lib/errors.js';
 
@@ -27,6 +27,15 @@ export function isSubmittable(status: string): status is SubmittableStatus {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export async function autoApprovesListings(database: typeof db | Tx, tenantId: string): Promise<boolean> {
+  const [tenant] = await database
+    .select({ enabled: tenants.autoApproveListings })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+  return tenant?.enabled === true;
+}
+
 type RowOf<T extends ReviewableListingType> = T extends 'venue'
   ? typeof venues.$inferSelect
   : T extends 'arena'
@@ -35,24 +44,25 @@ type RowOf<T extends ReviewableListingType> = T extends 'venue'
       ? typeof events.$inferSelect
       : typeof memberships.$inferSelect;
 
-async function flipToReview(tx: Tx, type: ReviewableListingType, id: string): Promise<unknown> {
+async function flipToReview(tx: Tx, type: ReviewableListingType, id: string, autoApprove: boolean): Promise<unknown> {
+  const status = autoApprove ? 'active' : 'pending_review';
   switch (type) {
     case 'venue':
-      return (await tx.update(venues).set({ status: 'pending_review' }).where(eq(venues.id, id)).returning())[0];
+      return (await tx.update(venues).set({ status }).where(eq(venues.id, id)).returning())[0];
     case 'arena':
-      return (await tx.update(arenas).set({ status: 'pending_review' }).where(eq(arenas.id, id)).returning())[0];
+      return (await tx.update(arenas).set({ status }).where(eq(arenas.id, id)).returning())[0];
     case 'event':
       // An event in review is never on the archive shelf; one shelved as a
       // draft or after a rejection comes back to the working list.
       return (
         await tx
           .update(events)
-          .set({ status: 'pending_review', archivedAt: null })
+          .set({ status: autoApprove ? 'published' : 'pending_review', archivedAt: null })
           .where(eq(events.id, id))
           .returning()
       )[0];
     case 'membership':
-      return (await tx.update(memberships).set({ status: 'pending_review' }).where(eq(memberships.id, id)).returning())[0];
+      return (await tx.update(memberships).set({ status }).where(eq(memberships.id, id)).returning())[0];
   }
 }
 
@@ -77,15 +87,17 @@ export async function submitForReview<T extends ReviewableListingType>(
     const [ev] = await tx.select({ archivedAt: events.archivedAt }).from(events).where(eq(events.id, id)).limit(1);
     wasArchived = ev?.archivedAt != null;
   }
-  const updated = await flipToReview(tx, type, id);
+  const autoApprove = await autoApprovesListings(tx, ctx.tenantId);
+  const status = autoApprove ? (type === 'event' ? 'published' : 'active') : 'pending_review';
+  const updated = await flipToReview(tx, type, id, autoApprove);
   await writeAudit(
     tx,
     ctx,
-    `${type}.submitted_for_review`,
+    `${type}.${autoApprove ? 'auto_approved' : 'submitted_for_review'}`,
     type,
     id,
     { status: from, ...(wasArchived ? { archived: true } : {}) },
-    { status: 'pending_review', ...(wasArchived ? { archived: false } : {}), ...extra },
+    { status, ...(wasArchived ? { archived: false } : {}), ...extra },
   );
   return updated as RowOf<T>;
 }

@@ -1580,6 +1580,17 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/tenants/{id}/listing-approval:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/tenants/{id}/catalog:
     patch:
       parameters:

@@ -124,6 +124,7 @@ export const tenants = pgTable('tenants', {
    * (PATCH /v1/admin/tenants/:id/catalog).
    */
   hiddenFromCatalog: boolean('hidden_from_catalog').notNull().default(false),
+  autoApproveListings: boolean('auto_approve_listings').notNull().default(false),
   /** Partner email preferences (Settings → Notifications). Owner/Manager-edited. */
   emailPrefs: jsonb('email_prefs').$type<TenantEmailPrefs>().notNull().default({}),
   createdAt: createdAt(),

@@ -540,6 +540,13 @@
       "when": 1785380000000,
       "tag": "0078_screen_layouts",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785460000000,
+      "tag": "0079_tenant_auto_approve_listings",
+      "breakpoints": true
     }
   ]
 }

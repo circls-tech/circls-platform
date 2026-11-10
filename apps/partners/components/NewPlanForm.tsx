@@ -123,7 +123,7 @@ export function NewPlanForm({
       {cannotCreate ? (
         <RoleNotice>Your role can’t create membership plans — Owners and Managers can.</RoleNotice>
       ) : (
-        <Card subtitle="Circls reviews a new plan before it goes live.">
+        <Card subtitle="New plans go live after Circls review, or immediately if your organisation has automatic approval enabled.">
           <form onSubmit={onCreate} className="flex max-w-2xl flex-col gap-2.5">
             <RestoredFormNotice autosave={autosave} unkept="The artwork isn’t kept — pick it again." />
             <MembershipPlanFields

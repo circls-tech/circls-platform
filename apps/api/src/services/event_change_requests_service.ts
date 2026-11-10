@@ -35,6 +35,9 @@ import {
   type UpdateEventPatch,
 } from './events_service.js';
 import { getVenueById } from './venue_service.js';
+import { autoApprovesListings } from './listing_review.js';
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const PATCH_KEYS = [
   'name',
@@ -85,7 +88,7 @@ function requireDates(event: Event): Event & { startsAt: Date; endsAt: Date } {
 }
 
 async function validatePatchAgainstEvent(
-  database: typeof db,
+  database: typeof db | Tx,
   event: Event,
   patch: EventChangeRequestPatch,
 ): Promise<void> {
@@ -151,6 +154,7 @@ async function validatePatchAgainstEvent(
 async function buildSnapshot(
   event: Event,
   patch: EventChangeRequestPatch,
+  database: typeof db | Tx = db,
 ): Promise<EventChangeRequestSnapshot> {
   const snapshot: EventChangeRequestSnapshot = {};
   if (patch.name !== undefined) snapshot.name = event.name;
@@ -164,7 +168,7 @@ async function buildSnapshot(
     snapshot.tzName = event.tzName;
   }
   if (patch.tiers !== undefined) {
-    const live = await listTiers(db, event.id);
+    const live = await listTiers(database, event.id);
     snapshot.tiers = live.map((t) => ({
       id: t.id,
       name: t.name,
@@ -206,9 +210,28 @@ export async function createChangeRequest(
 
   await validatePatchAgainstEvent(db, event, patch);
   const snapshot = await buildSnapshot(event, patch);
+  const autoApprove = await autoApprovesListings(db, ctx.tenantId);
+  const prepared = autoApprove ? await prepareEventPatch(toUpdatePatch(patch)) : null;
+  if (prepared?.venueId) {
+    const venue = await getVenueById(prepared.venueId);
+    if (!venue || venue.tenantId !== ctx.tenantId) {
+      throw new BadRequest('Venue not found for this tenant', 'venue_not_found');
+    }
+  }
 
   try {
     return await db.transaction(async (tx) => {
+      let current = event;
+      if (prepared) {
+        const [locked] = await tx.select().from(events)
+          .where(and(eq(events.id, eventId), eq(events.tenantId, ctx.tenantId))).limit(1).for('update');
+        if (!locked) throw new NotFound('Event not found', 'event_not_found');
+        if (locked.status !== 'published') {
+          throw new Conflict('The event is no longer live', 'event_not_published', { status: locked.status });
+        }
+        current = locked;
+        await validatePatchAgainstEvent(tx, current, patch);
+      }
       const [row] = await tx
         .insert(eventChangeRequests)
         .values({
@@ -216,10 +239,12 @@ export async function createChangeRequest(
           tenantId: ctx.tenantId,
           requestedBy: ctx.actorUserId,
           patch,
-          snapshot,
+          snapshot: prepared ? await buildSnapshot(current, patch, tx) : snapshot,
+          ...(autoApprove ? { status: 'approved' as const, reviewedAt: sql`now()` } : {}),
         })
         .returning();
-      await writeAudit(tx, ctx, 'event.change_requested', 'event_change_request', row!.id, null, {
+      if (prepared) await applyApprovedChangePatch(tx, ctx, current, prepared);
+      await writeAudit(tx, ctx, autoApprove ? 'event.change_auto_approved' : 'event.change_requested', 'event_change_request', row!.id, null, {
         eventId,
         fields: patchedFields(patch),
       });
