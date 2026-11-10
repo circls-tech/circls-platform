@@ -122,6 +122,38 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
       expect(r['status']).toBe('active');
     });
 
+    it('mints a QR pass for a desk-added member when the plan has QR tickets on, and none when it is off — so the door can find them by name', async () => {
+      const withQr = await makePlan(null);
+      await db.execute(sql`
+        update memberships
+           set qr_ticket_config = '{"enabled": true, "multiUse": true, "maxScans": null,
+                                   "validFromOffsetMin": null, "validUntilOffsetMin": null}'::jsonb
+         where id = ${withQr.id}
+      `);
+      const { userMembershipId } = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: withQr.id, name: 'Counter Signup Kabir' },
+      );
+      const passes = (await db.execute(sql`
+        select item_type, label, multi_use, status
+          from qr_tickets where user_membership_id = ${userMembershipId}
+      `)) as unknown as Array<Record<string, unknown>>;
+      expect(passes).toHaveLength(1);
+      expect(passes[0]).toMatchObject({ item_type: 'membership', multi_use: true, status: 'active' });
+      // The door-staff label is the plan's name (no tier was picked).
+      expect(String(passes[0]!['label'])).toContain('Hand-added');
+
+      const withoutQr = await makePlan(null);
+      const plain = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: withoutQr.id, name: 'Counter Signup Noor' },
+      );
+      const none = (await db.execute(sql`
+        select 1 from qr_tickets where user_membership_id = ${plain.userMembershipId}
+      `)) as unknown as unknown[];
+      expect(none).toHaveLength(0);
+    });
+
     it('shows up in the buyers list, flagged as external', async () => {
       const plan = await makePlan(null);
       await addExternalMember(

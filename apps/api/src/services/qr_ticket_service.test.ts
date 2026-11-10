@@ -596,4 +596,75 @@ describe.skipIf(!runIntegration)('qr_ticket_service', () => {
     const scan = await validateQrTicket(ctx, issued!.code, { consume: false });
     expect(scan.outcome).toBe('revoked');
   });
+
+  // ── Desk lookup by name: validate by the booking / membership, not the code ──
+
+  it('validating by bookingId admits one seat per call and then reads already_used', async () => {
+    const { event, tier } = await makeEvent(QR_ON);
+    const res = await bookEvent(event.id, { userId, name: 'Party Of Two' }, null, [
+      { tierId: tier.id, quantity: 2 },
+    ]);
+    const ctx = { tenantId, actorUserId: userId };
+    const subject = { bookingId: res.booking.id };
+
+    // Peek shows the pass without spending it.
+    const peek = await validateQrTicket(ctx, subject, { consume: false });
+    expect(peek.outcome).toBe('valid');
+    expect(peek.ticket?.scanCount).toBe(0);
+    expect(peek.ticket?.customerName).toBe('Party Of Two');
+
+    const first = await validateQrTicket(ctx, subject);
+    const second = await validateQrTicket(ctx, subject);
+    expect(first.outcome).toBe('valid');
+    expect(second.outcome).toBe('valid');
+    // Two different seats, each spent once.
+    expect(first.ticket?.id).not.toBe(second.ticket?.id);
+    expect(first.ticket?.status).toBe('used');
+    expect(second.ticket?.status).toBe('used');
+
+    // No active seat left: the verdict names a real, spent pass.
+    const third = await validateQrTicket(ctx, subject);
+    expect(third.outcome).toBe('already_used');
+    expect(third.ticket).not.toBeNull();
+
+    // Another tenant's booking id, or an unknown one, reads as not_found.
+    const foreign = await validateQrTicket({ tenantId: otherTenantId, actorUserId: userId }, subject);
+    expect(foreign).toMatchObject({ outcome: 'not_found', ticket: null });
+    const unknown = await validateQrTicket(ctx, {
+      bookingId: '00000000-0000-7000-8000-000000000000',
+    });
+    expect(unknown).toMatchObject({ outcome: 'not_found', ticket: null });
+  });
+
+  it('validating by userMembershipId finds the membership pass and consumes it like a scan', async () => {
+    const [m] = await db
+      .insert(memberships)
+      .values({
+        tenantId,
+        name: 'Qr Desk Club',
+        pricePaise: 0,
+        durationDays: 30,
+        status: 'active',
+        qrTicketConfig: { ...QR_ON, multiUse: true, maxScans: 2 } as never,
+      })
+      .returning();
+    const res = await purchaseMembership({ membershipId: m!.id, userId });
+    const ctx = { tenantId, actorUserId: userId };
+    const subject = { userMembershipId: res.userMembershipId };
+
+    const s1 = await validateQrTicket(ctx, subject);
+    const s2 = await validateQrTicket(ctx, subject);
+    const s3 = await validateQrTicket(ctx, subject);
+    expect(s1).toMatchObject({ outcome: 'valid', ticket: { scanCount: 1, itemType: 'membership' } });
+    expect(s2).toMatchObject({ outcome: 'valid', ticket: { scanCount: 2, status: 'used' } });
+    expect(s3.outcome).toBe('already_used');
+
+    // Both calls spent the same single pass, and a scan of its code agrees.
+    expect(s1.ticket?.id).toBe(s2.ticket?.id);
+    const [row] = await db
+      .select()
+      .from(qrTickets)
+      .where(sql`user_membership_id = ${res.userMembershipId}`);
+    expect((await validateQrTicket(ctx, row!.code, { consume: false })).outcome).toBe('already_used');
+  });
 });

@@ -604,6 +604,13 @@ export async function addExternalMember(
       endsAt: endsAt.toISOString(),
     });
 
+    // A desk-added member is admitted at the door like any other: mint their
+    // pass when the plan (or their tier) has QR tickets enabled, exactly as a
+    // purchase does. Idempotent and a no-op when QR is off, so this is safe on
+    // every add. Without it a "Find by name" check-in could only answer
+    // not_found for someone who paid at the counter.
+    await issueQrTicketsForUserMembership(row.id, {}, tx);
+
     return { userMembershipId: row.id };
   });
 }
