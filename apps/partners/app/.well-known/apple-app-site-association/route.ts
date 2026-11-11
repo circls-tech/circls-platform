@@ -19,10 +19,14 @@
 
 export const dynamic = 'force-static';
 
-/** Apple Developer Team IDs the app has shipped or will ship under. The
- * personal team signs today's builds; PBAYD5CXP4 is where the store runbook
- * moves it. Apple ignores an entry whose team does not match the installed
- * app, so listing both is harmless. */
+/** Apple Developer Team IDs the app has shipped under. PBAYD5CXP4 (Gibbous
+ * Technologies) signs every build since the App Store record was transferred
+ * to it (circls-flutter `docs/STORE_RELEASE.md`). AQQHT55AT9, a personal
+ * team, signed the earlier TestFlight builds, and those stay installed until
+ * testers update — keep it until none do. Apple ignores an entry whose team
+ * does not match the installed app, so listing both is harmless; dropping
+ * PBAYD5CXP4 would break Password AutoFill and invite links for every
+ * current build. */
 const TEAM_IDS = ['AQQHT55AT9', 'PBAYD5CXP4'];
 const BUNDLE_ID = 'com.circls.circlsPartners';
 
