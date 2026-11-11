@@ -8,8 +8,13 @@
  */
 import { z } from 'zod';
 
-/** A Google place ID as clients send it back (`ChIJ…`: URL-safe base64). */
-export const placeIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,300}$/);
+/**
+ * A Google place ID as clients send it back: URL-safe base64. Google sets no
+ * maximum length — a business is a 27-character `ChIJ…`, but a street address
+ * is an `Ek…`/`Ei…` ID of 170+ — so the cap only stops abuse, it is not a
+ * guess at the longest real ID.
+ */
+export const placeIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,1024}$/);
 
 export interface CoordsProvenance {
   coordsPlaceId: string | null;

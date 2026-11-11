@@ -48,10 +48,12 @@ export async function searchAddress(
  * search's `session` ends that session (see {@link searchAddress}).
  */
 export async function resolvePlace(placeId: string, session?: string | null): Promise<AddressSuggestion> {
-  const params = new URLSearchParams();
+  // In the query, not the path: street-address place IDs run past the API's
+  // 100-character limit on path parameters.
+  const params = new URLSearchParams({ placeId });
   if (session) params.set('session', session);
   const res = await apiFetch<{ suggestion: AddressSuggestion }>(
-    `/v1/venues/geocode/place/${encodeURIComponent(placeId)}?${params.toString()}`,
+    `/v1/venues/geocode/place?${params.toString()}`,
   );
   return res.suggestion;
 }

@@ -48,4 +48,15 @@ describe('placeIdSchema', () => {
     expect(placeIdSchema.safeParse('a?b').success).toBe(false);
     expect(placeIdSchema.safeParse('').success).toBe(false);
   });
+
+  it("accepts a street address's long place ID — Google sets no maximum", () => {
+    expect(STREET_PLACE_ID.length).toBeGreaterThan(170);
+    expect(placeIdSchema.safeParse(STREET_PLACE_ID).success).toBe(true);
+    expect(placeIdSchema.safeParse('a'.repeat(1025)).success).toBe(false);
+  });
 });
+
+/** A real Places API (New) ID for "100 Feet Road, HAL 2nd Stage, Indiranagar,
+ * Bengaluru": 172 characters, as street addresses come back. */
+const STREET_PLACE_ID =
+  'Ek8xMDAgRmVldCBSb2FkLCBIQUwgMm5kIFN0YWdlLCBTdGFnZSAzLCBJbmRpcmFuYWdhciwgQmVuZ2FsdXJ1LCBLYXJuYXRha2EsIEluZGlhIi4qLAoUChIJQTt4fFwUrjsRXl20ikArF0gSFAoSCZ-SY5umFq47Efvf_nsHT_D2';

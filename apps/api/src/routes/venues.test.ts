@@ -332,4 +332,34 @@ describe.skipIf(!runIntegration)('venues', () => {
       expect(res.json().name).toBe('Renamed While Closing');
     });
   });
+
+  describe('place lookup for a picked suggestion', () => {
+    /** A real Places API (New) ID for a street address: 172 characters. */
+    const STREET_PLACE_ID =
+      'Ek8xMDAgRmVldCBSb2FkLCBIQUwgMm5kIFN0YWdlLCBTdGFnZSAzLCBJbmRpcmFuYWdhciwgQmVuZ2FsdXJ1LCBLYXJuYXRha2EsIEluZGlhIi4qLAoUChIJQTt4fFwUrjsRXl20ikArF0gSFAoSCZ-SY5umFq47Efvf_nsHT_D2';
+
+    it("reaches the lookup with a street address's long place ID", async () => {
+      // As a path segment this was Fastify's "Route not found": its path
+      // parameters stop at 100 characters. The stub geocoder never resolves a
+      // place, so the route's own place_not_found proves the request got in.
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/venues/geocode/place?placeId=${STREET_PLACE_ID}&session=abc-123`,
+        headers: bearer('owner'),
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('place_not_found');
+    });
+
+    it('refuses a missing or malformed place ID', async () => {
+      for (const query of ['', '?placeId=', '?placeId=..%2Fsecrets', `?placeId=${'a'.repeat(1025)}`]) {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/v1/venues/geocode/place${query}`,
+          headers: bearer('owner'),
+        });
+        expect(res.statusCode, query.slice(0, 30)).toBe(400);
+      }
+    });
+  });
 });

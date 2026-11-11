@@ -96,7 +96,10 @@ const geocodeSearchSchema = z.object({
   session: sessionTokenSchema.optional(),
 });
 
-const geocodePlaceSchema = z.object({ session: sessionTokenSchema.optional() });
+const geocodePlaceSchema = z.object({
+  placeId: placeIdSchema,
+  session: sessionTokenSchema.optional(),
+});
 
 const cityCenterSchema = z.object({
   city: z.string().trim().min(1).max(120),
@@ -134,12 +137,15 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
   // that autocomplete session, which caps its billed requests. 404 when the
   // place can't be resolved — always so with the free providers, whose
   // suggestions arrive complete.
-  app.get('/v1/venues/geocode/place/:placeId', { preHandler: requireAuth }, async (req) => {
-    const placeId = placeIdSchema.safeParse((req.params as { placeId: string }).placeId);
+  //
+  // The place ID is a query parameter, not a path segment: a street address's
+  // ID runs past 170 characters, and Fastify answers "Route not found" for any
+  // path parameter over its 100-character default.
+  app.get('/v1/venues/geocode/place', { preHandler: requireAuth }, async (req) => {
     const parsed = geocodePlaceSchema.safeParse(req.query);
-    if (!placeId.success || !parsed.success) throw new BadRequest('Invalid place', 'bad_request');
+    if (!parsed.success) throw new BadRequest('Invalid place', 'bad_request');
     await currentUser(req); // any authenticated partner, as for search
-    const suggestion = await getGeocoder().resolve(placeId.data, parsed.data.session ?? null);
+    const suggestion = await getGeocoder().resolve(parsed.data.placeId, parsed.data.session ?? null);
     if (!suggestion) throw new NotFound('Place not found', 'place_not_found');
     return { suggestion };
   });
