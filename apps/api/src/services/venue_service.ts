@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { type Venue, type VenueOpeningHours, venues } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
-import { isSubmittable, submitForReview } from './listing_review.js';
+import { autoApprovesListings, isSubmittable, submitForReview } from './listing_review.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { getGeocoder, hasGeocodableAddress } from '../lib/geocoding/index.js';
 import { coordsProvenance, sentCoordsProvenance } from '../lib/geocoding/provenance.js';
@@ -144,7 +144,7 @@ export async function createVenue(tenantId: string, input: CreateVenueInput): Pr
     tags: input.tags ?? [],
     // New listings await Circls review before going live (subproject B) —
     // unless the partner wants a draft to come back to first.
-    status: input.draft ? 'draft' : 'pending_review',
+    status: input.draft ? 'draft' : (await autoApprovesListings(db, tenantId) ? 'active' : 'pending_review'),
   };
   applyMetadata(values, input);
   // Derive coordinates + mirror address_json from whatever address was supplied.
@@ -286,7 +286,7 @@ export async function submitVenueForReview(ctx: AuditCtx, venueId: string): Prom
     }
     return submitForReview(tx, ctx, 'venue', venueId, existing.status, []);
   });
-  await onListingSubmitted('venue', venueId);
+  if (submitted.status === 'pending_review') await onListingSubmitted('venue', venueId);
   return submitted;
 }
 

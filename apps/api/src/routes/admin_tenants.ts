@@ -450,6 +450,38 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  app.patch('/v1/admin/tenants/:id/listing-approval', { preHandler: requireAuth }, async (req) => {
+    const user = await currentUser(req);
+    const platformTenantId = await getPlatformTenantId();
+    const ctx = await requireTenantMembership(user.id, platformTenantId);
+    assertCap(ctx, 'admin.tenants.suspend');
+
+    const params = tenantIdParamSchema.safeParse(req.params);
+    if (!params.success) {
+      throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
+    }
+    const body = z.object({ autoApproveListings: z.boolean() }).strict().safeParse(req.body);
+    if (!body.success) {
+      throw new BadRequest('Invalid listing approval patch', 'bad_request', { issues: body.error.issues });
+    }
+    const { id } = params.data;
+    return db.transaction(async (tx) => {
+      const [before] = await tx.select().from(tenants).where(eq(tenants.id, id)).limit(1).for('update');
+      if (!before) throw new NotFound('Tenant not found', 'tenant_not_found');
+      const [after] = await tx.update(tenants).set(body.data).where(eq(tenants.id, id)).returning();
+      await writeAudit(
+        tx,
+        { tenantId: id, actorUserId: user.id },
+        'tenant.listing_approval_updated',
+        'tenant',
+        id,
+        { autoApproveListings: before.autoApproveListings },
+        { autoApproveListings: after!.autoApproveListings },
+      );
+      return { autoApproveListings: after!.autoApproveListings };
+    });
+  });
+
   // ── PATCH /v1/admin/tenants/:id/catalog — hide from consumers ──────────────
   // Takes an org off everything consumers see while it keeps working for its
   // members: App Review demo and internal test orgs. Same cap as suspend.

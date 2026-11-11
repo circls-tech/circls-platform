@@ -370,7 +370,7 @@ export function NewEventForm({
 
   return (
     <>
-      <Card title="Details" subtitle="Only a name is needed to save a draft — dates, location and ticket tiers can follow. Submit for review from the event's page when it's complete; Circls approves it before it goes live.">
+      <Card title="Details" subtitle="Only a name is needed to save a draft — dates, location and ticket tiers can follow. Submit from the event's page when it's complete. It goes live after Circls review, or immediately if your organisation has automatic approval enabled.">
         <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-4">
           <RestoredFormNotice autosave={autosave} unkept="Photos aren’t kept — add them again." />
           <div className="flex flex-col gap-1">

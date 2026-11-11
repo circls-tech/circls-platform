@@ -68,6 +68,8 @@ import { activityRoutes } from './routes/activity.js';
 import { adminEarningsRoutes, earningsRoutes } from './routes/earnings.js';
 import { questionRoutes } from './routes/questions.js';
 import { feedbackRoutes } from './routes/feedback.js';
+import { screenRoutes } from './routes/screens.js';
+import { adminScreensRoutes } from './routes/admin_screens.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -341,6 +343,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(questionRoutes);
   // Feedback prompts: 1–10 ratings, the event-type poll and the website surveys.
   await app.register(feedbackRoutes);
+  // Server-driven UI: the screen layouts, flags and update notice the mobile
+  // apps fetch (public), and the admin portal's Screens editor.
+  await app.register(screenRoutes);
+  await app.register(adminScreensRoutes);
 
   return app;
 }

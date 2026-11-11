@@ -1,11 +1,11 @@
 import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { type Arena, arenas } from '../db/schema/index.js';
+import { type Arena, arenas, venues } from '../db/schema/index.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { inferSport } from '../lib/sport_inference.js';
-import { submitForReview } from './listing_review.js';
+import { autoApprovesListings, submitForReview } from './listing_review.js';
 import { onListingSubmitted } from './notification_hooks.js';
 
 export interface CreateArenaInput {
@@ -23,6 +23,10 @@ export async function createArena(venueId: string, input: CreateArenaInput): Pro
   // Explicit sport wins; fall back to tag-based inference; then null.
   const sport = input.sport ?? inferSport(tags) ?? null;
 
+  const venue = await db.query.venues.findFirst({ where: eq(venues.id, venueId) });
+  if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
+  const autoApprove = await autoApprovesListings(db, venue.tenantId);
+
   const [a] = await db
     .insert(arenas)
     .values({
@@ -34,11 +38,11 @@ export async function createArena(venueId: string, input: CreateArenaInput): Pro
       tags,
       qrTicketConfig: input.qrTicketConfig ?? null,
       // New listings await Circls review before going live (subproject B).
-      status: 'pending_review',
+      status: autoApprove ? 'active' : 'pending_review',
     })
     .returning();
   if (!a) throw new Error('arena insert returned no row');
-  await onListingSubmitted('arena', a.id);
+  if (a.status === 'pending_review') await onListingSubmitted('arena', a.id);
   return a;
 }
 
@@ -94,7 +98,7 @@ export async function updateArenaDetails(
     }
     if (patch.tags !== undefined && JSON.stringify(patch.tags) !== JSON.stringify(existing.tags)) set.tags = patch.tags;
     if (Object.keys(set).length === 0) return existing;
-    if (existing.status !== 'rejected') {
+    if (existing.status !== 'rejected' && !(existing.status === 'active' && await autoApprovesListings(tx, ctx.tenantId))) {
       throw new Conflict('Only a rejected arena’s details can be edited', 'arena_not_editable', {
         status: existing.status,
       });
@@ -121,7 +125,7 @@ export async function submitArenaForReview(ctx: AuditCtx, arenaId: string): Prom
     }
     return submitForReview(tx, ctx, 'arena', arenaId, 'rejected', []);
   });
-  await onListingSubmitted('arena', arenaId);
+  if (submitted.status === 'pending_review') await onListingSubmitted('arena', arenaId);
   return submitted;
 }
 

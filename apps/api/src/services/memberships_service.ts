@@ -31,7 +31,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
-import { isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
+import { autoApprovesListings, isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -275,7 +275,7 @@ export async function createMembership(
         qrTicketConfig: input.qrTicketConfig ?? null,
         // New listings await Circls review before going live (subproject B) —
         // unless the partner wants a draft to come back to first.
-        status: input.draft ? 'draft' : 'pending_review',
+        status: input.draft ? 'draft' : (await autoApprovesListings(tx, input.tenantId) ? 'active' : 'pending_review'),
       })
       .returning();
     if (!row) throw new Error('membership insert returned no row');
@@ -362,7 +362,7 @@ export async function submitMembershipForReview(
       membershipMissing(Number(tierCount?.n ?? 0)),
     );
   });
-  await onListingSubmitted('membership', membershipId);
+  if (submitted.status === 'pending_review') await onListingSubmitted('membership', membershipId);
   return submitted;
 }
 
@@ -603,6 +603,13 @@ export async function addExternalMember(
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
     });
+
+    // A desk-added member is admitted at the door like any other: mint their
+    // pass when the plan (or their tier) has QR tickets enabled, exactly as a
+    // purchase does. Idempotent and a no-op when QR is off, so this is safe on
+    // every add. Without it a "Find by name" check-in could only answer
+    // not_found for someone who paid at the counter.
+    await issueQrTicketsForUserMembership(row.id, {}, tx);
 
     return { userMembershipId: row.id };
   });

@@ -538,7 +538,21 @@
       "idx": 78,
       "version": "7",
       "when": 1785380000000,
-      "tag": "0078_coords_provenance",
+      "tag": "0078_screen_layouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785460000000,
+      "tag": "0079_tenant_auto_approve_listings",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785546400000,
+      "tag": "0080_coords_provenance",
       "breakpoints": true
     }
   ]

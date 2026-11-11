@@ -501,7 +501,7 @@ export async function publishEventSeries(ctx: AuditCtx, seriesId: string): Promi
     return submitSeriesDates(tx, ctx, seriesId, drafts);
   });
   // A series is reviewed as one unit: one alert for the batch.
-  if (submitted[0]) await onListingSubmitted('event', submitted[0].id);
+  if (submitted[0]?.status === 'pending_review') await onListingSubmitted('event', submitted[0].id);
   return submitted;
 }
 
@@ -968,7 +968,7 @@ export async function publishEvent(ctx: AuditCtx, eventId: string): Promise<Even
     // A draft may be saved with gaps; review needs the whole thing.
     return submitForReview(tx, ctx, 'event', eventId, existing.status, await eventMissing(tx, existing));
   });
-  await onListingSubmitted('event', submitted.id);
+  if (submitted.status === 'pending_review') await onListingSubmitted('event', submitted.id);
   return submitted;
 }
 

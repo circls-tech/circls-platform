@@ -499,6 +499,11 @@ export function useCreateEventChangeRequest(tenantId: string) {
       }),
     onSuccess: (row) => {
       void qc.invalidateQueries({ queryKey: ['event-change-requests', tenantId, row.eventId] });
+      if (row.status === 'approved') {
+        void qc.invalidateQueries({ queryKey: ['event', tenantId, row.eventId] });
+        void qc.invalidateQueries({ queryKey: ['tenant-events', tenantId] });
+        void qc.invalidateQueries({ queryKey: ['venue-events'] });
+      }
     },
   });
 }

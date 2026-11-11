@@ -52,7 +52,10 @@ export type Capability =
   | 'admin.coupons.read'
   | 'admin.coupons.write'
   | 'admin.support.read'
-  | 'admin.support.write';
+  | 'admin.support.write'
+  // Server-driven UI: screen layouts, feature flags, the update notice.
+  | 'admin.content.read'
+  | 'admin.content.write';
 
 /** Used by snapshot tests + by tooling that needs to walk every capability. */
 export const ALL_CAPABILITIES: readonly Capability[] = [
@@ -76,4 +79,5 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   'admin.audit.read',
   'admin.coupons.read', 'admin.coupons.write',
   'admin.support.read', 'admin.support.write',
+  'admin.content.read', 'admin.content.write',
 ] as const;

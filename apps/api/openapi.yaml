@@ -39,6 +39,10 @@ paths:
       responses:
         '200':
           description: Default Response
+    delete:
+      responses:
+        '200':
+          description: Default Response
   /v1/me/login:
     post:
       responses:
@@ -201,6 +205,50 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/venues/{id}/close-impact:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{id}/submit:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{id}/close:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/venues/{id}/reopen:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/venues/{id}/images/upload-presign:
     post:
       parameters:
@@ -308,6 +356,39 @@ paths:
         '200':
           description: Default Response
     get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/submit:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/close:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: arenaId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/arenas/{arenaId}/reopen:
+    post:
       parameters:
         - schema:
             type: string
@@ -608,6 +689,138 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/complete:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/registrations:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/reopen:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/archive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/unarchive:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/change-requests:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/events/{id}/change-requests/{requestId}/withdraw:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: requestId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/tenants/{tenantId}/event-series/{seriesId}:
     get:
       parameters:
@@ -845,6 +1058,22 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/tenants/{tenantId}/memberships/{id}/submit:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/tenants/{tenantId}/memberships/{id}/activate:
     post:
       parameters:
@@ -889,6 +1118,64 @@ paths:
             type: string
           in: path
           name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{id}/members:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{membershipId}/members/{userMembershipId}/refund:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: membershipId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: userMembershipId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/memberships/{membershipId}/members/{userMembershipId}:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: membershipId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: userMembershipId
           required: true
       responses:
         '200':
@@ -1121,7 +1408,108 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/tenants/{tenantId}/members/{userId}/profile:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: userId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/members/{userId}/super-admin:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: userId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/super-admin/tenants:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/super-admin/tenants/{id}/visit:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/circls-support:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/bookings/{id}/cancel:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings/{id}/reschedule:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/bookings/{id}/reschedule/settle:
     post:
       parameters:
         - schema:
@@ -1192,13 +1580,117 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/tenants/{id}/listing-approval:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/catalog:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/billing:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/events:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/venues:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/memberships:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/events/{id}/billing:
+    patch:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/stats:
     get:
       responses:
         '200':
           description: Default Response
+  /v1/admin/revenue:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/revenue:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/payouts:
     get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/payouts/{id}/breakdown:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
       responses:
         '200':
           description: Default Response
@@ -1218,17 +1710,25 @@ paths:
       responses:
         '200':
           description: Default Response
-  /v1/admin/payment-settings:
+  /v1/admin/tenants/{id}/payout-items:
     get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
       responses:
         '200':
           description: Default Response
-    put:
-      responses:
-        '200':
-          description: Default Response
-  /v1/admin/payment-settings/failover/clear:
+  /v1/admin/payout-items/{id}/execute:
     post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
       responses:
         '200':
           description: Default Response
@@ -1285,7 +1785,102 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/tenants/{tenantId}/listings/{type}/{id}/preview:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: type
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/listings/{type}/{id}/preview:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: type
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/change-requests:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/change-requests/{id}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/change-requests/{id}/approve:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/change-requests/{id}/reject:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/audit-log:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/users/consumers:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/users/partners:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/engagement:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/feedback:
     get:
       responses:
         '200':
@@ -1306,6 +1901,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/previews/scratch:
+    get:
+      responses:
+        '200':
+          description: Default Response
   /v1/consumer/venues:
     get:
       responses:
@@ -1317,6 +1917,11 @@ paths:
         '200':
           description: Default Response
   /v1/consumer/events:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/search:
     get:
       responses:
         '200':
@@ -1458,17 +2063,6 @@ paths:
       responses:
         '200':
           description: Default Response
-  /v1/consumer/me/bookings/{id}:
-    get:
-      parameters:
-        - schema:
-            type: string
-          in: path
-          name: id
-          required: true
-      responses:
-        '200':
-          description: Default Response
   /v1/consumer/me/wishlist:
     get:
       responses:
@@ -1510,24 +2104,66 @@ paths:
       responses:
         '200':
           description: Default Response
-  /v1/consumer/payments/{orderId}/status:
+  /v1/consumer/me/bookings/{id}:
     get:
       parameters:
         - schema:
             type: string
           in: path
-          name: orderId
+          name: id
           required: true
       responses:
         '200':
           description: Default Response
-  /v1/consumer/payments/{orderId}/switch-gateway:
+  /v1/consumer/me/bookings/{id}/tickets/{ticketId}/share:
     post:
       parameters:
         - schema:
             type: string
           in: path
-          name: orderId
+          name: id
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: ticketId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: ticketId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/ticket-shares/{token}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: token
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/ticket-shares/{token}/claim:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: token
           required: true
       responses:
         '200':
@@ -1583,6 +2219,17 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/tenants/{tenantId}/coupons/stats:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
   /v1/tenants/{tenantId}/coupons/{id}:
     patch:
       parameters:
@@ -1623,6 +2270,11 @@ paths:
       responses:
         '200':
           description: Default Response
+  /v1/admin/coupons/stats:
+    get:
+      responses:
+        '200':
+          description: Default Response
   /v1/admin/coupons/{id}:
     patch:
       parameters:
@@ -1648,84 +2300,89 @@ paths:
     post:
       responses:
         '200':
-          description: Checkout price breakdown for an item and optional coupon
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - basePaise
-                  - discountPaise
-                  - discountedBasePaise
-                  - otherChargesPaise
-                  - totalPaise
-                  - gatewayFeePaise
-                  - gatewayFeeWaivedPaise
-                  - platformFeePaise
-                  - currency
-                  - coupon
-                properties:
-                  basePaise:
-                    type: integer
-                    description: Item subtotal before discount, in the currency's minor unit.
-                  discountPaise:
-                    type: integer
-                  discountedBasePaise:
-                    type: integer
-                  otherChargesPaise:
-                    type: integer
-                    description: >-
-                      The "Other charges (incl taxes)" line: totalPaise −
-                      discountedBasePaise. Equals gatewayFeePaise + platformFeePaise.
-                  totalPaise:
-                    type: integer
-                    description: What the customer pays. 0 means free (gateway skipped).
-                  gatewayFeePaise:
-                    type: integer
-                    description: The customer's share of the payment-gateway charge.
-                  gatewayFeeWaivedPaise:
-                    type: integer
-                    description: >-
-                      The part of the payment-gateway charge the customer is NOT
-                      paying (the organisation or Circls bears it). Checkout shows
-                      gatewayFeePaise + gatewayFeeWaivedPaise struck through and, when
-                      gatewayFeePaise is 0, "FREE" — like a waived delivery fee.
-                  platformFeePaise:
-                    type: integer
-                    description: Circls platform fee (consumer-side commission), if configured.
-                  currency:
-                    type: string
-                    description: ISO 4217 (INR or USD).
-                  coupon:
-                    type: object
-                    nullable: true
-                    properties:
-                      id:
-                        type: string
-                      code:
-                        type: string
-                      description:
-                        type: string
-                        nullable: true
-                  error:
-                    type: string
-                    description: Present when a couponCode was rejected (e.g. coupon_not_found).
+          description: Default Response
   /v1/consumer/coupons:
     get:
       responses:
         '200':
           description: Default Response
+  /v1/consumer/payments/{orderId}/status:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: orderId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/payments/{orderId}/switch-gateway:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: orderId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/payment-settings:
+    get:
+      responses:
+        '200':
+          description: Default Response
+    put:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/payment-settings/failover/clear:
+    post:
+      responses:
+        '200':
+          description: Default Response
   /v1/tenants/{tenantId}/qr-tickets/validate:
     post:
+      description: >-
+        Door check-in. Validates (and by default consumes) a QR ticket found by
+        exactly one of: its scanned `code`, the `bookingId` it was issued for
+        (first still-active seat; `already_used` once none is), or the
+        `userMembershipId` of a membership pass. Any tenant member may call it;
+        codes and ids from other tenants read as `not_found`.
       parameters:
         - schema:
             type: string
           in: path
           name: tenantId
           required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                bookingId:
+                  type: string
+                  format: uuid
+                userMembershipId:
+                  type: string
+                  format: uuid
+                consume:
+                  type: boolean
+                  default: true
+                  description: false peeks without spending a scan.
       responses:
         '200':
-          description: Default Response
+          description: >-
+            `{ outcome, ticket }` — outcome is one of valid, not_found, revoked,
+            expired, not_yet_valid, already_used; ticket is null only for
+            not_found.
   /v1/tenants/{tenantId}/activity:
     get:
       parameters:
@@ -1755,6 +2412,39 @@ paths:
             type: string
           in: path
           name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/earnings:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/commission-waiver:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/tenants/{id}/earnings:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: id
           required: true
       responses:
         '200':
@@ -1795,6 +2485,17 @@ paths:
         '200':
           description: Default Response
   /v1/consumer/questions/{threadId}/messages:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/questions/{threadId}/block:
     post:
       parameters:
         - schema:
@@ -2062,6 +2763,228 @@ paths:
             type: string
           in: path
           name: threadId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/feedback/prompt:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/feedback:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/consumer/feedback/dismiss:
+    post:
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/feedback/prompt:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/feedback:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/tenants/{tenantId}/feedback/dismiss:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: tenantId
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/screens/{app}/manifest:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/screens/{app}/{key}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens:
+    get:
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/flags:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/update:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/{key}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/{key}/versions/{version}:
+    get:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: version
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/{key}/draft:
+    put:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+      responses:
+        '200':
+          description: Default Response
+    delete:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/{key}/publish:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
+          required: true
+      responses:
+        '200':
+          description: Default Response
+  /v1/admin/screens/{app}/{key}/rollback:
+    post:
+      parameters:
+        - schema:
+            type: string
+          in: path
+          name: app
+          required: true
+        - schema:
+            type: string
+          in: path
+          name: key
           required: true
       responses:
         '200':

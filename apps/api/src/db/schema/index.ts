@@ -48,3 +48,5 @@ export * from './platform_settings.js';
 export * from './wishlist_items.js';
 // Consumer + partner feedback (listing ratings, website surveys, nudges).
 export * from './user_feedback.js';
+// Server-driven UI screen layouts (admin → Screens; the mobile apps fetch them).
+export * from './screen_layouts.js';
