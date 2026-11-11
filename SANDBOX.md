@@ -50,6 +50,23 @@ them). The sandbox always uses Cashfree's test environment. Cashfree's webhooks
 can't reach your machine without a tunnel, but the checkout still confirms
 payments by asking Cashfree directly.
 
+## Maps
+Addresses resolve offline against a built-in city list, and the partner
+portal's address forms show an OpenStreetMap map. To try real Google Maps
+(address suggestions, place lookup and the Google map with a draggable pin),
+put **local-only** keys in the same gitignored `.env` (see DEPLOYMENT.md for
+which APIs each key needs):
+
+    GEOCODER_PROVIDER=google
+    GOOGLE_MAPS_SERVER_KEY=...
+    NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=...
+    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=...
+
+Then restart the two services: `docker compose -f compose.sandbox.yaml up -d
+api partners`. Set all four together: Google's terms forbid showing its results
+on the OpenStreetMap map. Every autocomplete, lookup and map load is billed past
+Google's free allowance, so restrict the keys and set a budget alert.
+
 ## Shipping your work
 Ask Claude Code to commit your changes, create a feature **branch in this repo**,
 push the branch to `origin`, and **open a pull request against `main`**. A
