@@ -4,3 +4,8 @@ node_modules
 **/dist
 .git
 .claude/worktrees
+# Local secrets (Cashfree, Google Maps keys) live in the root .env and reach
+# the containers through compose at run time; never bake them into the image.
+.env
+**/.env
+**/.env.local

@@ -1,30 +1,77 @@
 import { apiFetch } from './client';
 
-/** One address autocomplete suggestion returned by the API's geocode search. */
+/**
+ * One address autocomplete suggestion returned by the API's geocode search.
+ *
+ * With the Google provider a suggestion is only a prediction — `placeId` set,
+ * address parts and coordinates null — until {@link resolvePlace} fills it in.
+ */
 export interface AddressSuggestion {
   label: string;
+  /** The Google place behind the suggestion; null from the free providers. */
+  placeId: string | null;
   line1: string | null;
   city: string | null;
   state: string | null;
   postalCode: string | null;
   country: string | null;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
+}
+
+/** Which geocoder answered. Google results must be credited to Google Maps. */
+export type GeocoderProvider = 'stub' | 'photon' | 'google';
+
+/**
+ * Query the venue address autocomplete. `country` (optional) restricts results;
+ * `session` groups one search's keystrokes into one billed Google session.
+ * Returns no suggestions for short/empty queries without hitting the network.
+ */
+export async function searchAddress(
+  q: string,
+  country?: string | null,
+  session?: string | null,
+): Promise<{ suggestions: AddressSuggestion[]; provider: GeocoderProvider | null }> {
+  const query = q.trim();
+  if (query.length < 2) return { suggestions: [], provider: null };
+  const params = new URLSearchParams({ q: query });
+  if (country) params.set('country', country);
+  if (session) params.set('session', session);
+  const res = await apiFetch<{ suggestions: AddressSuggestion[]; provider?: GeocoderProvider }>(
+    `/v1/venues/geocode/search?${params.toString()}`,
+  );
+  return { suggestions: res.suggestions, provider: res.provider ?? null };
 }
 
 /**
- * Query the venue address autocomplete. `country` (optional) restricts results.
- * Returns [] for short/empty queries without hitting the network.
+ * The full address and coordinates of a picked Google suggestion. Passing the
+ * search's `session` ends that session (see {@link searchAddress}).
  */
-export async function searchAddress(q: string, country?: string | null): Promise<AddressSuggestion[]> {
-  const query = q.trim();
-  if (query.length < 2) return [];
-  const params = new URLSearchParams({ q: query });
-  if (country) params.set('country', country);
-  const res = await apiFetch<{ suggestions: AddressSuggestion[] }>(
-    `/v1/venues/geocode/search?${params.toString()}`,
+export async function resolvePlace(placeId: string, session?: string | null): Promise<AddressSuggestion> {
+  // In the query, not the path: street-address place IDs run past the API's
+  // 100-character limit on path parameters.
+  const params = new URLSearchParams({ placeId });
+  if (session) params.set('session', session);
+  const res = await apiFetch<{ suggestion: AddressSuggestion }>(
+    `/v1/venues/geocode/place?${params.toString()}`,
   );
-  return res.suggestions;
+  return res.suggestion;
+}
+
+/**
+ * Where to centre the map for a typed city: a known city's centre, or null.
+ * Offline on the server, so it costs nothing to follow the typing.
+ */
+export async function cityCenter(
+  city: string,
+  country?: string | null,
+): Promise<{ lat: number; lng: number } | null> {
+  const params = new URLSearchParams({ city });
+  if (country) params.set('country', country);
+  const res = await apiFetch<{ center: { lat: number; lng: number } | null }>(
+    `/v1/venues/geocode/city-center?${params.toString()}`,
+  );
+  return res.center;
 }
 
 /**

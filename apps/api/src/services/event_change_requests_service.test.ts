@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
 import {
   bookings,
@@ -10,6 +10,7 @@ import {
   venues,
 } from '../db/schema/index.js';
 import { createEvent, updateEvent } from './events_service.js';
+import { getGeocoder } from '../lib/geocoding/index.js';
 import { listTiers } from './event_tiers_service.js';
 import {
   approveChangeRequest,
@@ -171,6 +172,66 @@ describe.skipIf(!runIntegration)('event_change_requests_service', () => {
         tiers: [{ id: tiers[0]!.id, name: 'General', pricePaise: 10000, capacity: 3 }],
       }),
     ).rejects.toMatchObject({ code: 'tier_capacity_below_sold' });
+  });
+
+  describe('a Google pin in a request', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const PUNE = { addressJson: { city: 'Pune', country: 'India' }, tzName: 'Asia/Kolkata' };
+
+    it('is kept as its place only, and resolved afresh on approval', async () => {
+      const { ev } = await makePublishedEvent();
+      const row = await createChangeRequest(ctx(), ev.id, {
+        venueId: null,
+        ...PUNE,
+        lat: 18.52,
+        lng: 73.86,
+        coordsPlaceId: 'ChIJpune',
+      });
+      // Google's coordinates may be kept 30 days; the request row is kept for good.
+      expect(row.patch).not.toHaveProperty('lat');
+      expect(row.patch).not.toHaveProperty('lng');
+      expect(row.patch.coordsPlaceId).toBe('ChIJpune');
+
+      vi.spyOn(getGeocoder(), 'resolve').mockResolvedValue({
+        label: 'Pune', placeId: 'ChIJpune', line1: null, city: 'Pune', state: null,
+        postalCode: null, country: 'India', lat: 18.5204, lng: 73.8567,
+      });
+      const before = Date.now();
+      await approveChangeRequest({ id: row.id, actorUserId });
+      const [updated] = await db.select().from(events).where(eq(events.id, ev.id)).limit(1);
+      expect(updated!.lat).toBe(18.5204);
+      expect(updated!.coordsPlaceId).toBe('ChIJpune');
+      // Its 30 days start at approval, when the coordinates were fetched.
+      expect(updated!.coordsFetchedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    });
+
+    it("falls back to the address when Google can't resolve the place", async () => {
+      const { ev } = await makePublishedEvent();
+      const row = await createChangeRequest(ctx(), ev.id, {
+        venueId: null,
+        ...PUNE,
+        lat: 18.52,
+        lng: 73.86,
+        coordsPlaceId: 'ChIJgone',
+      });
+      vi.spyOn(getGeocoder(), 'resolve').mockResolvedValue(null);
+      await approveChangeRequest({ id: row.id, actorUserId });
+      const [updated] = await db.select().from(events).where(eq(events.id, ev.id)).limit(1);
+      expect(updated!.coordsPlaceId).toBeNull();
+      expect(updated!.lat).not.toBeNull(); // the stub geocoder's Pune
+    });
+
+    it("keeps the partner's own pin, and snapshots a Google pin as its place", async () => {
+      const { ev } = await makePublishedEvent();
+      await db
+        .update(events)
+        .set({ venueId: null, ...PUNE, lat: 18.5, lng: 73.8, coordsPlaceId: 'ChIJnow', coordsFetchedAt: new Date() })
+        .where(eq(events.id, ev.id));
+      const row = await createChangeRequest(ctx(), ev.id, { lat: 18.6, lng: 73.9 });
+      expect(row.patch).toMatchObject({ lat: 18.6, lng: 73.9 });
+      expect(row.snapshot).toMatchObject({ coordsPlaceId: 'ChIJnow' });
+      expect(row.snapshot).not.toHaveProperty('lat');
+    });
   });
 
   it('approve applies name + window and marks the request approved', async () => {

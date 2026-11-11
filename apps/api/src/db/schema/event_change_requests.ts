@@ -35,6 +35,9 @@ export interface EventChangeRequestPatch {
   addressJson?: Record<string, unknown>;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place `lat`/`lng` came from, when they did (see
+   *  services/coords_refresh_service.ts); absent for the partner's own pin. */
+  coordsPlaceId?: string | null;
   tzName?: string;
   tiers?: ChangeRequestTier[];
 }
@@ -49,6 +52,9 @@ export interface EventChangeRequestSnapshot {
   addressJson?: Record<string, unknown> | null;
   lat?: number | null;
   lng?: number | null;
+  /** The Google place the event's pin came from — recorded instead of its
+   *  coordinates, which may only be kept 30 days. */
+  coordsPlaceId?: string | null;
   tzName?: string | null;
   tiers?: (ChangeRequestTier & { id: string })[];
 }

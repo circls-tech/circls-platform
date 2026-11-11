@@ -62,6 +62,12 @@ services:
       CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET:-}
       CASHFREE_ENV: sandbox
       INR_PAYMENT_GATEWAY: ${INR_PAYMENT_GATEWAY:-}
+      # Optional real Google Maps (see SANDBOX.md), also from the local .env.
+      # Unset stays on the offline gazetteer. Never an empty provider: the API
+      # refuses to boot on one, so the fallback is spelled out.
+      GEOCODER_PROVIDER: ${GEOCODER_PROVIDER:-stub}
+      GOOGLE_MAPS_SERVER_KEY: ${GOOGLE_MAPS_SERVER_KEY:-}
+      GOOGLE_MAPS_COUNTRIES: ${GOOGLE_MAPS_COUNTRIES:-}
     command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
     ports: ['8080:8080']
     volumes:
@@ -72,6 +78,13 @@ services:
   partners:
     <<: *dev
     env_file: ./.sandbox/env/partners.env
+    # A service's own `environment` replaces the shared one, so WATCHPACK_POLLING
+    # is restated. The Google Maps keys come from the local .env (SANDBOX.md);
+    # unset, the address forms keep the OpenStreetMap map.
+    environment:
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-}
+      NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY:-}
+      NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID:-}
     command: pnpm --filter @circls/partners dev
     ports: ['3001:3001']
     volumes:

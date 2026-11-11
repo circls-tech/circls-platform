@@ -139,6 +139,10 @@ export interface Venue {
   tzName: string;
   lat: number | null;
   lng: number | null;
+  /** Set while lat/lng are Google's (picked from address search, pin unmoved). */
+  coordsPlaceId?: string | null;
+  /** When Google returned lat/lng (ISO); set with coordsPlaceId. */
+  coordsFetchedAt?: string | null;
   status: ListingStatus;
   /** What the venue was before its partner closed it; reopening restores it.
    *  Null while open, and for venues closed before this was recorded. */
@@ -709,6 +713,9 @@ export interface VenueEvent {
   addressJson: Record<string, unknown> | null;
   lat: number | null;
   lng: number | null;
+  /** As on Venue. */
+  coordsPlaceId?: string | null;
+  coordsFetchedAt?: string | null;
   tzName: string | null;
   name: string;
   description: string | null;

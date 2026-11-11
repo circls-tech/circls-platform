@@ -10,7 +10,9 @@ import {
 } from '@/lib/api/events';
 import { useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
+import { coordsProvenanceOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
+import { applyAddressSuggestion } from '@/lib/address_suggestion';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
@@ -76,7 +78,7 @@ interface EventFields {
   pincode: string;
   country: string;
   tz: string;
-  coords: { lat: number; lng: number } | null;
+  coords: PinCoords | null;
 }
 
 /** A blank form, or one seeded from the event being duplicated. */
@@ -181,7 +183,7 @@ export function NewEventForm({
   // Coordinates are held here (never shown) — set from an autocomplete pick and
   // cleared on any manual address edit so the server geocodes from the typed
   // address on create. Organisers never enter lat/lng by hand.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(initial.coords);
+  const [coords, setCoords] = useState<PinCoords | null>(initial.coords);
   const [err, setErr] = useState<string | null>(null);
   useAutosave<EventFields>(autosave, {
     scope,
@@ -223,14 +225,16 @@ export function NewEventForm({
   });
   const busy = createEvent.isPending || uploadProgress !== null;
 
-  /** Fill the address fields + coordinates from a chosen autocomplete result. */
+  /** Fill the address fields + pin from a picked suggestion (lib/address_suggestion). */
   function applySuggestion(s: AddressSuggestion) {
-    if (s.line1) setLine1(s.line1);
-    setCity(s.city ?? '');
-    setStateRegion(s.state ?? '');
-    if (s.postalCode) setPincode(s.postalCode);
-    if (s.country) setCountry(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    applyAddressSuggestion(s, {
+      setLine1: setLine1,
+      setCity: setCity,
+      setState: setStateRegion,
+      setPostalCode: setPincode,
+      setCountry: setCountry,
+      setCoords,
+    });
   }
 
   /** Timezone for one series date — its override venue's tz, else the event's. */
@@ -328,7 +332,7 @@ export function NewEventForm({
               ...base,
               addressJson,
               tzName: tz,
-              ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+              ...(coords ? { lat: coords.lat, lng: coords.lng, ...coordsProvenanceOf(coords) } : {}),
             }
           : { ...base };
     }

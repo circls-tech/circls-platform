@@ -51,7 +51,8 @@ async function main(): Promise<void> {
   logger.info(notificationModes(), 'notification_providers');
 
   // Which geocoder resolves venue addresses to coordinates. `stub` = built-in
-  // IN/US gazetteer (no external calls); `nominatim` = live OSM geocoding.
+  // IN/US gazetteer (no external calls); `photon` = live OSM geocoding;
+  // `google` = Google Maps Platform (paid past the free allowance).
   logger.info({ geocoder: geocoderMode() }, 'geocoder_provider');
 
   const app = await buildServer();

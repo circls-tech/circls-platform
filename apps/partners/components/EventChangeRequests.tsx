@@ -13,7 +13,9 @@ import { useCurrency } from '@/lib/currency';
 import { useCan } from '@/lib/use_can';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { localToTzIso } from '@/lib/time';
+import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
+import { applyAddressSuggestion } from '@/lib/address_suggestion';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
@@ -103,7 +105,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
   const [countryForm, setCountryForm] = useState('');
   // Set from an autocomplete pick / map pin; cleared on manual edits so the
   // server re-geocodes from the typed address on approval.
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useState<PinCoords | null>(null);
   const [tzForm, setTzForm] = useState('Asia/Kolkata');
 
   const pending = requests?.rows.find((r) => r.status === 'pending');
@@ -137,19 +139,26 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     setStateRegion(str('state'));
     setPincode(str('pincode'));
     setCountryForm(str('country'));
-    setCoords(ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : null);
+    setCoords(
+      ev.lat != null && ev.lng != null
+        ? { lat: ev.lat, lng: ev.lng, placeId: ev.coordsPlaceId ?? null }
+        : null,
+    );
     setTzForm(ev.tzName ?? 'Asia/Kolkata');
     setError(null);
     setOpen(true);
   }
 
+  /** Fill the address fields + pin from a picked suggestion (lib/address_suggestion). */
   function applySuggestion(s: AddressSuggestion) {
-    if (s.line1) setLine1(s.line1);
-    setCity(s.city ?? '');
-    setStateRegion(s.state ?? '');
-    if (s.postalCode) setPincode(s.postalCode);
-    if (s.country) setCountryForm(s.country);
-    setCoords({ lat: s.lat, lng: s.lng });
+    applyAddressSuggestion(s, {
+      setLine1: setLine1,
+      setCity: setCity,
+      setState: setStateRegion,
+      setPostalCode: setPincode,
+      setCountry: setCountryForm,
+      setCoords,
+    });
   }
 
   function buildAddressJson(): Record<string, unknown> {
@@ -214,6 +223,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
         if (coords) {
           input.lat = coords.lat;
           input.lng = coords.lng;
+          Object.assign(input, coordsPlaceIdOf(coords));
         }
         if (scopeChanged) input.venueId = null;
       }

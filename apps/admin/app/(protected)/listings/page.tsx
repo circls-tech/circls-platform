@@ -59,8 +59,14 @@ function fmtAddress(addressJson: Record<string, unknown> | null | undefined): st
 
 /** Map pin suffix — the only visible difference when a partner drags the pin
  *  without touching the address text. */
-function fmtPin(lat: number | null | undefined, lng: number | null | undefined): string {
-  return lat != null && lng != null ? ` · pin ${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
+function fmtPin(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  placeId?: string | null,
+): string {
+  if (lat != null && lng != null) return ` · pin ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  // A request keeps a Google pin as its place; approval fetches the coordinates.
+  return placeId ? ' · pin from Google Maps' : '';
 }
 
 /** The queue tabs: the four listing types + live-event change requests. */
@@ -629,7 +635,8 @@ function ChangeDetailContent({ detail }: { detail: AdminChangeRequestDetail }) {
     patch.addressJson !== undefined ||
     patch.tzName !== undefined ||
     patch.lat !== undefined ||
-    patch.lng !== undefined;
+    patch.lng !== undefined ||
+    patch.coordsPlaceId !== undefined;
 
   // Tier diff keyed by live tier id: proposed rows without an id are additions,
   // current tiers absent from the proposal are removals.
@@ -668,7 +675,7 @@ function ChangeDetailContent({ detail }: { detail: AdminChangeRequestDetail }) {
           proposed={
             patch.venueId
               ? `Venue: ${detail.proposedVenueName ?? patch.venueId}`
-              : `${fmtAddress(patch.addressJson)}${patch.tzName ? ` (${patch.tzName})` : ''}${fmtPin(patch.lat, patch.lng)}`
+              : `${fmtAddress(patch.addressJson)}${patch.tzName ? ` (${patch.tzName})` : ''}${fmtPin(patch.lat, patch.lng, patch.coordsPlaceId)}`
           }
         />
       )}

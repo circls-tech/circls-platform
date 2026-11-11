@@ -518,6 +518,8 @@ export interface AdminChangeRequestPatch {
   addressJson?: Record<string, unknown>;
   lat?: number | null;
   lng?: number | null;
+  /** A Google pin, kept as its place: approval fetches its coordinates. */
+  coordsPlaceId?: string | null;
   tzName?: string;
   tiers?: AdminChangeRequestTier[];
 }
