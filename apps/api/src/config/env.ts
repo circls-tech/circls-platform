@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { type CountryKey, normalizeCountry } from '../lib/geocoding/gazetteer.js';
+
+const SERVED_COUNTRIES: readonly CountryKey[] = ['India', 'USA'];
 
 export const envSchema = z
   .object({
@@ -187,6 +190,34 @@ export const envSchema = z
   // Server-side Google key: Places API (New) + Geocoding API only, restricted
   // to the API server's IP. Never the browser key the partner portal ships.
   GOOGLE_MAPS_SERVER_KEY: z.string().optional(),
+  // Which served countries the google provider suggests and geocodes in:
+  // comma-separated, any spelling normalizeCountry knows ("India", "IN",
+  // "USA"…). Unset means all of them. Narrowing it keeps suggestions to where
+  // partners are, and Google's India pricing (higher free caps) needs most
+  // usage to be located in India. The free providers ignore it: they only
+  // ever return the served countries.
+  GOOGLE_MAPS_COUNTRIES: z
+    .preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().optional())
+    .transform((v, ctx): CountryKey[] => {
+      if (v === undefined) return [...SERVED_COUNTRIES];
+      const out: CountryKey[] = [];
+      for (const part of v.split(',').map((s) => s.trim()).filter(Boolean)) {
+        const country = normalizeCountry(part);
+        if (!country) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Unknown country "${part}" (served: ${SERVED_COUNTRIES.join(', ')})`,
+          });
+          return z.NEVER;
+        }
+        if (!out.includes(country)) out.push(country);
+      }
+      if (out.length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Name at least one country, or leave it unset' });
+        return z.NEVER;
+      }
+      return out;
+    }),
 
   // Partner portal base URL (used to build invite acceptance links).
   PARTNERS_BASE_URL: z.string().url().default('https://partners.circls.app'),

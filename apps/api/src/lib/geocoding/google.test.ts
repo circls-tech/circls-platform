@@ -176,3 +176,39 @@ describe('GoogleGeocoder.geocode / reverse', () => {
     expect(await geocoder.reverse({ lat: 12.3, lng: 76.6 })).toEqual({ city: 'Mysuru', country: 'India' });
   });
 });
+
+describe('GoogleGeocoder narrowed by GOOGLE_MAPS_COUNTRIES', () => {
+  const indiaOnly = new GoogleGeocoder('test-key', ['India']);
+  const PREDICTION = { suggestions: [{ placePrediction: { placeId: 'ChIJx', text: { text: 'MG Road, Bengaluru' } } }] };
+
+  it('suggests only in the configured country when the form names none', async () => {
+    const fetchMock = respondWith(PREDICTION);
+    await indiaOnly.search('MG Road');
+    expect(JSON.parse(onlyCall(fetchMock).init.body as string).includedRegionCodes).toEqual(['in']);
+  });
+
+  it('returns nothing, without a billed request, for a country it does not cover', async () => {
+    const fetchMock = respondWith(PREDICTION);
+    expect(await indiaOnly.search('Main Street', { country: 'USA' })).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('holds an address with no country to the one configured country', async () => {
+    const fetchMock = respondWith({ status: 'ZERO_RESULTS', results: [] });
+    await indiaOnly.geocode({ line1: '100 Feet Road', city: 'Bengaluru' });
+    expect(onlyCall(fetchMock).url.searchParams.get('components')).toBe('country:in');
+  });
+
+  it('does not geocode an address in a country it does not cover', async () => {
+    const fetchMock = respondWith({ status: 'OK', results: [] });
+    expect(await indiaOnly.geocode({ city: 'Boston', country: 'USA' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves a country-less address unfiltered while it covers several', async () => {
+    // The Geocoding API filters by one country at a time.
+    const fetchMock = respondWith({ status: 'ZERO_RESULTS', results: [] });
+    await geocoder.geocode({ city: 'Pune' });
+    expect(onlyCall(fetchMock).url.searchParams.get('components')).toBeNull();
+  });
+});

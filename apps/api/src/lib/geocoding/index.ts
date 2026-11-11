@@ -263,7 +263,7 @@ export function getGeocoder(): Geocoder {
       break;
     case 'google':
       // env.ts refuses to boot with the google provider and no key.
-      cached = new GoogleGeocoder(env.GOOGLE_MAPS_SERVER_KEY ?? '');
+      cached = new GoogleGeocoder(env.GOOGLE_MAPS_SERVER_KEY ?? '', env.GOOGLE_MAPS_COUNTRIES);
       break;
     default:
       cached = new StubGeocoder();

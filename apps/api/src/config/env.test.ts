@@ -183,3 +183,28 @@ describe('envSchema production refinement', () => {
     ).toBe(true);
   });
 });
+
+describe('GOOGLE_MAPS_COUNTRIES', () => {
+  const parse = (value?: string) =>
+    envSchema.safeParse({ DATABASE_URL: 'postgres://x', ...(value === undefined ? {} : { GOOGLE_MAPS_COUNTRIES: value }) });
+
+  it('covers every served country when unset or blank', () => {
+    for (const value of [undefined, '', '  ']) {
+      const r = parse(value);
+      expect(r.success && r.data.GOOGLE_MAPS_COUNTRIES).toEqual(['India', 'USA']);
+    }
+  });
+
+  it('takes names or codes, comma-separated, without duplicates', () => {
+    const india = parse('IN');
+    expect(india.success && india.data.GOOGLE_MAPS_COUNTRIES).toEqual(['India']);
+    const both = parse(' india , USA, in ');
+    expect(both.success && both.data.GOOGLE_MAPS_COUNTRIES).toEqual(['India', 'USA']);
+  });
+
+  it('refuses to boot on a country we do not serve', () => {
+    const r = parse('India, France');
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0]?.message).toContain('France');
+  });
+});

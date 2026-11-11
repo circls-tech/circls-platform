@@ -67,6 +67,7 @@ services:
       # refuses to boot on one, so the fallback is spelled out.
       GEOCODER_PROVIDER: ${GEOCODER_PROVIDER:-stub}
       GOOGLE_MAPS_SERVER_KEY: ${GOOGLE_MAPS_SERVER_KEY:-}
+      GOOGLE_MAPS_COUNTRIES: ${GOOGLE_MAPS_COUNTRIES:-}
     command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
     ports: ['8080:8080']
     volumes:

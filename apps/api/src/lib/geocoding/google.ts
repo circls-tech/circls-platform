@@ -120,7 +120,11 @@ interface GeocodingResponse {
 
 export class GoogleGeocoder implements Geocoder {
   readonly mode = 'google' as const;
-  constructor(private readonly apiKey: string) {}
+  /** @param countries Where to suggest and geocode (GOOGLE_MAPS_COUNTRIES). */
+  constructor(
+    private readonly apiKey: string,
+    private readonly countries: readonly CountryKey[] = Object.keys(REGION_CODE) as CountryKey[],
+  ) {}
 
   /** Places (New) call. Null on any failure — geocoding is best-effort. */
   private async places<T>(path: string, init: { method: 'GET' | 'POST'; body?: unknown; fieldMask?: string }): Promise<T | null> {
@@ -168,7 +172,12 @@ export class GoogleGeocoder implements Geocoder {
     if (!address) return null;
     const params = new URLSearchParams({ address });
     const wanted = normalizeCountry(query.country ?? null);
-    if (wanted) params.set('components', `country:${REGION_CODE[wanted]}`);
+    // An address in a country we don't geocode in costs no request.
+    if (wanted && !this.countries.includes(wanted)) return null;
+    // The Geocoding API filters by one country at a time, so an address with
+    // no country is held to ours only when there is just one.
+    const only = wanted ?? (this.countries.length === 1 ? this.countries[0] : null);
+    if (only) params.set('components', `country:${REGION_CODE[only]}`);
     const hit = await this.geocoding(params);
     const loc = hit?.geometry?.location;
     if (typeof loc?.lat !== 'number' || typeof loc?.lng !== 'number') return null;
@@ -179,11 +188,14 @@ export class GoogleGeocoder implements Geocoder {
     const input = query.trim();
     if (!input) return [];
     const scoped = normalizeCountry(opts.country ?? null);
+    // A form scoped to a country we don't suggest in gets nothing, and costs
+    // no request; the partner can still drop the pin by hand.
+    if (scoped && !this.countries.includes(scoped)) return [];
     const json = await this.places<PlacesAutocompleteResponse>('places:autocomplete', {
       method: 'POST',
       body: {
         input,
-        includedRegionCodes: scoped ? [REGION_CODE[scoped]] : Object.values(REGION_CODE),
+        includedRegionCodes: (scoped ? [scoped] : this.countries).map((c) => REGION_CODE[c]),
         languageCode: 'en',
         ...(opts.sessionToken ? { sessionToken: opts.sessionToken } : {}),
       },
