@@ -25,6 +25,7 @@ import { formatMoney, useCurrency } from '@/lib/currency';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
+import { applyAddressSuggestion } from '@/lib/address_suggestion';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
@@ -224,14 +225,16 @@ export default function OrgEventDetailPage() {
     setEditing(true);
   }
 
-  /** Fill the address fields + coordinates from a chosen autocomplete result. */
+  /** Fill the address fields + pin from a picked suggestion (lib/address_suggestion). */
   function applySuggestion(s: AddressSuggestion) {
-    if (s.line1) setLine1(s.line1);
-    setCity(s.city ?? '');
-    setStateRegion(s.state ?? '');
-    if (s.postalCode) setPincode(s.postalCode);
-    if (s.country) setCountryForm(s.country);
-    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
+    applyAddressSuggestion(s, {
+      setLine1: setLine1,
+      setCity: setCity,
+      setState: setStateRegion,
+      setPostalCode: setPincode,
+      setCountry: setCountryForm,
+      setCoords,
+    });
   }
 
   async function handlePublish() {

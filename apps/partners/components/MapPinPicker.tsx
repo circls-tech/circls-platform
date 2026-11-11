@@ -1,6 +1,6 @@
 'use client';
 
-import { initialMapView, type PinCoords, useUnpinnedView } from '@/lib/map_view';
+import { initialMapView, ownPin, type PinCoords, useUnpinnedView } from '@/lib/map_view';
 import { GooglePinMap } from './GooglePinMap';
 import { LeafletPinMap } from './LeafletPinMap';
 
@@ -9,6 +9,9 @@ export type { PinCoords } from '@/lib/map_view';
 /** Set at build time. With a key the map is Google's, and so must be the API's
  *  geocoder (GEOCODER_PROVIDER=google); without one it's OpenStreetMap. */
 const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
+/** Google's terms forbid showing its coordinates on another map. */
+const PIN_HIDDEN_NOTE =
+  "This pin came from Google Maps and can't be shown on this map — click the map to set your own.";
 /** Google's demo map ID works for development only. */
 const GOOGLE_MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
 
@@ -36,20 +39,27 @@ export function MapPinPicker({
   /** Selected country — fallback centre, and scopes the city lookup. */
   country?: string | null;
 }) {
+  // A Google-sourced pin is never drawn on the OpenStreetMap map — the case
+  // where the portal was built without the Google key but the API still
+  // geocodes with Google (a half-done rollback, say).
+  const hiddenGooglePin = !GOOGLE_MAPS_KEY && Boolean(coords?.placeId);
+  const shown = hiddenGooglePin ? null : coords;
   // Only the first value matters: the map keeps its own view after mounting.
-  const initialView = initialMapView(coords, country);
-  const unpinnedView = useUnpinnedView(city, country, coords === null);
+  const initialView = initialMapView(shown, country);
+  const unpinnedView = useUnpinnedView(city, country, shown === null);
+  // Clicking or dragging makes the pin the partner's own: no Google place.
+  const pick = (c: PinCoords) => onChange(ownPin(c.lat, c.lng));
   const map = GOOGLE_MAPS_KEY ? (
     <GooglePinMap
       apiKey={GOOGLE_MAPS_KEY}
       mapId={GOOGLE_MAP_ID}
-      coords={coords}
+      coords={shown}
       initialView={initialView}
       unpinnedView={unpinnedView}
-      onPick={onChange}
+      onPick={pick}
     />
   ) : (
-    <LeafletPinMap coords={coords} initialView={initialView} unpinnedView={unpinnedView} onPick={onChange} />
+    <LeafletPinMap coords={shown} initialView={initialView} unpinnedView={unpinnedView} onPick={pick} />
   );
 
   return (
@@ -59,9 +69,11 @@ export function MapPinPicker({
       </label>
       {map}
       <span className="text-xs text-gray-400">
-        {coords
-          ? 'Pin set — drag it (or click the map) to adjust the exact spot.'
-          : 'Click the map to drop a pin on the exact spot. Until then, the map location comes from the typed address.'}
+        {hiddenGooglePin
+          ? PIN_HIDDEN_NOTE
+          : coords
+            ? 'Pin set — drag it (or click the map) to adjust the exact spot.'
+            : 'Click the map to drop a pin on the exact spot. Until then, the map location comes from the typed address.'}
       </span>
     </div>
   );

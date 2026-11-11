@@ -120,7 +120,7 @@ const JOBS: ScheduledJob[] = [
     cron: '45 21 * * *', // 03:15 IST.
     run: async () => {
       const r = await refreshGoogleCoords();
-      if (r.refreshed > 0 || r.replaced > 0) logger.info(r, 'google_coords_refresh_complete');
+      if (r.refreshed > 0 || r.replaced > 0 || r.deferred > 0) logger.info(r, 'google_coords_refresh_complete');
     },
   },
   {

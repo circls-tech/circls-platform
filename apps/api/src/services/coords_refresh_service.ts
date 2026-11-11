@@ -29,6 +29,14 @@ export const DROP_AFTER_DAYS = 29;
 /** Rows per table per run — far above the daily need, a cap on a bad day. */
 const BATCH = 500;
 
+/**
+ * How long one run may spend. pg-boss expires a job after 15 minutes and
+ * retries it while the first run may still be going, which would re-fetch —
+ * and bill — the same rows twice. Rows left over wait for tomorrow: they're
+ * due at 25 days and only dropped at 29, so a short run loses nothing.
+ */
+export const RUN_BUDGET_MS = 10 * 60_000;
+
 const DAY_MS = 86_400_000;
 
 interface DueRow {
@@ -60,9 +68,12 @@ async function nextCoords(row: DueRow, now: Date): Promise<NextCoords | null> {
 
 export async function refreshGoogleCoords(
   now: Date = new Date(),
-): Promise<{ refreshed: number; replaced: number }> {
+  budgetMs: number = RUN_BUDGET_MS,
+): Promise<{ refreshed: number; replaced: number; deferred: number }> {
   const cutoff = new Date(now.getTime() - REFRESH_AFTER_DAYS * DAY_MS);
-  const counts = { refreshed: 0, replaced: 0 };
+  const counts = { refreshed: 0, replaced: 0, deferred: 0 };
+  const deadline = Date.now() + budgetMs;
+  const outOfTime = () => Date.now() >= deadline;
   const tally = (next: NextCoords) => {
     if (next.coordsPlaceId) counts.refreshed++;
     else counts.replaced++;
@@ -83,7 +94,11 @@ export async function refreshGoogleCoords(
     .where(and(isNotNull(venues.coordsPlaceId), lt(venues.coordsFetchedAt, cutoff)))
     .orderBy(asc(venues.coordsFetchedAt))
     .limit(BATCH);
-  for (const v of dueVenues) {
+  for (const [i, v] of dueVenues.entries()) {
+    if (outOfTime()) {
+      counts.deferred += dueVenues.length - i;
+      break;
+    }
     if (!v.placeId || !v.fetchedAt) continue;
     const next = await nextCoords({ placeId: v.placeId, fetchedAt: v.fetchedAt, address: v, ended: false }, now);
     if (!next) continue;
@@ -107,7 +122,11 @@ export async function refreshGoogleCoords(
     .where(and(isNotNull(events.coordsPlaceId), lt(events.coordsFetchedAt, cutoff)))
     .orderBy(asc(events.coordsFetchedAt))
     .limit(BATCH);
-  for (const e of dueEvents) {
+  for (const [i, e] of dueEvents.entries()) {
+    if (outOfTime()) {
+      counts.deferred += dueEvents.length - i;
+      break;
+    }
     if (!e.placeId || !e.fetchedAt) continue;
     const next = await nextCoords(
       {

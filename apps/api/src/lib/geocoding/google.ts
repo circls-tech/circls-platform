@@ -57,10 +57,13 @@ function component(components: AddressComponent[], ...types: string[]): AddressC
 /** The town a set of components is in. NYC addresses carry the borough as
  *  sublocality_level_1 and no locality; Indian ones nearly always have one. */
 function cityOf(components: AddressComponent[]): string | null {
-  return (
-    component(components, 'locality', 'postal_town', 'sublocality_level_1', 'administrative_area_level_2')
-      ?.long ?? null
-  );
+  const town = component(components, 'locality', 'postal_town', 'sublocality_level_1')?.long;
+  if (town) return town;
+  // Failing that, the district — named for its city with a suffix in India
+  // ("Bangalore Urban", "Pune District"). Without it the name is the city's,
+  // which the save canonicalises ("Bangalore" → "Bengaluru") for browse.
+  const district = component(components, 'administrative_area_level_2')?.long;
+  return district ? district.replace(/\s+(urban|rural|district|division)$/i, '') : null;
 }
 
 /**
@@ -109,8 +112,14 @@ interface PlaceDetailsResponse {
   location?: { latitude?: number; longitude?: number };
 }
 
+interface PlacesError {
+  error?: { status?: string; message?: string; details?: { reason?: string }[] };
+}
+
 interface GeocodingResponse {
   status?: string;
+  /** Why a request was refused (REQUEST_DENIED and the like). */
+  error_message?: string;
   results?: {
     place_id?: string;
     geometry?: { location?: { lat?: number; lng?: number } };
@@ -141,7 +150,20 @@ export class GoogleGeocoder implements Geocoder {
       });
       if (!res.ok) {
         // A place that no longer exists is an expected 404, not an alarm.
-        if (res.status !== 404) logger.warn({ status: res.status, path: path.split('/')[0] }, 'geocode_google_places_error');
+        if (res.status !== 404) {
+          // Google says why (a key restricted to another IP, an API not
+          // enabled, billing off); the body never contains the key.
+          const body = (await res.json().catch(() => null)) as PlacesError | null;
+          logger.warn(
+            {
+              status: res.status,
+              path: path.split('/')[0],
+              reason: body?.error?.details?.find((d) => d.reason)?.reason ?? body?.error?.status,
+              message: body?.error?.message,
+            },
+            'geocode_google_places_error',
+          );
+        }
         return null;
       }
       return (await res.json()) as T;
@@ -159,7 +181,9 @@ export class GoogleGeocoder implements Geocoder {
       const res = await fetch(`${GEOCODE_URL}?${params.toString()}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       const json = (await res.json().catch(() => ({}))) as GeocodingResponse;
       if (json.status === 'OK') return json.results?.[0] ?? null;
-      if (json.status !== 'ZERO_RESULTS') logger.warn({ status: json.status ?? res.status }, 'geocode_google_error');
+      if (json.status !== 'ZERO_RESULTS') {
+        logger.warn({ status: json.status ?? res.status, message: json.error_message }, 'geocode_google_error');
+      }
       return null;
     } catch (err) {
       logger.warn({ err }, 'geocode_google_failed');

@@ -47,11 +47,25 @@ const PATCH_KEYS = [
   'addressJson',
   'lat',
   'lng',
+  'coordsPlaceId',
   'tzName',
   'tiers',
 ] as const;
 
-const LOCATION_KEYS = new Set(['venueId', 'addressJson', 'lat', 'lng', 'tzName']);
+const LOCATION_KEYS = new Set(['venueId', 'addressJson', 'lat', 'lng', 'coordsPlaceId', 'tzName']);
+
+/**
+ * The patch as the request row keeps it. A Google pin is kept as its place
+ * only: Google's coordinates may be kept for 30 days, a request can wait
+ * longer than that and its row is kept for good, so approval fetches the
+ * coordinates afresh from the place (prepareEventPatch) and their 30 days
+ * start then. The partner's own pin has no place and is kept as sent.
+ */
+export function storablePatch(patch: EventChangeRequestPatch): EventChangeRequestPatch {
+  if (!patch.coordsPlaceId) return patch;
+  const { lat: _lat, lng: _lng, ...rest } = patch;
+  return rest;
+}
 
 /** The patch's defined keys — what the request proposes to change. */
 export function patchedFields(patch: EventChangeRequestPatch): string[] {
@@ -164,8 +178,14 @@ async function buildSnapshot(
   if (patchedFields(patch).some((k) => LOCATION_KEYS.has(k))) {
     snapshot.venueId = event.venueId;
     snapshot.addressJson = event.addressJson;
-    snapshot.lat = event.lat;
-    snapshot.lng = event.lng;
+    // Google's coordinates aren't ours to keep in a row that lives for good —
+    // the snapshot records their place instead.
+    if (event.coordsPlaceId) {
+      snapshot.coordsPlaceId = event.coordsPlaceId;
+    } else {
+      snapshot.lat = event.lat;
+      snapshot.lng = event.lng;
+    }
     snapshot.tzName = event.tzName;
   }
   if (patch.tiers !== undefined) {
@@ -239,7 +259,7 @@ export async function createChangeRequest(
           eventId,
           tenantId: ctx.tenantId,
           requestedBy: ctx.actorUserId,
-          patch,
+          patch: storablePatch(patch),
           snapshot: prepared ? await buildSnapshot(current, patch, tx) : snapshot,
           ...(autoApprove ? { status: 'approved' as const, reviewedAt: sql`now()` } : {}),
         })

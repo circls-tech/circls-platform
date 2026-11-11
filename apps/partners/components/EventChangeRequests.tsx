@@ -13,8 +13,9 @@ import { useCurrency } from '@/lib/currency';
 import { useCan } from '@/lib/use_can';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { localToTzIso } from '@/lib/time';
-import type { PinCoords } from '@/lib/map_view';
+import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
 import type { AddressSuggestion } from '@/lib/api/geocode';
+import { applyAddressSuggestion } from '@/lib/address_suggestion';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { CityDidYouMean } from '@/components/CityDidYouMean';
 import { MapPinPicker } from '@/components/MapPinPicker';
@@ -148,13 +149,16 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
     setOpen(true);
   }
 
+  /** Fill the address fields + pin from a picked suggestion (lib/address_suggestion). */
   function applySuggestion(s: AddressSuggestion) {
-    if (s.line1) setLine1(s.line1);
-    setCity(s.city ?? '');
-    setStateRegion(s.state ?? '');
-    if (s.postalCode) setPincode(s.postalCode);
-    if (s.country) setCountryForm(s.country);
-    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
+    applyAddressSuggestion(s, {
+      setLine1: setLine1,
+      setCity: setCity,
+      setState: setStateRegion,
+      setPostalCode: setPincode,
+      setCountry: setCountryForm,
+      setCoords,
+    });
   }
 
   function buildAddressJson(): Record<string, unknown> {
@@ -219,7 +223,7 @@ export function EventChangeRequests({ tenantId, ev }: { tenantId: string; ev: Ve
         if (coords) {
           input.lat = coords.lat;
           input.lng = coords.lng;
-          if (coords.placeId) input.coordsPlaceId = coords.placeId;
+          Object.assign(input, coordsPlaceIdOf(coords));
         }
         if (scopeChanged) input.venueId = null;
       }

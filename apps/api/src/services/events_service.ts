@@ -36,7 +36,7 @@ import {
 } from '../lib/geocoding/index.js';
 import { canonicalizeCity } from '../lib/geocoding/gazetteer.js';
 import { onEventCancelled, onListingSubmitted } from './notification_hooks.js';
-import { coordsProvenance, sentCoordsProvenance } from '../lib/geocoding/provenance.js';
+import { coordsProvenance, sentCoordsProvenance, withoutGoogleCoords } from '../lib/geocoding/provenance.js';
 import {
   applyLiveTiers,
   listTiersWithRemaining,
@@ -218,6 +218,8 @@ export interface CreateEventInput {
   lng?: number | undefined;
   /** The Google place lat/lng came from, when they did (see lib/geocoding/provenance). */
   coordsPlaceId?: string | null | undefined;
+  /** When Google returned lat/lng, if known — a later save keeps its 30 days. */
+  coordsFetchedAt?: Date | undefined;
   tzName?: string | undefined;
   name: string;
   description?: string | undefined;
@@ -282,6 +284,7 @@ async function deriveStandaloneCoords(
       input.lat = point.lat;
       input.lng = point.lng;
       input.coordsPlaceId = point.placeId ?? null;
+      input.coordsFetchedAt = undefined; // fetched just now
     }
   }
 }
@@ -386,6 +389,7 @@ async function insertEventTx(
             lat: input.lat ?? null,
             lng: input.lng ?? null,
             coordsPlaceId: input.coordsPlaceId,
+            coordsFetchedAt: input.coordsFetchedAt,
           })
         : coordsProvenance(null)),
       tzName: isStandalone ? (input.tzName ?? null) : null,
@@ -741,6 +745,18 @@ export async function prepareEventPatch(patch: UpdateEventPatch): Promise<Update
   if (patch.addressJson !== undefined) {
     patch = { ...patch, addressJson: canonicalizeAddressJsonCity(patch.addressJson) };
   }
+  // A Google place with no coordinates — how a change request keeps a Google
+  // pin (storablePatch) — is resolved now, so its 30 days start today. If
+  // Google can't resolve it, the address below is geocoded instead.
+  if (patch.coordsPlaceId && patch.lat === undefined && patch.lng === undefined) {
+    const fresh = await getGeocoder().resolve(patch.coordsPlaceId);
+    if (fresh?.lat != null && fresh.lng != null) {
+      patch = { ...patch, lat: fresh.lat, lng: fresh.lng, coordsPlaceId: fresh.placeId };
+    } else {
+      const { coordsPlaceId: _unresolved, ...rest } = patch;
+      patch = rest;
+    }
+  }
   if (patch.addressJson !== undefined && patch.lat === undefined && patch.lng === undefined) {
     const query = toGeocodeQuery(patch.addressJson);
     if (hasGeocodableAddress(query)) {
@@ -870,8 +886,10 @@ async function applyEventPatchTx(
     opts.auditAction,
     'event',
     eventId,
-    existing as unknown as Record<string, unknown>,
-    set,
+    // Google's coordinates may only be kept 30 days; the audit log keeps
+    // everything, so it records the place instead (lib/geocoding/provenance).
+    withoutGoogleCoords(existing as unknown as Record<string, unknown>),
+    withoutGoogleCoords(set as Record<string, unknown>, existing.coordsPlaceId),
   );
 
   return updated!;

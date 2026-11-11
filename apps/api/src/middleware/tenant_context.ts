@@ -36,6 +36,21 @@ export interface TenantContext {
  * never the Circls tenant itself, where they are members anyway). Their own
  * membership, where they have one, wins.
  */
+/**
+ * For partner-wide routes that have no tenant in the path — the address
+ * search, say: the caller must belong to at least one organisation. Circls
+ * staff do (the platform tenant). A consumer signed in with a phone number
+ * belongs to none.
+ */
+export async function requireAnyTenantMembership(userId: string): Promise<void> {
+  const [row] = await db
+    .select({ tenantId: tenantMembers.tenantId })
+    .from(tenantMembers)
+    .where(eq(tenantMembers.userId, userId))
+    .limit(1);
+  if (!row) throw new Forbidden('Only partner organisations can do this', 'not_a_partner');
+}
+
 export async function requireTenantMembership(
   userId: string,
   tenantId: string,

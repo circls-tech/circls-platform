@@ -90,6 +90,8 @@ export interface CreateTenantEventInput {
   lng?: number;
   /** The Google place lat/lng were picked from (see lib/map_view PinCoords). */
   coordsPlaceId?: string;
+  /** When Google returned lat/lng (ISO), so a later save keeps its 30 days. */
+  coordsFetchedAt?: string;
   tzName?: string;
   name: string;
   description?: string;

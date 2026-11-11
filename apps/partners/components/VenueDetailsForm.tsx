@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from 'react';
 import { useUpdateVenue } from '@/lib/api/queries';
 import type { AddressSuggestion } from '@/lib/api/geocode';
+import { applyAddressSuggestion } from '@/lib/address_suggestion';
 import type { OpeningHours, Venue } from '@/lib/api/types';
 import { SERVED_COUNTRIES } from '@/lib/countries';
 import { coordsPlaceIdOf, type PinCoords } from '@/lib/map_view';
@@ -97,7 +98,7 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
   // server re-geocodes from the typed address on save.
   const [coords, setCoords] = useState<PinCoords | null>(
     venue.lat != null && venue.lng != null
-      ? { lat: venue.lat, lng: venue.lng, placeId: venue.coordsPlaceId ?? null }
+      ? { lat: venue.lat, lng: venue.lng, placeId: venue.coordsPlaceId ?? null, fetchedAt: venue.coordsFetchedAt ?? null }
       : null,
   );
 
@@ -108,14 +109,16 @@ export function VenueDetailsForm({ venue }: { venue: Venue }) {
     setAmenities((prev) => (prev.includes(value) ? prev.filter((a) => a !== value) : [...prev, value]));
   }
 
-  /** Fill the structured fields + coordinates from a chosen autocomplete result. */
+  /** Fill the address fields + pin from a picked suggestion (lib/address_suggestion). */
   function applySuggestion(s: AddressSuggestion) {
-    if (s.line1) setAddressLine1(s.line1);
-    setCity(s.city ?? '');
-    setState(s.state ?? '');
-    if (s.postalCode) setPostalCode(s.postalCode);
-    if (s.country) setCountry(s.country);
-    if (s.lat != null && s.lng != null) setCoords({ lat: s.lat, lng: s.lng, placeId: s.placeId });
+    applyAddressSuggestion(s, {
+      setLine1: setAddressLine1,
+      setCity: setCity,
+      setState: setState,
+      setPostalCode: setPostalCode,
+      setCountry: setCountry,
+      setCoords,
+    });
   }
 
   function setDay(key: string, patch: Partial<DayState>) {

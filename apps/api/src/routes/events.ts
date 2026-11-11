@@ -134,6 +134,7 @@ const occurrenceSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   coordsPlaceId: placeIdSchema.nullable().optional(),
+  coordsFetchedAt: z.string().datetime({ offset: true }).optional(),
   tzName: z.string().min(1).optional(),
   tiers: tiersField.optional(),
 });
@@ -170,6 +171,8 @@ const createTenantEventSchema = z
     lng: z.number().optional(),
     /** The Google place lat/lng were picked from, when they were. */
     coordsPlaceId: placeIdSchema.nullable().optional(),
+    /** When Google returned them (a saved draft, a duplicated event). */
+    coordsFetchedAt: z.string().datetime({ offset: true }).optional(),
     tzName: z.string().min(1).optional(),
     name: eventNameField(200),
     description: z.string().optional(),
@@ -255,6 +258,32 @@ const changeRequestSchema = z
 
 type OccurrenceInput = z.infer<typeof occurrenceSchema>;
 
+type Coords = Pick<CreateEventInput, 'lat' | 'lng' | 'coordsPlaceId' | 'coordsFetchedAt'>;
+
+const NO_COORDS: Coords = { lat: undefined, lng: undefined, coordsPlaceId: undefined, coordsFetchedAt: undefined };
+
+/**
+ * A standalone date's coordinates, with the Google place and fetch time that
+ * travel with them. A date naming its own coordinates keeps them; one naming
+ * only its own address gets none, so that address is geocoded on create
+ * rather than pinned at the base event's spot; otherwise it inherits the base.
+ */
+export function occurrenceCoords(
+  occ: Pick<OccurrenceInput, 'addressJson' | 'lat' | 'lng' | 'coordsPlaceId' | 'coordsFetchedAt'>,
+  base: Coords,
+): Coords {
+  if (occ.lat !== undefined || occ.lng !== undefined) {
+    return {
+      lat: occ.lat,
+      lng: occ.lng,
+      coordsPlaceId: occ.coordsPlaceId,
+      coordsFetchedAt: occ.coordsFetchedAt ? new Date(occ.coordsFetchedAt) : undefined,
+    };
+  }
+  if (occ.addressJson !== undefined) return NO_COORDS;
+  return { lat: base.lat, lng: base.lng, coordsPlaceId: base.coordsPlaceId, coordsFetchedAt: base.coordsFetchedAt };
+}
+
 /**
  * Resolve base payload + per-date overrides into one CreateEventInput per date.
  * Any override venue must belong to the tenant (checked once per distinct id).
@@ -279,14 +308,8 @@ async function resolveOccurrences(
       ...base,
       venueId,
       addressJson: standalone ? (occ.addressJson ?? base.addressJson) : undefined,
-      lat: standalone ? (occ.lat ?? base.lat) : undefined,
-      lng: standalone ? (occ.lng ?? base.lng) : undefined,
-      // The place travels with whichever coordinates the date ends up with.
-      coordsPlaceId: standalone
-        ? occ.lat !== undefined
-          ? occ.coordsPlaceId
-          : base.coordsPlaceId
-        : undefined,
+      // Explicit undefineds: these keys must override the spread `base`.
+      ...(standalone ? occurrenceCoords(occ, base) : NO_COORDS),
       tzName: standalone ? (occ.tzName ?? base.tzName) : undefined,
       startsAt: new Date(occ.startsAt),
       endsAt: new Date(occ.endsAt),
@@ -425,6 +448,7 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       lat: parsed.data.lat,
       lng: parsed.data.lng,
       coordsPlaceId: parsed.data.coordsPlaceId,
+      coordsFetchedAt: parsed.data.coordsFetchedAt ? new Date(parsed.data.coordsFetchedAt) : undefined,
       tzName: parsed.data.tzName,
       name: parsed.data.name,
       description: parsed.data.description,

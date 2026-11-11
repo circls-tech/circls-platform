@@ -24,7 +24,7 @@ const DEFAULT_TZ = 'Asia/Kolkata';
  * `postalCode`), so this is a straight read; anything non-string is blank.
  */
 export function addressDraftFromApi(
-  ev: Pick<VenueEvent, 'addressJson' | 'lat' | 'lng' | 'coordsPlaceId' | 'tzName'>,
+  ev: Pick<VenueEvent, 'addressJson' | 'lat' | 'lng' | 'coordsPlaceId' | 'coordsFetchedAt' | 'tzName'>,
 ): AddressDraft {
   const addr = (ev.addressJson ?? {}) as Record<string, unknown>;
   const str = (k: string) => (typeof addr[k] === 'string' ? (addr[k] as string) : '');
@@ -36,10 +36,16 @@ export function addressDraftFromApi(
     pincode: str('pincode'),
     country: str('country'),
     tz: ev.tzName ?? DEFAULT_TZ,
-    // A Google pin keeps its place, so a copy is still known to be Google's.
+    // A Google pin keeps its place and fetch time, so a copy is still known
+    // to be Google's and its 30 days don't restart.
     coords:
       ev.lat != null && ev.lng != null
-        ? { lat: ev.lat, lng: ev.lng, placeId: ev.coordsPlaceId ?? null }
+        ? {
+            lat: ev.lat,
+            lng: ev.lng,
+            placeId: ev.coordsPlaceId ?? null,
+            fetchedAt: ev.coordsPlaceId ? (ev.coordsFetchedAt ?? null) : null,
+          }
         : null,
   };
 }

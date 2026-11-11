@@ -96,7 +96,7 @@ describe('duplicateDraftFromEvent', () => {
       pincode: '560001',
       country: 'India',
       tz: 'Asia/Kolkata',
-      coords: { lat: 12.97, lng: 77.59, placeId: null },
+      coords: { lat: 12.97, lng: 77.59, placeId: null, fetchedAt: null },
     });
     // An event with no tiers still gives the form one blank row to fill.
     expect(draft.tiers).toHaveLength(1);
@@ -106,15 +106,26 @@ describe('duplicateDraftFromEvent', () => {
 });
 
 describe('addressDraftFromApi', () => {
-  it("keeps a Google pin's place, so a copy is still known to be Google's", () => {
+  it("keeps a Google pin's place and fetch time, so a copy's 30 days don't restart", () => {
     const draft = addressDraftFromApi({
       addressJson: { city: 'Pune' },
       lat: 18.52,
       lng: 73.85,
       coordsPlaceId: 'ChIJpune',
+      coordsFetchedAt: '2026-11-01T10:00:00.000Z',
       tzName: 'Asia/Kolkata',
     });
-    expect(draft.coords).toEqual({ lat: 18.52, lng: 73.85, placeId: 'ChIJpune' });
+    expect(draft.coords).toEqual({
+      lat: 18.52,
+      lng: 73.85,
+      placeId: 'ChIJpune',
+      fetchedAt: '2026-11-01T10:00:00.000Z',
+    });
+  });
+
+  it("carries no fetch time for the partner's own pin", () => {
+    const draft = addressDraftFromApi({ addressJson: null, lat: 18.52, lng: 73.85, coordsPlaceId: null, tzName: null });
+    expect(draft.coords).toEqual({ lat: 18.52, lng: 73.85, placeId: null, fetchedAt: null });
   });
 
   it('falls back to blanks, the default timezone and no pin', () => {

@@ -5,7 +5,8 @@ import { assertCap } from '../middleware/require_cap.js';
 import { currentUser } from '../middleware/current_user.js';
 import { requireAuth } from '../middleware/require_auth.js';
 import { assertTermsAccepted } from '../middleware/require_terms.js';
-import { requireTenantMembership } from '../middleware/tenant_context.js';
+import { requireAnyTenantMembership, requireTenantMembership } from '../middleware/tenant_context.js';
+import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { amenitiesSchema, openingHoursSchema } from '../lib/venue_metadata.js';
 import { getGeocoder } from '../lib/geocoding/index.js';
 import { findGazetteerCity, suggestCity } from '../lib/geocoding/gazetteer.js';
@@ -96,6 +97,9 @@ const geocodeSearchSchema = z.object({
   session: sessionTokenSchema.optional(),
 });
 
+/** Per-account cap on the address routes that may bill (see venueRoutes). */
+const GEOCODE_PER_MINUTE = 60;
+
 const geocodePlaceSchema = z.object({
   placeId: placeIdSchema,
   session: sessionTokenSchema.optional(),
@@ -112,15 +116,22 @@ const suggestCitySchema = z.object({
 });
 
 export const venueRoutes: FastifyPluginAsync = async (app) => {
-  // Address autocomplete for the venue form. Auth-gated (partner-only) so the
-  // upstream geocoder isn't an open proxy; results are normalised + restricted
-  // to the countries we serve inside the provider (see lib/geocoding).
-  app.get('/v1/venues/geocode/search', { preHandler: requireAuth }, async (req) => {
+  // The two address routes that can reach a paid provider (Google bills each
+  // request): partners only, and capped per account as well as per IP, so no
+  // signed-in account can run up the bill. Typing makes at most a couple of
+  // searches a second, and only while typing.
+  const geocodeLimit = perIdentityRateLimit(app, GEOCODE_PER_MINUTE);
+
+  // Address autocomplete for the venue form. Partner-only so the upstream
+  // geocoder isn't an open proxy; results are normalised + restricted to the
+  // countries we serve inside the provider (see lib/geocoding).
+  app.get('/v1/venues/geocode/search', { preHandler: [requireAuth, geocodeLimit] }, async (req) => {
     const parsed = geocodeSearchSchema.safeParse(req.query);
     if (!parsed.success) {
       throw new BadRequest('Invalid search query', 'bad_request', { issues: parsed.error.issues });
     }
-    await currentUser(req); // any authenticated partner may search
+    const user = await currentUser(req);
+    await requireAnyTenantMembership(user.id); // any partner may search
     const { q, country, limit, session } = parsed.data;
     const geocoder = getGeocoder();
     const suggestions = await geocoder.search(q, {
@@ -141,10 +152,11 @@ export const venueRoutes: FastifyPluginAsync = async (app) => {
   // The place ID is a query parameter, not a path segment: a street address's
   // ID runs past 170 characters, and Fastify answers "Route not found" for any
   // path parameter over its 100-character default.
-  app.get('/v1/venues/geocode/place', { preHandler: requireAuth }, async (req) => {
+  app.get('/v1/venues/geocode/place', { preHandler: [requireAuth, geocodeLimit] }, async (req) => {
     const parsed = geocodePlaceSchema.safeParse(req.query);
     if (!parsed.success) throw new BadRequest('Invalid place', 'bad_request');
-    await currentUser(req); // any authenticated partner, as for search
+    const user = await currentUser(req);
+    await requireAnyTenantMembership(user.id); // any partner, as for search
     const suggestion = await getGeocoder().resolve(parsed.data.placeId, parsed.data.session ?? null);
     if (!suggestion) throw new NotFound('Place not found', 'place_not_found');
     return { suggestion };

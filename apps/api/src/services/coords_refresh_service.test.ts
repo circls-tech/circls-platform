@@ -109,6 +109,15 @@ describe.skipIf(!runIntegration)('Google coordinates provenance + refresh', () =
       expect(await venueRow(failing)).toMatchObject({ lat: 18.5, coordsPlaceId: 'ChIJold' });
     });
 
+    it('stops at its time budget and leaves the rest for tomorrow, untouched', async () => {
+      const due = await googleVenue(26);
+      const resolve = vi.spyOn(getGeocoder(), 'resolve');
+      const r = await refreshGoogleCoords(NOW, 0);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(r.deferred).toBeGreaterThan(0);
+      expect(await venueRow(due)).toMatchObject({ lat: 18.5, coordsPlaceId: 'ChIJold' });
+    });
+
     it('at the deadline, replaces coordinates it cannot re-fetch with ones we may keep', async () => {
       const id = await googleVenue(29.5);
       vi.spyOn(getGeocoder(), 'resolve').mockResolvedValue(null);

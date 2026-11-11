@@ -7,6 +7,7 @@ import {
   type AddressSuggestion,
   type GeocoderProvider,
 } from '@/lib/api/geocode';
+import { GOOGLE_MAP_ENABLED } from '@/lib/map_view';
 
 /** Each billed Google search request counts, so wait for a real query. */
 const MIN_QUERY = 3;
@@ -38,6 +39,8 @@ export function AddressAutocomplete({
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Google results with no Google map to show them on (a misconfigured build).
+  const [unavailable, setUnavailable] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   // One session per search, from the first keystroke to the pick.
   const sessionRef = useRef<string | null>(null);
@@ -48,6 +51,9 @@ export function AddressAutocomplete({
     if (q.length < MIN_QUERY) {
       setResults([]);
       setLoading(false);
+      // An abandoned search ends its session: the next one starts afresh
+      // rather than reusing a token Google has expired.
+      sessionRef.current = null;
       return;
     }
     sessionRef.current ??= newSessionToken();
@@ -56,11 +62,19 @@ export function AddressAutocomplete({
     const t = setTimeout(async () => {
       try {
         const res = await searchAddress(q, country, sessionRef.current);
-        if (active) {
-          setResults(res.suggestions);
-          setProvider(res.provider);
-          setOpen(true);
+        if (!active) return;
+        // Google's terms forbid its results on the OpenStreetMap map, which is
+        // what a portal built without the Google key shows.
+        if (res.provider === 'google' && !GOOGLE_MAP_ENABLED) {
+          console.error('Address search is on Google but the portal has no Google map (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY).');
+          setResults([]);
+          setUnavailable(true);
+          return;
         }
+        setUnavailable(false);
+        setResults(res.suggestions);
+        setProvider(res.provider);
+        setOpen(true);
       } catch {
         if (active) setResults([]);
       } finally {
@@ -114,10 +128,12 @@ export function AddressAutocomplete({
         className="w-full rounded-[var(--radius)] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#94a3b8] hover:border-slate-300"
         autoComplete="off"
       />
-      <span className={`text-xs ${failed ? 'text-red-600' : 'text-gray-400'}`}>
-        {failed
-          ? "Couldn't load that address — pick it again, or fill the fields below."
-          : 'Pick a result to fill the address and map location automatically.'}
+      <span className={`text-xs ${failed || unavailable ? 'text-red-600' : 'text-gray-400'}`}>
+        {unavailable
+          ? 'Address search is unavailable right now — fill the fields below.'
+          : failed
+            ? "Couldn't load that address — pick it again, or fill the fields below."
+            : 'Pick a result to fill the address and map location automatically.'}
       </span>
 
       {open && (loading || results.length > 0) && (

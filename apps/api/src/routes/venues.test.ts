@@ -351,6 +351,14 @@ describe.skipIf(!runIntegration)('venues', () => {
       expect(res.json().error.code).toBe('place_not_found');
     });
 
+    it("refuses anyone who isn't in a partner organisation — Google bills these routes", async () => {
+      for (const url of ['/v1/venues/geocode/search?q=MG%20Road', `/v1/venues/geocode/place?placeId=${STREET_PLACE_ID}`]) {
+        const res = await app.inject({ method: 'GET', url, headers: bearer('other') });
+        expect(res.statusCode, url).toBe(403);
+        expect(res.json().error.code).toBe('not_a_partner');
+      }
+    });
+
     it('refuses a missing or malformed place ID', async () => {
       for (const query of ['', '?placeId=', '?placeId=..%2Fsecrets', `?placeId=${'a'.repeat(1025)}`]) {
         const res = await app.inject({

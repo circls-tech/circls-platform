@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../logger.js';
 import { GoogleGeocoder, toAddressParts } from './google.js';
 
 /** Stub fetch with one canned JSON response; returns the mock to inspect calls. */
@@ -210,5 +211,37 @@ describe('GoogleGeocoder narrowed by GOOGLE_MAPS_COUNTRIES', () => {
     const fetchMock = respondWith({ status: 'ZERO_RESULTS', results: [] });
     await geocoder.geocode({ city: 'Pune' });
     expect(onlyCall(fetchMock).url.searchParams.get('components')).toBeNull();
+  });
+});
+
+describe('a place with no town', () => {
+  it("takes the district's city, without India's district suffix", () => {
+    const parts = toAddressParts([
+      { long: 'Bangalore Urban', short: 'Bangalore Urban', types: ['administrative_area_level_2', 'political'] },
+      { long: 'Karnataka', short: 'KA', types: ['administrative_area_level_1', 'political'] },
+      { long: 'India', short: 'IN', types: ['country', 'political'] },
+    ]);
+    expect(parts.city).toBe('Bangalore');
+  });
+});
+
+describe("Google's refusals", () => {
+  it('log the reason Google gives, so a misconfigured key is diagnosable', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    respondWith(
+      {
+        error: {
+          status: 'PERMISSION_DENIED',
+          message: 'Requests from this IP are blocked.',
+          details: [{ reason: 'API_KEY_IP_ADDRESS_BLOCKED' }],
+        },
+      },
+      403,
+    );
+    expect(await geocoder.search('MG Road')).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 403, reason: 'API_KEY_IP_ADDRESS_BLOCKED' }),
+      'geocode_google_places_error',
+    );
   });
 });
