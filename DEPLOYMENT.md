@@ -155,7 +155,7 @@ It talks to the live `api.circls.app`. Flow: log in → dashboard → create ten
 - Authentication → Sign-in method: enable **Phone** + **Email/Password**.
 - Authentication → Settings → **Authorized domains**: `localhost` is allowed by default; add `partners.circls.app` (and any other deploy domain) before using it there.
 
-**Google Maps (optional):** the address forms' map is OpenStreetMap unless the portal is **built** with these (Next.js inlines `NEXT_PUBLIC_*` at build time, so on Coolify they are build arguments). Switch the API to `GEOCODER_PROVIDER=google` in the same release.
+**Google Maps (optional):** the address forms' map is OpenStreetMap unless the portal is **built** with these. Next.js inlines `NEXT_PUBLIC_*` at build time, so on Coolify tick **Available at Buildtime** on both, and changing either needs a rebuild, not a restart. `apps/partners/Dockerfile` declares both as `ARG`s in its build stage: a new `NEXT_PUBLIC_*` variable needs the same, or the build never sees it. Switch the API to `GEOCODER_PROVIDER=google` in the same release.
 - `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` — browser key restricted to the **Maps JavaScript API** and to the portal's domains (`partners.circls.app/*`, `partners-stage.circls.app/*`, `localhost:3001/*`). Each form that shows the map is one billed map load past Google's free allowance.
 - `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` — a Map ID from Google Cloud → Map Management (free; the draggable pin needs one). Unset falls back to Google's `DEMO_MAP_ID`, which is for development only.
 
