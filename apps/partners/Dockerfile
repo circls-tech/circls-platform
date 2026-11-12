@@ -19,6 +19,12 @@ COPY apps/partners/package.json apps/partners/package.json
 RUN pnpm install --frozen-lockfile --prod=false --filter @circls/partners...
 
 FROM deps AS build
+# Next.js bakes NEXT_PUBLIC_* values into the browser bundle during the build,
+# and a stage only sees the build args it declares. Coolify passes the
+# variables ticked "Available at Buildtime" as build args. The other
+# NEXT_PUBLIC_* values the portal reads fall back to production in code.
+ARG NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
 COPY apps/partners ./apps/partners
 RUN pnpm --filter @circls/partners build
 
