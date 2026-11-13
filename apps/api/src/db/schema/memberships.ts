@@ -34,6 +34,20 @@ export interface MembershipBenefits {
   items: MembershipBenefitItem[];
 }
 
+/**
+ * A partner-named group of a membership's plans (e.g. "Day Passes", "Punch
+ * Passes"), shown to customers as a tab with its plans. Ordered as stored; a
+ * plan joins one through `membership_tiers.group_key`. Presentation only, so
+ * it can change while the membership is live.
+ */
+export interface MembershipTierGroup {
+  /** Stable within the membership; plans reference it, links use it (?tab=). */
+  key: string;
+  name: string;
+  /** One line on who the group is for. */
+  tagline: string | null;
+}
+
 export const memberships = pgTable('memberships', {
   id: uuidPk(),
   tenantId: uuid('tenant_id')
@@ -55,6 +69,8 @@ export const memberships = pgTable('memberships', {
   coverStorageKey: text('cover_storage_key'),
   /** QR entry-ticket rules for purchases of this plan (null = disabled). */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
+  /** Ordered plan groups; empty = the plans show as one list. */
+  tierGroups: jsonb('tier_groups').$type<MembershipTierGroup[]>().notNull().default([]),
   // DB default stays 'active'; create service sets 'pending_review' (B).
   status: membershipStatus('status').notNull().default('active'),
   createdAt: createdAt(),

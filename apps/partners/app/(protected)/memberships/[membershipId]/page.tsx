@@ -20,6 +20,8 @@ import { MembershipMembers } from '@/components/MembershipMembers';
 import { ReceptionButton } from '@/components/ReceptionButton';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { RejectionNotice } from '@/components/RejectionNotice';
+import { RegroupPanel } from '@/components/MembershipTierGroups';
+import { tiersByGroup } from '@/lib/tier_groups';
 import {
   MembershipPlanFields,
   planDraftFrom,
@@ -285,27 +287,38 @@ export default function MembershipDetailPage() {
               {membership.tiers.length === 0 ? (
                 <p className="text-sm text-slate-400">No tiers.</p>
               ) : (
-                <ul className="flex flex-col gap-1 text-sm">
-                  {membership.tiers.map((t) => (
-                    <li key={t.id} className="flex flex-wrap items-baseline gap-x-1.5">
-                      <span className="font-medium text-slate-700">{t.name}</span>
-                      <span className="text-slate-500">
-                        {t.pricePaise === 0 ? (
-                          <span className="text-emerald-600">Free</span>
-                        ) : (
-                          fmtPrice(t.pricePaise, currency)
-                        )}{' '}
-                        · {t.durationDays}d
-                        {t.capacity != null && (
-                          <span className="text-slate-400">
-                            {' '}
-                            · {t.remaining ?? 0}/{t.capacity} left
-                          </span>
-                        )}
-                      </span>
-                    </li>
+                <div className="flex flex-col gap-2">
+                  {tiersByGroup(membership.tierGroups ?? [], membership.tiers).map((section) => (
+                    <div key={section.group?.key ?? 'ungrouped'} className="flex flex-col gap-1">
+                      {(membership.tierGroups ?? []).length > 0 && (
+                        <span className="text-xs font-semibold text-slate-600">
+                          {section.group?.name ?? 'Not in a group'}
+                        </span>
+                      )}
+                      <ul className="flex flex-col gap-1 text-sm">
+                        {section.tiers.map((t) => (
+                          <li key={t.id} className="flex flex-wrap items-baseline gap-x-1.5">
+                            <span className="font-medium text-slate-700">{t.name}</span>
+                            <span className="text-slate-500">
+                              {t.pricePaise === 0 ? (
+                                <span className="text-emerald-600">Free</span>
+                              ) : (
+                                fmtPrice(t.pricePaise, currency)
+                              )}{' '}
+                              · {t.durationDays}d
+                              {t.capacity != null && (
+                                <span className="text-slate-400">
+                                  {' '}
+                                  · {t.remaining ?? 0}/{t.capacity} left
+                                </span>
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </div>
 
@@ -355,6 +368,19 @@ export default function MembershipDetailPage() {
           </div>
         )}
       </Card>
+
+      {canEditPlan && !editing && authed && (
+        <Card
+          title="Tier groups"
+          subtitle="How customers see the tiers: a tab per group. You can change this while the plan is live."
+        >
+          <RegroupPanel
+            tenantId={tenantId}
+            membership={membership}
+            describeTier={(t) => `${fmtPrice(t.pricePaise, currency)} · ${t.durationDays}d`}
+          />
+        </Card>
+      )}
 
       <div ref={membersRef}>
         <Card title="Members" subtitle="Everyone holding this plan, however they joined.">

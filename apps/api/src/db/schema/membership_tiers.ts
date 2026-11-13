@@ -34,6 +34,9 @@ export const membershipTiers = pgTable('membership_tiers', {
    *  config; `{ enabled: false }` = QR off for this tier even when the plan
    *  enables it; an enabled config replaces the plan's rules wholesale. */
   qrTicketConfig: jsonb('qr_ticket_config').$type<QrTicketConfig>(),
+  /** Key of the membership's `tierGroups` entry this plan is shown under;
+   *  null = ungrouped. Not an FK: groups live in the membership's jsonb. */
+  groupKey: text('group_key'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

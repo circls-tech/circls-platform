@@ -225,6 +225,18 @@ export interface PublicMembershipTier {
   benefits: MembershipBenefits;
   capacity: number | null;
   remaining: number | null;
+  /** Key of the `tierGroups` entry this tier is shown under; null = ungrouped.
+   *  Absent from an API that predates tier groups. */
+  groupKey?: string | null;
+}
+
+/** A partner-named group of a membership's tiers, shown as a tab. */
+export interface MembershipTierGroup {
+  /** Stable slug; `?tab=<key>` opens this group's tab. */
+  key: string;
+  name: string;
+  /** One line on who the group is for. */
+  tagline: string | null;
 }
 
 export interface PublicMembership {
@@ -247,6 +259,8 @@ export interface PublicMembership {
   status: 'active';
   /** Plan tiers (min 1). */
   tiers: PublicMembershipTier[];
+  /** Ordered tier groups that have tiers; empty or absent = one list. */
+  tierGroups?: MembershipTierGroup[];
 }
 
 // ── Booking / purchase results ────────────────────────────────────────────────

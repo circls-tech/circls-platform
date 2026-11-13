@@ -22,6 +22,8 @@ Want a hand? **Get help from Circls** on the **New plan** page lets the Circls t
    - **Description** (optional) and **Benefits** — add structured perks with **Add benefit**: each row has a **label** (e.g. *Priority booking*) and an optional **detail** line. These render as a clean list on the consumer plan page when the tier is selected.
 
    Use **+ Add tier** for more tiers (up to 20) and **Remove tier** to drop one. A plan needs at least one tier.
+
+   With many tiers, sort them into **tier groups** (optional) — see [Grouping tiers](#grouping-tiers). Each tier then has a **Group** picker.
 4. Optionally add **Plan artwork** — a single cover image (JPEG, PNG or WebP, up to 10 MB) picked right on the form. It uploads automatically when the plan is created. If it fails to upload, the plan is still created: the page says so and links to it, where you can add the artwork again.
 5. Click **Create plan**.
 
@@ -30,6 +32,21 @@ Artwork can also be added or changed later while editing the plan (see below).
 **Preview** (next to **Create plan**, available once the plan has a name) shows the plan's page on the customer site exactly as the form stands — name, description, scope, artwork, tiers, benefits and terms — and follows your edits as you make them; nothing is saved until you press a button below it. **Create plan** sends it to review; **Save as draft** keeps it to yourself for now — a draft needs only a name, its tiers can follow. You land on the new plan's page: a submitted plan starts in **pending review** until Circls approves it; a draft stays a **draft** until you click **Submit for review** there, which needs at least one tier and opens the customer-site preview first.
 
 If you leave the form before pressing either button — **Back**, a link, a reload — what you typed is kept in your browser, and the form opens as you left it next time, with a note saying so. The artwork isn't kept: pick it again. **Start over** on the note clears the form, after asking. If the venue the plan was scoped to has been removed since, the plan falls back to org-wide. The copy is only on this browser and device, lasts a week from your last change, and is dropped when you create the plan, press **Cancel** or sign out.
+
+## Grouping tiers
+
+A plan with many tiers — day passes, punch cards, monthly memberships and classes, say — is easier to choose from in groups. Under **Tier groups** on the plan form, click **+ Add group** and give each group:
+
+- a **Group name** (up to 40 characters) — e.g. *Punch passes*. Each group's name must be different.
+- **Who it's for** (optional, up to 140 characters) — one line shown above the group's tiers, e.g. *For occasional climbers who want flexibility.*
+
+Then pick each tier's **Group**. Use **↑** / **↓** to order the groups, and **Remove** to delete one — its tiers stay, ungrouped. You can have up to 10 groups.
+
+Customers see a tab for each group with tiers in it, in your order, each showing its lowest price (*from ₹2,750*). Picking a tab shows that group's line and its tiers. Tiers you left out of every group appear under a last **More options** tab. A plan with no groups shows its tiers in one list, as before. Each tab has its own link — the plan's page with `?tab=` and the group — so you can share one directly.
+
+### Regrouping a live plan
+
+Groups only change how tiers are laid out, so you can change them while a plan is **active** — no need to deactivate it. On the plan's page, the **Tier groups** card shows the current groups; click **Edit groups** (or **Group tiers** if it has none) to rename, add, reorder or remove groups, move a tier into another group, and change the order of the tiers with **↑** / **↓**. **Save groups** applies it straight away. Prices, durations and capacity still need the plan deactivated, as below. Renaming a group keeps its link working.
 
 ## The plans list
 
@@ -53,7 +70,7 @@ Preview is available to every member of your organisation, including Staff and R
 
 ## Editing a plan
 
-Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, and its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier), and to manage its **artwork**. Editing is available while a plan is a **draft**, **pending review**, **rejected** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate.
+Open a plan from the **Memberships** list — click its name — and click **Edit** there to change its name, description, venue scope, **terms**, its **tiers** (add, remove, reprice, or change duration/capacity/benefits per tier) and **tier groups**, and to manage its **artwork**. Editing is available while a plan is a **draft**, **pending review**, **rejected** or **inactive**. To change an **active** plan, deactivate it first, edit, then reactivate — except its tier groups, which you can change while it is live (see [Regrouping a live plan](#regrouping-a-live-plan)).
 
 ### Fixing a rejected plan
 

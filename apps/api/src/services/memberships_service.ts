@@ -20,6 +20,7 @@ import {
   memberships,
   type Membership,
   type MembershipBenefits,
+  type MembershipTierGroup,
   userMemberships,
 } from '../db/schema/memberships.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
@@ -55,11 +56,14 @@ import { onListingSubmitted } from './notification_hooks.js';
 import type { CouponPricing } from './booking_service.js';
 import {
   listTiersWithRemaining,
+  regroupTiers,
   replaceTiers,
   tiersWithRemainingByMembership,
+  ungroupMissingKeys,
   type MembershipTierInput,
   type MembershipTierWithRemaining,
 } from './membership_tiers_service.js';
+import { assertKnownGroupKeys, carryOverGroupKeys } from '../lib/membership_tier_groups.js';
 
 /** Partner-facing membership row enriched with the derived artwork URL (PR #110). */
 export interface PartnerMembership extends Membership {
@@ -229,6 +233,8 @@ export interface CreateMembershipInput {
   benefits?: MembershipBenefits | undefined;
   /** QR entry-ticket rules (null/omitted = disabled). */
   qrTicketConfig?: QrTicketConfig | null | undefined;
+  /** Ordered plan groups the tiers' `groupKey`s refer to (omitted = none). */
+  tierGroups?: MembershipTierGroup[] | undefined;
 }
 
 /** Resolve the create payload's tiers, falling back to a single legacy tier. */
@@ -255,6 +261,8 @@ export async function createMembership(
   input: CreateMembershipInput,
 ): Promise<PartnerMembershipWithTiers> {
   const tiers = resolveCreateTiers(input);
+  const tierGroups = input.tierGroups ?? [];
+  assertKnownGroupKeys(tierGroups, tiers.map((t) => t.groupKey));
   // Legacy display fields mirror the cheapest tier; a tierless draft shows nothing yet.
   const cheapest = tiers.length
     ? tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a))
@@ -273,6 +281,7 @@ export async function createMembership(
         benefits: cheapest.benefits ?? { items: [] },
         terms: input.terms ?? null,
         qrTicketConfig: input.qrTicketConfig ?? null,
+        tierGroups,
         // New listings await Circls review before going live (subproject B) —
         // unless the partner wants a draft to come back to first.
         status: input.draft ? 'draft' : (await autoApprovesListings(tx, input.tenantId) ? 'active' : 'pending_review'),
@@ -322,8 +331,11 @@ export interface UpdateMembershipPatch {
   terms?: string | null;
   /** null clears (QR tickets off); omitted = unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
-  /** When provided, replaces all plan tiers (editable states only). */
+  /** When provided, replaces all plan tiers (editable states only). A tier
+   *  sent without `groupKey` keeps the group of the live tier of that name. */
   tiers?: MembershipTierInput[];
+  /** When provided, replaces the plan groups; tiers in a removed group are ungrouped. */
+  tierGroups?: MembershipTierGroup[];
 }
 
 
@@ -407,13 +419,24 @@ export async function updateMembership(
     if (patch.benefits !== undefined) set.benefits = patch.benefits;
     if (patch.terms !== undefined) set.terms = patch.terms;
     if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
+    if (patch.tierGroups !== undefined) set.tierGroups = patch.tierGroups;
+    const groups = patch.tierGroups ?? existing.tierGroups;
+    // Check the tiers' groups before writing anything.
+    let nextTiers: MembershipTierInput[] | undefined;
+    if (patch.tiers !== undefined) {
+      const previous = await listTiersWithRemaining(tx, membershipId);
+      nextTiers = carryOverGroupKeys(previous, patch.tiers, groups);
+      assertKnownGroupKeys(groups, nextTiers.map((t) => t.groupKey));
+    }
     if (Object.keys(set).length > 0) {
       await tx.update(memberships).set(set).where(eq(memberships.id, membershipId));
     }
 
     // Replacing tiers also re-syncs the membership's legacy price/duration/benefits.
-    if (patch.tiers !== undefined) {
-      await replaceTiers(tx, membershipId, ctx.tenantId, patch.tiers);
+    if (nextTiers !== undefined) {
+      await replaceTiers(tx, membershipId, ctx.tenantId, nextTiers);
+    } else if (patch.tierGroups !== undefined) {
+      await ungroupMissingKeys(tx, membershipId, groups.map((g) => g.key));
     }
 
     const [updated] = await tx
@@ -429,6 +452,47 @@ export async function updateMembership(
       membershipId,
       existing as unknown as Record<string, unknown>,
       set,
+    );
+    const tiers = await listTiersWithRemaining(tx, membershipId);
+    return { ...withCoverUrl(updated!), tiers };
+  });
+}
+
+/**
+ * Rename, reorder or regroup a membership's plans. Allowed in every status,
+ * live included: it touches only the groups and each plan's group and order,
+ * never a price, duration or capacity, and keeps the plans' ids, so buyers
+ * and links are unaffected. `tiers` lists every live plan once, in display
+ * order.
+ */
+export async function regroupMembershipTiers(
+  ctx: { tenantId: string; actorUserId: string },
+  membershipId: string,
+  input: { tierGroups: MembershipTierGroup[]; tiers: { id: string; groupKey: string | null }[] },
+): Promise<PartnerMembershipWithTiers> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update');
+    if (!existing) throw new NotFound('Membership not found', 'membership_not_found');
+    assertKnownGroupKeys(input.tierGroups, input.tiers.map((t) => t.groupKey));
+    await regroupTiers(tx, membershipId, input.tiers);
+    const [updated] = await tx
+      .update(memberships)
+      .set({ tierGroups: input.tierGroups })
+      .where(eq(memberships.id, membershipId))
+      .returning();
+    await writeAudit(
+      tx,
+      ctx,
+      'membership.tiers_regrouped',
+      'membership',
+      membershipId,
+      { tierGroups: existing.tierGroups },
+      { tierGroups: input.tierGroups, tiers: input.tiers },
     );
     const tiers = await listTiersWithRemaining(tx, membershipId);
     return { ...withCoverUrl(updated!), tiers };

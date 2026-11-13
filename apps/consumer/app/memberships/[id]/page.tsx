@@ -1,6 +1,7 @@
 'use client';
-import { Suspense, use, useState } from 'react';
+import { Suspense, use, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/Header';
 import { BackBar } from '@/components/BackBar';
 import { PreviewBanner } from '@/components/PreviewBanner';
@@ -22,6 +23,7 @@ import { ScratchStatusNote } from '@/components/ScratchStatusNote';
 import { useItemView } from '@/lib/activity/ActivityProvider';
 import type { MembershipBenefits, PublicMembershipTier, PublicMembershipWithScope } from '@/lib/api/types';
 import { Badge, Button, Card } from '@/lib/ui';
+import { tierTabs } from '@/lib/tier_groups';
 
 /** Render the typed benefits list (PR #110) as a "What's included" list: each
  *  item has a label and an optional detail line. Nothing renders when empty. */
@@ -98,14 +100,83 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
     (t) => t.id === selectedTierId,
   );
 
+  // Tiers in partner-named groups show as tabs; `?tab=<group key>` links to one.
+  const searchParams = useSearchParams();
+  const tabs = tierTabs(m?.tierGroups, tiers);
+  const [tabKey, setTabKey] = useState<string | null>(null);
+  const activeTab =
+    tabs.find((t) => t.key === tabKey) ?? tabs.find((t) => t.key === searchParams.get('tab')) ?? tabs[0];
+  // On a phone the tab row scrolls sideways: bring the open tab into view
+  // (a ?tab= link may open one past the edge), moving only the row.
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const activeTabKey = activeTab?.key;
+  useEffect(() => {
+    const list = tabListRef.current;
+    const tab = activeTabKey ? document.getElementById(`tier-tab-${activeTabKey}`) : null;
+    if (!list || !tab) return;
+    const left = tab.offsetLeft - list.offsetLeft;
+    if (left < list.scrollLeft || left + tab.offsetWidth > list.scrollLeft + list.clientWidth) {
+      list.scrollLeft = Math.max(0, left - 16);
+    }
+  }, [activeTabKey]);
+  function openTab(key: string) {
+    setTabKey(key);
+    // Replace, don't push: switching tabs isn't a page to go Back through. The
+    // rest of the query (a preview token, say) stays.
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', key);
+    window.history.replaceState(window.history.state, '', url);
+  }
+
   // Sign-in interrupted a purchase on this page — reopen it, and reselect the
   // tier they had chosen so the page matches the modal.
   useResumeCheckout((item, prefill) => {
     if (item.kind === 'membership' && item.membershipTierId) {
       setSelectedTierId(item.membershipTierId);
+      const tab = tabs.find((t) => t.tiers.some((x) => x.id === item.membershipTierId));
+      if (tab) setTabKey(tab.key);
     }
     openCheckout(item, prefill);
   });
+
+  function renderTier(t: PublicMembershipTier) {
+    const selected = selectedTier?.id === t.id;
+    const soldOut = t.remaining === 0;
+    return (
+      <button
+        key={t.id}
+        type="button"
+        onClick={() => setSelectedTierId((prev) => (prev === t.id ? null : t.id))}
+        disabled={soldOut}
+        aria-pressed={selected}
+        className={[
+          'flex w-full items-start justify-between gap-4 rounded-card border-[2px] bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow,border-color] duration-150',
+          selected ? 'border-coral-deep' : 'border-ink',
+          soldOut
+            ? 'opacity-60'
+            : 'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
+        ].join(' ')}
+      >
+        <div className="min-w-0">
+          <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
+          {t.description && (
+            <p className="mt-0.5 text-sm text-text-secondary">{t.description}</p>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="font-display text-xl font-extrabold text-ink">{formatPaise(t.pricePaise, currency)}</p>
+          <p className="text-xs text-ink-soft">/ {t.durationDays} days</p>
+          {soldOut ? (
+            <p className="mt-1 text-xs font-semibold text-petal-red">Sold out</p>
+          ) : (
+            t.remaining != null && (
+              <p className="mt-1 text-xs text-ink-soft">{t.remaining} left</p>
+            )
+          )}
+        </div>
+      </button>
+    );
+  }
 
   function buy(tier: PublicMembershipTier | undefined) {
     if (!m || preview) return;
@@ -195,44 +266,44 @@ function MembershipPageInner({ params }: { params: Promise<{ id: string }> }) {
                   {multiTier && (
                     <h2 className="font-display text-lg font-extrabold text-ink">Choose a tier</h2>
                   )}
-                  {tiers.map((t) => {
-                    const selected = selectedTier?.id === t.id;
-                    const soldOut = t.remaining === 0;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setSelectedTierId((prev) => (prev === t.id ? null : t.id))}
-                        disabled={soldOut}
-                        aria-pressed={selected}
-                        className={[
-                          'flex w-full items-start justify-between gap-4 rounded-card border-[2px] bg-white px-4 py-3.5 text-left shadow-offset-sm transition-[transform,box-shadow,border-color] duration-150',
-                          selected ? 'border-coral-deep' : 'border-ink',
-                          soldOut
-                            ? 'opacity-60'
-                            : 'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-offset',
-                        ].join(' ')}
+                  {activeTab ? (
+                    <>
+                      <div ref={tabListRef} role="tablist" aria-label="Tier groups" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                        {tabs.map((tab) => {
+                          const on = tab.key === activeTab.key;
+                          return (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              role="tab"
+                              id={`tier-tab-${tab.key}`}
+                              aria-selected={on}
+                              aria-controls="tier-panel"
+                              onClick={() => openTab(tab.key)}
+                              className={[
+                                'flex shrink-0 flex-col items-start rounded-card border-[2px] border-ink px-3 py-2 text-left transition-[background-color,box-shadow] duration-150',
+                                on ? `${tab.tint} shadow-offset-sm` : 'bg-white hover:bg-sky-soft',
+                              ].join(' ')}
+                            >
+                              <span className="font-display text-sm font-extrabold text-ink">{tab.name}</span>
+                              <span className="text-xs text-ink-soft">from {formatPaise(tab.fromPaise, currency)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div
+                        role="tabpanel"
+                        id="tier-panel"
+                        aria-labelledby={`tier-tab-${activeTab.key}`}
+                        className="flex flex-col gap-3"
                       >
-                        <div className="min-w-0">
-                          <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
-                          {t.description && (
-                            <p className="mt-0.5 text-sm text-text-secondary">{t.description}</p>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="font-display text-xl font-extrabold text-ink">{formatPaise(t.pricePaise, currency)}</p>
-                          <p className="text-xs text-ink-soft">/ {t.durationDays} days</p>
-                          {soldOut ? (
-                            <p className="mt-1 text-xs font-semibold text-petal-red">Sold out</p>
-                          ) : (
-                            t.remaining != null && (
-                              <p className="mt-1 text-xs text-ink-soft">{t.remaining} left</p>
-                            )
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
+                        {activeTab.tagline && <p className="text-sm text-text-secondary">{activeTab.tagline}</p>}
+                        {activeTab.tiers.map(renderTier)}
+                      </div>
+                    </>
+                  ) : (
+                    tiers.map(renderTier)
+                  )}
                   <p className="text-xs text-text-secondary">
                     {selectedTier
                       ? 'Review and confirm in the bar below.'

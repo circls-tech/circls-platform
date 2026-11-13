@@ -5,7 +5,7 @@
  * — enforces pending_review/inactive). All write helpers take a transaction
  * handle so they compose inside the membership create/update tx.
  */
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { membershipTiers, type MembershipTier } from '../db/schema/membership_tiers.js';
 import { memberships, userMemberships } from '../db/schema/memberships.js';
@@ -26,6 +26,8 @@ export interface MembershipTierInput {
   /** Per-tier QR override: null/omitted = inherit the plan's config;
    *  `{ enabled: false }` = QR off for this tier; enabled = custom rules. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Key of the membership's plan group this tier shows under; null = none. */
+  groupKey?: string | null | undefined;
 }
 
 export interface MembershipTierWithRemaining extends MembershipTier {
@@ -156,6 +158,7 @@ export async function replaceTiers(
         benefits: t.benefits ?? { items: [] },
         capacity: t.capacity ?? null,
         qrTicketConfig: t.qrTicketConfig ?? null,
+        groupKey: t.groupKey ?? null,
         sortOrder: i,
       })),
     )
@@ -174,4 +177,50 @@ export async function replaceTiers(
     .where(eq(memberships.id, membershipId));
 
   return inserted;
+}
+
+/**
+ * Put each live tier in a group and in display order, without replacing the
+ * tiers: their ids, prices and buyers stay as they are, so this is safe on a
+ * live membership. `order` must list every live tier exactly once; a tier's
+ * index becomes its sort order. The caller validates the group keys.
+ */
+export async function regroupTiers(
+  tx: Tx,
+  membershipId: string,
+  order: readonly { id: string; groupKey: string | null }[],
+): Promise<void> {
+  const live = await tx
+    .select({ id: membershipTiers.id })
+    .from(membershipTiers)
+    .where(and(eq(membershipTiers.membershipId, membershipId), isNull(membershipTiers.deletedAt)));
+  const liveIds = new Set(live.map((t) => t.id));
+  const sentIds = new Set(order.map((t) => t.id));
+  if (sentIds.size !== order.length || sentIds.size !== liveIds.size || [...sentIds].some((id) => !liveIds.has(id))) {
+    throw new BadRequest(
+      "List every one of the membership's plans exactly once",
+      'membership_tiers_mismatch',
+      { expected: liveIds.size, received: order.length },
+    );
+  }
+  for (const [i, t] of order.entries()) {
+    await tx
+      .update(membershipTiers)
+      .set({ groupKey: t.groupKey, sortOrder: i })
+      .where(eq(membershipTiers.id, t.id));
+  }
+}
+
+/** Ungroup the live tiers whose group is no longer among `keys`. */
+export async function ungroupMissingKeys(tx: Tx, membershipId: string, keys: readonly string[]): Promise<void> {
+  await tx
+    .update(membershipTiers)
+    .set({ groupKey: null })
+    .where(
+      and(
+        eq(membershipTiers.membershipId, membershipId),
+        isNull(membershipTiers.deletedAt),
+        keys.length > 0 ? notInArray(membershipTiers.groupKey, [...keys]) : sql`true`,
+      ),
+    );
 }

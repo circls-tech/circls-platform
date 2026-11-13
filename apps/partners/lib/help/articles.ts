@@ -104,7 +104,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Setting up membership plans',
     category: 'Memberships',
     summary:
-      'How to create membership plans with tiers (price, duration, benefits and capacity per tier), define artwork and terms, fix and resubmit a plan Circls rejected, and manage active member subscriptions.',
+      'How to create membership plans with tiers (price, duration, benefits and capacity per tier), sort tiers into groups customers pick from as tabs (changeable while a plan is live), define artwork and terms, fix and resubmit a plan Circls rejected, and manage active member subscriptions.',
     order: 6,
   },
   {

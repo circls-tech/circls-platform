@@ -10,7 +10,8 @@ import {
   membershipTiersToPayload,
   type MembershipTierDraft,
 } from '@/components/MembershipTiersEditor';
-import type { TenantProfile, Venue } from './types';
+import type { MembershipTierGroup, TenantProfile, Venue } from './types';
+import { resolveTierGroups, type TierGroupDraft } from '@/lib/tier_groups';
 
 /** The id every scratch listing carries; the consumer page keys on it. */
 export const SCRATCH_ID = 'scratch';
@@ -163,6 +164,7 @@ export interface ScratchMembershipTier {
   benefits: ScratchBenefits;
   capacity: number | null;
   remaining: number | null;
+  groupKey: string | null;
 }
 
 /** Mirrors the consumer's PublicMembershipWithScope. */
@@ -181,6 +183,8 @@ export interface ScratchMembership {
   brand: ScratchBrand;
   status: 'active';
   tiers: ScratchMembershipTier[];
+  /** The form's named tier groups; the customer page hides empty ones. */
+  tierGroups: MembershipTierGroup[];
   scopeName: string;
   venueTags: string[];
   city: string | null;
@@ -196,10 +200,13 @@ export function scratchMembership(input: {
   description: string;
   terms: string;
   tiers: MembershipTierDraft[];
+  /** Absent for a form autosaved before tier groups existed. */
+  tierGroups?: TierGroupDraft[] | undefined;
   venue: Venue | null | undefined;
   tenantCountry: string | null;
 }): ScratchMembership {
-  const tiers: ScratchMembershipTier[] = membershipTiersToPayload(input.tiers)
+  const { groups, keyOf } = resolveTierGroups(input.tierGroups ?? []);
+  const tiers: ScratchMembershipTier[] = membershipTiersToPayload(input.tiers, keyOf)
     .filter((t) => t.name)
     .map((t, i) => ({
       id: `${SCRATCH_ID}-${i}`,
@@ -210,6 +217,7 @@ export function scratchMembership(input: {
       benefits: t.benefits ?? { items: [] },
       capacity: t.capacity,
       remaining: t.capacity,
+      groupKey: t.groupKey ?? null,
     }));
   const cheapest = tiers.length
     ? tiers.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a))
@@ -229,6 +237,7 @@ export function scratchMembership(input: {
     brand: input.brand,
     status: 'active',
     tiers,
+    tierGroups: groups,
     scopeName: v?.name ?? input.brand.name,
     venueTags: v?.tags ?? [],
     city: v?.city ?? null,
