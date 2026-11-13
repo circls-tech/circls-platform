@@ -96,6 +96,7 @@ export function NewPlanForm({
         ...(input.venueId ? { venueId: input.venueId } : {}),
         ...(input.terms ? { terms: input.terms } : {}),
         tiers: input.tiers,
+        tierGroups: input.tierGroups,
         qrTicketConfig: input.qrTicketConfig,
       });
       autosave.clear();
@@ -215,6 +216,7 @@ export function NewPlanForm({
           description: draft.description,
           terms: draft.terms,
           tiers: draft.tiers,
+          tierGroups: draft.tierGroups,
           venue: draft.venueId ? venues?.find((v) => v.id === draft.venueId) : null,
           tenantCountry: profile?.country ?? null,
         })}

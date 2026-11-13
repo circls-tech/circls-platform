@@ -8,6 +8,7 @@ import { assertTermsAccepted } from '../middleware/require_terms.js';
 import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { requireTenantMembership } from '../middleware/tenant_context.js';
 import { benefitsSchema, coerceBenefits } from '../lib/membership_benefits.js';
+import { tierGroupKeySchema, tierGroupsField } from '../lib/membership_tier_groups.js';
 import {
   qrTicketConfigSchema,
   toQrTicketConfig,
@@ -27,6 +28,7 @@ import {
   listUserMemberships,
   presignMembershipCover,
   purchaseMembership,
+  regroupMembershipTiers,
   removeMembershipCover,
   setMembershipActive,
   updateMember,
@@ -71,6 +73,9 @@ const tierSchema = z.object({
   // Per-tier QR override: omitted/null = inherit the plan's config;
   // enabled:false = explicitly off for this tier; enabled:true = custom rules.
   qrTicketConfig: qrTicketConfigSchema.optional(),
+  // The plan group this tier shows under; null = ungrouped. Omitted (an app
+  // that predates groups) keeps the group of the live tier with this name.
+  groupKey: tierGroupKeySchema.nullable().optional(),
 });
 const tiersField = z.array(tierSchema).min(1).max(20);
 /** On create a draft may have no tiers yet; submission for review asks for one. */
@@ -86,6 +91,7 @@ function tierToInput(t: z.infer<typeof tierSchema>) {
     benefits: t.benefits !== undefined ? coerceBenefits(t.benefits) : { items: [] },
     capacity: t.capacity,
     qrTicketConfig: t.qrTicketConfig !== undefined ? toTierQrTicketConfig(t.qrTicketConfig) : null,
+    groupKey: t.groupKey,
   };
 }
 
@@ -103,6 +109,7 @@ const createSchema = z
     durationDays: z.number().int().min(1).max(3650).optional(),
     benefits: benefitsSchema.optional(),
     tiers: createTiersField.optional(),
+    tierGroups: tierGroupsField.optional(),
     qrTicketConfig: qrTicketConfigSchema.optional(),
   })
   .refine(
@@ -123,7 +130,17 @@ const updateSchema = z.object({
   durationDays: z.number().int().min(1).max(3650).optional(),
   benefits: benefitsSchema.optional(),
   tiers: tiersField.optional(),
+  tierGroups: tierGroupsField.optional(),
   qrTicketConfig: qrTicketConfigSchema.optional(),
+});
+
+/** Live-safe regrouping: the groups, and every live tier in display order. */
+const regroupSchema = z.object({
+  tierGroups: tierGroupsField,
+  tiers: z
+    .array(z.object({ id: z.string().uuid(), groupKey: tierGroupKeySchema.nullable() }))
+    .min(1)
+    .max(20),
 });
 
 const purchaseSchema = z.object({
@@ -162,6 +179,7 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
       terms: parsed.data.terms,
       ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
       ...(parsed.data.tiers ? { tiers: parsed.data.tiers.map(tierToInput) } : {}),
+      ...(parsed.data.tierGroups ? { tierGroups: parsed.data.tierGroups } : {}),
       ...(parsed.data.pricePaise !== undefined ? { pricePaise: parsed.data.pricePaise } : {}),
       ...(parsed.data.durationDays !== undefined ? { durationDays: parsed.data.durationDays } : {}),
       ...(parsed.data.benefits !== undefined ? { benefits: coerceBenefits(parsed.data.benefits) } : {}),
@@ -198,9 +216,23 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.durationDays !== undefined) patch.durationDays = parsed.data.durationDays;
     if (parsed.data.benefits !== undefined) patch.benefits = coerceBenefits(parsed.data.benefits);
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
+    if (parsed.data.tierGroups !== undefined) patch.tierGroups = parsed.data.tierGroups;
     if (parsed.data.qrTicketConfig !== undefined)
       patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);
     return updateMembership({ tenantId, actorUserId: user.id }, id, patch);
+  });
+
+  // Plan groups, each plan's group and the plans' order. Unlike PATCH this
+  // works on a live membership: it never changes a price, duration or tier id.
+  app.put('/v1/tenants/:tenantId/memberships/:id/tier-groups', { preHandler: requireAuth }, async (req) => {
+    const { tenantId, id } = req.params as { tenantId: string; id: string };
+    const user = await currentUser(req);
+    const ctx = await requireTenantMembership(user.id, tenantId);
+    assertCap(ctx, 'memberships.write');
+    const parsed = regroupSchema.safeParse(req.body);
+    if (!parsed.success)
+      throw new BadRequest('Invalid plan groups', 'bad_request', { issues: parsed.error.issues });
+    return regroupMembershipTiers({ tenantId, actorUserId: user.id }, id, parsed.data);
   });
 
   // ── Artwork (PR #110): single cover image, presign → PUT → finalize. ─────────

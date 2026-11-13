@@ -64,6 +64,7 @@ import { listSlots, type SlotWithBounds } from './slot_service.js';
 import { imagesForVenues, type PublicImageRef } from './venue_image_service.js';
 import { previewAllows } from './listing_preview_service.js';
 import { coerceBenefits } from '../lib/membership_benefits.js';
+import { customerTierGroups } from '../lib/membership_tier_groups.js';
 import { getStorage } from '../lib/storage.js';
 import { type BrandSummary, getPublicOrgBySlug, listPublicOrgs, type PublicOrg, type PublicOrgSummary, toBrandSummary } from './tenant_service.js';
 import type { MembershipBenefits } from '../db/schema/memberships.js';
@@ -863,6 +864,8 @@ export interface PublicMembershipTier {
   benefits: MembershipBenefits;
   capacity: number | null;
   remaining: number | null;
+  /** Key of the `tierGroups` entry this tier shows under; null = ungrouped. */
+  groupKey: string | null;
 }
 
 function toPublicMembershipTier(t: MembershipTierWithRemaining): PublicMembershipTier {
@@ -875,6 +878,7 @@ function toPublicMembershipTier(t: MembershipTierWithRemaining): PublicMembershi
     benefits: coerceBenefits(t.benefits),
     capacity: t.capacity,
     remaining: t.remaining,
+    groupKey: t.groupKey,
   };
 }
 
@@ -884,7 +888,12 @@ async function attachMembershipTiers(
 ): Promise<PublicMembershipWithScope[]> {
   const base = rows.map(toPublicMembership);
   const byMembership = await tiersWithRemainingByMembership(db, base.map((m) => m.id));
-  for (const m of base) m.tiers = (byMembership.get(m.id) ?? []).map(toPublicMembershipTier);
+  for (const m of base) {
+    // Customers see only groups that have plans; an orphaned plan shows ungrouped.
+    const shown = customerTierGroups(m.tierGroups, (byMembership.get(m.id) ?? []).map(toPublicMembershipTier));
+    m.tierGroups = shown.groups;
+    m.tiers = shown.tiers;
+  }
   return base;
 }
 

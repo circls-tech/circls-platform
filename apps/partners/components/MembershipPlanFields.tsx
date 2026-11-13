@@ -12,6 +12,9 @@ import {
   type MembershipTierDraft,
 } from '@/components/MembershipTiersEditor';
 import { QrTicketConfigEditor } from '@/components/QrTicketConfigEditor';
+import { TierGroupsFields } from '@/components/MembershipTierGroups';
+import { resolveTierGroups, tierGroupDraftsFrom, type TierGroupDraft } from '@/lib/tier_groups';
+import type { MembershipTierGroup } from '@/lib/api/types';
 
 /**
  * Everything a plan is, minus its artwork.
@@ -29,6 +32,9 @@ export interface MembershipPlanDraft {
   venueId: string;
   terms: string;
   tiers: MembershipTierDraft[];
+  /** Optional groups the tiers are shown under. Absent in drafts autosaved
+   *  before groups existed, hence optional. */
+  tierGroups?: TierGroupDraft[];
   qrConfig: QrTicketConfig | null;
 }
 
@@ -39,6 +45,7 @@ export function emptyPlanDraft(): MembershipPlanDraft {
     venueId: '',
     terms: '',
     tiers: [emptyMembershipTier()],
+    tierGroups: [],
     qrConfig: null,
   };
 }
@@ -51,6 +58,7 @@ export function planDraftFrom(m: Membership): MembershipPlanDraft {
     terms: m.terms ?? '',
     tiers:
       m.tiers.length > 0 ? m.tiers.map(membershipTierDraftFromApi) : [emptyMembershipTier()],
+    tierGroups: tierGroupDraftsFrom(m.tierGroups),
     qrConfig: m.qrTicketConfig ?? null,
   };
 }
@@ -61,16 +69,19 @@ export interface MembershipPlanInput {
   description: string;
   terms: string | null;
   tiers: MembershipTierInput[];
+  tierGroups: MembershipTierGroup[];
   qrTicketConfig: QrTicketConfig | null;
 }
 
 export function planDraftToInput(d: MembershipPlanDraft): MembershipPlanInput {
+  const { groups, keyOf } = resolveTierGroups(d.tierGroups ?? []);
   return {
     venueId: d.venueId || null,
     name: d.name,
     description: d.description,
     terms: d.terms.trim() ? d.terms.trim() : null,
-    tiers: membershipTiersToPayload(d.tiers),
+    tiers: membershipTiersToPayload(d.tiers, keyOf),
+    tierGroups: groups,
     qrTicketConfig: d.qrConfig,
   };
 }
@@ -136,10 +147,24 @@ export function MembershipPlanFields({
         </p>
       </div>
 
+      <TierGroupsFields
+        value={value.tierGroups ?? []}
+        onChange={(groups, removed) =>
+          onChange({
+            ...value,
+            tierGroups: groups,
+            tiers: removed
+              ? value.tiers.map((t) => (t.groupLocalId === removed ? { ...t, groupLocalId: null } : t))
+              : value.tiers,
+          })
+        }
+      />
+
       <MembershipTiersEditor
         value={value.tiers}
         onChange={(t) => set('tiers', t)}
         currency={currencyFor(value.venueId || null)}
+        groups={value.tierGroups ?? []}
       />
 
       <QrTicketConfigEditor

@@ -6,6 +6,7 @@ import type {
   Membership,
   MembershipBenefits,
   MembershipPurchase,
+  MembershipTierGroup,
   MemberStatus,
   MemberStatusCounts,
   PresignedUpload,
@@ -152,6 +153,8 @@ export interface MembershipTierInput {
   /** Per-tier QR override: null = inherit the plan-level config;
    *  `{ enabled: false }` = QR passes off for this tier; enabled = custom rules. */
   qrTicketConfig?: QrTicketConfig | null;
+  /** Key of the plan group (in `tierGroups`) this tier shows under; null = none. */
+  groupKey?: string | null;
 }
 
 export interface CreateMembershipInput {
@@ -163,6 +166,8 @@ export interface CreateMembershipInput {
   terms?: string | null;
   /** Plan tiers (min 1, unless saving a draft). */
   tiers: MembershipTierInput[];
+  /** Ordered tier groups the tiers' `groupKey`s refer to. */
+  tierGroups?: MembershipTierGroup[];
   /** QR ticket rules; null/omitted = disabled. */
   qrTicketConfig?: QrTicketConfig | null;
 }
@@ -204,6 +209,8 @@ export interface UpdateMembershipInput {
   terms?: string | null;
   /** Replace-all plan tiers (editable states only). */
   tiers?: MembershipTierInput[];
+  /** Replace the tier groups; tiers in a removed group become ungrouped. */
+  tierGroups?: MembershipTierGroup[];
   /** QR ticket rules; null = disable. Omit to leave unchanged. */
   qrTicketConfig?: QrTicketConfig | null;
 }
@@ -220,6 +227,34 @@ export function useUpdateMembership(tenantId: string) {
       apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
+      }),
+    onSuccess: (_m, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['memberships', tenantId] });
+      void qc.invalidateQueries({ queryKey: ['membership', id] });
+    },
+  });
+}
+
+/**
+ * Set a membership's tier groups, and each tier's group and order. Works on a
+ * live plan too: it changes no price, duration or tier id. `tiers` lists every
+ * live tier once, in display order.
+ */
+export function useRegroupMembership(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      tierGroups,
+      tiers,
+    }: {
+      id: string;
+      tierGroups: MembershipTierGroup[];
+      tiers: { id: string; groupKey: string | null }[];
+    }) =>
+      apiFetch<Membership>(`/v1/tenants/${tenantId}/memberships/${id}/tier-groups`, {
+        method: 'PUT',
+        body: JSON.stringify({ tierGroups, tiers }),
       }),
     onSuccess: (_m, { id }) => {
       void qc.invalidateQueries({ queryKey: ['memberships', tenantId] });

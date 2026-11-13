@@ -826,6 +826,14 @@ export interface MembershipBenefits {
 }
 
 /** A plan tier on a membership, with live sold/remaining counts. */
+/** A partner-named group of a membership's tiers, shown to customers as a tab. */
+export interface MembershipTierGroup {
+  /** Stable lowercase slug; tiers reference it and customer links use it (?tab=). */
+  key: string;
+  name: string;
+  tagline: string | null;
+}
+
 export interface MembershipTier {
   id: string;
   name: string;
@@ -837,6 +845,8 @@ export interface MembershipTier {
   /** Per-tier QR override: null = inherit the plan config; enabled:false = off
    *  for this tier; enabled:true = custom rules. */
   qrTicketConfig: QrTicketConfig | null;
+  /** Key of the plan group this tier shows under (`Membership.tierGroups`); null = none. */
+  groupKey: string | null;
   sold: number;
   remaining: number | null;
 }
@@ -866,6 +876,8 @@ export interface Membership {
   qrTicketConfig: QrTicketConfig | null;
   /** Plan tiers (min 1). Present on list + detail endpoints. */
   tiers: MembershipTier[];
+  /** Ordered tier groups; empty = the tiers show as one list. */
+  tierGroups: MembershipTierGroup[];
 }
 
 export interface UserMembership {

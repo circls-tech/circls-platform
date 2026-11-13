@@ -11,6 +11,8 @@ import {
   TierQrModeControl,
   type TierQrMode,
 } from './QrTicketConfigEditor';
+import { TierGroupSelect } from './MembershipTierGroups';
+import type { TierGroupDraft } from '@/lib/tier_groups';
 
 export type { TierQrMode } from './QrTicketConfigEditor';
 
@@ -25,6 +27,8 @@ export interface MembershipTierDraft {
   qrMode: TierQrMode;
   /** Custom rules; only sent when qrMode === 'custom'. */
   qrConfig: QrTicketConfig;
+  /** The tier group (its draft `localId`) this tier shows under; null = none. */
+  groupLocalId?: string | null;
 }
 
 export function emptyMembershipTier(): MembershipTierDraft {
@@ -47,8 +51,15 @@ function tierQrToPayload(t: MembershipTierDraft): QrTicketConfig | null {
   return { ...t.qrConfig, enabled: true };
 }
 
-/** Convert drafts to the API payload shape. */
-export function membershipTiersToPayload(tiers: MembershipTierDraft[]): MembershipTierInput[] {
+/**
+ * Convert drafts to the API payload shape. `keyOf` turns a draft's group into
+ * its saved key (see resolveTierGroups); every tier then says its group, null
+ * included, so the API never has to guess it.
+ */
+export function membershipTiersToPayload(
+  tiers: MembershipTierDraft[],
+  keyOf: (localId: string | null | undefined) => string | null = () => null,
+): MembershipTierInput[] {
   return tiers.map((t) => ({
     name: t.name.trim(),
     description: t.description?.trim() ? t.description.trim() : undefined,
@@ -57,6 +68,7 @@ export function membershipTiersToPayload(tiers: MembershipTierDraft[]): Membersh
     benefits: { items: cleanBenefits(t.benefits) },
     capacity: t.capacity?.trim() ? parseInt(t.capacity, 10) : null,
     qrTicketConfig: tierQrToPayload(t),
+    groupKey: keyOf(t.groupLocalId),
   }));
 }
 
@@ -65,7 +77,8 @@ export function membershipTierDraftFromApi(
   t: Pick<
     MembershipTier,
     'name' | 'description' | 'pricePaise' | 'durationDays' | 'capacity' | 'benefits' | 'qrTicketConfig'
-  >,
+  > &
+    Partial<Pick<MembershipTier, 'groupKey'>>,
 ): MembershipTierDraft {
   return {
     name: t.name,
@@ -76,6 +89,8 @@ export function membershipTierDraftFromApi(
     benefits: t.benefits?.items ?? [],
     qrMode: t.qrTicketConfig == null ? 'inherit' : t.qrTicketConfig.enabled ? 'custom' : 'off',
     qrConfig: t.qrTicketConfig?.enabled ? t.qrTicketConfig : DEFAULT_QR_CONFIG,
+    // A saved group's draft local id is its key (tierGroupDraftsFrom).
+    groupLocalId: t.groupKey ?? null,
   };
 }
 
@@ -84,11 +99,14 @@ export function MembershipTiersEditor({
   onChange,
   currency,
   disabled,
+  groups = [],
 }: {
   value: MembershipTierDraft[];
   onChange: (next: MembershipTierDraft[]) => void;
   currency: CurrencyCode;
   disabled?: boolean;
+  /** The plan's tier groups; each tier picks one once any is named. */
+  groups?: TierGroupDraft[];
 }) {
   function update(i: number, patch: Partial<MembershipTierDraft>) {
     onChange(value.map((t, j) => (j === i ? { ...t, ...patch } : t)));
@@ -156,6 +174,14 @@ export function MembershipTiersEditor({
                 value={t.description ?? ''}
                 disabled={disabled}
                 onChange={(e) => update(i, { description: e.target.value })}
+              />
+            </div>
+            <div className="sm:col-span-6">
+              <TierGroupSelect
+                groups={groups}
+                value={t.groupLocalId ?? null}
+                disabled={disabled}
+                onChange={(localId) => update(i, { groupLocalId: localId })}
               />
             </div>
           </div>
