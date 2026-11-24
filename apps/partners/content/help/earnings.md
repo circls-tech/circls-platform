@@ -58,9 +58,14 @@ If you sell in more than one currency, each one gets its own set of figures. The
 
 ## Collected at your desk
 
-Bookings you took yourself and marked as paid directly to you appear in their own section, **not** in the net payout figure.
+Money you took yourself appears in its own section, **not** in the net payout figure. One total, then the two things it is made of:
 
-That money never passed through circls, so circls has nothing to pay you for it — it is already yours. It is shown here so that this page and the **Dashboard** visibly account for each other rather than appearing to disagree, since the Dashboard's Revenue tile does include desk takings.
+- **Walk-in bookings** — bookings you recorded yourself and marked as paid directly to you. Cancelling one takes it back out.
+- **Members added by hand** — what the people you signed up to a membership plan at the desk paid you, as you recorded it on the **Add member** form (see *Adding someone who joined elsewhere* in [Setting up membership plans](/help/memberships)). A member counts on the day you added them, whatever dates their membership covers, and keeps counting after it expires — they still paid. Cancelling a member takes them back out. Members added before the form asked for an amount have nothing recorded, so they are not counted; the same goes for anyone you recorded as paying nothing.
+
+Both lines are always shown, even at zero, so you can see at a glance which kind of desk money a period holds. Each one can be checked against its own list — the venue's bookings, or the plan's members, where every hand-added member shows the amount and payment method you entered.
+
+That money never passed through circls, so circls has nothing to pay you for it — it is already yours. It is shown here so you can reconcile your till in one place, and so that this page and the **Dashboard** visibly account for each other rather than appearing to disagree: the Dashboard's Revenue tile includes your desk bookings. It does not include what hand-added members paid, which appears only here.
 
 ## When the money actually arrives
 
@@ -82,9 +87,9 @@ One thing to know about refunds: **circls' commission on a sale is not returned 
 
 The two pages are answering different questions, and both answers are correct:
 
-- The **Dashboard's Revenue** tiles show **money that moved** — the full amount customers paid, plus your desk takings. It is a measure of trade.
-- **Earnings** shows **money coming to you** — net of everything, and excluding desk takings, which are already in your hands.
+- The **Dashboard's Revenue** tiles show **money that moved** — the full amount customers paid, plus your walk-in desk bookings. It is a measure of trade.
+- **Earnings** shows **money coming to you** — net of everything, and excluding desk takings, which are already in your hands. Those are listed separately underneath, including what hand-added members paid you, which the Dashboard does not count.
 
-Earnings will therefore always read lower than the Dashboard's Revenue for the same period. The gap is circls' commission, the gateway's charges, and any desk cash — which is exactly what the separate desk section is there to make visible.
+The net payout will therefore always read lower than the Dashboard's Revenue for the same period. The gap is circls' commission, the gateway's charges, and any desk bookings — which is exactly what the separate desk section is there to make visible.
 
 If a figure still looks wrong after allowing for all of that, tell us through **Questions** and include the period you are looking at.

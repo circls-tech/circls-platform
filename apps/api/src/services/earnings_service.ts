@@ -60,11 +60,15 @@
  * this page exists to give; a partner reading it sees what is owed and what has
  * landed, which is the pair they actually want.
  *
- * DESK TAKINGS ARE SEPARATE. Bookings the partner took at their own desk
- * (`payment_method = 'external'`) never passed through Circls, so they can
- * never appear in a payout and are not in any net figure here. They are
- * returned on their own so the page can account for the gap between itself and
- * the Dashboard's Revenue tile, instead of the two silently disagreeing.
+ * DESK TAKINGS ARE SEPARATE. Money the partner took at their own desk —
+ * walk-in bookings marked paid to them (`bookings.payment_method =
+ * 'external'`) and what the members they added by hand paid them
+ * (`user_memberships.desk_paid_paise`) — never passed through Circls, so it
+ * can never appear in a payout and is in no net figure here. It is returned on
+ * its own, bookings and memberships side by side, so a partner counting the
+ * till sees both beside what Circls owes them, and so the page can account for
+ * the gap between itself and the Dashboard's Revenue tile instead of the two
+ * silently disagreeing.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -139,12 +143,32 @@ export interface EarningsItem extends EarningsStreamTotal {
   venueName: string | null;
 }
 
-/** Cash the partner took at their own desk. Never part of a Circls payout. */
+/**
+ * Cash the partner took at their own desk, in one currency. Never part of a
+ * Circls payout.
+ *
+ * Two things are taken at a desk and both are here: walk-in bookings marked
+ * paid to the partner (`bookings.payment_method = 'external'`) and members
+ * added by hand with what they paid recorded (`user_memberships.desk_paid_paise`).
+ * `amountMinor` is the two added up — the one figure a partner counting the
+ * till wants — and each part sits beside it so the page can say where it came
+ * from. There is no per-payment-method split here, as there is none for
+ * bookings: the till is reconciled against the members list, which has it.
+ */
 export interface DeskTakings {
   currency: string;
-  /** What the partner charged, in minor units — their money already. */
+  /** Everything taken at the desk, in minor units — the partner's money already. */
   amountMinor: number;
+  /** Walk-in bookings marked paid at the desk, and what they came to. */
   bookings: number;
+  bookingsMinor: number;
+  /**
+   * Members added by hand with an amount recorded, and what they paid. A
+   * member recorded before the desk kept amounts is not counted; one recorded
+   * as paying nothing (a free month) is a member who paid 0.
+   */
+  members: number;
+  membersMinor: number;
 }
 
 export interface TenantEarnings {
@@ -283,22 +307,66 @@ export async function getTenantEarnings(
     });
   }
 
-  // Desk takings: the booking row is the only record of them, so the same
-  // "booking stands" rule analytics_service uses applies — a cancelled desk
-  // booking leaves no refund to net off, so it simply stops counting.
+  // Desk takings: money that never passed through Circls, so the row that
+  // records it is the only evidence there is. Two kinds, kept apart so the
+  // page can say which is which, then added up per currency:
+  //
+  //   - Walk-in bookings marked paid to the partner. The same "booking stands"
+  //     rule analytics_service uses applies — a cancelled desk booking leaves
+  //     no refund to net off, so it simply stops counting.
+  //   - Members added by hand, with what they paid written on the row
+  //     (`desk_paid_paise`, see memberships_service.addExternalMember). A plan
+  //     stores no currency, so it is derived the way checkout derives it
+  //     (payments_service.resolvePaymentContext): the venue's country for a
+  //     venue-scoped plan, else the organisation's — the same US spellings
+  //     lib/gateway.ts isUsCountry accepts. A cancelled member stops counting
+  //     for the reason a cancelled booking does; an expired one still paid.
+  //     `user_id is null` is belt and braces: a consumer purchase never has an
+  //     amount here, its money is on `payments`. A member recorded before the
+  //     desk kept amounts has nothing to count.
+  //
+  // Dated by `created_at` in both cases — the day the desk took the money —
+  // as the circls figures above are dated by the day the customer paid.
   const deskRaw = await db.execute<Record<string, unknown>>(sql`
-    select b.currency                             as currency,
-           coalesce(sum(b.total_paise), 0)::bigint as amount,
-           count(*)                               as bookings
-      from bookings b
-     where b.tenant_id = ${tenantId}::uuid
-       and b.payment_method = 'external'
-       and b.status in ('confirmed', 'completed', 'no_show')
-       and b.total_paise is not null
-       and b.created_at >= ${from}::timestamptz
-       and b.created_at <  ${to}::timestamptz
-     group by b.currency
-     order by b.currency
+    with desk_bookings as (
+      select b.currency::text                        as currency,
+             coalesce(sum(b.total_paise), 0)::bigint as amount,
+             count(*)::int                           as n
+        from bookings b
+       where b.tenant_id = ${tenantId}::uuid
+         and b.payment_method = 'external'
+         and b.status in ('confirmed', 'completed', 'no_show')
+         and b.total_paise is not null
+         and b.created_at >= ${from}::timestamptz
+         and b.created_at <  ${to}::timestamptz
+       group by b.currency
+    ),
+    desk_members as (
+      select case when upper(btrim(coalesce(nullif(btrim(v.country), ''), t.country, '')))
+                       in ('USA', 'US', 'UNITED STATES', 'UNITED STATES OF AMERICA')
+                  then 'USD' else 'INR' end              as currency,
+             coalesce(sum(um.desk_paid_paise), 0)::bigint as amount,
+             count(*)::int                              as n
+        from user_memberships um
+        join memberships m on m.id = um.membership_id
+        join tenants     t on t.id = m.tenant_id
+        left join venues v on v.id = m.venue_id
+       where m.tenant_id = ${tenantId}::uuid
+         and um.user_id is null
+         and um.desk_paid_paise is not null
+         and um.status <> 'cancelled'
+         and um.created_at >= ${from}::timestamptz
+         and um.created_at <  ${to}::timestamptz
+       group by 1
+    )
+    select coalesce(b.currency, m.currency) as currency,
+           coalesce(b.amount, 0)::bigint    as bookings_amount,
+           coalesce(b.n, 0)                 as bookings,
+           coalesce(m.amount, 0)::bigint    as members_amount,
+           coalesce(m.n, 0)                 as members
+      from desk_bookings b
+      full outer join desk_members m on m.currency = b.currency
+     order by 1
   `);
 
   return {
@@ -307,11 +375,19 @@ export async function getTenantEarnings(
     total: totalsByCurrency(items),
     byStream: totalsByStream(items),
     items,
-    desk: (deskRaw as unknown as Record<string, unknown>[]).map((r) => ({
-      currency: r['currency'] as string,
-      amountMinor: Number(r['amount'] ?? 0),
-      bookings: Number(r['bookings'] ?? 0),
-    })),
+    desk: (deskRaw as unknown as Record<string, unknown>[]).map((r) => {
+      // bigint comes back from pg as a string.
+      const bookingsMinor = Number(r['bookings_amount'] ?? 0);
+      const membersMinor = Number(r['members_amount'] ?? 0);
+      return {
+        currency: r['currency'] as string,
+        amountMinor: bookingsMinor + membersMinor,
+        bookings: Number(r['bookings'] ?? 0),
+        bookingsMinor,
+        members: Number(r['members'] ?? 0),
+        membersMinor,
+      };
+    }),
   };
 }
 
