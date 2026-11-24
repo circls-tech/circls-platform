@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/firebase/auth_context';
 import { apiFetch } from './client';
 import { VENUE_IMAGE_MAX_BYTES, VENUE_IMAGE_TYPES } from './queries';
 import type {
+  DeskPaymentMethod,
   Membership,
   MembershipBenefits,
   MembershipPurchase,
@@ -35,17 +36,23 @@ export function useMembership(tenantId: string, membershipId: string, enabled = 
   });
 }
 
-/** Consumer purchases of a membership plan (partner-facing). */
+/** A member the partner adds by hand (partner-facing). */
 export interface AddMemberInput {
   name: string;
   contact?: string;
   membershipTierId?: string;
   startsAt?: string;
   endsAt?: string;
+  /** What they paid, in minor units of the plan's currency. Omit for the
+   *  tier's price. */
+  paidPaise?: number;
+  paymentMethod?: DeskPaymentMethod;
+  note?: string;
 }
 
 /** Record a member who joined off-platform. Counts towards tier capacity; no
- *  money is written, so it never reaches a payout. */
+ *  payment is written, so it never reaches a payout — what they paid at the
+ *  desk is kept on the member for the partner's records only. */
 export function useAddMember(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({

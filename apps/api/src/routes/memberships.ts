@@ -35,6 +35,7 @@ import {
   submitMembershipForReview,
   updateMembership,
 } from '../services/memberships_service.js';
+import { DESK_PAYMENT_METHODS } from '../db/schema/index.js';
 import { assertMembershipPurchasable } from '../services/consumer_service.js';
 import { getVenueById } from '../services/venue_service.js';
 
@@ -321,7 +322,10 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * A member the partner signed up off-platform. Counts towards tier capacity
-   * like any purchase; writes no payment, so it never reaches a payout.
+   * like any purchase; writes no payment, so it never reaches a payout. What
+   * they paid at the desk (`paidPaise`, defaulting to the tier's price), how
+   * (`paymentMethod`) and a `note` are kept on the member for the partner's
+   * records only.
    */
   const addMemberSchema = z.object({
     name: z.string().min(1).max(200),
@@ -329,6 +333,10 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
     membershipTierId: z.string().uuid().optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
+    /** Minor units of the plan's currency. Omit for the tier's price. */
+    paidPaise: z.number().int().min(0).max(1_000_000_000_000).optional(),
+    paymentMethod: z.enum(DESK_PAYMENT_METHODS).optional(),
+    note: z.string().max(1000).optional(),
   });
 
   app.post(
@@ -355,6 +363,9 @@ export const membershipRoutes: FastifyPluginAsync = async (app) => {
             : {}),
           ...(parsed.data.startsAt ? { startsAt: new Date(parsed.data.startsAt) } : {}),
           ...(parsed.data.endsAt ? { endsAt: new Date(parsed.data.endsAt) } : {}),
+          ...(parsed.data.paidPaise != null ? { paidPaise: parsed.data.paidPaise } : {}),
+          ...(parsed.data.paymentMethod ? { paymentMethod: parsed.data.paymentMethod } : {}),
+          ...(parsed.data.note?.trim() ? { note: parsed.data.note } : {}),
         },
       );
       return reply.code(201).send(result);

@@ -154,6 +154,66 @@ describe.skipIf(!runIntegration)('memberships_service', () => {
       expect(none).toHaveLength(0);
     });
 
+    it("records what they paid at the desk: the tier's price unless told otherwise, how, and a note", async () => {
+      // A tier at ₹500 with room to spare.
+      const plan = await makePlan(100);
+      const tierId = plan.tiers?.[0]?.id;
+      expect(tierId).toBeTruthy();
+
+      // Nothing said about money: the tier's price is what they paid.
+      const listPrice = await addExternalMember(
+        { tenantId, actorUserId },
+        { membershipId: plan.id, name: 'List Price Lata', membershipTierId: tierId! },
+      );
+      // A custom amount, with how they paid and a note.
+      const custom = await addExternalMember(
+        { tenantId, actorUserId },
+        {
+          membershipId: plan.id,
+          name: 'Discounted Dev',
+          membershipTierId: tierId!,
+          paidPaise: 42500,
+          paymentMethod: 'upi',
+          note: '  Renewed early, so ₹75 off.  ',
+        },
+      );
+
+      const rows = (await db.execute(sql`
+        select id, desk_paid_paise, desk_payment_method, note, payment_id
+          from user_memberships where id in (${listPrice.userMembershipId}, ${custom.userMembershipId})
+      `)) as unknown as Array<Record<string, unknown>>;
+      const byId = new Map(rows.map((r) => [r['id'], r]));
+      const lata = byId.get(listPrice.userMembershipId)!;
+      expect(Number(lata['desk_paid_paise'])).toBe(50000);
+      expect(lata['desk_payment_method']).toBeNull();
+      expect(lata['note']).toBeNull();
+      const dev = byId.get(custom.userMembershipId)!;
+      expect(Number(dev['desk_paid_paise'])).toBe(42500);
+      expect(dev['desk_payment_method']).toBe('upi');
+      expect(dev['note']).toBe('Renewed early, so ₹75 off.');
+      // Still nothing on the ledger: the desk's record never becomes a payout.
+      expect(lata['payment_id']).toBeNull();
+      expect(dev['payment_id']).toBeNull();
+
+      // And the members list carries it back to the portal.
+      const listed = await listMembershipPurchases(tenantId, plan.id);
+      const devRow = listed.find((x) => x.userMembershipId === custom.userMembershipId);
+      expect(devRow).toMatchObject({ paidPaise: 42500, paymentMethod: 'upi', note: 'Renewed early, so ₹75 off.' });
+      expect(devRow!.refundable).toBe(false);
+      const lataRow = listed.find((x) => x.userMembershipId === listPrice.userMembershipId);
+      expect(lataRow).toMatchObject({ paidPaise: 50000, paymentMethod: null, note: null });
+    });
+
+    it('refuses a negative or fractional amount paid', async () => {
+      const plan = await makePlan(null);
+      await expect(
+        addExternalMember({ tenantId, actorUserId }, { membershipId: plan.id, name: 'Minus', paidPaise: -1 }),
+      ).rejects.toMatchObject({ code: 'bad_request' });
+      await expect(
+        addExternalMember({ tenantId, actorUserId }, { membershipId: plan.id, name: 'Half', paidPaise: 10.5 }),
+      ).rejects.toMatchObject({ code: 'bad_request' });
+    });
+
     it('shows up in the buyers list, flagged as external', async () => {
       const plan = await makePlan(null);
       await addExternalMember(

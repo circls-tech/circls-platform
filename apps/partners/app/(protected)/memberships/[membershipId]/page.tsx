@@ -388,6 +388,7 @@ export default function MembershipDetailPage() {
             tenantId={tenantId}
             membershipId={membership.id}
             tiers={membership.tiers}
+            currency={currency}
             walkInOpen={walkInOpen}
             onWalkInOpenChange={setWalkInOpen}
           />
