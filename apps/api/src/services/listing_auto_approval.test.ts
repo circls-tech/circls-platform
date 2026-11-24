@@ -9,6 +9,7 @@ vi.mock('./notification_hooks.js', () => ({
 
 import { closeDb, db } from '../db/client.js';
 import { arenas, auditLog, bookings, eventBookingTickets, eventChangeRequests, events, memberships, tenants, users, venues } from '../db/schema/index.js';
+import { resolveAutoApprove } from '../db/schema/tenants.js';
 import { createArena, submitArenaForReview, updateArenaDetails } from './arena_service.js';
 import { createChangeRequest } from './event_change_requests_service.js';
 import { listTiers } from './event_tiers_service.js';
@@ -16,6 +17,9 @@ import { createEvent, createEventSeries, publishEvent, publishEventSeries } from
 import { createMembership, setMembershipActive, submitMembershipForReview, updateMembership } from './memberships_service.js';
 import { onListingReviewed, onListingSubmitted } from './notification_hooks.js';
 import { createVenue, submitVenueForReview, updateVenue } from './venue_service.js';
+
+const ALL_ON = { venues: true, events: true, memberships: true, changes: true };
+const ALL_OFF = { venues: false, events: false, memberships: false, changes: false };
 
 describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', () => {
   let tenantId: string;
@@ -36,7 +40,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', ()
     const [actor] = await db.insert(users).values({ firebaseUid: `auto-approval-${Date.now()}` }).returning();
     actorUserId = actor!.id;
     const [tenant, other] = await db.insert(tenants).values([
-      { name: 'Auto-approval', slug: `auto-approval-${Date.now()}`, autoApproveListings: true },
+      { name: 'Auto-approval', slug: `auto-approval-${Date.now()}`, autoApprove: ALL_ON },
       { name: 'Manual review', slug: `manual-review-${Date.now()}` },
     ]).returning();
     tenantId = tenant!.id;
@@ -46,7 +50,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', ()
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    await db.update(tenants).set({ autoApproveListings: true }).where(eq(tenants.id, tenantId));
+    await db.update(tenants).set({ autoApprove: ALL_ON }).where(eq(tenants.id, tenantId));
   });
 
   afterAll(async () => {
@@ -64,7 +68,8 @@ describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', ()
 
   it('defaults to manual review and keeps other tenants unchanged', async () => {
     const [other] = await db.select().from(tenants).where(eq(tenants.id, otherTenantId));
-    expect(other!.autoApproveListings).toBe(false);
+    expect(other!.autoApprove).toEqual({});
+    expect(resolveAutoApprove(other!.autoApprove)).toEqual(ALL_OFF);
     const venue = await createVenue(otherTenantId, { name: 'Needs review' });
     expect(venue.status).toBe('pending_review');
     expect(onListingSubmitted).toHaveBeenCalledWith('venue', venue.id);
@@ -182,7 +187,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', ()
   it('returns future submissions and changes to manual review when disabled', async () => {
     const event = await createEvent(ctx(), eventInput());
     await publishEvent(ctx(), event.id);
-    await db.update(tenants).set({ autoApproveListings: false }).where(eq(tenants.id, tenantId));
+    await db.update(tenants).set({ autoApprove: {} }).where(eq(tenants.id, tenantId));
     const request = await createChangeRequest(ctx(), event.id, { name: 'Needs approval' });
     expect(request.status).toBe('pending');
     const [unchanged] = await db.select().from(events).where(eq(events.id, event.id));
@@ -190,6 +195,51 @@ describe.skipIf(!process.env.RUN_INTEGRATION)('tenant listing auto-approval', ()
     const draft = await createEvent(ctx(), eventInput());
     expect((await publishEvent(ctx(), draft.id)).status).toBe('pending_review');
     expect(onListingSubmitted).toHaveBeenCalledWith('event', draft.id);
+  });
+
+  it('approves only the ticked aspects and reviews the rest', async () => {
+    // Two live events to hang change requests on (one open request per event).
+    const liveA = await createEvent(ctx(), eventInput());
+    await publishEvent(ctx(), liveA.id);
+    const liveB = await createEvent(ctx(), eventInput());
+    await publishEvent(ctx(), liveB.id);
+    const liveVenue = await createVenue(tenantId, { name: 'Venue for arena edits' });
+    const liveArena = await createArena(liveVenue.id, { name: 'Live arena' });
+    vi.clearAllMocks();
+
+    // Venues only: venues and arenas go live; events, plans and changes review.
+    await db.update(tenants).set({ autoApprove: { venues: true } }).where(eq(tenants.id, tenantId));
+    const venue = await createVenue(tenantId, { name: 'Trusted venue' });
+    expect(venue.status).toBe('active');
+    expect((await createArena(venue.id, { name: 'Trusted arena' })).status).toBe('active');
+    const reviewedEvent = await createEvent(ctx(), eventInput());
+    expect((await publishEvent(ctx(), reviewedEvent.id)).status).toBe('pending_review');
+    expect(onListingSubmitted).toHaveBeenCalledWith('event', reviewedEvent.id);
+    const reviewedPlan = await createMembership({ ...ctx(), name: 'Reviewed plan', pricePaise: 0, durationDays: 30 });
+    expect(reviewedPlan.status).toBe('pending_review');
+    expect(onListingSubmitted).toHaveBeenCalledWith('membership', reviewedPlan.id);
+    expect((await createChangeRequest(ctx(), liveA.id, { name: 'Awaits review' })).status).toBe('pending');
+    await expect(updateArenaDetails(ctx(), liveArena.id, { name: 'Frozen' })).rejects.toMatchObject({ code: 'arena_not_editable' });
+    expect(onListingSubmitted).not.toHaveBeenCalledWith('venue', venue.id);
+
+    // Changes only: live listings change in place; new listings review.
+    await db.update(tenants).set({ autoApprove: { changes: true } }).where(eq(tenants.id, tenantId));
+    const request = await createChangeRequest(ctx(), liveB.id, { name: 'Applied at once' });
+    expect(request.status).toBe('approved');
+    expect((await db.select().from(events).where(eq(events.id, liveB.id)))[0]!.name).toBe('Applied at once');
+    expect((await updateArenaDetails(ctx(), liveArena.id, { name: 'Renamed live' })).status).toBe('active');
+    const queuedVenue = await createVenue(tenantId, { name: 'Queued venue' });
+    expect(queuedVenue.status).toBe('pending_review');
+    expect(onListingSubmitted).toHaveBeenCalledWith('venue', queuedVenue.id);
+
+    // Events and memberships only: those publish; venues still review.
+    await db.update(tenants).set({ autoApprove: { events: true, memberships: true } }).where(eq(tenants.id, tenantId));
+    const event = await createEvent(ctx(), eventInput());
+    expect((await publishEvent(ctx(), event.id)).status).toBe('published');
+    const plan = await createMembership({ ...ctx(), name: 'Trusted plan', pricePaise: 0, durationDays: 30 });
+    expect(plan.status).toBe('active');
+    expect((await createVenue(tenantId, { name: 'Still queued' })).status).toBe('pending_review');
+    expect(onListingReviewed).not.toHaveBeenCalled();
   });
 
   it('refuses a later change to a venue owned by another tenant', async () => {

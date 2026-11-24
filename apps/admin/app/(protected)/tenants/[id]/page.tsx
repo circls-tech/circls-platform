@@ -15,6 +15,7 @@ import {
   useUpdateTenantBilling,
 } from '@/lib/api/queries';
 import type {
+  AdminTenantAutoApprove,
   AdminTenantDetail,
   AdminTenantEventBillingItem,
   CommissionWaiver,
@@ -98,6 +99,35 @@ function StatusPill({ status }: { status: string }) {
     </span>
   );
 }
+
+/** The Listing approval checkboxes, one per aspect the API knows. */
+const AUTO_APPROVE_OPTIONS: ReadonlyArray<{
+  key: keyof AdminTenantAutoApprove;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'venues',
+    label: 'Venues and arenas',
+    description: 'New venues and arenas go live when submitted.',
+  },
+  {
+    key: 'events',
+    label: 'Events',
+    description: 'Complete events publish when submitted — single dates and whole recurring series.',
+  },
+  {
+    key: 'memberships',
+    label: 'Memberships',
+    description: 'Complete membership plans go on sale when submitted.',
+  },
+  {
+    key: 'changes',
+    label: 'Changes to live listings',
+    description:
+      'Event change requests apply as soon as they pass validation, and live arenas can be edited in place. Sold tickets stay protected.',
+  },
+];
 
 export default function TenantDetailPage() {
   const params = useParams<{ id: string }>();
@@ -206,23 +236,30 @@ export default function TenantDetailPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-900">Listing approval</h2>
-        <label className="mt-3 flex items-start gap-3 text-sm text-slate-800">
-          <input
-            type="checkbox"
-            checked={t.autoApproveListings}
-            disabled={listingApproval.isPending}
-            onChange={(event) => listingApproval.mutate({ id: t.id, enabled: event.target.checked })}
-            className="mt-0.5 h-4 w-4 accent-slate-900"
-          />
-          <span>
-            Automatically approve this tenant’s listings and later changes
-            <span className="mt-1 block text-xs text-slate-500">
-              Events, memberships, venues and arenas go live when submitted, without admin review
-              or review emails. Drafts and all existing validation rules still apply. Existing
-              pending reviews are unchanged. Untick to require review for future submissions.
-            </span>
-          </span>
-        </label>
+        <p className="mt-1 text-xs text-slate-500">
+          Tick what this tenant may take live without admin review or review emails. Anything left
+          unticked goes through the review queue as usual. Drafts, completeness checks and all other
+          validation rules still apply, and existing pending reviews are unchanged either way.
+        </p>
+        <div className="mt-3 space-y-3">
+          {AUTO_APPROVE_OPTIONS.map((option) => (
+            <label key={option.key} className="flex items-start gap-3 text-sm text-slate-800">
+              <input
+                type="checkbox"
+                checked={t.autoApprove[option.key]}
+                disabled={listingApproval.isPending}
+                onChange={(event) =>
+                  listingApproval.mutate({ id: t.id, patch: { [option.key]: event.target.checked } })
+                }
+                className="mt-0.5 h-4 w-4 accent-slate-900"
+              />
+              <span>
+                {option.label}
+                <span className="mt-1 block text-xs text-slate-500">{option.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
         {listingApproval.isPending && <p role="status" className="mt-2 text-xs text-slate-500">Saving…</p>}
         {listingApproval.isError && (
           <p role="alert" className="mt-2 text-sm text-red-600">
