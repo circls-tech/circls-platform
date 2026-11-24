@@ -65,6 +65,7 @@ import { adminPaymentSettingsRoutes } from './routes/admin_payment_settings.js';
 // QR ticket door check-in (validate/consume scanned codes).
 import { qrTicketRoutes } from './routes/qr_tickets.js';
 import { activityRoutes } from './routes/activity.js';
+import { customerRoutes } from './routes/customers.js';
 import { adminEarningsRoutes, earningsRoutes } from './routes/earnings.js';
 import { questionRoutes } from './routes/questions.js';
 import { feedbackRoutes } from './routes/feedback.js';
@@ -335,6 +336,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(qrTicketRoutes);
   // Partner portal Activity page: unified tenant activity feed + calendar counts.
   await app.register(activityRoutes);
+  await app.register(customerRoutes);
   // Partner portal Earnings page: net payable per window (financials.read).
   await app.register(earningsRoutes);
   // Same earnings figures, for a platform admin inspecting one organisation.

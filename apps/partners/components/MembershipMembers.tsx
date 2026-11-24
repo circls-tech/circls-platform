@@ -16,6 +16,7 @@ import type {
   MemberStatusCounts,
 } from '@/lib/api/types';
 import { Button, Input, StatusPill } from '@/lib/ui';
+import { CustomerFields } from './CustomerFields';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
@@ -336,17 +337,11 @@ export function MembershipMembers({
             like any member, but no money is recorded — whatever they paid, they
             paid you directly.
           </p>
-          <Input
-            label="Name"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            required
-          />
-          <Input
-            label="Contact (optional)"
-            value={form.contact}
-            onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))}
-            placeholder="Phone or email"
+          <CustomerFields
+            tenantId={tenantId}
+            name={form.name}
+            contact={form.contact}
+            onChange={(c) => setForm((f) => ({ ...f, name: c.name, contact: c.contact }))}
           />
           {tiers.length > 0 && (
             <label className="flex flex-col gap-1">
