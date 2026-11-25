@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { CommissionWaiverCard } from '@/components/CommissionWaiverCard';
 import { useEarnings } from '@/lib/api/queries';
-import type { EarningsItem, EarningsStream, TenantEarnings } from '@/lib/api/types';
+import type { DeskTakings, EarningsItem, EarningsStream, TenantEarnings } from '@/lib/api/types';
 import { asCurrencyCode, formatMoney } from '@/lib/currency';
 import { downloadCsv, toCsv } from '@/lib/csv';
 import { useOrg } from '@/lib/org_context';
@@ -135,7 +135,9 @@ function unitsLabel(row: { units: number; bookings: number }, unit: string): str
 function currenciesOf(data: TenantEarnings): string[] {
   const seen = new Set<string>();
   for (const t of data.total) seen.add(t.currency);
-  for (const d of data.desk) seen.add(d.currency);
+  // A currency whose only desk entry adds up to nothing (members recorded as
+  // paying 0) would be a section with no figures: the desk card hides at 0.
+  for (const d of data.desk) if (d.amountMinor > 0) seen.add(d.currency);
   return [...seen].sort();
 }
 
@@ -390,8 +392,8 @@ export default function EarningsPage() {
  *
  * Desk takings sit apart from the total on purpose. That money never went
  * through Circls, so it can never be in a payout — but the Dashboard's Revenue
- * tile does count it, and a partner comparing the two pages deserves to see why
- * they differ rather than assume one is wrong.
+ * tile does count the desk bookings, and a partner comparing the two pages
+ * deserves to see why they differ rather than assume one is wrong.
  */
 function CurrencyBlock({ currency, data }: { currency: string; data: TenantEarnings }) {
   const total = data.total.find((t) => t.currency === currency);
@@ -476,25 +478,73 @@ function CurrencyBlock({ currency, data }: { currency: string; data: TenantEarni
         })}
       </div>
 
-      {desk && desk.amountMinor > 0 && (
-        <Card>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Collected at your desk{multi ? ` · ${currency}` : ''}
-              </p>
-              <p className="mt-1 font-[family-name:var(--font-display)] text-xl font-extrabold text-[#17151D]">
-                {money(desk.amountMinor, currency)}
-              </p>
-            </div>
-            <p className="max-w-md text-xs text-slate-500">
-              You took this directly from {countLabel(desk.bookings, 'customers')}, so it is already
-              yours and is <strong>not</strong> part of the net payout above.
-            </p>
-          </div>
-        </Card>
-      )}
+      {desk && desk.amountMinor > 0 && <DeskCard desk={desk} currency={currency} multi={multi} />}
     </div>
+  );
+}
+
+/**
+ * What the partner took at their own desk: walk-in bookings marked paid to
+ * them, and what the members they added by hand paid. One total, then the two
+ * parts, so a partner counting the till can check each against its own list —
+ * the venue's bookings, the plan's members. Both parts always show, a zero
+ * included: the line is how a partner learns that desk memberships land here.
+ */
+function DeskCard({
+  desk,
+  currency,
+  multi,
+}: {
+  desk: DeskTakings;
+  currency: string;
+  multi: boolean;
+}) {
+  // An API older than this portal (mid-deploy) reported bookings only, with
+  // the bookings figure as the total.
+  const bookingsMinor = desk.bookingsMinor ?? desk.amountMinor;
+  const members = desk.members ?? 0;
+  const membersMinor = desk.membersMinor ?? 0;
+  return (
+    <Card>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Collected at your desk{multi ? ` · ${currency}` : ''}
+          </p>
+          <p className="mt-1 font-[family-name:var(--font-display)] text-xl font-extrabold text-[#17151D]">
+            {money(desk.amountMinor, currency)}
+          </p>
+        </div>
+        <p className="max-w-md text-xs text-slate-500">
+          You took this directly from your customers, so it is already yours and is{' '}
+          <strong>not</strong> part of the net payout above.
+        </p>
+      </div>
+      <dl className="mt-3 grid gap-x-6 gap-y-3 border-t border-slate-200 pt-3 sm:grid-cols-2">
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Walk-in bookings
+          </dt>
+          <dd className="mt-1 text-lg font-semibold text-slate-800">
+            {money(bookingsMinor, currency)}
+          </dd>
+          <dd className="text-xs text-slate-500">
+            {countLabel(desk.bookings, 'bookings')} marked as paid to you
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Members added by hand
+          </dt>
+          <dd className="mt-1 text-lg font-semibold text-slate-800">
+            {money(membersMinor, currency)}
+          </dd>
+          <dd className="text-xs text-slate-500">
+            {countLabel(members, 'members')} with an amount recorded
+          </dd>
+        </div>
+      </dl>
+    </Card>
   );
 }
 

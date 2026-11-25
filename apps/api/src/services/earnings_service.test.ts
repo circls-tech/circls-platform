@@ -23,6 +23,11 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
   let venueId: string;
   let eventId: string;
   let planId: string;
+  /** An org-wide plan (no venue), so its currency follows the organisation. */
+  let clubPlanId: string;
+  /** A plan on a venue in the USA, so its currency is dollars. */
+  let usPlanId: string;
+  let foreignPlanId: string;
 
   async function insertBooking(opts: {
     tenant?: string;
@@ -87,6 +92,27 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
               ${opts.releasedAt ?? null}::timestamptz,
               ${opts.advance?.paise ?? null}, ${opts.advance?.releasedAt ?? null}::timestamptz,
               ${opts.at}::timestamptz)
+    `);
+  }
+
+  /**
+   * A member the partner added by hand, with what they paid written on the row
+   * the way memberships_service.addExternalMember writes it. No `payments` row
+   * exists — the money went to the partner directly. `paid: null` is a member
+   * recorded before the desk kept amounts.
+   */
+  async function insertDeskMember(opts: {
+    plan: string;
+    paid: number | null;
+    status?: 'active' | 'expired' | 'cancelled';
+    at: string;
+  }): Promise<void> {
+    await db.execute(sql`
+      insert into user_memberships (membership_id, external_name, starts_at, ends_at, status,
+                                    desk_paid_paise, desk_payment_method, created_at)
+      values (${opts.plan}::uuid, 'Desk Member', ${opts.at}::timestamptz,
+              ${opts.at}::timestamptz + interval '30 days', ${opts.status ?? 'active'},
+              ${opts.paid}, ${opts.paid === null ? null : 'cash'}, ${opts.at}::timestamptz)
     `);
   }
 
@@ -164,6 +190,31 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     `)) as unknown as Record<string, unknown>[];
     planId = plan!['id'] as string;
 
+    const [club] = (await db.execute<Record<string, unknown>>(sql`
+      insert into memberships (tenant_id, name, duration_days)
+      values (${tenantId}::uuid, 'Club Pass', 30)
+      returning id
+    `)) as unknown as Record<string, unknown>[];
+    clubPlanId = club!['id'] as string;
+
+    const [usVenue] = (await db.execute<Record<string, unknown>>(sql`
+      insert into venues (tenant_id, name, country)
+      values (${tenantId}::uuid, 'Earn Court NYC', 'USA') returning id
+    `)) as unknown as Record<string, unknown>[];
+    const [usPlan] = (await db.execute<Record<string, unknown>>(sql`
+      insert into memberships (tenant_id, venue_id, name, duration_days)
+      values (${tenantId}::uuid, ${usVenue!['id'] as string}::uuid, 'Dollar Monthly', 30)
+      returning id
+    `)) as unknown as Record<string, unknown>[];
+    usPlanId = usPlan!['id'] as string;
+
+    const [foreignPlan] = (await db.execute<Record<string, unknown>>(sql`
+      insert into memberships (tenant_id, name, duration_days)
+      values (${otherTenantId}::uuid, 'Other Club', 30)
+      returning id
+    `)) as unknown as Record<string, unknown>[];
+    foreignPlanId = foreignPlan!['id'] as string;
+
     // ── An event seat: ₹1,000 paid, ₹900 settleable, ₹90 commission → ₹810 net.
     const seat = await insertBooking({ itemType: 'event', itemData: { eventId }, venue: venueId, at: AT(5) });
     await insertPayment({ booking: seat, kind: 'charge', amount: 100000, base: 90000, commission: 9000, at: AT(5) });
@@ -191,9 +242,34 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     // so the booking standing or not is the only signal there is.
     await insertBooking({ itemType: 'slot', paymentMethod: 'external', status: 'cancelled', venue: venueId, totalPaise: 999900, at: AT(9) });
 
+    // ── Desk memberships: what members added by hand paid the partner, kept
+    // on the row. No country anywhere, so rupees: ₹1,500 on the venue's plan
+    // and ₹500 on the org-wide one from a member who has since expired — they
+    // still paid. Not takings: a cancelled member, one recorded before the
+    // desk kept amounts, and a consumer purchase, whose money is on `payments`.
+    await insertDeskMember({ plan: planId, paid: 150000, at: AT(9) });
+    await insertDeskMember({ plan: clubPlanId, paid: 50000, status: 'expired', at: AT(9) });
+    await insertDeskMember({ plan: planId, paid: 999900, status: 'cancelled', at: AT(9) });
+    await insertDeskMember({ plan: planId, paid: null, at: AT(9) });
+    const [buyer] = (await db.execute<Record<string, unknown>>(sql`
+      insert into users (firebase_uid, display_name)
+      values (${`fbuid_earn_${stamp}`}, 'Online Buyer') returning id
+    `)) as unknown as Record<string, unknown>[];
+    await db.execute(sql`
+      insert into user_memberships (user_id, membership_id, starts_at, ends_at, status, created_at)
+      values (${buyer!['id'] as string}::uuid, ${planId}::uuid, ${AT(9)}::timestamptz,
+              ${AT(39)}::timestamptz, 'active', ${AT(9)}::timestamptz)
+    `);
+    // A member of the plan on the US venue paid in dollars.
+    await insertDeskMember({ plan: usPlanId, paid: 2500, at: AT(9) });
+    // Outside the window: not this period's takings.
+    await insertDeskMember({ plan: planId, paid: 777700, at: AT(61) });
+
     // ── Another organisation's sale, which must never appear.
     const foreign = await insertBooking({ tenant: otherTenantId, itemType: 'event', itemData: { eventId }, at: AT(10) });
     await insertPayment({ booking: foreign, tenant: otherTenantId, kind: 'charge', amount: 500000, base: 450000, commission: 45000, at: AT(10) });
+    // Nor their desk member.
+    await insertDeskMember({ plan: foreignPlanId, paid: 123400, at: AT(10) });
   });
 
   afterAll(async () => {
@@ -249,15 +325,53 @@ describe.skipIf(!runIntegration)('earnings_service', () => {
     const e = await getTenantEarnings(tenantId, FROM, TO);
     const desk = e.desk.find((d) => d.currency === 'INR');
     // The ₹700 booking, not the cancelled ₹9,999 one.
-    expect(desk?.amountMinor).toBe(70000);
+    expect(desk?.bookingsMinor).toBe(70000);
     expect(desk?.bookings).toBe(1);
     // And it is in no net total.
     expect(e.total.find((t) => t.currency === 'INR')?.netPaise).toBe(76500);
   });
 
+  it('counts what hand-added members paid as desk takings, beside the bookings', async () => {
+    const e = await getTenantEarnings(tenantId, FROM, TO);
+    const desk = e.desk.find((d) => d.currency === 'INR');
+    // ₹1,500 from the active member and ₹500 from the expired one. Not the
+    // cancelled ₹9,999, not the member with nothing recorded, never the
+    // consumer purchase, and not the ₹7,777 taken after the window closed.
+    expect(desk?.members).toBe(2);
+    expect(desk?.membersMinor).toBe(200000);
+    // The till figure is both kinds of desk money together.
+    expect(desk?.amountMinor).toBe(70000 + 200000);
+    // None of it reaches a circls figure: the INR net is what the sales made
+    // it, and no membership stream appears in rupees — the only plan sold
+    // through circls was the dollar one.
+    expect(e.total.find((t) => t.currency === 'INR')?.netPaise).toBe(76500);
+    expect(e.byStream.find((s) => s.stream === 'membership' && s.currency === 'INR')).toBeUndefined();
+    expect(e.items.filter((i) => i.stream === 'membership')).toHaveLength(1);
+  });
+
+  it('reads a desk member s currency off the plan s venue, else the organisation', async () => {
+    const e = await getTenantEarnings(tenantId, FROM, TO);
+    // The plan on the US venue: dollars, with no desk bookings to join.
+    expect(e.desk.find((d) => d.currency === 'USD')).toEqual({
+      currency: 'USD',
+      amountMinor: 2500,
+      bookings: 0,
+      bookingsMinor: 0,
+      members: 1,
+      membersMinor: 2500,
+    });
+    // The dollar plan sold through circls is untouched by it.
+    expect(e.total.find((t) => t.currency === 'USD')?.netPaise).toBe(1620);
+    expect(e.total.find((t) => t.currency === 'USD')?.bookings).toBe(1);
+  });
+
   it('never leaks another organisation s money', async () => {
     const e = await getTenantEarnings(otherTenantId, FROM, TO);
     expect(e.total.find((t) => t.currency === 'INR')?.netPaise).toBe(405000);
+    // Their desk member is theirs alone — and ours never reached them.
+    expect(e.desk).toEqual([
+      { currency: 'INR', amountMinor: 123400, bookings: 0, bookingsMinor: 0, members: 1, membersMinor: 123400 },
+    ]);
   });
 
   it('returns empty totals for a window with no sales', async () => {

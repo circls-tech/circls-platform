@@ -277,11 +277,14 @@ function EarningsBody({ data, tenantId }: { data: TenantEarnings; tenantId: stri
                   />
                 );
               })}
+              {/* Walk-in bookings and members added by hand, both paid to the
+                  partner directly. An API older than this console reports
+                  bookings only, so the members count falls back to none. */}
               {desk && (
                 <SummaryCard
                   label="Collected at their desk"
                   value={money(desk.amountMinor, currency)}
-                  sub={`${countLabel(desk.bookings, 'bookings')} · not part of any payout`}
+                  sub={`${countLabel(desk.bookings, 'walk-in bookings')} · ${countLabel(desk.members ?? 0, 'members')} added by hand · not part of any payout`}
                 />
               )}
             </div>

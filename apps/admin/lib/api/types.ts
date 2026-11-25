@@ -1086,11 +1086,24 @@ export interface EarningsItem extends EarningsStreamTotal {
   venueName: string | null;
 }
 
-/** Cash taken at the partner's own desk. Never part of a Circls payout. */
+/**
+ * Cash taken at the partner's own desk, in one currency: walk-in bookings
+ * marked paid to them, and what the members they added by hand paid. Never
+ * part of a Circls payout. `amountMinor` is both parts together.
+ */
 export interface DeskTakings {
   currency: string;
+  /** Everything taken at the desk, in minor units. */
   amountMinor: number;
+  /** Walk-in bookings marked paid at the desk, and what they came to. */
   bookings: number;
+  /** Optional: absent from an API older than this console (mid-deploy), which
+   *  reported bookings only — `amountMinor` is then the bookings figure. */
+  bookingsMinor?: number;
+  /** Members added by hand with an amount recorded, and what they paid.
+   *  Optional for the same reason. */
+  members?: number;
+  membersMinor?: number;
 }
 
 export interface TenantEarnings {
