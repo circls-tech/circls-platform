@@ -65,7 +65,7 @@ export function CustomerFields({
   const { resolveTz } = useTimezone();
 
   const query = active === 'name' ? name : active === 'contact' ? contact : '';
-  const { suggestions, isLoading } = useCustomerSuggestions(tenantId, query);
+  const { suggestions, isLoading, isFresh } = useCustomerSuggestions(tenantId, query);
   const searching = query.trim().length >= CUSTOMER_SEARCH_MIN_QUERY;
   const showList = open && active !== null && searching && (isLoading || suggestions.length > 0);
 
@@ -107,8 +107,10 @@ export function CustomerFields({
       e.preventDefault();
       setHighlighted((h) => Math.max(h - 1, 0));
     } else if (e.key === 'Enter') {
-      // Choosing from the list must not also submit the form around it.
-      const s = suggestions[highlighted];
+      // Choosing from the list must not also submit the form around it. A
+      // list still showing the previous query's people (the new search hasn't
+      // answered yet) is not picked from: Enter keeps what was typed.
+      const s = isFresh ? suggestions[highlighted] : undefined;
       if (s) {
         e.preventDefault();
         pick(s);

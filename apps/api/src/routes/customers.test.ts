@@ -17,6 +17,7 @@ vi.mock('../lib/firebase_admin.js', () => ({
 }));
 
 const { closeDb, db } = await import('../db/client.js');
+const { sql } = await import('drizzle-orm');
 const { bookings, memberships, tenantMembers, userMemberships, users, venues } = await import(
   '../db/schema/index.js'
 );
@@ -47,8 +48,14 @@ describe('phoneQueryVariants', () => {
     expect(phoneQueryVariants('919876')).toEqual(['919876']);
   });
   it('also drops a country code the query spells out with a +', () => {
-    expect(phoneQueryVariants('+91 98765')).toEqual(['9198765', '198765', '98765', '8765']);
+    expect(phoneQueryVariants('+91 98765')).toEqual(['9198765', '98765']);
     expect(phoneQueryVariants('+1 555')).toEqual(['1555', '555']);
+  });
+  it('drops only a real country code, never a few digits that would match anyone', () => {
+    // Not '8765' or '198765': those find unrelated numbers.
+    expect(phoneQueryVariants('+91 98765')).not.toContain('8765');
+    // A code circls doesn't trade in is left alone.
+    expect(phoneQueryVariants('+44 7911 123')).toEqual(['447911123']);
   });
   it('is empty where any number would match', () => {
     expect(phoneQueryVariants('98')).toEqual([]);
@@ -154,6 +161,36 @@ describe.skipIf(!runIntegration)('customer lookup', () => {
       externalContact: 'sana@example.com',
     });
 
+    // Never customers: an online checkout still waiting for payment, and one
+    // the abandoned-cart sweep cancelled without it ever being paid.
+    const online = { channel: 'circls' as const, paymentMethod: 'razorpay_route' as const };
+    const [, , paidThenCancelled] = await db
+      .insert(bookings)
+      .values([
+        { ...walkIn('Paula Pending', 'paula@example.com', 1), ...online, status: 'pending' as const },
+        { ...walkIn('Abe Abandoned', 'abe@example.com', 1), ...online, status: 'cancelled' as const },
+        // Paid, then cancelled: they were a customer.
+        { ...walkIn('Carla Cancelled', 'carla@example.com', 1), ...online, status: 'cancelled' as const },
+      ])
+      .returning();
+    await db.execute(sql`
+      insert into payments (booking_id, tenant_id, provider, amount_paise, currency, status, kind)
+      values (${paidThenCancelled!.id}::uuid, ${tenantId}::uuid, 'stub', 10000, 'INR', 'refunded', 'charge')
+    `);
+
+    // Someone who closed their circls account: the copy of their details on
+    // the booking must not come back.
+    const [gone] = await db
+      .insert(users)
+      .values({ firebaseUid: `fbuid_cust_gone_${Date.now()}`, deletedAt: new Date() })
+      .returning();
+    await db.insert(bookings).values({
+      ...walkIn('Gina Gone', 'gina@example.com', 1),
+      channel: 'circls' as const,
+      paymentMethod: 'free' as const,
+      customerUserId: gone!.id,
+    });
+
     // Someone else's customer must never show up here.
     await db.insert(bookings).values({
       ...walkIn('Ravi Elsewhere', '9876543210', 1),
@@ -199,6 +236,17 @@ describe.skipIf(!runIntegration)('customer lookup', () => {
       contact: 'sana@example.com',
       kinds: ['membership'],
     });
+  });
+
+  it('leaves out checkouts that never became bookings, but keeps a paid one later cancelled', async () => {
+    expect(await customers('paula')).toEqual([]);
+    expect(await customers('abe abandoned')).toEqual([]);
+    expect((await customers('carla'))[0]).toMatchObject({ name: 'Carla Cancelled' });
+  });
+
+  it('never offers someone who closed their account', async () => {
+    expect(await customers('gina')).toEqual([]);
+    expect(await customers('gina@')).toEqual([]);
   });
 
   it('treats the query as text, not a pattern', async () => {

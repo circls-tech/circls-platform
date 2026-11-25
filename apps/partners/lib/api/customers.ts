@@ -56,6 +56,12 @@ export function useCustomerSuggestions(tenantId: string, query: string) {
     suggestions: enabled ? (result.data ?? []) : [],
     isLoading: enabled && result.isFetching && result.data === undefined,
     isError: enabled && result.isError,
+    /**
+     * The suggestions answer what is typed now — not the previous query's,
+     * kept on screen while the next loads or the debounce runs. Only a fresh
+     * list may be picked from with the keyboard.
+     */
+    isFresh: enabled && !result.isPlaceholderData && q === query.trim(),
   };
 }
 

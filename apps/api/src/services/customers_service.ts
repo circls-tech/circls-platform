@@ -41,19 +41,26 @@ export function phoneDigits(s: string): string {
   return s.replace(/\D/g, '');
 }
 
+/** The country codes circls trades in (India, the US), longest first. */
+const COUNTRY_CODES = ['91', '1'];
+
 /**
  * The runs of digits a query is looked for in recorded phone numbers: what was
  * typed, and — so "+91 98765" still finds a number recorded as "98765 43210"
- * — the same with a one-, two- or three-digit country code dropped when the
- * query starts with "+". Empty below three digits, where any number matches.
+ * — the same with its country code dropped, when the query starts with "+"
+ * and one of ours. Only a real country code is dropped: stripping any one to
+ * three digits would turn "+91 98765" into "8765", which matches unrelated
+ * numbers and crowds the person being looked for off the list. Empty below
+ * three digits, where any number matches.
  */
 export function phoneQueryVariants(q: string): string[] {
   const digits = phoneDigits(q);
   if (digits.length < 3) return [];
   const out = [digits];
   if (q.trim().startsWith('+')) {
-    for (const cc of [1, 2, 3]) {
-      const rest = digits.slice(cc);
+    for (const cc of COUNTRY_CODES) {
+      if (!digits.startsWith(cc)) continue;
+      const rest = digits.slice(cc.length);
       if (rest.length >= 3 && !out.includes(rest)) out.push(rest);
     }
   }
@@ -94,6 +101,29 @@ export async function searchCustomers(
       from bookings b
       left join users u on u.id = b.customer_user_id
       where b.tenant_id = ${tenantId}
+        -- Someone who closed their circls account is gone, along with the
+        -- copy of their name and contact the booking kept.
+        and (b.customer_user_id is null or u.deleted_at is null)
+        -- Only bookings that happened. An online checkout opens as 'pending'
+        -- and an abandoned one is swept to 'cancelled' without ever being
+        -- paid; neither makes its would-be buyer a customer. A cancelled
+        -- booking still counts when it was real: taken at the desk, free, or
+        -- paid for.
+        and (
+          b.status in ('confirmed', 'completed', 'no_show')
+          or (
+            b.status = 'cancelled'
+            and (
+              b.payment_method <> 'razorpay_route'
+              or exists (
+                select 1 from payments p
+                where p.booking_id = b.id
+                  and p.kind = 'charge'
+                  and p.status in ('captured', 'refunded', 'partially_refunded')
+              )
+            )
+          )
+        )
       union all
       -- Membership purchases without a bookings row: free ones and members
       -- the partner added by hand. Paid ones are already in from bookings.
@@ -106,6 +136,7 @@ export async function searchCustomers(
       join memberships m on m.id = um.membership_id
       left join users u on u.id = um.user_id
       where m.tenant_id = ${tenantId}
+        and (um.user_id is null or u.deleted_at is null)
         and not exists (
           select 1 from bookings b2
           where b2.tenant_id = ${tenantId}
