@@ -291,6 +291,8 @@ Took a registration at the door, over the phone, or through your own form? Click
 
 You are asked for the same things the customer would have given: their name, an optional contact, which tickets they took, and answers to any **required** registration question — those are enforced here exactly as they are in the customer flow, so your answer data stays complete.
 
+Start typing a **name or phone number** in either field and circls offers the people your organisation has recorded before — anyone on a past court booking, event registration or membership, with their last visit beside each — so a returning customer isn't typed in again. Pick one and both fields are filled in; edit anything that has changed. It only fills the form: nothing is linked to their earlier visits, and a name nobody has used before is simply typed in as usual.
+
 The registration is real in every way that matters to your event:
 
 - it takes seats out of your ticket tiers, so capacity counts it and can sell out because of it;

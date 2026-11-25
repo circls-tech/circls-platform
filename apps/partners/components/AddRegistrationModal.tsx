@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/client';
 import { type CurrencyCode, formatMoney } from '@/lib/currency';
 import type { EventQuestion, EventTier } from '@/lib/api/types';
 import { Button, Input, Modal } from '@/lib/ui';
+import { CustomerFields } from './CustomerFields';
 import {
   isAnswerBlank,
   type RegistrationAnswers,
@@ -113,19 +114,16 @@ export function AddRegistrationModal({
           reaches a payout.
         </p>
 
-        <Input
-          label="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          placeholder="Who attended"
-        />
-        <Input
-          label="Contact (optional)"
-          value={contact}
-          onChange={(e) => setContact(e.target.value)}
-          placeholder="Phone or email"
-          hint="Used to send them their entry pass, if the event issues one."
+        <CustomerFields
+          tenantId={tenantId}
+          name={name}
+          contact={contact}
+          onChange={(c) => {
+            setName(c.name);
+            setContact(c.contact);
+          }}
+          namePlaceholder="Who attended"
+          contactHint="Used to send them their entry pass, if the event issues one."
         />
 
         <div className="flex flex-col gap-2">

@@ -6,8 +6,11 @@ import { useBookSlots, useHoldSlots, useReleaseHoldSlots } from '@/lib/api/queri
 import { ApiError } from '@/lib/api/client';
 import { type CurrencyCode, formatMoney } from '@/lib/currency';
 import { Button, Input, Modal } from '@/lib/ui';
+import { CustomerFields } from './CustomerFields';
 
 export interface AddBookingModalProps {
+  /** The org whose desk this is — its past customers feed the autofill. */
+  tenantId: string;
   arenaId: string;
   currency: CurrencyCode;
   open: boolean;
@@ -17,6 +20,7 @@ export interface AddBookingModalProps {
 }
 
 export function AddBookingModal({
+  tenantId,
   arenaId,
   currency,
   open,
@@ -113,21 +117,20 @@ export function AddBookingModal({
           </span>
         </div>
 
-        <Input
-          label="Customer name"
-          placeholder="e.g. Ravi Kumar"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          autoFocus
-        />
-
-        <Input
-          label="Contact (phone / email)"
-          placeholder="e.g. 9876543210"
-          value={contact}
-          onChange={(e) => setContact(e.target.value)}
-          required
+        <CustomerFields
+          tenantId={tenantId}
+          name={name}
+          contact={contact}
+          onChange={(c) => {
+            setName(c.name);
+            setContact(c.contact);
+          }}
+          nameLabel="Customer name"
+          namePlaceholder="e.g. Ravi Kumar"
+          autoFocusName
+          contactLabel="Contact (phone / email)"
+          contactPlaceholder="e.g. 9876543210"
+          contactRequired
         />
 
         <Input
