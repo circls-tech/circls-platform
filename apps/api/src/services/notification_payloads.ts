@@ -16,6 +16,7 @@ import {
   firstName,
   formatAge,
   formatDay,
+  formatDayMonth,
   formatDayWithYear,
   formatMoney,
   formatWhen,
@@ -943,5 +944,138 @@ export async function supportRequestedPayload(grantId: string): Promise<Record<s
     endsAt,
     ...(note ? { note } : {}),
     rows,
+  };
+}
+
+// ── Payout sent (to the org) ─────────────────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Payout lines named in the email; any beyond are summed into one row. */
+const PAYOUT_LINES_SHOWN = 8;
+
+/** What kind of money a payout line is, as the email's sub-line says it. */
+const PAYOUT_LINE_KIND: Record<string, string> = {
+  slot: 'Venue bookings',
+  event: 'Event',
+  membership: 'Membership plan',
+};
+
+interface PayoutLineRow {
+  id: string;
+  itemType: string;
+  itemName: string | null;
+  amount: number;
+  status: string;
+  reference: string | null;
+}
+
+function payoutLine(l: PayoutLineRow, currency: string): { name: string; sub: string; amount: string } {
+  const amount = formatMoney(l.amount, currency);
+  if (l.itemType === 'advance') {
+    // Money paid ahead on sales still on hold, or (negative) such an advance
+    // taken back out of this week's payout once those sales settled.
+    return l.amount >= 0
+      ? { name: 'Advance', sub: 'Paid early on sales still on hold', amount }
+      : { name: 'Advance recovered', sub: 'Paid to you in an earlier week', amount };
+  }
+  const kind = PAYOUT_LINE_KIND[l.itemType];
+  if (!kind) return { name: 'Other sales', sub: 'Not tied to one listing', amount };
+  return { name: l.itemName ?? kind, sub: kind, amount };
+}
+
+/**
+ * partner.payout_sent — what ONE transfer paid the org: the payout lines it
+ * settled (`itemIds`), or, for a payout with no lines (reconciled before
+ * payout_items existed), whatever of it was still unpaid. Read after the
+ * write commits, so the lines it settled already read `paid`.
+ *
+ * Null when there's nothing to tell: the payout is gone, or the transfer
+ * moved no money to the partner (e.g. a line that only recovers an advance).
+ * greetingName is filled per recipient.
+ */
+export async function payoutSentPayload(
+  payoutId: string,
+  itemIds: readonly string[],
+): Promise<{ tenantId: string; payload: Record<string, unknown> } | null> {
+  const [p] = (await db.execute<Row>(sql`
+    select tenant_id, period_start, period_end, amount_paise, currency, paid_reference
+      from payouts where id = ${payoutId}::uuid
+  `)) as unknown as Row[];
+  if (!p) return null;
+  const lineRows = (await db.execute<Row>(sql`
+    select pi.id, pi.item_type, pi.amount_paise, pi.status, pi.paid_reference,
+           case pi.item_type
+             when 'event'      then ev.name
+             when 'membership' then mem.name
+             when 'slot'       then v.name
+           end as item_name
+      from payout_items pi
+      left join events ev       on pi.item_type = 'event'      and ev.id  = pi.item_id
+      left join memberships mem on pi.item_type = 'membership' and mem.id = pi.item_id
+      left join venues v        on pi.item_type = 'slot'       and v.id   = pi.item_id
+     where pi.payout_id = ${payoutId}::uuid
+  `)) as unknown as Row[];
+
+  const currency = str(p['currency']) ?? 'INR';
+  const total = num(p['amount_paise']);
+  const lines: PayoutLineRow[] = lineRows.map((r) => ({
+    id: String(r['id']),
+    itemType: String(r['item_type']),
+    itemName: str(r['item_name']),
+    amount: num(r['amount_paise']),
+    status: String(r['status']),
+    reference: str(r['paid_reference']),
+  }));
+  const settledNow = new Set(itemIds);
+  const sent = lines.filter((l) => settledNow.has(l.id));
+  const sentEarlier = lines
+    .filter((l) => l.status === 'paid' && !settledNow.has(l.id))
+    .reduce((s, l) => s + l.amount, 0);
+  const remaining = lines.filter((l) => l.status === 'pending').reduce((s, l) => s + l.amount, 0);
+  const amount = sent.length > 0 ? sent.reduce((s, l) => s + l.amount, 0) : total - sentEarlier;
+  if (amount <= 0) return null;
+
+  const start = date(p['period_start']);
+  const end = date(p['period_end']);
+  // Settlement weeks run Monday to Monday in UTC, and end is exclusive.
+  const periodLabel =
+    start && end ? `${formatDayMonth(start, 'UTC')} – ${formatDayMonth(new Date(end.getTime() - DAY_MS), 'UTC')}` : '';
+  const reference = sent[0]?.reference ?? str(p['paid_reference']) ?? '—';
+  const amountText = formatMoney(amount, currency);
+
+  const rows: DetailRow[] = [];
+  if (periodLabel) rows.push({ label: 'Week', value: noAutoLink(periodLabel) });
+  rows.push({ label: 'Reference', value: reference, mono: true });
+  if (sentEarlier > 0 || remaining > 0) {
+    rows.push({ label: 'Payout for the week', value: formatMoney(total, currency) });
+    if (sentEarlier > 0) rows.push({ label: 'Sent earlier', value: formatMoney(sentEarlier, currency) });
+  }
+
+  const ordered = [...sent].sort((a, b) => b.amount - a.amount);
+  const shown = ordered.length > PAYOUT_LINES_SHOWN ? ordered.slice(0, PAYOUT_LINES_SHOWN - 1) : ordered;
+  const rest = ordered.slice(shown.length);
+  const lineItems = shown.map((l) => payoutLine(l, currency));
+  if (rest.length > 0) {
+    lineItems.push({
+      name: `${rest.length} more`,
+      sub: 'The full split is on your Earnings page',
+      amount: formatMoney(
+        rest.reduce((s, l) => s + l.amount, 0),
+        currency,
+      ),
+    });
+  }
+
+  return {
+    tenantId: String(p['tenant_id']),
+    payload: {
+      preheader: `${amountText} is on its way to your account · ref ${reference}`,
+      payoutId,
+      amountText,
+      periodLabel,
+      rows,
+      lines: lineItems,
+      remainingText: remaining > 0 ? formatMoney(remaining, currency) : '',
+    },
   };
 }

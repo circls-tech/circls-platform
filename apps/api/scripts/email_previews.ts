@@ -55,6 +55,21 @@ const variants: Array<{ key: string; label: string; vars: Record<string, unknown
       refundAtVenue: true,
     },
   },
+  {
+    key: 'partner.payout_sent',
+    label: 'one line of a week paid on its own',
+    vars: {
+      preheader: '₹12,480 is on its way to your account · ref UTR451200987731',
+      amountText: '₹12,480',
+      rows: [
+        { label: 'Week', value: '6 Oct – 12 Oct' },
+        { label: 'Reference', value: 'UTR451200987731', mono: true },
+        { label: 'Payout for the week', value: '₹21,060' },
+      ],
+      lines: [{ name: 'Bandra Sports Club', sub: 'Venue bookings', amount: '₹12,480' }],
+      remainingText: '₹8,580',
+    },
+  },
   { key: 'admin.payouts_reminder', label: 'Wednesday, payout day', vars: { payoutDay: true } },
 ];
 

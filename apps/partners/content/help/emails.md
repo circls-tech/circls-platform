@@ -1,6 +1,6 @@
 # Emails circls sends you
 
-circls emails your organisation about the things that need a person: a new booking, the outcome of a listing review, a customer question, a team invitation. Nothing here needs setting up — but **where** the emails go, and which of them you get, is up to you.
+circls emails your organisation about the things that need a person: a new booking, the outcome of a listing review, money sent to you, a customer question, a team invitation. Nothing here needs setting up — but **where** the emails go, and which of them you get, is up to you.
 
 ## Where the emails go
 
@@ -16,7 +16,7 @@ In **Settings → Notifications**, Owners and Managers can switch off:
 - **New bookings** — the email for each booking.
 - **Listing reviews** — the "listing approved" and "listing needs changes" emails.
 
-Each switch saves straight away and applies to everyone who'd get that email. Bookings still appear in the portal and the review outcome still shows on the listing — only the email stops. Customer questions and team invitations always send, and your customers' own emails aren't affected. Every change is recorded in the [activity log](/help/activity).
+Each switch saves straight away and applies to everyone who'd get that email. Bookings still appear in the portal and the review outcome still shows on the listing — only the email stops. Payout emails, customer questions and team invitations always send, and your customers' own emails aren't affected. Every change is recorded in the [activity log](/help/activity).
 
 ## What you'll receive
 
@@ -25,6 +25,7 @@ Each switch saves straight away and applies to everyone who'd get that email. Bo
 | **New booking** | A customer books one of your arenas, events or membership plans through circls (the website, the app, a partner site, or your own website via the API). Bookings your team enters at the desk don't echo back to you. | Organisation contact (see above) |
 | **Listing approved** | The circls team approves a venue, arena, event or membership plan you submitted. It's live for customers from that moment. | Organisation contact |
 | **Listing needs changes** | The circls team can't approve a listing. The email lists what to fix, and **Edit & resubmit** opens the listing. Make the fixes there and press **Submit again** — it goes back to review, usually within 24 hours. You don't need to duplicate or re-add it (see [fixing a rejected venue or arena](/help/venues#fixing-a-rejected-venue-or-arena)). | Organisation contact |
+| **Payout sent** | circls records a transfer to your account. The email gives the amount, the bank reference, the week it's for and what it covers (each event, plan and venue). When a week's payout goes out in parts, each part sends its own email and says how much is still to come. See [Earnings](/help/earnings) for how payouts work. | Organisation contact |
 | **New question** | A customer asks a question on one of your listings — see [Answering customer questions](/help/questions). | Organisation contact |
 | **Question follow-up** | The customer who asked writes back after your team (or circls) replied. Several messages before your next reply send one email. | Organisation contact |
 | **Team invitation** | Someone on your team invites a person to join your organisation. | The invited person |

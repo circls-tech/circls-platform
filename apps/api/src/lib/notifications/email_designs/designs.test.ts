@@ -65,6 +65,30 @@ describe('design content', () => {
     expect(noFixes.html).not.toContain('reply to this email');
   });
 
+  it('payout sent: amount, reference and lines, and a note while more is to come', () => {
+    const d = getEmailDesign('partner.payout_sent')!;
+    const whole = renderDesign(d, { ...shared, ...d.sample });
+    expect(whole.subject).toBe('Payout sent: ₹21,060 for 6 Oct – 12 Oct');
+    expect(whole.html).toContain('UTR451200987731');
+    expect(whole.html).toContain('Monthly Turf Pass');
+    expect(whole.html).toContain('href="https://partners.circls.app/earnings"');
+    expect(whole.html).toContain('reply to this email');
+    expect(whole.html).not.toContain('The rest is on its way');
+    expect(whole.text).toContain('- Sunday 10K Social (Event): ₹6,980');
+
+    const part = renderDesign(d, { ...shared, ...d.sample, remainingText: '₹4,200', canReply: false });
+    expect(part.html).toContain('The rest is on its way');
+    expect(part.html).toContain('The other ₹4,200 of this payout');
+    expect(part.html).toContain('report it from Partner help');
+    expect(part.text).toContain('The other ₹4,200 of this payout is sent separately');
+
+    // An old payout with no week or lines still reads cleanly.
+    const bare = renderDesign(d, { ...shared, ...d.sample, periodLabel: '', lines: [] });
+    expect(bare.subject).toBe('Payout sent: ₹21,060');
+    expect(bare.html).not.toContain('What it covers');
+    expect(bare.text).not.toContain('What it covers');
+  });
+
   it('escapes customer- and partner-supplied text in the HTML', () => {
     const d = getEmailDesign('partner.booking_confirmed')!;
     const out = renderDesign(d, { ...shared, ...d.sample, customerFirst: '<script>x</script>' });
@@ -82,7 +106,7 @@ describe('design content', () => {
   it('every MSG91 slug is unique and admin designs have none', () => {
     const slugs = EMAIL_DESIGNS.flatMap((d) => (d.msg91Slug ? [d.msg91Slug] : []));
     expect(new Set(slugs).size).toBe(slugs.length);
-    expect(slugs).toHaveLength(6);
+    expect(slugs).toHaveLength(7);
     for (const d of EMAIL_DESIGNS.filter((x) => x.key.startsWith('admin.'))) expect(d.msg91Slug).toBeUndefined();
   });
 
@@ -123,6 +147,15 @@ describe('msg91TemplateId — a design uses its own template only once switched 
     expect(m.msg91TemplateId('listing.approved')).toBe('circls_partner_listing_approved');
     // Admin designs never have an MSG91 template of their own.
     expect(m.msg91TemplateId('admin.org_signup')).toBeUndefined();
+  });
+
+  it('"all" leaves a listed-only design on the generic template until its key is named', async () => {
+    let m = await load({ MSG91_EMAIL_DESIGNS: ['all'] });
+    expect(m.msg91TemplateId('partner.payout_sent')).toBeUndefined();
+    expect(m.msg91TemplateId('booking.confirmed')).toBe('circls_booking_confirmed');
+    vi.resetModules();
+    m = await load({ MSG91_EMAIL_DESIGNS: ['all', 'partner.payout_sent'] });
+    expect(m.msg91TemplateId('partner.payout_sent')).toBe('circls_partner_payout_sent');
   });
 
   it('an explicit slug mapping wins and counts as switched on', async () => {

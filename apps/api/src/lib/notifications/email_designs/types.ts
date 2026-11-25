@@ -24,6 +24,14 @@ export interface EmailDesign {
    * MSG91 they go through the generic template as plain text.
    */
   msg91Slug?: string;
+  /**
+   * Set on a design added after `MSG91_EMAIL_DESIGNS=all` went live: "all"
+   * leaves it on the generic template, so nothing fails while its own MSG91
+   * template is created and approved. Switch it on by listing its key next to
+   * "all" (e.g. `all,partner.payout_sent`), or drop this flag once every
+   * environment has the template.
+   */
+  msg91ListedOnly?: boolean;
   /** Subject line (Handlebars, plain text). */
   subject: string;
   /** Full HTML document (Handlebars). */

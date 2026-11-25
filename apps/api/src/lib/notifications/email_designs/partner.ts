@@ -1,14 +1,16 @@
 /**
  * Partner (organisation) emails: new booking, listing approved, listing needs
- * changes. Sent by MSG91 from its stored copy of each template, to the org's
- * contact email (else its owners).
+ * changes, payout sent. Sent by MSG91 from its stored copy of each template,
+ * to the org's contact email (else its owners).
  */
 import { noAutoLink } from '../email_format.js';
 import {
   bulletList,
   cardHero,
   cardProgress,
+  cardRankedList,
   cardRows,
+  cardSubhead,
   cardTotal,
   emailDocument,
   noteBox,
@@ -179,5 +181,67 @@ export const listingRejected: EmailDesign = {
     ctaLabel: 'Edit & resubmit',
     nextStep: 'Make the fixes on the listing and press Submit again — it’s usually reviewed within 24 hours.',
     canReply: true,
+  },
+};
+
+// ── Payout sent ──────────────────────────────────────────────────────────────
+// One email per transfer: paying a whole payout sends one, and so does each
+// line an admin pays on its own. Variables: greetingName, amountText,
+// periodLabel (empty for an old payout with no week), rows[], lines[]
+// {name, sub, amount} (empty for an old payout with no lines), remainingText
+// (what of the payout is still to be sent; empty once it is all paid),
+// preheader.
+
+export const partnerPayoutSent: EmailDesign = {
+  key: 'partner.payout_sent',
+  name: 'Circls · Partner: payout sent',
+  msg91Slug: 'circls_partner_payout_sent',
+  msg91ListedOnly: true,
+  subject: 'Payout sent: {{amountText}}{{#if periodLabel}} for {{periodLabel}}{{/if}}',
+  html: emailDocument({
+    preheader: '{{preheader}}',
+    pill: { tone: 'green', text: 'Payout sent' },
+    headline: 'Money&rsquo;s on its way.',
+    intro: `Hi {{greetingName}} &mdash; we&rsquo;ve sent ${strong('{{amountText}}')} to your account{{#if periodLabel}} for your sales of {{periodLabel}}{{/if}}.`,
+    card:
+      cardHero('Amount sent', '{{amountText}}') +
+      cardRows() +
+      `{{#if lines}}${cardSubhead('What it covers')}\n${cardRankedList('lines')}{{/if}}`,
+    boxes: `{{#if remainingText}}${noteBox(
+      'lilac',
+      'The rest is on its way',
+      'The other {{remainingText}} of this payout is sent separately, and you&rsquo;ll get an email like this one for it.',
+    )}{{/if}}`,
+    cta: { href: '{{partnersUrl}}/earnings', label: 'See your earnings', color: 'coral' },
+    footnote:
+      'Bank transfers can take a working day or two to show up. If it hasn&rsquo;t arrived by then, ' +
+      '{{#if canReply}}reply to this email with the reference above.{{else}}report it from Partner help with the reference above.{{/if}}',
+    signoff: 'here&rsquo;s to the next one',
+    footerReason: PARTNER_FOOTER_REASON('Circls pays out your sales'),
+    footerLinks: PARTNER_FOOTER_LINKS,
+  }),
+  text:
+    'Hi {{greetingName}},\n\n' +
+    'We’ve sent {{amountText}} to your account{{#if periodLabel}} for your sales of {{periodLabel}}{{/if}}.\n\n' +
+    '{{#each rows}}{{label}}: {{value}}\n{{/each}}' +
+    '{{#if lines}}\nWhat it covers:\n{{#each lines}}- {{name}} ({{sub}}): {{amount}}\n{{/each}}{{/if}}' +
+    '{{#if remainingText}}\nThe other {{remainingText}} of this payout is sent separately, with its own email.\n{{/if}}\n' +
+    'Bank transfers can take a working day or two to show up. If it hasn’t arrived by then, contact us with the reference above.\n\n' +
+    'See your earnings: {{partnersUrl}}/earnings\n\n— Circls\n',
+  sample: {
+    preheader: '₹21,060 is on its way to your account · ref UTR451200987731',
+    greetingName: 'Kabir',
+    amountText: '₹21,060',
+    periodLabel: '6 Oct – 12 Oct',
+    rows: [
+      { label: 'Week', value: noAutoLink('6 Oct – 12 Oct') },
+      { label: 'Reference', value: 'UTR451200987731', mono: true },
+    ],
+    lines: [
+      { name: 'Bandra Sports Club', sub: 'Venue bookings', amount: '₹12,480' },
+      { name: 'Sunday 10K Social', sub: 'Event', amount: '₹6,980' },
+      { name: 'Monthly Turf Pass', sub: 'Membership plan', amount: '₹1,600' },
+    ],
+    remainingText: '',
   },
 };
