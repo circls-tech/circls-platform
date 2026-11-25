@@ -23,6 +23,7 @@ import {
   notifyListingReviewed,
   notifyListingSubmitted,
   notifyOrgCreated,
+  notifyPayoutSent,
   notifyQuestionAsked,
   notifyQuestionFollowedUp,
   notifyQuestionReplied,
@@ -177,6 +178,19 @@ export async function onListingReviewed(
     await notifyListingReviewed(type, id, decision, reason);
   } catch (err) {
     logger.warn({ err, type, id, decision }, 'on_listing_reviewed_hook_failed');
+  }
+}
+
+/**
+ * Call after an admin marks a payout, or one of its lines, paid (committed).
+ * `itemIds` are the lines that write settled — empty for a payout with no
+ * lines. Emails the org what was sent. Never throws.
+ */
+export async function onPayoutSent(payoutId: string, itemIds: readonly string[]): Promise<void> {
+  try {
+    await notifyPayoutSent(payoutId, itemIds);
+  } catch (err) {
+    logger.warn({ err, payoutId }, 'on_payout_sent_hook_failed');
   }
 }
 

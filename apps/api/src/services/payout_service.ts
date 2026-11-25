@@ -19,6 +19,7 @@ import { payments, payoutItems, payouts, tenants } from '../db/schema/index.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import { writeAudit } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
+import { onPayoutSent } from './notification_hooks.js';
 import { creditableCharge } from './settlement_credit.js';
 import { bookingUnitsSql } from './booking_units.js';
 import { itemKeySql } from './item_key.js';
@@ -1299,7 +1300,7 @@ export interface ExecutePayoutItemInput {
 export async function executePayoutItem(
   input: ExecutePayoutItemInput,
 ): Promise<{ id: string; payoutId: string; payoutStatus: string | null }> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [item] = await tx
       .select()
       .from(payoutItems)
@@ -1345,10 +1346,13 @@ export async function executePayoutItem(
 
     return { id: updated.id, payoutId: item.payoutId, payoutStatus };
   });
+  // After the commit: the org hears what this transfer sent (best-effort).
+  await onPayoutSent(result.payoutId, [result.id]);
+  return result;
 }
 
 export async function executePayout(input: ExecutePayoutInput): Promise<{ id: string; status: string }> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [payout] = await tx.select().from(payouts).where(eq(payouts.id, input.payoutId)).limit(1);
     if (!payout) throw new NotFound('Payout not found', 'payout_not_found');
     // Only a fully paid payout is off limits. A PARTIALLY paid one still has
@@ -1365,7 +1369,7 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
     // Paying the whole payout settles every line it still has outstanding —
     // otherwise the payout would read 'paid' while its own lines still read
     // 'pending', and the two would disagree about the same money.
-    await tx
+    const settled = await tx
       .update(payoutItems)
       .set({
         status: 'paid',
@@ -1373,7 +1377,8 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
         paidReference: input.reference,
         paidByUserId: input.actorUserId,
       })
-      .where(and(eq(payoutItems.payoutId, input.payoutId), eq(payoutItems.status, 'pending')));
+      .where(and(eq(payoutItems.payoutId, input.payoutId), eq(payoutItems.status, 'pending')))
+      .returning({ id: payoutItems.id });
 
     const [updated] = await tx
       .update(payouts)
@@ -1398,6 +1403,9 @@ export async function executePayout(input: ExecutePayoutInput): Promise<{ id: st
       { status: 'paid', amountPaise: payout.amountPaise, reference: input.reference },
     );
 
-    return { id: updated.id, status: updated.status };
+    return { id: updated.id, status: updated.status, settledItemIds: settled.map((s) => s.id) };
   });
+  // After the commit: the org hears what this transfer sent (best-effort).
+  await onPayoutSent(result.id, result.settledItemIds);
+  return { id: result.id, status: result.status };
 }

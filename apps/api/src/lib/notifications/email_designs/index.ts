@@ -21,7 +21,7 @@ import {
   adminSupportRequested,
 } from './admin.js';
 import { bookingCancelled, bookingConfirmed, bookingRefunded } from './consumer.js';
-import { listingApproved, listingRejected, partnerBookingConfirmed } from './partner.js';
+import { listingApproved, listingRejected, partnerBookingConfirmed, partnerPayoutSent } from './partner.js';
 import type { EmailDesign } from './types.js';
 
 export type { EmailDesign } from './types.js';
@@ -33,6 +33,7 @@ export const EMAIL_DESIGNS: readonly EmailDesign[] = [
   partnerBookingConfirmed,
   listingApproved,
   listingRejected,
+  partnerPayoutSent,
   adminListingSubmitted,
   adminPayoutsReminder,
   adminOrgSignup,
@@ -139,15 +140,17 @@ export function msg91SlugFromName(name: string): string {
 /**
  * MSG91 template id for an email, when it has its own switched-on template:
  * the MSG91_EMAIL_TEMPLATES mapping for the key, else the design's slug if
- * MSG91_EMAIL_DESIGNS lists the key (or "all"). Undefined ⇒ send through the
- * generic template — every email until its own template is approved and
- * switched on.
+ * MSG91_EMAIL_DESIGNS lists the key (or "all", unless the design is
+ * `msg91ListedOnly`). Undefined ⇒ send through the generic template — every
+ * email until its own template is approved and switched on.
  */
 export function msg91TemplateId(templateKey: string): string | undefined {
   const override = env.MSG91_EMAIL_TEMPLATES?.[templateKey];
   if (override) return override;
-  const slug = getEmailDesign(templateKey)?.msg91Slug;
-  if (!slug) return undefined;
+  const design = getEmailDesign(templateKey);
+  if (!design?.msg91Slug) return undefined;
+  const slug = design.msg91Slug;
   const on = env.MSG91_EMAIL_DESIGNS ?? [];
-  return on.includes('all') || on.includes(templateKey) ? slug : undefined;
+  if (on.includes(templateKey)) return slug;
+  return on.includes('all') && !design.msg91ListedOnly ? slug : undefined;
 }
