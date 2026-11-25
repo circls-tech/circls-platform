@@ -271,21 +271,27 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     expect(body.members.some((m) => m.role === 'owner')).toBe(true);
   });
 
-  it('listing auto-approval defaults off, is admin-only, persists and is audited', async () => {
+  it('listing auto-approval defaults off per aspect, is admin-only, patches per aspect and is audited', async () => {
+    const off = { venues: false, events: false, memberships: false, changes: false };
     const detail = await app.inject({ method: 'GET', url: `/v1/admin/tenants/${tenantAId}`, headers: bearer('padmin') });
-    expect(detail.json().tenant.autoApproveListings).toBe(false);
+    expect(detail.json().tenant.autoApprove).toEqual(off);
     const url = `/v1/admin/tenants/${tenantAId}/listing-approval`;
-    const denied = await app.inject({ method: 'PATCH', url, headers: bearer('owner'), payload: { autoApproveListings: true } });
+    const denied = await app.inject({ method: 'PATCH', url, headers: bearer('owner'), payload: { venues: true } });
     expect(denied.statusCode).toBe(403);
-    const invalid = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload: { autoApproveListings: 'true' } });
-    expect(invalid.statusCode).toBe(400);
-    for (const enabled of [true, false]) {
-      const saved = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload: { autoApproveListings: enabled } });
-      expect(saved.statusCode).toBe(200);
-      expect(saved.json()).toEqual({ autoApproveListings: enabled });
-      const refreshed = await app.inject({ method: 'GET', url: `/v1/admin/tenants/${tenantAId}`, headers: bearer('padmin') });
-      expect(refreshed.json().tenant.autoApproveListings).toBe(enabled);
+    // A non-boolean, an empty patch and the retired single switch are all refused.
+    for (const payload of [{ venues: 'true' }, {}, { autoApproveListings: true }]) {
+      const invalid = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload });
+      expect(invalid.statusCode).toBe(400);
     }
+    // Each patch changes only the aspects it names.
+    const first = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload: { venues: true, changes: true } });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ autoApprove: { ...off, venues: true, changes: true } });
+    const second = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload: { events: true, changes: false } });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({ autoApprove: { ...off, venues: true, events: true } });
+    const refreshed = await app.inject({ method: 'GET', url: `/v1/admin/tenants/${tenantAId}`, headers: bearer('padmin') });
+    expect(refreshed.json().tenant.autoApprove).toEqual({ ...off, venues: true, events: true });
     const audit = await db.execute(sql`
       SELECT actor_user_id, before, after FROM audit_log
       WHERE tenant_id = ${tenantAId} AND action = 'tenant.listing_approval_updated'
@@ -293,13 +299,18 @@ describe.skipIf(!runIntegration)('admin tenants endpoints', () => {
     `);
     expect(audit).toHaveLength(2);
     expect(audit[0]!.actor_user_id).toBe(adminUserId);
-    expect(audit[0]!.before).toMatchObject({ autoApproveListings: false });
-    expect(audit[0]!.after).toMatchObject({ autoApproveListings: true });
+    expect(audit[0]!.before).toEqual({ autoApprove: off });
+    expect(audit[0]!.after).toEqual({ autoApprove: { ...off, venues: true, changes: true } });
+    expect(audit[1]!.before).toEqual({ autoApprove: { ...off, venues: true, changes: true } });
+    expect(audit[1]!.after).toEqual({ autoApprove: { ...off, venues: true, events: true } });
     const missing = await app.inject({
       method: 'PATCH', url: '/v1/admin/tenants/00000000-0000-0000-0000-000000000000/listing-approval',
-      headers: bearer('padmin'), payload: { autoApproveListings: true },
+      headers: bearer('padmin'), payload: { venues: true },
     });
     expect(missing.statusCode).toBe(404);
+    // Leave the tenant reviewing everything for the tests that follow.
+    const reset = await app.inject({ method: 'PATCH', url, headers: bearer('padmin'), payload: { venues: false, events: false } });
+    expect(reset.json()).toEqual({ autoApprove: off });
   });
 
   it('GET /v1/admin/tenants/:id — 404 on unknown id', async () => {

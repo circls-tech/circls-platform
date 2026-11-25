@@ -12,6 +12,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { arenas, auditLog, events, memberships, tenants, venues } from '../db/schema/index.js';
+import { type AutoApproveAspect, resolveAutoApprove } from '../db/schema/tenants.js';
 import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict } from '../lib/errors.js';
 
@@ -27,14 +28,31 @@ export function isSubmittable(status: string): status is SubmittableStatus {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-export async function autoApprovesListings(database: typeof db | Tx, tenantId: string): Promise<boolean> {
+/**
+ * True when the org skips Circls review for `aspect` (a platform admin sets
+ * each aspect from the tenant page). Missing or unknown tenants review.
+ */
+export async function autoApproves(
+  database: typeof db | Tx,
+  tenantId: string,
+  aspect: AutoApproveAspect,
+): Promise<boolean> {
   const [tenant] = await database
-    .select({ enabled: tenants.autoApproveListings })
+    .select({ autoApprove: tenants.autoApprove })
     .from(tenants)
     .where(eq(tenants.id, tenantId))
     .limit(1);
-  return tenant?.enabled === true;
+  return resolveAutoApprove(tenant?.autoApprove)[aspect];
 }
+
+/** The auto-approval aspect that governs submitting a listing of each type:
+ *  arenas go with their venue. */
+export const ASPECT_FOR_LISTING: Readonly<Record<ReviewableListingType, AutoApproveAspect>> = {
+  venue: 'venues',
+  arena: 'venues',
+  event: 'events',
+  membership: 'memberships',
+};
 
 type RowOf<T extends ReviewableListingType> = T extends 'venue'
   ? typeof venues.$inferSelect
@@ -87,7 +105,7 @@ export async function submitForReview<T extends ReviewableListingType>(
     const [ev] = await tx.select({ archivedAt: events.archivedAt }).from(events).where(eq(events.id, id)).limit(1);
     wasArchived = ev?.archivedAt != null;
   }
-  const autoApprove = await autoApprovesListings(tx, ctx.tenantId);
+  const autoApprove = await autoApproves(tx, ctx.tenantId, ASPECT_FOR_LISTING[type]);
   const status = autoApprove ? (type === 'event' ? 'published' : 'active') : 'pending_review';
   const updated = await flipToReview(tx, type, id, autoApprove);
   await writeAudit(

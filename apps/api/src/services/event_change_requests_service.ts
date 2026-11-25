@@ -35,7 +35,7 @@ import {
   type UpdateEventPatch,
 } from './events_service.js';
 import { getVenueById } from './venue_service.js';
-import { autoApprovesListings } from './listing_review.js';
+import { autoApproves } from './listing_review.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -231,7 +231,7 @@ export async function createChangeRequest(
 
   await validatePatchAgainstEvent(db, event, patch);
   const snapshot = await buildSnapshot(event, patch);
-  const autoApprove = await autoApprovesListings(db, ctx.tenantId);
+  const autoApprove = await autoApproves(db, ctx.tenantId, 'changes');
   const prepared = autoApprove ? await prepareEventPatch(toUpdatePatch(patch)) : null;
   if (prepared?.venueId) {
     const venue = await getVenueById(prepared.venueId);
