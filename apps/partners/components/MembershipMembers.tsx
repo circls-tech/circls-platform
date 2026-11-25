@@ -101,6 +101,9 @@ export interface MembershipMembersProps {
   tiers: Membership['tiers'];
   /** The plan's currency: what a hand-added member paid is recorded in it. */
   currency: CurrencyCode;
+  /** The plan's own price, in minor units: what a member of a plan with no
+   *  tiers paid unless Custom amount says otherwise (the API's fallback too). */
+  planPricePaise: number;
   /** Whether the walk-in form is open. Omit to let this component own it; pass
    *  it when a Reception button elsewhere on the page opens the desk. */
   walkInOpen?: boolean;
@@ -112,6 +115,7 @@ export function MembershipMembers({
   membershipId,
   tiers,
   currency,
+  planPricePaise,
   walkInOpen,
   onWalkInOpenChange,
 }: MembershipMembersProps) {
@@ -177,7 +181,9 @@ export function MembershipMembers({
   const selectedTier = form.tierId
     ? (tiers.find((t) => t.id === form.tierId) ?? null)
     : cheapestTier;
-  const tierPaise = selectedTier?.pricePaise ?? 0;
+  // A plan with no tiers (a draft, or one from before tiers) is priced on the
+  // plan itself — never 0, or the desk would record a free membership.
+  const tierPaise = selectedTier?.pricePaise ?? planPricePaise;
   const amountShown = form.customAmount ? form.amount : toAmountInput(tierPaise);
 
   /** What a desk member paid, as the list shows it. */
@@ -484,7 +490,7 @@ export function MembershipMembers({
                     ? 'What they actually paid you.'
                     : selectedTier
                       ? `${selectedTier.name}'s price. Tick Custom amount to change it.`
-                      : 'Tick Custom amount to change it.'
+                      : "The plan's price. Tick Custom amount to change it."
                 }
               />
               <label className="flex items-center gap-2 text-sm text-slate-700">

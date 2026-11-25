@@ -905,11 +905,11 @@ export type MemberStatus = 'active' | 'expired' | 'cancelled';
 /** How many members the plan holds in each state, whatever the list shows. */
 export type MemberStatusCounts = Record<MemberStatus, number>;
 
-/** A consumer purchase of a membership plan (partner-facing). */
 /** How a hand-added member paid the partner directly. Mirrors the API's
  *  `desk_payment_method` enum. */
 export type DeskPaymentMethod = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'cheque' | 'other';
 
+/** A consumer purchase of a membership plan (partner-facing). */
 export interface MembershipPurchase {
   userMembershipId: string;
   buyerName: string;
