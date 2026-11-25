@@ -156,7 +156,11 @@ export const tenants = pgTable('tenants', {
    * (PATCH /v1/admin/tenants/:id/catalog).
    */
   hiddenFromCatalog: boolean('hidden_from_catalog').notNull().default(false),
-  /** Which submissions skip Circls review (admin-set; see TenantAutoApprove). */
+  /**
+   * Which submissions skip Circls review (admin-set; see TenantAutoApprove).
+   * Replaces `auto_approve_listings`, which stays in the table, unread, until
+   * a later migration drops it (see 0082_tenant_auto_approve_aspects.sql).
+   */
   autoApprove: jsonb('auto_approve').$type<TenantAutoApprove>().notNull().default({}),
   /** Partner email preferences (Settings → Notifications). Owner/Manager-edited. */
   emailPrefs: jsonb('email_prefs').$type<TenantEmailPrefs>().notNull().default({}),

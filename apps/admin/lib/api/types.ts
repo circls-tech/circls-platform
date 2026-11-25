@@ -114,8 +114,9 @@ export interface AdminTenantDetail {
     status: AdminTenantListItem['status'];
     /** Off everything consumers see (demo / test orgs). */
     hiddenFromCatalog: boolean;
-    /** What goes live without review; PATCH /v1/admin/tenants/:id/listing-approval. */
-    autoApprove: AdminTenantAutoApprove;
+    /** What goes live without review; PATCH /v1/admin/tenants/:id/listing-approval.
+     *  Optional: absent from an API older than this console (mid-deploy). */
+    autoApprove?: AdminTenantAutoApprove;
     // Billing knobs (basis points, 100 bps = 1%).
     commissionBps: number;
     consumerCommissionBps: number;

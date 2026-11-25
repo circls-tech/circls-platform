@@ -76,7 +76,9 @@ stay live.
 The settings live in `tenants.auto_approve` (jsonb, a missing key means off).
 Migration `0082_tenant_auto_approve_aspects` replaces the earlier single switch,
 turning every aspect on for tenants that had it enabled. Apply it before
-deploying the updated API.
+deploying the updated API. It leaves the old `auto_approve_listings` column in
+place, because the API running while it applies still reads it; nothing writes
+it any more, and a later migration drops it once no deployed API selects it.
 
 ## License
 

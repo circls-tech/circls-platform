@@ -246,7 +246,9 @@ export default function TenantDetailPage() {
             <label key={option.key} className="flex items-start gap-3 text-sm text-slate-800">
               <input
                 type="checkbox"
-                checked={t.autoApprove[option.key]}
+                // An API older than this console (mid-deploy) sends no
+                // autoApprove; show every aspect off rather than crash.
+                checked={t.autoApprove?.[option.key] ?? false}
                 disabled={listingApproval.isPending}
                 onChange={(event) =>
                   listingApproval.mutate({ id: t.id, patch: { [option.key]: event.target.checked } })

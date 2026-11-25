@@ -11,11 +11,15 @@
 --
 -- Orgs that had the old switch on get every aspect on, so nothing they could
 -- do without review starts queuing; everyone else gets the empty blob (off).
+--
+-- `auto_approve_listings` is deliberately NOT dropped here. The API that is
+-- running when this applies (and any release rolled back to) still selects
+-- it on every tenant read, so dropping it in the same release would break
+-- those reads. The new code no longer reads or writes it; drop it in a later
+-- migration, once no deployed API selects it.
 
 ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "auto_approve" jsonb DEFAULT '{}'::jsonb NOT NULL;
 --> statement-breakpoint
 UPDATE "tenants"
 SET "auto_approve" = '{"venues": true, "events": true, "memberships": true, "changes": true}'::jsonb
 WHERE "auto_approve_listings" = true;
---> statement-breakpoint
-ALTER TABLE "tenants" DROP COLUMN IF EXISTS "auto_approve_listings";
