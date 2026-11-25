@@ -905,6 +905,10 @@ export type MemberStatus = 'active' | 'expired' | 'cancelled';
 /** How many members the plan holds in each state, whatever the list shows. */
 export type MemberStatusCounts = Record<MemberStatus, number>;
 
+/** How a hand-added member paid the partner directly. Mirrors the API's
+ *  `desk_payment_method` enum. */
+export type DeskPaymentMethod = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'cheque' | 'other';
+
 /** A consumer purchase of a membership plan (partner-facing). */
 export interface MembershipPurchase {
   userMembershipId: string;
@@ -912,6 +916,14 @@ export interface MembershipPurchase {
   buyerContact: string;
   /** The tier the buyer purchased, or null for legacy purchases. */
   tierName: string | null;
+  /** What a hand-added member paid the partner, in minor units of the plan's
+   *  currency; null for consumer purchases and members added before the desk
+   *  kept this. Never part of a payout. */
+  paidPaise: number | null;
+  /** How a hand-added member paid, when the desk recorded it. */
+  paymentMethod: DeskPaymentMethod | null;
+  /** The partner's note on the member, if any. */
+  note: string | null;
   status: string;
   /** ISO-8601 */
   startsAt: string;

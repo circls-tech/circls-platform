@@ -23,6 +23,7 @@ import {
   type MembershipTierGroup,
   userMemberships,
 } from '../db/schema/memberships.js';
+import { DESK_PAYMENT_METHODS, type DeskPaymentMethod } from '../db/schema/memberships.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { membershipTiers } from '../db/schema/membership_tiers.js';
 import { qrTickets } from '../db/schema/qr_tickets.js';
@@ -123,6 +124,14 @@ export interface MembershipPurchaseRow {
   /** circls took money for this membership, so it can be refunded. False for
    *  hand-added and free memberships, which have nothing to give back. */
   refundable: boolean;
+  /** What a hand-added member paid the partner directly, in minor units of the
+   *  plan's currency; null for consumer purchases and members recorded before
+   *  the desk kept this. */
+  paidPaise: number | null;
+  /** How a hand-added member paid, when the desk recorded it. */
+  paymentMethod: DeskPaymentMethod | null;
+  /** The partner's note on the member, if any. */
+  note: string | null;
   status: string;
   startsAt: string;
   endsAt: string;
@@ -159,7 +168,8 @@ export async function listMembershipPurchases(
   const raw = await db.execute<Record<string, unknown>>(sql`
     select um.id, um.status, um.starts_at, um.ends_at, um.created_at,
            u.display_name, u.phone_e164, u.email, mt.name as tier_name,
-           um.external_name, um.external_contact, um.user_id, um.payment_id
+           um.external_name, um.external_contact, um.user_id, um.payment_id,
+           um.desk_paid_paise, um.desk_payment_method, um.note
     from user_memberships um
     join memberships m on m.id = um.membership_id
     left join users u on u.id = um.user_id
@@ -182,6 +192,10 @@ export async function listMembershipPurchases(
     tierName: (r['tier_name'] as string | null) ?? null,
     external: r['user_id'] === null,
     refundable: r['payment_id'] !== null && r['status'] !== 'cancelled',
+    // bigint comes back from pg as a string.
+    paidPaise: r['desk_paid_paise'] == null ? null : Number(r['desk_paid_paise']),
+    paymentMethod: (r['desk_payment_method'] as DeskPaymentMethod | null) ?? null,
+    note: (r['note'] as string | null) ?? null,
     status: r['status'] as string,
     startsAt: new Date(r['starts_at'] as string).toISOString(),
     endsAt: new Date(r['ends_at'] as string).toISOString(),
@@ -580,6 +594,15 @@ export interface AddExternalMemberInput {
   startsAt?: Date;
   /** Defaults to the tier's duration from startsAt. */
   endsAt?: Date;
+  /**
+   * What they paid the partner, in minor units of the plan's currency.
+   * Defaults to the tier's price; pass a value for a custom amount.
+   */
+  paidPaise?: number | null;
+  /** How they paid, when the desk wants it on record. */
+  paymentMethod?: DeskPaymentMethod | null;
+  /** Anything else worth remembering about this member. */
+  note?: string | null;
 }
 
 /**
@@ -590,7 +613,8 @@ export interface AddExternalMemberInput {
  * per-tier capacity exactly like a purchase, so a tier can sell out because of
  * them. They are invisible to money: `payment_id` stays null, and payouts are
  * computed purely from `payments`, so this can never reach a settlement or
- * attract commission — whatever they paid went to the partner directly.
+ * attract commission — whatever they paid went to the partner directly. What
+ * they paid, and how, is kept on the row for the partner's own records.
  */
 export async function addExternalMember(
   ctx: AuditCtx,
@@ -598,6 +622,15 @@ export async function addExternalMember(
 ): Promise<{ userMembershipId: string }> {
   const name = input.name.trim();
   if (!name) throw new BadRequest('A name is required', 'bad_request');
+  if (
+    input.paidPaise != null &&
+    (!Number.isInteger(input.paidPaise) || input.paidPaise < 0)
+  ) {
+    throw new BadRequest('The amount paid must be zero or more', 'bad_request');
+  }
+  if (input.paymentMethod != null && !DESK_PAYMENT_METHODS.includes(input.paymentMethod)) {
+    throw new BadRequest('Unknown payment method', 'bad_request');
+  }
 
   return db.transaction(async (tx) => {
     const [m] = await tx
@@ -643,6 +676,13 @@ export async function addExternalMember(
       throw new BadRequest('The end date must be after the start date', 'bad_date_range');
     }
 
+    // The desk's record of the money. The tier's price unless the desk said
+    // otherwise, so the common case is a click; written to the row rather than
+    // `payments`, which stays untouched — see the money note above.
+    const paidPaise = input.paidPaise ?? tier?.pricePaise ?? m.pricePaise;
+    const paymentMethod = input.paymentMethod ?? null;
+    const note = input.note?.trim() || null;
+
     const [row] = await tx
       .insert(userMemberships)
       .values({
@@ -655,6 +695,9 @@ export async function addExternalMember(
         status: 'active',
         externalName: name,
         externalContact: input.contact?.trim() || null,
+        deskPaidPaise: paidPaise,
+        deskPaymentMethod: paymentMethod,
+        note,
         createdByUserId: ctx.actorUserId,
       })
       .returning();
@@ -666,6 +709,9 @@ export async function addExternalMember(
       tierId: tier?.id ?? null,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
+      paidPaise,
+      paymentMethod,
+      note,
     });
 
     // A desk-added member is admitted at the door like any other: mint their

@@ -86,6 +86,21 @@ export const userMembershipStatus = pgEnum('user_membership_status', [
   'cancelled',
 ]);
 
+/**
+ * How a hand-added member paid the partner directly. The desk's record only:
+ * none of this money passed through circls, so it never reaches a payout.
+ */
+export const deskPaymentMethod = pgEnum('desk_payment_method', [
+  'cash',
+  'upi',
+  'card',
+  'bank_transfer',
+  'cheque',
+  'other',
+]);
+export const DESK_PAYMENT_METHODS = deskPaymentMethod.enumValues;
+export type DeskPaymentMethod = (typeof DESK_PAYMENT_METHODS)[number];
+
 export const userMemberships = pgTable('user_memberships', {
   id: uuidPk(),
   /**
@@ -112,6 +127,18 @@ export const userMemberships = pgTable('user_memberships', {
   externalName: text('external_name'),
   /** Phone or email for an externally-added member, when one was captured. */
   externalContact: text('external_contact'),
+  /**
+   * What a hand-added member paid the partner directly, in minor units of the
+   * plan's currency. Defaults to the tier's price when they were added; a custom
+   * amount overrides it. Null for consumer purchases (their money is on
+   * `payments`) and for members recorded before this existed. The desk's record
+   * only — payouts never read it.
+   */
+  deskPaidPaise: bigintPaise('desk_paid_paise'),
+  /** How a hand-added member paid — cash, UPI, card… — when the desk said. */
+  deskPaymentMethod: deskPaymentMethod('desk_payment_method'),
+  /** Free text the partner left when recording the member. */
+  note: text('note'),
   /** The partner who recorded this member; null for consumer purchases. */
   createdByUserId: uuid('created_by_user_id').references(() => users.id),
   createdAt: createdAt(),

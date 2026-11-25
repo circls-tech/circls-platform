@@ -112,7 +112,7 @@ purchase time — later edits never change passes that are already issued.
 
 ## Managing a plan's members
 
-Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, status, the valid period (start → end date) and when they were added. On a phone the table becomes one card per member.
+Open a plan from the **Memberships** list to see its **Members** section. For each member you'll see their name, contact, the **tier** they hold, what they **paid** (for someone you added by hand: the amount and how they paid it, as you recorded them; *via circls* for an online purchase), status, the valid period (start → end date) and when they were added. A note you left when adding someone shows under their name — hover over it to read all of it. On a phone the table becomes one card per member.
 
 The section opens on **Active** — the people whose membership is running right now. **Expired** and **Cancelled** are tabs beside it, each showing how many it holds, so a plan that has been selling for a year doesn't bury its current members under everyone who has ever held it. Cancelling a member moves them to the **Cancelled** tab straight away, so their row leaves the list you are looking at, and adding one takes you back to **Active**, where they land.
 
@@ -124,13 +124,20 @@ An expired member keeps their seat on the tier, exactly as before — expiry doe
 
 ### Adding someone who joined elsewhere
 
-Signed someone up at the desk, over the phone, or on paper? Click **Reception** beside the plan's name — or **Add member** in that list; both open the same form, and Reception is there so counter staff can reach it in one click (Owners, Managers and Staff; Read-only members don't see either button). You give their name, an optional contact, which tier they are on, and — if you want something other than the tier's normal run — the dates their membership covers.
+Signed someone up at the desk, over the phone, or on paper? Click **Reception** beside the plan's name — or **Add member** in that list; both open the same form, and Reception is there so counter staff can reach it in one click (Owners, Managers and Staff; Read-only members don't see either button). The form asks for:
+
+- **Name** (required) and an optional **Contact** — phone or email.
+- **Tier** — which tier they are on. Each option shows its price. Leave it on **Cheapest tier** to place them on the lowest-priced one.
+- **Amount paid** — filled in for you with the tier's price, in the plan's currency, so the usual sale is a click. Paid something else — a discount, a part payment, a free month? Tick **Custom amount** and type what they actually paid you; the box starts from the tier's price so a discount is an edit, not a retype. Untick it to go back to the tier's price.
+- **How they paid** — **Cash**, **UPI**, **Card**, **Bank transfer**, **Cheque** or **Other**, or leave it at **Not recorded**.
+- **Starts** and **Ends** — only if you want something other than the tier's normal run from today.
+- **Note** (optional, up to 1,000 characters) — anything worth remembering about this member: *paid for two months up front*, *joined with a friend*.
 
 Start typing a **name or phone number** in either field and circls offers the people your organisation has recorded before — anyone on a past court booking, event registration or membership, with their last visit beside each — so a returning customer isn't typed in again. Pick one and both fields are filled in; edit anything that has changed. It only fills the form: nothing is linked to their earlier visits, and a name nobody has used before is simply typed in as usual.
 
-They are a real member where it counts: the seat comes out of that tier's capacity, so a tier can sell out because of them, and they appear in the list marked **added by you**.
+They are a real member where it counts: the seat comes out of that tier's capacity, so a tier can sell out because of them, and they appear in the list marked **added by you**, with the amount, payment method and note you recorded.
 
-**They are invisible to money.** circls processed nothing, so the membership never appears in a payout and never attracts commission — whatever they paid, they paid you directly.
+**They are invisible to money.** circls processed nothing, so the membership never appears in a payout and never attracts commission — whatever they paid, they paid you directly. The amount and payment method are your own record of that, for your books and for reconciling the till; they don't appear on the Earnings page. Members added before this was recorded show **—** in the **Paid** column.
 
 ### Correcting dates, and cancelling
 

@@ -10,17 +10,61 @@ import {
 } from '@/lib/api/memberships';
 import { useMyRole } from '@/lib/api/queries';
 import type {
+  DeskPaymentMethod,
   Membership,
   MembershipPurchase,
+  MembershipTier,
   MemberStatus,
   MemberStatusCounts,
 } from '@/lib/api/types';
+import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { Button, Input, StatusPill } from '@/lib/ui';
 import { CustomerFields } from './CustomerFields';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
 }
+
+/** How a desk member paid, in the order a counter reaches for them. */
+const PAYMENT_METHODS: { key: DeskPaymentMethod; label: string }[] = [
+  { key: 'cash', label: 'Cash' },
+  { key: 'upi', label: 'UPI' },
+  { key: 'card', label: 'Card' },
+  { key: 'bank_transfer', label: 'Bank transfer' },
+  { key: 'cheque', label: 'Cheque' },
+  { key: 'other', label: 'Other' },
+];
+const PAYMENT_METHOD_LABEL = Object.fromEntries(
+  PAYMENT_METHODS.map((m) => [m.key, m.label]),
+) as Record<DeskPaymentMethod, string>;
+
+/** Minor units → what goes in the amount box: "1500", or "1500.50" when it must. */
+function toAmountInput(paise: number): string {
+  const major = paise / 100;
+  return Number.isInteger(major) ? String(major) : major.toFixed(2);
+}
+
+/** The amount box → minor units, or null when it isn't a number of zero or more. */
+function parseAmountInput(text: string): number | null {
+  if (!text.trim()) return null;
+  const major = Number(text);
+  if (!Number.isFinite(major) || major < 0) return null;
+  return Math.round(major * 100);
+}
+
+/** The blank walk-in form. `amount` is only read while `customAmount` is on;
+ *  otherwise the box shows the tier's price. */
+const EMPTY_FORM = {
+  name: '',
+  contact: '',
+  tierId: '',
+  startsAt: '',
+  endsAt: '',
+  customAmount: false,
+  amount: '',
+  paymentMethod: '' as '' | DeskPaymentMethod,
+  note: '',
+};
 
 /**
  * Members are listed one state at a time. A plan that has run for a while
@@ -56,6 +100,11 @@ export interface MembershipMembersProps {
   membershipId: string;
   /** Live tiers of the plan — a hand-added member is placed on one. */
   tiers: Membership['tiers'];
+  /** The plan's currency: what a hand-added member paid is recorded in it. */
+  currency: CurrencyCode;
+  /** The plan's own price, in minor units: what a member of a plan with no
+   *  tiers paid unless Custom amount says otherwise (the API's fallback too). */
+  planPricePaise: number;
   /** Whether the walk-in form is open. Omit to let this component own it; pass
    *  it when a Reception button elsewhere on the page opens the desk. */
   walkInOpen?: boolean;
@@ -66,6 +115,8 @@ export function MembershipMembers({
   tenantId,
   membershipId,
   tiers,
+  currency,
+  planPricePaise,
   walkInOpen,
   onWalkInOpenChange,
 }: MembershipMembersProps) {
@@ -104,7 +155,7 @@ export function MembershipMembers({
     if (walkInOpen === undefined) setOwnAdding(open);
     onWalkInOpenChange?.(open);
   };
-  const [form, setForm] = useState({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRange, setEditRange] = useState({ startsAt: '', endsAt: '' });
   const [err, setErr] = useState<string | null>(null);
@@ -119,6 +170,26 @@ export function MembershipMembers({
   const listed = counts[tab];
   const truncated =
     !isFetching && data != null && rows.length >= data.limit && listed > rows.length;
+
+  // The tier the new member lands on: the one picked, else the cheapest — the
+  // same default the API applies when none is sent. Its price is what the
+  // amount box shows until Custom amount is ticked, so the common case —
+  // they paid the list price — needs no typing.
+  const cheapestTier = tiers.reduce<MembershipTier | null>(
+    (best, t) => (best == null || t.pricePaise < best.pricePaise ? t : best),
+    null,
+  );
+  const selectedTier = form.tierId
+    ? (tiers.find((t) => t.id === form.tierId) ?? null)
+    : cheapestTier;
+  // A plan with no tiers (a draft, or one from before tiers) is priced on the
+  // plan itself — never 0, or the desk would record a free membership.
+  const tierPaise = selectedTier?.pricePaise ?? planPricePaise;
+  const amountShown = form.customAmount ? form.amount : toAmountInput(tierPaise);
+
+  /** What a desk member paid, as the list shows it. */
+  const fmtPaid = (paise: number) =>
+    formatMoney(paise, currency, { decimals: paise % 100 === 0 ? 0 : 2 });
 
   /** <input type="date"> wants YYYY-MM-DD; the API speaks ISO instants. */
   const toDateInput = (iso: string) => iso.slice(0, 10);
@@ -140,6 +211,13 @@ export function MembershipMembers({
   async function submitNew(e: FormEvent) {
     e.preventDefault();
     setErr(null);
+    // Sent explicitly even when it is just the tier's price, so what the desk
+    // saw in the box is what gets recorded.
+    const paidPaise = form.customAmount ? parseAmountInput(form.amount) : tierPaise;
+    if (paidPaise == null) {
+      setErr('Enter the amount they paid, or untick Custom amount.');
+      return;
+    }
     try {
       await addMember.mutateAsync({
         membershipId,
@@ -151,9 +229,12 @@ export function MembershipMembers({
           // the start of that day.
           ...(form.startsAt ? { startsAt: `${form.startsAt}T00:00:00.000Z` } : {}),
           ...(form.endsAt ? { endsAt: `${form.endsAt}T00:00:00.000Z` } : {}),
+          paidPaise,
+          ...(form.paymentMethod ? { paymentMethod: form.paymentMethod } : {}),
+          ...(form.note.trim() ? { note: form.note.trim() } : {}),
         },
       });
-      setForm({ name: '', contact: '', tierId: '', startsAt: '', endsAt: '' });
+      setForm(EMPTY_FORM);
       setAdding(false);
       // A new member is always active. Staying on Expired or Cancelled would
       // close the form onto an unchanged list — no row, no confirmation — and
@@ -289,6 +370,32 @@ export function MembershipMembers({
     );
   }
 
+  /**
+   * What the member paid, as the desk recorded it. A consumer purchase's money
+   * is on circls' own ledger, so the cell just says where it went.
+   */
+  function paidCell(p2: MembershipPurchase) {
+    if (!p2.external) return <span className="text-slate-400">via circls</span>;
+    if (p2.paidPaise == null) return <span className="text-slate-400">—</span>;
+    const method = p2.paymentMethod ? PAYMENT_METHOD_LABEL[p2.paymentMethod] : null;
+    return (
+      <span className="whitespace-nowrap">
+        {fmtPaid(p2.paidPaise)}
+        {method && <span className="text-slate-400"> · {method}</span>}
+      </span>
+    );
+  }
+
+  /** The partner's note on a member, one line with the rest on hover. */
+  function noteLine(p2: MembershipPurchase) {
+    if (!p2.note) return null;
+    return (
+      <p className="mt-0.5 max-w-[18rem] truncate text-xs font-normal text-slate-500" title={p2.note}>
+        {p2.note}
+      </p>
+    );
+  }
+
   /** The validity cell: two date inputs while editing, plain text otherwise. */
   function validCell(p2: MembershipPurchase) {
     if (editingId !== p2.userMembershipId) {
@@ -334,8 +441,8 @@ export function MembershipMembers({
         >
           <p className="text-xs text-slate-500">
             For someone who joined away from circls. They take a seat on the tier
-            like any member, but no money is recorded — whatever they paid, they
-            paid you directly.
+            like any member. Whatever they paid, they paid you directly — record
+            it here for your own books; it never enters a payout.
           </p>
           <CustomerFields
             tenantId={tenantId}
@@ -343,23 +450,80 @@ export function MembershipMembers({
             contact={form.contact}
             onChange={(c) => setForm((f) => ({ ...f, name: c.name, contact: c.contact }))}
           />
-          {tiers.length > 0 && (
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">Tier</span>
-              <select
-                value={form.tierId}
-                onChange={(e) => setForm((f) => ({ ...f, tierId: e.target.value }))}
-                className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
-              >
-                <option value="">Cheapest tier</option>
-                {tiers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {tiers.length > 0 && (
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">Tier</span>
+                <select
+                  value={form.tierId}
+                  onChange={(e) => setForm((f) => ({ ...f, tierId: e.target.value }))}
+                  className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                >
+                  <option value="">Cheapest tier</option>
+                  {tiers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} · {fmtPaid(t.pricePaise)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <Input
+                label={`Amount paid (${currencySymbol(currency)})`}
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={amountShown}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                disabled={!form.customAmount}
+                required={form.customAmount}
+                className="disabled:bg-slate-50 disabled:text-slate-500"
+                hint={
+                  form.customAmount
+                    ? 'What they actually paid you.'
+                    : selectedTier
+                      ? `${selectedTier.name}'s price. Tick Custom amount to change it.`
+                      : "The plan's price. Tick Custom amount to change it."
+                }
+              />
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.customAmount}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      customAmount: e.target.checked,
+                      // Start the custom amount from the tier's price, so a
+                      // discount is an edit rather than a retype.
+                      amount: e.target.checked ? toAmountInput(tierPaise) : '',
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Custom amount
+              </label>
+            </div>
+          </div>
+          <label className="flex flex-col gap-1 sm:max-w-[calc(50%-0.375rem)]">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">How they paid</span>
+            <select
+              value={form.paymentMethod}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, paymentMethod: e.target.value as '' | DeskPaymentMethod }))
+              }
+              className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+            >
+              <option value="">Not recorded</option>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex flex-wrap gap-3">
             <Input
               label="Starts (optional)"
@@ -375,6 +539,17 @@ export function MembershipMembers({
               hint="Defaults to the tier's duration."
             />
           </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[#475569]">Note (optional)</span>
+            <textarea
+              value={form.note}
+              onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+              rows={2}
+              maxLength={1000}
+              placeholder="Anything worth remembering — paid for two months up front, joined with a friend…"
+              className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
+            />
+          </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
               Cancel
@@ -458,7 +633,7 @@ export function MembershipMembers({
         }`}
         aria-busy={isFetching}
       >
-        {/* Phones: one card per buyer — a six-column table is unreadable there. */}
+        {/* Phones: one card per buyer — a seven-column table is unreadable there. */}
         <ul className="flex flex-col gap-2 md:hidden">
           {rows.map((p) => (
             <li
@@ -474,6 +649,7 @@ export function MembershipMembers({
                     )}
                   </p>
                   <p className="truncate text-xs text-slate-500">{p.buyerContact}</p>
+                  {noteLine(p)}
                 </div>
                 <StatusPill status={p.status} />
               </div>
@@ -481,6 +657,10 @@ export function MembershipMembers({
                 <div className="flex justify-between gap-2">
                   <dt className="text-slate-400">Tier</dt>
                   <dd>{p.tierName ?? '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Paid</dt>
+                  <dd>{paidCell(p)}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-slate-400">Valid</dt>
@@ -504,6 +684,7 @@ export function MembershipMembers({
                 <th className="pb-2 pr-4 font-medium text-slate-500">Buyer</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Contact</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Tier</th>
+                <th className="pb-2 pr-4 font-medium text-slate-500">Paid</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Status</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Valid</th>
                 <th className="pb-2 pr-4 font-medium text-slate-500">Added</th>
@@ -518,9 +699,11 @@ export function MembershipMembers({
                     {p.external && (
                       <span className="ml-1.5 text-xs font-normal text-slate-400">· added by you</span>
                     )}
+                    {noteLine(p)}
                   </td>
                   <td className="py-2.5 pr-4 text-slate-700">{p.buyerContact}</td>
                   <td className="py-2.5 pr-4 text-slate-700">{p.tierName ?? '—'}</td>
+                  <td className="py-2.5 pr-4 text-slate-700">{paidCell(p)}</td>
                   <td className="py-2.5 pr-4">
                     <StatusPill status={p.status} />
                   </td>
