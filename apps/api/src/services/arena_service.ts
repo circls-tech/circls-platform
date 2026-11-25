@@ -5,7 +5,7 @@ import { type AuditCtx, writeAudit } from '../lib/audit.js';
 import { Conflict, NotFound } from '../lib/errors.js';
 import type { QrTicketConfig } from '../db/schema/qr_ticket_config.js';
 import { inferSport } from '../lib/sport_inference.js';
-import { autoApprovesListings, submitForReview } from './listing_review.js';
+import { autoApproves, submitForReview } from './listing_review.js';
 import { onListingSubmitted } from './notification_hooks.js';
 
 export interface CreateArenaInput {
@@ -25,7 +25,7 @@ export async function createArena(venueId: string, input: CreateArenaInput): Pro
 
   const venue = await db.query.venues.findFirst({ where: eq(venues.id, venueId) });
   if (!venue) throw new NotFound('Venue not found', 'venue_not_found');
-  const autoApprove = await autoApprovesListings(db, venue.tenantId);
+  const autoApprove = await autoApproves(db, venue.tenantId, 'venues');
 
   const [a] = await db
     .insert(arenas)
@@ -98,7 +98,9 @@ export async function updateArenaDetails(
     }
     if (patch.tags !== undefined && JSON.stringify(patch.tags) !== JSON.stringify(existing.tags)) set.tags = patch.tags;
     if (Object.keys(set).length === 0) return existing;
-    if (existing.status !== 'rejected' && !(existing.status === 'active' && await autoApprovesListings(tx, ctx.tenantId))) {
+    // A live arena is otherwise frozen; an org trusted with changes to its
+    // live listings edits it in place, as its event changes apply at once.
+    if (existing.status !== 'rejected' && !(existing.status === 'active' && await autoApproves(tx, ctx.tenantId, 'changes'))) {
       throw new Conflict('Only a rejected arena’s details can be edited', 'arena_not_editable', {
         status: existing.status,
       });

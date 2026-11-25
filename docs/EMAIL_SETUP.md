@@ -7,7 +7,7 @@ template key:
 | Audience | Emails | Sender |
 |---|---|---|
 | **Customers** | booking confirmed, booking cancelled (incl. a cancelled event), refund, booking moved, question replies | **MSG91 Email** |
-| **Partners** (org contact email, else its owners) | new booking, listing approved, listing needs changes, new question, team invitation | **MSG91 Email** |
+| **Partners** (org contact email, else its owners) | new booking, listing approved, listing needs changes, payout sent, new question, team invitation | **MSG91 Email** |
 | **Circls admin team** (`ADMIN_TEAM_EMAILS`) | listing submitted for review, new organiser, payout reminders (Tue + Wed 9:00 IST), daily summary (08:00 IST) | **Resend** |
 
 Each sender carries the other's mail while only one is configured (with a boot
@@ -22,17 +22,22 @@ The boot log line `notification_providers` shows the senders, e.g.
 
 ## Designed emails
 
-Nine emails have a branded HTML design (`lib/notifications/email_designs/`):
+Eleven emails have a branded HTML design (`lib/notifications/email_designs/`):
 booking confirmed / cancelled / refunded, partner new booking, listing approved,
-listing needs changes, and the three admin emails. The rest are plain text.
+listing needs changes, payout sent, and the four admin emails. The rest are
+plain text.
 
 - **Resend** (admin) and **Mailpit** get the HTML rendered by the API.
 - **MSG91** sends only through templates stored in its dashboard and renders
-  them itself (Handlebars). The six customer/partner designs each have their
+  them itself (Handlebars). The seven customer/partner designs each have their
   own MSG91 template, named by its slug (`circls_booking_confirmed`, …). A
   design uses its template only once **switched on** in
   `MSG91_EMAIL_DESIGNS`; until then it goes through the generic template as
   plain text, so nothing fails while a template awaits approval.
+- A design added after `MSG91_EMAIL_DESIGNS=all` went live is marked
+  `msg91ListedOnly` (today: `partner.payout_sent`). `all` does not switch it
+  on, so it keeps using the generic template until its own is created and
+  approved; then name it next to `all` (step 6).
 - Emails without a design always use the generic template.
 
 Preview every design with sample data:
@@ -54,7 +59,8 @@ Preview every design with sample data:
    `<pre style="white-space:pre-wrap;font-family:Arial,Helvetica,sans-serif">{{VAR2}}</pre>`
    inside a simple header/footer. `MSG91_EMAIL_TEMPLATE_ID` is its **slug**,
    not its numeric id (the number fails with "… is not registered").
-4. **Design templates** — create all six through the API (no pasting):
+4. **Design templates** — create every missing one through the API (no
+   pasting; existing templates are left alone):
    ```bash
    pnpm --filter @circls/api email:msg91-templates create
    pnpm --filter @circls/api email:msg91-templates list
@@ -75,7 +81,9 @@ Preview every design with sample data:
    mangles pasted code.)
 6. **Switch approved designs on** — `MSG91_EMAIL_DESIGNS=all`, or a list of
    keys as they're approved, e.g.
-   `booking.confirmed,booking.cancelled,booking.refunded`. Redeploy.
+   `booking.confirmed,booking.cancelled,booking.refunded`. Redeploy. A
+   `msg91ListedOnly` design needs its key named even with `all`:
+   `MSG91_EMAIL_DESIGNS=all,partner.payout_sent`.
 
 ## Resend (admin email)
 
@@ -89,7 +97,7 @@ domain, and `ADMIN_TEAM_EMAILS` (comma-separated). Free tier: 3k/month,
 MSG91_AUTH_KEY=…                                   # owner-created key
 MSG91_EMAIL_FROM=Circls <no-reply@event.circls.app>
 MSG91_EMAIL_TEMPLATE_ID=circls_transactional       # slug of the generic template
-MSG91_EMAIL_DESIGNS=all                            # once the six are approved
+MSG91_EMAIL_DESIGNS=all                            # once approved; add ,partner.payout_sent when its template is
 RESEND_API_KEY=re_…
 RESEND_FROM=Circls Ops <ops@circls.app>
 ADMIN_TEAM_EMAILS=founders@circls.app,ops@circls.app

@@ -82,6 +82,21 @@ export interface AdminTenantMember {
   createdAt: string | null;
 }
 
+/**
+ * Which of a tenant's submissions skip admin review and go live at once; one
+ * flag per aspect, every one filled in by the API (default off).
+ */
+export interface AdminTenantAutoApprove {
+  /** New venues and arenas. */
+  venues: boolean;
+  /** Complete events, single dates and whole series. */
+  events: boolean;
+  /** Complete membership plans. */
+  memberships: boolean;
+  /** Later changes to live listings: event change requests, live arena edits. */
+  changes: boolean;
+}
+
 export interface AdminTenantDetail {
   tenant: {
     id: string;
@@ -99,7 +114,9 @@ export interface AdminTenantDetail {
     status: AdminTenantListItem['status'];
     /** Off everything consumers see (demo / test orgs). */
     hiddenFromCatalog: boolean;
-    autoApproveListings: boolean;
+    /** What goes live without review; PATCH /v1/admin/tenants/:id/listing-approval.
+     *  Optional: absent from an API older than this console (mid-deploy). */
+    autoApprove?: AdminTenantAutoApprove;
     // Billing knobs (basis points, 100 bps = 1%).
     commissionBps: number;
     consumerCommissionBps: number;

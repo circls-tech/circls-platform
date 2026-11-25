@@ -384,6 +384,7 @@ export default function ArenaReceptionPage() {
 
       {/* Add booking modal */}
       <AddBookingModal
+        tenantId={orgId ?? ''}
         arenaId={arenaId}
         currency={currency}
         open={bookingOpen}

@@ -69,7 +69,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Earnings: what circls will pay you',
     category: 'Bookings',
     summary:
-      'Net payout for any period you choose — across events, memberships and venues, and for each one individually, with how much of it has already been transferred. Every figure is what reaches you after commission, gateway charges and refunds, not what your customers were charged. Also: your commission-free first 3 months.',
+      'Net payout for any period you choose — across events, memberships and venues, and for each one individually, with how much of it has already been transferred (each transfer is also emailed to you). Every figure is what reaches you after commission, gateway charges and refunds, not what your customers were charged. Also: your commission-free first 3 months.',
     quickLink: true,
     order: 16,
   },
@@ -144,7 +144,7 @@ export const HELP_ARTICLES: HelpArticleMeta[] = [
     title: 'Emails circls sends you',
     category: 'Support',
     summary:
-      'Which emails your organisation receives — new bookings, listing review outcomes, customer questions, invitations — where they go (contact email or owners), switching booking and review emails off in Settings → Notifications, and what your customers are sent: confirmations, cancellations (including a cancelled event) and refunds.',
+      'Which emails your organisation receives — new bookings, listing review outcomes, payouts sent, customer questions, invitations — where they go (contact email or owners), switching booking and review emails off in Settings → Notifications, and what your customers are sent: confirmations, cancellations (including a cancelled event) and refunds.',
     order: 17,
   },
   {

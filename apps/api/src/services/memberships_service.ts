@@ -33,7 +33,7 @@ import { tenants } from '../db/schema/tenants.js';
 import { writeAudit, type AuditCtx } from '../lib/audit.js';
 import { cancelPaidBooking } from './cancellation_service.js';
 import { BadRequest, Conflict, NotFound } from '../lib/errors.js';
-import { autoApprovesListings, isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
+import { autoApproves, isSubmittable, latestRejection, type ListingRejection, submitForReview } from './listing_review.js';
 import { logger } from '../lib/logger.js';
 import { getStorage } from '../lib/storage.js';
 import { publicKeyIdFor, type PaymentProviderId } from '../lib/gateway.js';
@@ -298,7 +298,7 @@ export async function createMembership(
         tierGroups,
         // New listings await Circls review before going live (subproject B) —
         // unless the partner wants a draft to come back to first.
-        status: input.draft ? 'draft' : (await autoApprovesListings(tx, input.tenantId) ? 'active' : 'pending_review'),
+        status: input.draft ? 'draft' : (await autoApproves(tx, input.tenantId, 'memberships') ? 'active' : 'pending_review'),
       })
       .returning();
     if (!row) throw new Error('membership insert returned no row');
