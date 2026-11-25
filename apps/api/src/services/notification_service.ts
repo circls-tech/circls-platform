@@ -521,12 +521,13 @@ export async function notifyListingReviewed(
  * An admin marked a payout, or some of its lines, paid — tell the org what
  * this transfer sent, with its reference. One email per transfer, so paying a
  * week line by line sends one for each line. Not covered by the org's email
- * preferences: it is the record of money sent to them.
+ * preferences: it is the record of money sent to them. Queued for the worker,
+ * so the admin's Mark paid never waits on (or times out over) the provider.
  */
 export async function notifyPayoutSent(payoutId: string, itemIds: readonly string[]): Promise<void> {
   const sent = await payoutSentPayload(payoutId, itemIds);
   if (!sent) return;
-  await notifyPartner(sent.tenantId, 'partner.payout_sent', sent.payload);
+  await notifyPartner(sent.tenantId, 'partner.payout_sent', sent.payload, { queue: true });
 }
 
 /** A partner organisation was created — tell the admin team who signed up. */

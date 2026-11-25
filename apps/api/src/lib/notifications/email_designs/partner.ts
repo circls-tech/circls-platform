@@ -210,7 +210,7 @@ export const partnerPayoutSent: EmailDesign = {
     boxes: `{{#if remainingText}}${noteBox(
       'lilac',
       'The rest is on its way',
-      'The other {{remainingText}} of this payout is sent separately, and you&rsquo;ll get an email like this one for it.',
+      'The other {{remainingText}} of this payout is sent separately. Your Earnings page shows what has reached you so far.',
     )}{{/if}}`,
     cta: { href: '{{partnersUrl}}/earnings', label: 'See your earnings', color: 'coral' },
     footnote:
@@ -225,7 +225,7 @@ export const partnerPayoutSent: EmailDesign = {
     'We’ve sent {{amountText}} to your account{{#if periodLabel}} for your sales of {{periodLabel}}{{/if}}.\n\n' +
     '{{#each rows}}{{label}}: {{value}}\n{{/each}}' +
     '{{#if lines}}\nWhat it covers:\n{{#each lines}}- {{name}} ({{sub}}): {{amount}}\n{{/each}}{{/if}}' +
-    '{{#if remainingText}}\nThe other {{remainingText}} of this payout is sent separately, with its own email.\n{{/if}}\n' +
+    '{{#if remainingText}}\nThe other {{remainingText}} of this payout is sent separately.\n{{/if}}\n' +
     'Bank transfers can take a working day or two to show up. If it hasn’t arrived by then, contact us with the reference above.\n\n' +
     'See your earnings: {{partnersUrl}}/earnings\n\n— Circls\n',
   sample: {
