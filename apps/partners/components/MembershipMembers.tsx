@@ -19,6 +19,7 @@ import type {
 } from '@/lib/api/types';
 import { type CurrencyCode, currencySymbol, formatMoney } from '@/lib/currency';
 import { Button, Input, StatusPill } from '@/lib/ui';
+import { CustomerFields } from './CustomerFields';
 
 function fmtDate(formatter: Intl.DateTimeFormat, iso: string) {
   return formatter.format(new Date(iso));
@@ -443,17 +444,11 @@ export function MembershipMembers({
             like any member. Whatever they paid, they paid you directly — record
             it here for your own books; it never enters a payout.
           </p>
-          <Input
-            label="Name"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            required
-          />
-          <Input
-            label="Contact (optional)"
-            value={form.contact}
-            onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))}
-            placeholder="Phone or email"
+          <CustomerFields
+            tenantId={tenantId}
+            name={form.name}
+            contact={form.contact}
+            onChange={(c) => setForm((f) => ({ ...f, name: c.name, contact: c.contact }))}
           />
           <div className="grid gap-3 sm:grid-cols-2">
             {tiers.length > 0 && (

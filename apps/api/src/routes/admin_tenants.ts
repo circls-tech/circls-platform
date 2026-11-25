@@ -11,6 +11,7 @@ import {
   users,
   venues,
 } from '../db/schema/index.js';
+import { AUTO_APPROVE_ASPECTS, resolveAutoApprove } from '../db/schema/tenants.js';
 import { writeAudit } from '../lib/audit.js';
 import { getPlatformTenantId } from '../lib/authz/platform_tenant.js';
 import { BadRequest, NotFound } from '../lib/errors.js';
@@ -344,7 +345,7 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
       ]);
 
       return {
-        tenant,
+        tenant: { ...tenant, autoApprove: resolveAutoApprove(tenant.autoApprove) },
         commissionWaiver: resolveCommissionWaiver({
           startsOn: tenant.commissionWaiverStartsOn,
           endsOn: tenant.commissionWaiverEndsOn,
@@ -460,7 +461,19 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     if (!params.success) {
       throw new BadRequest('Invalid tenant id', 'bad_request', { issues: params.error.issues });
     }
-    const body = z.object({ autoApproveListings: z.boolean() }).strict().safeParse(req.body);
+    // One key per aspect the admin ticked or unticked; the rest keep their
+    // value. The row stores the full resolved blob so a later read needs no
+    // merge, and the audit row shows every aspect before and after.
+    const body = z
+      .object({
+        venues: z.boolean().optional(),
+        events: z.boolean().optional(),
+        memberships: z.boolean().optional(),
+        changes: z.boolean().optional(),
+      })
+      .strict()
+      .refine((patch) => Object.keys(patch).length > 0, { message: 'Nothing to change' })
+      .safeParse(req.body);
     if (!body.success) {
       throw new BadRequest('Invalid listing approval patch', 'bad_request', { issues: body.error.issues });
     }
@@ -468,17 +481,24 @@ export const adminTenantRoutes: FastifyPluginAsync = async (app) => {
     return db.transaction(async (tx) => {
       const [before] = await tx.select().from(tenants).where(eq(tenants.id, id)).limit(1).for('update');
       if (!before) throw new NotFound('Tenant not found', 'tenant_not_found');
-      const [after] = await tx.update(tenants).set(body.data).where(eq(tenants.id, id)).returning();
+      const previous = resolveAutoApprove(before.autoApprove);
+      const next = { ...previous };
+      for (const aspect of AUTO_APPROVE_ASPECTS) {
+        const value = body.data[aspect];
+        if (value !== undefined) next[aspect] = value;
+      }
+      const [after] = await tx.update(tenants).set({ autoApprove: next }).where(eq(tenants.id, id)).returning();
+      const autoApprove = resolveAutoApprove(after!.autoApprove);
       await writeAudit(
         tx,
         { tenantId: id, actorUserId: user.id },
         'tenant.listing_approval_updated',
         'tenant',
         id,
-        { autoApproveListings: before.autoApproveListings },
-        { autoApproveListings: after!.autoApproveListings },
+        { autoApprove: previous },
+        { autoApprove },
       );
-      return { autoApproveListings: after!.autoApproveListings };
+      return { autoApprove };
     });
   });
 

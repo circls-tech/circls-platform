@@ -73,6 +73,8 @@ The **Paid out** column tells you how much has already reached you; the rest is 
 
 Payouts run on the weekly cycle set out in your [Partner Terms](/terms): circls transfers your collections for the week, net of refunds and commission. Timing can shift for holidays, bank delays or a risk review, and the parts of one week's payout can go out separately — which is why the rows on this page fill in individually rather than all at once.
 
+**You get an email for every transfer.** Each time circls sends you money, your organisation is emailed a **Payout sent** notice: the amount, the bank reference, the week it is for and which events, plans and venues it covers. When a week goes out in parts, each part that sends you money gets its own email, saying how much is still to come. Bank transfers can take a working day or two to show in your account, so if one hasn't arrived after that, quote the reference from the email when you report it. See [Emails circls sends you](/help/emails) for where these emails go.
+
 So a sale you see on this page today is money owed to you now, and paid on the next cycle. If a row has been sitting on a dash far longer than that, or the two columns disagree with what reached your account, [report it from the Help Centre](/help) — the figures here are built from the same records your payouts are.
 
 ## Why a figure can be negative

@@ -111,7 +111,7 @@ From here you can:
 
 - **Change prices** on selected slots (you'll be asked to confirm). Owners and Managers only.
 - **Block or unblock** slots — applied immediately. Owners and Managers only.
-- **Take a booking** on open slots for walk-in / phone customers (reception booking). Owners, Managers and Staff.
+- **Take a booking** on open slots for walk-in / phone customers (reception booking). Owners, Managers and Staff. The form asks for the customer's name and contact: start typing either and circls offers the people your organisation has recorded before — on any court booking, event registration or membership — with their last visit beside each; pick one to fill both fields, then edit anything that has changed. A new customer is simply typed in.
 - **Cancel a booking** on a booked slot, which frees it again. A booking paid online is refunded to the customer in full; the confirmation shows the refund before you confirm. Read-only members don't get this action. See [Understanding bookings and cancellations](/help/bookings).
 
 ## Tips

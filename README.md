@@ -50,22 +50,35 @@ pnpm dev                      # Currently a stub — wired up in Phase 1
 
 ## Tenant listing auto-approval
 
-On the admin portal's tenant detail page, enable **Automatically approve this
-tenant’s listings and later changes** under **Listing approval**. The setting
-defaults to off and can only be changed by platform admins with tenant-management
-permission; changes are recorded in the tenant audit log.
+On the admin portal's tenant detail page, **Listing approval** has a checkbox per
+aspect a tenant may take live without admin review:
 
-For enabled tenants, submitting a complete event publishes it, and submitting a
-venue, arena or membership activates it. Drafts remain drafts until submitted.
-Later event change requests are validated and applied immediately, with their
-approved history retained. Existing rules still apply, including membership
-deactivation before editing and protections for sold tickets. Automatic approvals
-send neither review-queue emails nor approval-outcome emails.
+- **Venues and arenas** — a submitted venue or arena activates at once.
+- **Events** — a submitted complete event publishes at once, single dates and
+  whole recurring series alike.
+- **Memberships** — a submitted complete membership plan goes on sale at once.
+- **Changes to live listings** — event change requests are validated and applied
+  immediately (their approved history is retained), and a live arena's details
+  can be edited in place.
 
-Existing pending reviews are unchanged. Turning the setting off restores review
-for future submissions and event change requests; already-live listings stay live.
-Apply database migration `0079_tenant_auto_approve_listings` before deploying the
-updated API.
+Every aspect defaults to off and can only be changed by platform admins with
+tenant-management permission (`PATCH /v1/admin/tenants/:id/listing-approval`,
+one key per aspect to change); each change is recorded in the tenant audit log
+with every aspect before and after.
+
+Drafts remain drafts until submitted. Existing rules still apply, including
+completeness checks, membership deactivation before editing and protections for
+sold tickets. Automatic approvals send neither review-queue emails nor
+approval-outcome emails. Existing pending reviews are unchanged, and unticking an
+aspect restores review for future submissions of that kind; already-live listings
+stay live.
+
+The settings live in `tenants.auto_approve` (jsonb, a missing key means off).
+Migration `0082_tenant_auto_approve_aspects` replaces the earlier single switch,
+turning every aspect on for tenants that had it enabled. Apply it before
+deploying the updated API. It leaves the old `auto_approve_listings` column in
+place, because the API running while it applies still reads it; nothing writes
+it any more, and a later migration drops it once no deployed API selects it.
 
 ## License
 

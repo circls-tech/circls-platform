@@ -133,6 +133,8 @@ Signed someone up at the desk, over the phone, or on paper? Click **Reception** 
 - **Starts** and **Ends** — only if you want something other than the tier's normal run from today.
 - **Note** (optional, up to 1,000 characters) — anything worth remembering about this member: *paid for two months up front*, *joined with a friend*.
 
+Start typing a **name or phone number** in either field and circls offers the people your organisation has recorded before — anyone on a past court booking, event registration or membership, with their last visit beside each — so a returning customer isn't typed in again. Pick one and both fields are filled in; edit anything that has changed. It only fills the form: nothing is linked to their earlier visits, and a name nobody has used before is simply typed in as usual.
+
 They are a real member where it counts: the seat comes out of that tier's capacity, so a tier can sell out because of them, and they appear in the list marked **added by you**, with the amount, payment method and note you recorded.
 
 **They never reach a payout.** circls processed nothing, so the membership never appears in a payout and never attracts commission — whatever they paid, they paid you directly. The amount and payment method are your own record of that, for your books and for reconciling the till. The amounts are added up for you on the [Earnings](/help/earnings) page, under **Collected at your desk** beside your walk-in bookings — apart from the net payout, since circls has nothing to pay you for them. A member counts there from the day you added them and stays counted after their membership expires; cancelling them takes the amount out. Members added before this was recorded show **—** in the **Paid** column and count for nothing there.

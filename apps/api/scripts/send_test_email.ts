@@ -27,7 +27,7 @@ const { isInternalTemplateKey } = await import('../src/lib/notifications/templat
 
 const design = getEmailDesign(templateKey);
 if (!design) {
-  process.stderr.write(`No design for ${templateKey}. Designed keys: booking.confirmed, booking.cancelled, booking.refunded, partner.booking_confirmed, listing.approved, listing.rejected, admin.listing_submitted, admin.payouts_reminder, admin.org_signup\n`);
+  process.stderr.write(`No design for ${templateKey}. Designed keys: booking.confirmed, booking.cancelled, booking.refunded, partner.booking_confirmed, listing.approved, listing.rejected, partner.payout_sent, admin.listing_submitted, admin.payouts_reminder, admin.org_signup\n`);
   process.exit(2);
 }
 

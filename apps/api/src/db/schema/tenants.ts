@@ -44,6 +44,38 @@ export function resolveEmailPrefs(p: TenantEmailPrefs | null | undefined): Requi
   return { booking: p?.booking !== false, listing: p?.listing !== false };
 }
 
+/**
+ * Which of the org's submissions skip Circls review and go live at once. Set
+ * per aspect by a platform admin (PATCH /v1/admin/tenants/:id/listing-approval).
+ * A missing key means "off", so a new aspect starts in review for every org
+ * with no migration. See services/listing_review.ts (autoApproves).
+ */
+export interface TenantAutoApprove {
+  /** New venues and arenas activate when submitted. */
+  venues?: boolean;
+  /** Complete events publish when submitted (single dates and whole series). */
+  events?: boolean;
+  /** Complete membership plans activate when submitted. */
+  memberships?: boolean;
+  /** Later changes to live listings — event change requests, live arena edits
+   *  — apply immediately instead of waiting for review. */
+  changes?: boolean;
+}
+
+export type AutoApproveAspect = keyof TenantAutoApprove;
+
+export const AUTO_APPROVE_ASPECTS = ['venues', 'events', 'memberships', 'changes'] as const satisfies readonly AutoApproveAspect[];
+
+/** The org's auto-approval settings with every aspect filled in (missing = off). */
+export function resolveAutoApprove(p: TenantAutoApprove | null | undefined): Required<TenantAutoApprove> {
+  return {
+    venues: p?.venues === true,
+    events: p?.events === true,
+    memberships: p?.memberships === true,
+    changes: p?.changes === true,
+  };
+}
+
 export const tenants = pgTable('tenants', {
   id: uuidPk(),
   name: text('name').notNull(),
@@ -124,7 +156,12 @@ export const tenants = pgTable('tenants', {
    * (PATCH /v1/admin/tenants/:id/catalog).
    */
   hiddenFromCatalog: boolean('hidden_from_catalog').notNull().default(false),
-  autoApproveListings: boolean('auto_approve_listings').notNull().default(false),
+  /**
+   * Which submissions skip Circls review (admin-set; see TenantAutoApprove).
+   * Replaces `auto_approve_listings`, which stays in the table, unread, until
+   * a later migration drops it (see 0082_tenant_auto_approve_aspects.sql).
+   */
+  autoApprove: jsonb('auto_approve').$type<TenantAutoApprove>().notNull().default({}),
   /** Partner email preferences (Settings → Notifications). Owner/Manager-edited. */
   emailPrefs: jsonb('email_prefs').$type<TenantEmailPrefs>().notNull().default({}),
   createdAt: createdAt(),
