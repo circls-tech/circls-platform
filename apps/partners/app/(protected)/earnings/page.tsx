@@ -135,7 +135,9 @@ function unitsLabel(row: { units: number; bookings: number }, unit: string): str
 function currenciesOf(data: TenantEarnings): string[] {
   const seen = new Set<string>();
   for (const t of data.total) seen.add(t.currency);
-  for (const d of data.desk) seen.add(d.currency);
+  // A currency whose only desk entry adds up to nothing (members recorded as
+  // paying 0) would be a section with no figures: the desk card hides at 0.
+  for (const d of data.desk) if (d.amountMinor > 0) seen.add(d.currency);
   return [...seen].sort();
 }
 
