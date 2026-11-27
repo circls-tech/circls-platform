@@ -14,6 +14,7 @@ import { env } from './config/env.js';
 import { AppError } from './lib/errors.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
+import { phoneLoginRoutes } from './routes/phone_login.js';
 import { tenantRoutes } from './routes/tenants.js';
 import { arenaRoutes } from './routes/arenas.js';
 import { bookingRoutes } from './routes/bookings.js';
@@ -280,6 +281,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(meRoutes);
+  await app.register(phoneLoginRoutes);
   await app.register(tenantRoutes);
   await app.register(venueRoutes);
   await app.register(venueImageRoutes);

@@ -143,6 +143,32 @@ describe('envSchema production refinement', () => {
     expect(result.success && result.data.INR_PAYMENT_GATEWAY).toBe('razorpay');
   });
 
+  it('refuses MSG91 login codes in production without the key and OTP template', () => {
+    const base = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://x',
+      RAZORPAY_KEY_ID: 'key',
+      RAZORPAY_KEY_SECRET: 'secret',
+      RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+      LISTING_PREVIEW_SECRET: 'a-preview-secret-for-tests',
+      MSG91_OTP_ENABLED: 'true',
+    };
+    const missing = envSchema.safeParse(base);
+    expect(missing.success).toBe(false);
+    if (!missing.success) {
+      const paths = missing.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toEqual(expect.arrayContaining(['MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID']));
+    }
+    const ok = envSchema.safeParse({ ...base, MSG91_AUTH_KEY: 'k', MSG91_OTP_TEMPLATE_ID: 't' });
+    expect(ok.success && ok.data.MSG91_OTP_ENABLED).toBe(true);
+  });
+
+  it('leaves MSG91 login codes off by default', () => {
+    const result = envSchema.safeParse({ NODE_ENV: 'development', DATABASE_URL: 'postgres://x' });
+    expect(result.success && result.data.MSG91_OTP_ENABLED).toBe(false);
+    expect(result.success && result.data.LOGIN_OTP_DAILY_LIMIT).toBe(2000);
+  });
+
   it('allows the stub (missing razorpay keys) in development', () => {
     const result = envSchema.safeParse({
       NODE_ENV: 'development',

@@ -29,6 +29,8 @@ for (const key of [
   // team, from a test run. Tests that exercise the senders mock fetch /
   // ../config/env.js.
   'MSG91_AUTH_KEY',
+  'MSG91_OTP_TEMPLATE_ID',
+  'MSG91_OTP_ENABLED',
   'MSG91_EMAIL_FROM',
   'MSG91_EMAIL_TEMPLATE_ID',
   'RESEND_API_KEY',

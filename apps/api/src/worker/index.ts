@@ -13,6 +13,7 @@ import { runScheduleRollover } from '../services/schedule_rollover_service.js';
 import { sendAdminDailyDigest } from '../services/admin_digest_service.js';
 import { sendPayoutReminder } from '../services/payout_reminder_service.js';
 import { refreshGoogleCoords } from '../services/coords_refresh_service.js';
+import { purgeOldPhoneLoginCodes } from '../services/phone_login_service.js';
 
 /**
  * In-process pg-boss worker. One queue per scheduled job; each handler delegates
@@ -160,6 +161,15 @@ const JOBS: ScheduledJob[] = [
     run: async () => {
       const r = await sendPayoutReminder('payout_day');
       if (r.pending > 0) logger.info(r, 'admin_payout_reminder_complete');
+    },
+  },
+  {
+    // Sent login codes (phone + IP) are kept 30 days as the send log.
+    queue: 'phone-login-code-purge',
+    cron: '45 21 * * *', // 03:15 IST.
+    run: async () => {
+      const purged = await purgeOldPhoneLoginCodes();
+      if (purged > 0) logger.info({ purged }, 'phone_login_code_purge_complete');
     },
   },
 ];

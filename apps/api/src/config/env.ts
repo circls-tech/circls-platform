@@ -113,6 +113,22 @@ export const envSchema = z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // Consumer login codes for Indian (+91) numbers through MSG91 instead of
+  // Firebase phone auth (Firebase bills $0.07 per SMS to India; MSG91 a
+  // fraction of that). Off ⇒ every number signs in through Firebase, as
+  // before. On ⇒ +91 numbers get their code from POST /v1/auth/phone/start,
+  // texted with the MSG91 OTP template below (a DLT-registered template whose
+  // text holds ##OTP##); other countries stay on Firebase. Separate from
+  // MSG91_SMS_ENABLED. Without MSG91_AUTH_KEY + MSG91_OTP_TEMPLATE_ID the code
+  // is only logged (stub, for the sandbox); production refuses to boot so.
+  MSG91_OTP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  MSG91_OTP_TEMPLATE_ID: z.string().optional(),
+  // Spend ceiling: login codes sent through MSG91 per rolling 24 hours, across
+  // all numbers. Past it, new sign-ins go through Firebase until it clears.
+  LOGIN_OTP_DAILY_LIMIT: z.coerce.number().int().min(1).default(2000),
   // MSG91 Email (same account and MSG91_AUTH_KEY as SMS) sends every customer
   // and partner email once these are set; MSG91_AUTH_KEY alone sends no email.
   // Sender on a domain verified in MSG91 → Email, e.g. "Circls <no-reply@event.circls.app>".
@@ -328,6 +344,19 @@ export const envSchema = z
           path: ['CASHFREE_ENV'],
           message: 'CASHFREE_ENV must be production when Cashfree is configured in production',
         });
+      }
+      // MSG91 login codes switched on without the means to send them would log
+      // every Indian customer's code instead of texting it: nobody could sign in.
+      if (val.MSG91_OTP_ENABLED) {
+        for (const key of ['MSG91_AUTH_KEY', 'MSG91_OTP_TEMPLATE_ID'] as const) {
+          if (!val[key] || val[key].length === 0) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [key],
+              message: `${key} is required in production when MSG91_OTP_ENABLED=true`,
+            });
+          }
+        }
       }
       // Sandbox-only vars must NEVER be set in production: they silently reroute
       // auth/email to local emulators that don't exist in prod. Refuse to boot.

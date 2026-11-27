@@ -10,9 +10,12 @@ interface ApiErrorBody {
 
 export class ApiError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  /** HTTP status of the failed response. */
+  readonly status?: number;
+  constructor(code: string, message: string, status?: number) {
     super(message);
     this.code = code;
+    if (status !== undefined) this.status = status;
   }
 }
 
@@ -34,7 +37,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const body: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
     const e = (body as ApiErrorBody).error;
-    throw new ApiError(e?.code ?? 'request_failed', e?.message ?? `Request failed (${res.status})`);
+    throw new ApiError(e?.code ?? 'request_failed', e?.message ?? `Request failed (${res.status})`, res.status);
   }
   return body as T;
 }

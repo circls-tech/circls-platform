@@ -68,6 +68,10 @@ services:
       GEOCODER_PROVIDER: ${GEOCODER_PROVIDER:-stub}
       GOOGLE_MAPS_SERVER_KEY: ${GOOGLE_MAPS_SERVER_KEY:-}
       GOOGLE_MAPS_COUNTRIES: ${GOOGLE_MAPS_COUNTRIES:-}
+      # MSG91_OTP_ENABLED=true in the local .env sends Indian (+91) consumer
+      # login codes the Circls way; with no MSG91 OTP template here, each code
+      # is only logged (`login_code_stub` in the api logs), never texted.
+      MSG91_OTP_ENABLED: ${MSG91_OTP_ENABLED:-false}
     command: sh -c "pnpm --filter @circls/api db:migrate && pnpm --filter @circls/api dev"
     ports: ['8080:8080']
     volumes:
