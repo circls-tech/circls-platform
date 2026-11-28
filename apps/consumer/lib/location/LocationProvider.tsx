@@ -29,7 +29,9 @@ import { isPreviewDocument } from '@/lib/preview';
 // shown when they're outside every served city). The key bump abandons v3
 // entries, so previously-located users go through the auto-locate flow once
 // more and pick up a label instead of a bare country.
-const STORAGE_KEY = 'circls:loc:v4';
+// v5 changes no fields: v4 labels could be a street name ("8th Main Road"),
+// so the bump drops them and those users are located once more.
+const STORAGE_KEY = 'circls:loc:v5';
 /**
  * Within this distance the user is treated as "in" the nearest city, so we adopt
  * its name (and filter venues by it). Farther away we still adopt the country —
