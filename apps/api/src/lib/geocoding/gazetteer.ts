@@ -232,7 +232,7 @@ const REVERSE_CITY_KM = 120;
  * listed city regardless (coarse, but the gazetteer only spans served
  * countries, so the bucket is right whenever the user is in one).
  */
-export function reverseGazetteer(point: GeoPoint): ReversePlace | null {
+export function reverseGazetteer(point: GeoPoint, cityKm = REVERSE_CITY_KM): ReversePlace | null {
   let best: { city: string; country: CountryKey; dist: number } | null = null;
   for (const ck of ['India', 'USA'] as CountryKey[]) {
     for (const [city, pt] of Object.entries(CITIES[ck])) {
@@ -242,7 +242,7 @@ export function reverseGazetteer(point: GeoPoint): ReversePlace | null {
   }
   if (!best) return null;
   const hit = best as { city: string; country: CountryKey; dist: number };
-  return { city: hit.dist <= REVERSE_CITY_KM ? hit.city : null, country: hit.country };
+  return { city: hit.dist <= cityKm ? hit.city : null, country: hit.country };
 }
 
 /**

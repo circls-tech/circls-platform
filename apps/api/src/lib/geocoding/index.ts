@@ -137,15 +137,40 @@ class StubGeocoder implements Geocoder {
 interface PhotonFeature {
   geometry?: { coordinates?: [number, number] };
   properties?: {
+    /** What the feature is: 'house', 'street', 'locality', 'district', 'city'… */
+    type?: string;
     name?: string;
     street?: string;
     housenumber?: string;
     city?: string;
+    county?: string;
     state?: string;
     postcode?: string;
     country?: string;
     countrycode?: string;
   };
+}
+
+/** How near a gazetteer city's centre a point must be to borrow its name. */
+const PHOTON_NEAR_CITY_KM = 25;
+
+/**
+ * The city-level name for a reverse-geocoded feature — never finer. Photon
+ * returns the nearest feature, usually a street or a building, and many OSM
+ * features (much of India) carry no `city`. The feature's own `name` is then
+ * a street or a shop, so it is used only when the feature is itself a city;
+ * otherwise a gazetteer city close by, else the county.
+ */
+function cityOfFeature(
+  p: NonNullable<PhotonFeature['properties']>,
+  point: GeoPoint,
+  country: string | null,
+): string | null {
+  if (p.city) return p.city;
+  if (p.type === 'city' && p.name) return p.name;
+  const near = reverseGazetteer(point, PHOTON_NEAR_CITY_KM);
+  if (near?.city && near.country === country) return near.city;
+  return p.county ?? null;
 }
 
 class PhotonGeocoder implements Geocoder {
@@ -242,8 +267,8 @@ class PhotonGeocoder implements Geocoder {
       const [feat] = await this.request('reverse', params);
       const p = feat?.properties;
       if (!p) return null;
-      const city = p.city ?? p.name ?? null;
       const country = normalizeCountry(p.countrycode ?? p.country ?? null) ?? p.country ?? null;
+      const city = cityOfFeature(p, point, country);
       if (!city && !country) return null;
       return { city, country };
     } catch (err) {
