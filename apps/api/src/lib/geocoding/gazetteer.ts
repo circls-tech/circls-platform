@@ -226,6 +226,36 @@ function haversineKm(a: GeoPoint, b: GeoPoint): number {
  */
 const REVERSE_CITY_KM = 120;
 
+/** The gazetteer city nearest a point, with how far its centre is. */
+export interface NearestCity {
+  city: string;
+  country: CountryKey;
+  distanceKm: number;
+  /** Lowercased names the city goes by: its key plus any aliases ("bangalore"). */
+  names: string[];
+}
+
+export function nearestGazetteerCity(point: GeoPoint): NearestCity | null {
+  let best: { key: string; country: CountryKey; dist: number } | null = null;
+  for (const ck of ['India', 'USA'] as CountryKey[]) {
+    for (const [key, pt] of Object.entries(CITIES[ck])) {
+      const dist = haversineKm(point, pt);
+      if (!best || dist < best.dist) best = { key, country: ck, dist };
+    }
+  }
+  if (!best) return null;
+  const hit = best as { key: string; country: CountryKey; dist: number };
+  const aliases = Object.entries(CITY_ALIASES)
+    .filter(([, key]) => key === hit.key)
+    .map(([alias]) => alias);
+  return {
+    city: titleCase(hit.key),
+    country: hit.country,
+    distanceKm: hit.dist,
+    names: [hit.key, ...aliases],
+  };
+}
+
 /**
  * Nearest-city reverse lookup — the stub geocoder's `reverse()`. The city name
  * is included only within REVERSE_CITY_KM; the country comes from the nearest
@@ -233,16 +263,9 @@ const REVERSE_CITY_KM = 120;
  * countries, so the bucket is right whenever the user is in one).
  */
 export function reverseGazetteer(point: GeoPoint): ReversePlace | null {
-  let best: { city: string; country: CountryKey; dist: number } | null = null;
-  for (const ck of ['India', 'USA'] as CountryKey[]) {
-    for (const [city, pt] of Object.entries(CITIES[ck])) {
-      const dist = haversineKm(point, pt);
-      if (!best || dist < best.dist) best = { city: titleCase(city), country: ck, dist };
-    }
-  }
-  if (!best) return null;
-  const hit = best as { city: string; country: CountryKey; dist: number };
-  return { city: hit.dist <= REVERSE_CITY_KM ? hit.city : null, country: hit.country };
+  const hit = nearestGazetteerCity(point);
+  if (!hit) return null;
+  return { city: hit.distanceKm <= REVERSE_CITY_KM ? hit.city : null, country: hit.country };
 }
 
 /**

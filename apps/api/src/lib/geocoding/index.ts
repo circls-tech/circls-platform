@@ -20,7 +20,13 @@
  */
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
-import { lookupGazetteer, normalizeCountry, reverseGazetteer, searchGazetteer } from './gazetteer.js';
+import {
+  lookupGazetteer,
+  nearestGazetteerCity,
+  normalizeCountry,
+  reverseGazetteer,
+  searchGazetteer,
+} from './gazetteer.js';
 import { GoogleGeocoder } from './google.js';
 
 export interface GeoPoint {
@@ -137,15 +143,66 @@ class StubGeocoder implements Geocoder {
 interface PhotonFeature {
   geometry?: { coordinates?: [number, number] };
   properties?: {
+    /** What the feature is: 'house', 'street', 'locality', 'district', 'city',
+     *  'county'… Older Photon builds omit it; the OSM tag pair stands in. */
+    type?: string;
+    osm_key?: string;
+    osm_value?: string;
     name?: string;
     street?: string;
     housenumber?: string;
     city?: string;
+    county?: string;
     state?: string;
     postcode?: string;
     country?: string;
     countrycode?: string;
   };
+}
+
+/** Within this distance of a gazetteer city's centre a point is in that city. */
+const IN_CITY_KM = 10;
+/** Out to here it is too, but only when the county doesn't say otherwise. */
+const CITY_OUTSKIRTS_KM = 25;
+
+type PhotonProps = NonNullable<PhotonFeature['properties']>;
+
+/** True when the feature is a city, town or village itself — not something in one. */
+function isCityFeature(p: PhotonProps): boolean {
+  if (p.type) return p.type === 'city';
+  return p.osm_key === 'place' && ['city', 'town', 'village'].includes(p.osm_value ?? '');
+}
+
+/**
+ * The city-level name for a reverse-geocoded feature — never finer. Photon
+ * returns the nearest feature, usually a street or a building, and many OSM
+ * features (much of India) carry no `city`. The feature's own `name` is then
+ * a street or a shop, so it is used only when the feature is itself a city.
+ * Otherwise, in order:
+ *
+ *   - a gazetteer city whose centre is close: always within IN_CITY_KM, and
+ *     out to CITY_OUTSKIRTS_KM unless the county names somewhere else
+ *     ("Thane" near Mumbai is Thane; "Bangalore East" is Bengaluru);
+ *   - the county, with its state — a bare county ("Middlesex") reads as a city;
+ *   - the state.
+ */
+function cityOfFeature(p: PhotonProps, point: GeoPoint, country: string | null): string | null {
+  if (p.city) return p.city;
+  if (isCityFeature(p) && p.name) return p.name;
+  // A county feature is its own county: it carries the name, not `county`.
+  const county = p.county || (p.type === 'county' ? p.name : undefined) || null;
+  const near = nearestGazetteerCity(point);
+  if (near && near.country === country) {
+    const countyLc = county?.toLowerCase();
+    // Short aliases ("sf") would match inside unrelated words.
+    const countyFits =
+      !countyLc || near.names.some((n) => n.length >= 4 && countyLc.includes(n));
+    if (near.distanceKm <= IN_CITY_KM || (near.distanceKm <= CITY_OUTSKIRTS_KM && countyFits)) {
+      return near.city;
+    }
+  }
+  if (county) return p.state && p.state !== county ? `${county}, ${p.state}` : county;
+  return p.state || null;
 }
 
 class PhotonGeocoder implements Geocoder {
@@ -242,8 +299,8 @@ class PhotonGeocoder implements Geocoder {
       const [feat] = await this.request('reverse', params);
       const p = feat?.properties;
       if (!p) return null;
-      const city = p.city ?? p.name ?? null;
       const country = normalizeCountry(p.countrycode ?? p.country ?? null) ?? p.country ?? null;
+      const city = cityOfFeature(p, point, country);
       if (!city && !country) return null;
       return { city, country };
     } catch (err) {
