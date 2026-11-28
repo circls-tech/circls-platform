@@ -38,6 +38,8 @@ export type CheckoutItem =
       /** The event's registration questions — when present, the modal collects
        *  answers before payment. */
       questions?: PublicEventQuestion[];
+      /** The code the viewer unlocked an invite-only event with. */
+      accessCode?: string;
     })
   | (CheckoutItemBase & { kind: 'membership'; membershipId: string; membershipTierId?: string });
 

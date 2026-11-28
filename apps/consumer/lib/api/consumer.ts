@@ -119,11 +119,22 @@ export function useUpcomingEvents(limit = 50, search = '') {
 }
 
 /** A single public event (venue or standalone) by id. */
-export function useEvent(eventId: string, preview: string | null = null) {
+export function useEvent(
+  eventId: string,
+  preview: string | null = null,
+  /** Unlocks an invite-only event; without it (or with a wrong one) the event
+   *  comes back `locked: true` with no tiers. */
+  accessCode?: string,
+) {
   return useQuery({
-    queryKey: ['event', eventId, preview],
+    queryKey: ['event', eventId, preview, accessCode ?? null],
     queryFn: () =>
-      apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`, previewInit(preview)),
+      apiFetch<PublicEventWithVenue>(
+        `/v1/consumer/events/${eventId}${accessCode ? `?code=${encodeURIComponent(accessCode)}` : ''}`,
+        previewInit(preview),
+      ),
+    // Keep the teaser on screen while a code is being checked.
+    placeholderData: (prev) => prev,
     enabled: Boolean(eventId),
   });
 }
@@ -254,6 +265,8 @@ export interface BookEventInput {
   name?: string;
   contact?: string;
   couponCode?: string;
+  /** Required for invite-only (access_code) events. */
+  accessCode?: string;
   /** Answers to the event's registration questions: a string for free-text and
    *  single-choice questions, the ticked options for multi-select ones. */
   answers?: { questionId: string; answer: string | string[] }[];

@@ -40,13 +40,22 @@ import {
 } from '@/components/PostBookingRedirectEditor';
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
+import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityFromApi,
+  visibilityLabel,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
+import { EventShareLink } from '@/components/EventShareLink';
 import { EventChangeRequests } from '@/components/EventChangeRequests';
 import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { RejectionNotice } from '@/components/RejectionNotice';
 import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useTimezone } from '@/lib/timezone_context';
-import { BackLink, Button, Card, Input, StatusPill } from '@/lib/ui';
+import { BackLink, Badge, Button, Card, Input, StatusPill } from '@/lib/ui';
 
 /** Display a UTC instant in the given zone (the event's own tz, or the
  *  portal-wide viewing tz when overridden). Display only. */
@@ -154,6 +163,7 @@ export default function EventDetailPage() {
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
+  const [visibilityDraft, setVisibilityDraft] = useState<VisibilityDraft>(emptyVisibility());
 
   function startEdit() {
     if (!ev) return;
@@ -165,6 +175,7 @@ export default function EventDetailPage() {
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setRedirect(ev.postBookingRedirect ?? null);
+    setVisibilityDraft(visibilityFromApi(ev));
     setErrorMsg(null);
     setEditing(true);
   }
@@ -205,6 +216,13 @@ export default function EventDetailPage() {
       setErrorMsg('Give every choice question at least 2 options.');
       return;
     }
+    if (
+      visibilityDraft.visibility === 'access_code' &&
+      visibilityDraft.accessCode.trim().length < 4
+    ) {
+      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
       setErrorMsg('Enter a full http:// or https:// link for the after-booking step.');
       return;
@@ -222,6 +240,7 @@ export default function EventDetailPage() {
           questions: questionsToPayload(questions),
           maxPerUser: maxPerUserToPayload(maxPerUser),
           postBookingRedirect: redirectToPayload(redirect),
+          ...visibilityToPayload(visibilityDraft),
         },
       });
       setEditing(false);
@@ -255,6 +274,9 @@ export default function EventDetailPage() {
           <div className="flex items-center justify-between gap-3">
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight text-[#17151D]">{ev.name}</h1>
             <div className="flex items-center gap-2">
+              {ev.visibility !== 'public' && (
+                <Badge tone="neutral" label={visibilityLabel(ev.visibility)} />
+              )}
               <StatusPill status={ev.status} />
               {/* The event's page on the customer site, whatever its status —
                   the only way to see a draft as customers will. */}
@@ -322,6 +344,25 @@ export default function EventDetailPage() {
                       ? `${fmt(ev.startsAt, displayTz)} → ${fmt(ev.endsAt, displayTz)}`
                       : 'Dates to be set'}
                   </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                    Visibility
+                  </dt>
+                  <dd className="mt-1 text-sm text-slate-700">
+                    {visibilityLabel(ev.visibility)}
+                    {ev.visibility === 'access_code' && ev.accessCode && (
+                      <>
+                        {' · code '}
+                        <code className="select-all rounded bg-slate-50 px-1.5 py-0.5 text-xs">
+                          {ev.accessCode}
+                        </code>
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <EventShareLink eventId={ev.id} status={ev.status} visibility={ev.visibility} />
                 </div>
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
@@ -434,6 +475,8 @@ export default function EventDetailPage() {
                 qrTicketConfig={ev.qrTicketConfig}
                 postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
+                visibility={ev.visibility}
+                accessCode={ev.accessCode}
                 saving={update.isPending}
                 readOnly={!canWrite}
                 onSave={async (input) => {
@@ -491,6 +534,8 @@ export default function EventDetailPage() {
                 <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
                 <EventQuestionsEditor value={questions} onChange={setQuestions} />
+
+                <EventVisibilityField value={visibilityDraft} onChange={setVisibilityDraft} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

@@ -19,6 +19,8 @@ function event(overrides: Partial<VenueEvent> = {}): VenueEvent {
     capacity: null,
     maxPerUser: 4,
     status: 'completed',
+    visibility: 'access_code',
+    accessCode: 'CLUB-NIGHT',
     qrTicketConfig: null,
     postBookingRedirect: { url: 'https://example.com/waiver', description: null, forced: false },
     seriesId: 'series-1',
@@ -61,6 +63,7 @@ describe('duplicateDraftFromEvent', () => {
     expect(draft.description).toBe('Casual 5-a-side');
     expect(draft.maxPerUser).toBe('4');
     expect(draft.redirect).toEqual({ url: 'https://example.com/waiver', description: null, forced: false });
+    expect(draft.visibility).toEqual({ visibility: 'access_code', accessCode: 'CLUB-NIGHT' });
     expect(draft.tiers.map((t) => t.id)).toEqual([undefined, undefined]);
     expect(draft.tiers.map((t) => [t.name, t.priceRupees, t.capacity, t.qrMode])).toEqual([
       ['Gold', '500', '20', 'inherit'],

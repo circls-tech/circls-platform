@@ -58,6 +58,15 @@ import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { RejectionNotice } from '@/components/RejectionNotice';
 import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import {
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityFromApi,
+  visibilityLabel,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
+import { EventShareLink } from '@/components/EventShareLink';
+import {
   MaxPerUserField,
   maxPerUserFromApi,
   maxPerUserToPayload,
@@ -148,6 +157,7 @@ export default function OrgEventDetailPage() {
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [qrConfig, setQrConfig] = useState<QrTicketConfig | null>(null);
+  const [visibilityDraft, setVisibilityDraft] = useState<VisibilityDraft>(emptyVisibility());
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(null);
   const [redirect, setRedirect] = useState<PostBookingRedirect | null>(null);
@@ -208,6 +218,7 @@ export default function OrgEventDetailPage() {
     setTiers(ev.tiers.length > 0 ? ev.tiers.map(tierDraftFromApi) : [emptyTier()]);
     setQuestions((ev.questions ?? []).map(questionDraftFromApi));
     setQrConfig(ev.qrTicketConfig ?? null);
+    setVisibilityDraft(visibilityFromApi(ev));
     setMaxPerUser(maxPerUserFromApi(ev.maxPerUser));
     setRedirect(ev.postBookingRedirect ?? null);
     setVenueChoice(ev.venueId ?? '');
@@ -311,6 +322,13 @@ export default function OrgEventDetailPage() {
       setErrorMsg('Give every choice question at least 2 options.');
       return;
     }
+    if (
+      visibilityDraft.visibility === 'access_code' &&
+      visibilityDraft.accessCode.trim().length < 4
+    ) {
+      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      return;
+    }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
       setErrorMsg('Enter a full http:// or https:// link for the after-booking step.');
       return;
@@ -367,6 +385,7 @@ export default function OrgEventDetailPage() {
           maxPerUser: maxPerUserToPayload(maxPerUser),
           qrTicketConfig: qrConfig,
           postBookingRedirect: redirectToPayload(redirect),
+          ...visibilityToPayload(visibilityDraft),
           ...scopePatch,
         },
       });
@@ -405,6 +424,9 @@ export default function OrgEventDetailPage() {
                 <Badge tone="neutral" label={`Recurring · ${series?.events.length ?? '…'} dates`} />
               )}
               <Badge tone="neutral" label={ev.venueId ? 'Venue' : 'Standalone'} />
+              {ev.visibility !== 'public' && (
+                <Badge tone="neutral" label={visibilityLabel(ev.visibility)} />
+              )}
               <StatusPill status={ev.status} />
               {/* The event's page on the customer site, whatever its status —
                   the only way to see a draft as customers will. */}
@@ -486,6 +508,25 @@ export default function OrgEventDetailPage() {
                   <dd className="mt-1 text-sm text-slate-700">
                     {ev.description ?? <span className="text-slate-400">—</span>}
                   </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
+                    Visibility
+                  </dt>
+                  <dd className="mt-1 text-sm text-slate-700">
+                    {visibilityLabel(ev.visibility)}
+                    {ev.visibility === 'access_code' && ev.accessCode && (
+                      <>
+                        {' · code '}
+                        <code className="select-all rounded bg-slate-50 px-1.5 py-0.5 text-xs">
+                          {ev.accessCode}
+                        </code>
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <EventShareLink eventId={ev.id} status={ev.status} visibility={ev.visibility} />
                 </div>
                 <div>
                   <dt className="text-xs font-medium uppercase tracking-wide text-[#475569]">
@@ -675,6 +716,8 @@ export default function OrgEventDetailPage() {
                 qrTicketConfig={ev.qrTicketConfig}
                 postBookingRedirect={ev.postBookingRedirect}
                 questions={ev.questions}
+                visibility={ev.visibility}
+                accessCode={ev.accessCode}
                 saving={update.isPending}
                 readOnly={!canWrite}
                 onSave={async (input) => {
@@ -841,6 +884,8 @@ export default function OrgEventDetailPage() {
                 />
 
                 <EventQuestionsEditor value={questions} onChange={setQuestions} />
+
+                <EventVisibilityField value={visibilityDraft} onChange={setVisibilityDraft} />
 
                 <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

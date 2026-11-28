@@ -68,6 +68,7 @@ export function listingMetadata(card: ListingCard, origin: string): Metadata {
     title,
     description: card.description,
     alternates: { canonical: card.path },
+    ...(card.noindex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       type: 'website',
       siteName: 'circls',

@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { events, type Event, type NewEvent } from '../db/schema/events.js';
+import { events, type Event, type EventVisibility, type NewEvent } from '../db/schema/events.js';
 import { eventTicketTiers } from '../db/schema/event_ticket_tiers.js';
 import {
   isSubmittable,
@@ -238,6 +238,16 @@ export interface CreateEventInput {
   qrTicketConfig?: QrTicketConfig | null | undefined;
   /** Where to send the customer after their booking confirms (null/omitted = nowhere). */
   postBookingRedirect?: PostBookingRedirect | null | undefined;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility | undefined;
+  /** Required when visibility='access_code'; stored trimmed. */
+  accessCode?: string | null | undefined;
+}
+
+/** Trim the code; blank collapses to null so the required-check catches it. */
+function normalizeAccessCode(code: string | null | undefined): string | null {
+  const trimmed = code?.trim();
+  return trimmed ? trimmed : null;
 }
 
 /**
@@ -326,6 +336,12 @@ function validateCreateEventInput(input: CreateEventInput): void {
   if (!input.venueId && input.addressJson && !input.tzName) {
     throw new BadRequest('Org-scoped events require a timezone', 'event_tz_required');
   }
+  if (input.visibility === 'access_code' && !normalizeAccessCode(input.accessCode)) {
+    throw new BadRequest(
+      'Invite-only events need an access code',
+      'event_access_code_required',
+    );
+  }
 }
 
 /** What an event still lacks before it can go to review, by field. */
@@ -403,6 +419,8 @@ async function insertEventTx(
       qrTicketConfig: input.qrTicketConfig ?? null,
       postBookingRedirect: input.postBookingRedirect ?? null,
       seriesId,
+      visibility: input.visibility ?? 'public',
+      accessCode: normalizeAccessCode(input.accessCode),
       status: 'draft',
     })
     .returning();
@@ -418,6 +436,7 @@ async function insertEventTx(
     isStandalone,
     name: row.name,
     pricePaise: row.pricePaise,
+    visibility: row.visibility,
     ...(seriesId ? { seriesId } : {}),
   });
 
@@ -612,6 +631,11 @@ export interface UpdateEventPatch {
   postBookingRedirect?: PostBookingRedirect | null;
   /** Per-customer ticket cap for the whole event; null clears, omitted = unchanged. */
   maxPerUser?: number | null;
+  /** Consumer discovery; editable on drafts AND live events (it only gates
+   *  discovery/entry, not the approved content). */
+  visibility?: EventVisibility;
+  /** Access code for invite-only events; null clears, omitted = unchanged. */
+  accessCode?: string | null;
   /** When provided, replaces all ticket tiers (draft-only). */
   tiers?: TierInput[];
   /** When provided, replaces all registration questions (draft-only; [] clears). */
@@ -634,15 +658,51 @@ const LIVE_EDITABLE_KEYS = new Set([
   'qrTicketConfig',
   'postBookingRedirect',
   'questions',
+  'visibility',
+  'accessCode',
 ]);
+
+/**
+ * Resolve + validate the visibility/access-code portion of a patch against the
+ * event's current values. Returns the columns to set ({} = nothing to change).
+ * Throws when the resulting state would be access_code with no code.
+ */
+function resolveVisibilityPatch(
+  existing: Event,
+  patch: Pick<UpdateEventPatch, 'visibility' | 'accessCode'>,
+): Partial<NewEvent> {
+  const set: Partial<NewEvent> = {};
+  if (patch.visibility !== undefined) set.visibility = patch.visibility;
+  if (patch.accessCode !== undefined) set.accessCode = normalizeAccessCode(patch.accessCode);
+  const visibility = set.visibility ?? existing.visibility;
+  const accessCode = 'accessCode' in set ? set.accessCode : existing.accessCode;
+  if (visibility === 'access_code' && !accessCode) {
+    throw new BadRequest('Invite-only events need an access code', 'event_access_code_required');
+  }
+  return set;
+}
+
+/**
+ * An event row or patch as the audit log may keep it: the access code is
+ * left out (the log is widely readable; the code is the lock), with a flag
+ * saying whether this write changed it.
+ */
+function withoutAccessCode(
+  row: Record<string, unknown>,
+  changed?: boolean,
+): Record<string, unknown> {
+  const { accessCode: _accessCode, ...rest } = row;
+  return changed ? { ...rest, accessCodeChanged: true } : rest;
+}
 
 /**
  * Unconstrained-on-approval-free fields for a published event: the
  * per-customer ticket cap (any change — it only gates future purchases, never
  * existing tickets), increase-only tier capacity, description, QR ticket
  * config, the post-booking redirect (it only affects future bookings'
- * confirmation screens), and registration questions (replace-all, like
- * drafts). Any other field is rejected — name/window/location/tiers change only via an approved
+ * confirmation screens), registration questions (replace-all, like
+ * drafts), and visibility / access code (they gate discovery and entry, not
+ * the reviewed content). Any other field is rejected — name/window/location/tiers change only via an approved
  * change request, so the content the circls team reviewed stays controlled.
  */
 async function applyLiveSettings(
@@ -656,7 +716,7 @@ async function applyLiveSettings(
     .map(([k]) => k);
   if (disallowed.length > 0) {
     throw new Conflict(
-      `These fields need an approved change request on a live event: ${disallowed.join(', ')}. Freely editable: description, QR config, post-booking link, questions, per-customer limit, capacity increases.`,
+      `These fields need an approved change request on a live event: ${disallowed.join(', ')}. Freely editable: description, QR config, post-booking link, questions, per-customer limit, capacity increases, visibility and access code.`,
       'event_not_draft',
       { fields: disallowed },
     );
@@ -689,7 +749,7 @@ async function applyLiveSettings(
     }
   }
 
-  const set: Partial<NewEvent> = {};
+  const set: Partial<NewEvent> = resolveVisibilityPatch(existing, patch);
   if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
@@ -718,6 +778,7 @@ async function applyLiveSettings(
       ...(patch.postBookingRedirect !== undefined
         ? { postBookingRedirect: existing.postBookingRedirect }
         : {}),
+      ...(patch.visibility !== undefined ? { visibility: existing.visibility } : {}),
     },
     {
       ...(patch.maxPerUser !== undefined ? { maxPerUser: patch.maxPerUser } : {}),
@@ -728,6 +789,9 @@ async function applyLiveSettings(
         ? { postBookingRedirect: patch.postBookingRedirect }
         : {}),
       ...(patch.questions !== undefined ? { questions: patch.questions } : {}),
+      ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
+      // The code itself never lands in the audit log — only that it changed.
+      ...(patch.accessCode !== undefined ? { accessCodeChanged: true } : {}),
     },
   );
 
@@ -800,6 +864,7 @@ async function applyEventPatchTx(
   if (patch.qrTicketConfig !== undefined) set.qrTicketConfig = patch.qrTicketConfig;
   if (patch.postBookingRedirect !== undefined) set.postBookingRedirect = patch.postBookingRedirect;
   if (patch.maxPerUser !== undefined) set.maxPerUser = patch.maxPerUser;
+  Object.assign(set, resolveVisibilityPatch(existing, patch));
 
   // Resolve the post-update scope: a venue id in the patch wins, otherwise the
   // event keeps whatever scope it already has.
@@ -888,8 +953,11 @@ async function applyEventPatchTx(
     eventId,
     // Google's coordinates may only be kept 30 days; the audit log keeps
     // everything, so it records the place instead (lib/geocoding/provenance).
-    withoutGoogleCoords(existing as unknown as Record<string, unknown>),
-    withoutGoogleCoords(set as Record<string, unknown>, existing.coordsPlaceId),
+    withoutAccessCode(withoutGoogleCoords(existing as unknown as Record<string, unknown>)),
+    withoutAccessCode(
+      withoutGoogleCoords(set as Record<string, unknown>, existing.coordsPlaceId),
+      'accessCode' in set && set.accessCode !== existing.accessCode,
+    ),
   );
 
   return updated!;

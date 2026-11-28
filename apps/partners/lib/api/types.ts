@@ -719,6 +719,13 @@ export type EventStatus =
   /** Ended early by the partner: it ran, and has stopped selling. */
   | 'completed';
 
+/**
+ * Who can find/enter the event once published: `public` = normal discovery;
+ * `unlisted` = hidden from consumer listings, reachable only by direct link;
+ * `access_code` = listed as invite-only, entry gated behind `accessCode`.
+ */
+export type EventVisibility = 'public' | 'unlisted' | 'access_code';
+
 export interface VenueEvent {
   id: string;
   tenantId: string;
@@ -741,6 +748,10 @@ export interface VenueEvent {
   /** Per-customer ticket cap for the whole event (all tiers); null = no limit. */
   maxPerUser: number | null;
   status: EventStatus;
+  /** Consumer discovery/entry mode. */
+  visibility: EventVisibility;
+  /** Entry code for invite-only events; null otherwise. */
+  accessCode: string | null;
   /** QR ticket rules for registrations; null = disabled. */
   qrTicketConfig: QrTicketConfig | null;
   /** Where confirmed bookers are sent next; null = nothing shown. */

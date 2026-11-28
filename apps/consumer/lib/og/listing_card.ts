@@ -25,6 +25,9 @@ export interface ListingCard {
   pictures: string[];
   /** The listing's canonical path. */
   path: string;
+  /** Keep search engines off the page: a private-link event is found by its
+   *  link alone. */
+  noindex?: boolean;
 }
 
 function card(
@@ -52,13 +55,14 @@ function sportOf(tags: string[] | undefined): string | null {
 
 /** When, in the event's own zone (where its guests read it), and where. */
 export function eventCard(ev: PublicEventWithVenue): ListingCard {
-  return card(
+  const base = card(
     'Event',
     ev.name,
     [ev.startsAt ? formatDayAtTime(ev.startsAt, ev.locTzName) : null, ev.venueName ?? ev.locationName],
     [coverOf(ev.images), sportOf(ev.venueTags)],
     `/events/${ev.id}`,
   );
+  return ev.visibility === 'unlisted' ? { ...base, noindex: true } : base;
 }
 
 /** Where, and the sports it is for (tags are stored as typed, often lower-case). */

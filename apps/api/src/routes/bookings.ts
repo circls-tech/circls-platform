@@ -56,6 +56,9 @@ const bookEventSchema = z.object({
     )
     .min(1)
     .max(MAX_LINES_PER_EVENT_BOOKING),
+  /** Needed for an invite-only (access_code) event, unless the caller is on
+   *  the organiser's team. */
+  accessCode: z.string().trim().min(1).max(64).optional(),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -182,7 +185,12 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         issues: parsed.error.issues,
       });
     }
-    await assertEventBookable(eventId);
+    // An invite-only event needs its code here too, so this route is no way
+    // round the gate; the organiser's own team (the door desk) is exempt.
+    await assertEventBookable(eventId, {
+      accessCode: parsed.data.accessCode,
+      staffUserId: user.id,
+    });
     return bookEvent(
       eventId,
       {

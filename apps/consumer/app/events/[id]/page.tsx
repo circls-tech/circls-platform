@@ -45,7 +45,11 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // create form posts it here as they type, and nothing is fetched by id.
   const scratch = id === SCRATCH_ID;
   const scratchQ = useScratchListing<PublicEventWithVenue>(scratch, preview, 'event');
-  const eventQ = useEvent(scratch ? '' : id, preview);
+  // Invite-only events: the code the viewer entered. Set on submit — the query
+  // refetches with it and the server unlocks (or keeps `locked: true`).
+  const [codeInput, setCodeInput] = useState('');
+  const [submittedCode, setSubmittedCode] = useState<string | undefined>(undefined);
+  const eventQ = useEvent(scratch ? '' : id, preview, submittedCode);
   useItemView('event', id, !preview && !scratch);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
@@ -57,6 +61,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // Owning-org profile for the "Organised by" block; degrades to the compact
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
+  const codeRejected = Boolean(ev?.locked && submittedCode && !eventQ.isFetching);
   const [qty, setQty] = useState<Record<string, number>>({});
   // Public offers for this event (partner- and Circls-funded alike); tapping
   // one carries it into checkout pre-applied.
@@ -98,6 +103,9 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // selection behind it.
   useResumeCheckout((item, prefill) => {
     if (item.kind === 'event') {
+      // The code the event was unlocked with, so the page behind the modal
+      // comes back unlocked too.
+      if (item.accessCode) setSubmittedCode(item.accessCode);
       setQty(Object.fromEntries(item.lines.map((l) => [l.tierId, l.quantity])));
     }
     openCheckout(item, prefill);
@@ -118,6 +126,7 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
         currency,
         questions: ev.questions,
         invite: inviteForEvent(ev),
+        ...(submittedCode ? { accessCode: submittedCode } : {}),
       },
       prefill,
     );
@@ -243,7 +252,39 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
             <Card className="flex flex-col gap-4">
               {ev.description && <p className="whitespace-pre-line text-sm text-text-secondary">{ev.description}</p>}
 
-              {tiers.length === 0 ? (
+              {ev.locked ? (
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (codeInput.trim()) setSubmittedCode(codeInput.trim());
+                  }}
+                >
+                  <p className="text-sm font-semibold text-ink">This event is invite-only.</p>
+                  <p className="text-sm text-text-secondary">
+                    Enter the access code from the organiser to see tickets and book.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      placeholder="Access code"
+                      aria-label="Access code"
+                      autoComplete="off"
+                      maxLength={64}
+                      className="w-48 rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-ink placeholder:text-text-secondary"
+                    />
+                    <Button type="submit" disabled={!codeInput.trim() || eventQ.isFetching}>
+                      {eventQ.isFetching ? 'Checking…' : 'Unlock'}
+                    </Button>
+                  </div>
+                  {codeRejected && (
+                    <p role="alert" className="text-sm font-semibold text-petal-red">
+                      That code didn’t work — check it with the organiser and try again.
+                    </p>
+                  )}
+                </form>
+              ) : tiers.length === 0 ? (
                 <p className="text-sm text-text-secondary">
                   {scratch
                     ? 'Ticket tiers you add on the form appear here.'
