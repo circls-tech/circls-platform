@@ -193,6 +193,7 @@ export function CheckoutModal({ item, prefill, onSuccess, onClose }: { item: Che
           ...(contact ? { contact } : {}),
           ...(appliedCode ? { couponCode: appliedCode } : {}),
           ...(answerPayload.length > 0 ? { answers: answerPayload } : {}),
+          ...(item.accessCode ? { accessCode: item.accessCode } : {}),
         });
         // Present only on the free path; paid bookings resolve it after payment.
         setRedirect(r.postBookingRedirect ?? null);

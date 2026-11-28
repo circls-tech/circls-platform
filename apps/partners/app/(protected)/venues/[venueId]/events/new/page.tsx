@@ -16,6 +16,13 @@ import {
 } from '@/lib/events/questions';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import {
+  ACCESS_CODE_MIN_LENGTH,
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
+import {
   PostBookingRedirectEditor,
   isValidRedirectUrl,
   redirectToPayload,
@@ -74,6 +81,7 @@ interface VenueEventFields {
   questions: QuestionDraft[];
   maxPerUser: string | null;
   redirect: PostBookingRedirect | null;
+  visibility: VisibilityDraft;
   recurrence: RecurrenceValue;
 }
 
@@ -87,6 +95,7 @@ function blankVenueEvent(): VenueEventFields {
     questions: [],
     maxPerUser: null,
     redirect: null,
+    visibility: emptyVisibility(),
     recurrence: emptyRecurrence(),
   };
 }
@@ -131,6 +140,10 @@ function NewVenueEventForm() {
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(init.maxPerUser);
   const [redirect, setRedirect] = useState<PostBookingRedirect | null>(init.redirect);
+  // `??`: a form autosaved before this field existed restores without it.
+  const [visibility, setVisibility] = useState<VisibilityDraft>(
+    init.visibility ?? emptyVisibility(),
+  );
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(init.recurrence);
   const [err, setErr] = useState<string | null>(null);
@@ -146,6 +159,7 @@ function NewVenueEventForm() {
     questions,
     maxPerUser,
     redirect,
+    visibility,
     recurrence,
   });
 
@@ -182,6 +196,10 @@ function NewVenueEventForm() {
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
       setErr('Enter a full http:// or https:// link for the after-booking step.');
+      return;
+    }
+    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH) {
+      setErr('Enter an access code of at least 6 characters (or generate one).');
       return;
     }
 
@@ -226,6 +244,7 @@ function NewVenueEventForm() {
         questions: questionsToPayload(questions),
         maxPerUser: maxPerUserToPayload(maxPerUser),
         postBookingRedirect: redirectToPayload(redirect),
+        ...visibilityToPayload(visibility),
       });
       autosave.clear();
       // For a series, photos land on the first date — the other dates (and the
@@ -324,6 +343,8 @@ function NewVenueEventForm() {
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <EventQuestionsEditor value={questions} onChange={setQuestions} />
+
+          <EventVisibilityField value={visibility} onChange={setVisibility} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

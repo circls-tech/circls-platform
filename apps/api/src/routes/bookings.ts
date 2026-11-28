@@ -11,6 +11,7 @@ import {
   MAX_SLOTS_PER_BOOKING,
   MAX_TICKETS_PER_LINE,
 } from '../lib/booking_limits.js';
+import { withAccessCodeAttempt } from '../lib/access_code_attempts.js';
 import { perIdentityRateLimit } from '../lib/rate_limit.js';
 import { getArenaById } from '../services/arena_service.js';
 import { getVenueById } from '../services/venue_service.js';
@@ -56,6 +57,9 @@ const bookEventSchema = z.object({
     )
     .min(1)
     .max(MAX_LINES_PER_EVENT_BOOKING),
+  /** Needed for an invite-only (access_code) event, unless the caller is on
+   *  the organiser's team. */
+  accessCode: z.string().trim().min(1).max(64).optional(),
 });
 
 const listBookingsQuerySchema = z.object({
@@ -182,7 +186,15 @@ export const bookingRoutes: FastifyPluginAsync = async (app) => {
         issues: parsed.error.issues,
       });
     }
-    await assertEventBookable(eventId);
+    // An invite-only event needs its code here too, so this route is no way
+    // round the gate; the organiser's own team (the door desk) is exempt.
+    // Wrong codes are counted per caller per event.
+    await withAccessCodeAttempt(req, eventId, parsed.data.accessCode, () =>
+      assertEventBookable(eventId, {
+        accessCode: parsed.data.accessCode,
+        staffUserId: user.id,
+      }),
+    );
     return bookEvent(
       eventId,
       {

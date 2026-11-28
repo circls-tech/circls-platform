@@ -15,6 +15,7 @@ Want a hand? **Get help from Circls** on the **New event** page lets the Circls 
    - **Description** (optional).
    - **Starts** and **Ends** (required) — entered in the venue's timezone.
    - **Repeats** — leave on **One time**, or switch to **Repeats weekly** for a recurring event (see below).
+   - **Visibility** — who can find and enter the event on circls.app: **Public**, **Private link**, or **Access code** (see **Private and invite-only events** below). Defaults to Public.
    - **Photos** (optional) — add up to 12 photos right on the create form; they upload automatically when the event is created, and the first one becomes the cover. If one fails to upload, the event is still created: the page says so and links to it, where you can add the photo again. Previews show the listing crop; you can reorder them and adjust each crop from the **Photos** section once the event exists.
 4. Click **Save draft**. Only the **name** is needed to save — the dates, the location and the ticket tiers can follow.
 
@@ -26,7 +27,7 @@ The event is created as a **draft** and you're returned to the Events list. A dr
 
 ## Duplicating an event
 
-Running the same event again? Open it and click **Duplicate** next to **Preview** — it works for any event, including ended, cancelled and archived ones. The create form opens with the original's details filled in: where it happens, name, description, ticket tiers (per-tier QR rules included), registration questions, the per-customer ticket limit, QR entry rules and the after-booking link.
+Running the same event again? Open it and click **Duplicate** next to **Preview** — it works for any event, including ended, cancelled and archived ones. The create form opens with the original's details filled in: where it happens, name, description, ticket tiers (per-tier QR rules included), registration questions, the per-customer ticket limit, QR entry rules, the after-booking link, and the visibility (with its access code).
 
 Three things are **not** copied, so set them on the form:
 
@@ -60,6 +61,20 @@ Open **Advanced settings** under the weekly options to fine-tune individual date
 Every date of the series shows on the event detail page under **Series dates**, with links to each one. From there (or from the Events list) you can **submit all dates for review at once** or **cancel the entire series**; the circls team likewise approves or rejects the whole series in one decision. Individual dates can still be edited (while drafts, or after a rejection) or cancelled on their own pages.
 
 Photos are shared across the series: upload them once (on the create form or on any date's page) and every date — and the consumer listing — uses the same gallery. Reordering photos or adjusting a crop therefore changes what every date in the series shows.
+
+## Private and invite-only events
+
+Every event has a **Visibility** setting that controls who can find and enter it on circls.app once it's published:
+
+- **Public** (default) — anyone can find the event by browsing circls.app and book it.
+- **Private link** — the event is **hidden from every circls.app listing** (the events feed, search and your venue's page). It's only reachable through its direct link, which you'll find on the event's detail page under **Event link** — copy it and send it to your invitees. Anyone with the link can book.
+- **Access code** — the event **appears in listings with an "Invite only" badge**, but ticket tiers, registration questions and booking stay locked until the customer enters your **access code** on the event page. Set the code yourself (6–64 characters, not case-sensitive) or click **Generate** for one. The code is shown on the event's detail page — share it with your invitees along with the event link. The code is checked again at booking time, so it can't be bypassed. Anyone who enters several wrong codes in a row has to wait about 15 minutes before trying again, so pass the code on exactly as shown. If you later switch the event to Public or Private link the code is discarded — switching back to Access code needs a new one. Your own team doesn't need it to add a registration at the door.
+
+Notes:
+
+- All three visibilities go through the normal review flow — a private-link or access-code event still needs circls approval before its link works.
+- For a recurring event, the visibility (and access code) you pick applies to **every date of the series**.
+- Unlike most fields, **visibility and the access code stay editable after the event is published** (see **Live settings** below) — so you can take a public event private, change a leaked code, or open an invite-only event up to everyone without going through review again.
 
 ## Ticket tiers
 
@@ -99,6 +114,7 @@ Once the event is **published**, its detail page shows a **Live settings** card 
 - **Registration questions** — add, edit, remove, or reorder. Answers people already gave are kept under the question's old wording, so if you edit a question mid-event, the registrations CSV shows the old and new versions as **two separate columns**.
 - **QR ticket rules** — event-level QR settings; changes only apply to future registrations, passes customers already hold are never changed.
 - **After booking** — the link customers are sent to once they've booked (see **Sending bookers to a next step** below). Changing it applies to new bookings; people who already booked keep seeing the link that was set when they booked, on their booking page.
+- **Visibility and access code** — switch between Public, Private link and Access code, or change the code, at any time. This only decides who can find and book from now on — tickets people already hold are unaffected.
 
 The remaining fields — **name, date & time, location, and ticket tiers** — change only through an approved change request, described next.
 
@@ -197,7 +213,7 @@ passes customers already hold are never changed.
 | --- | --- |
 | **draft** | Created but not yet submitted. Fully editable, including ticket tiers. Only you can see it. |
 | **pending_review** | Submitted and awaiting the circls team's approval. |
-| **published** | Approved and live — visible to consumers, who can register. Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
+| **published** | Approved and live — consumers can register. How they find it depends on the event's **visibility** (public, private link, or access code). Live settings stay freely editable; name/time/location/tier changes need an approved change request. |
 | **cancelled** | Cancelled by you or by circls. Read-only. |
 | **rejected** | Circls asked for changes. Editable like a draft — fix it and **Submit again**. Not visible to consumers. |
 | **completed** | Ended by you. The event has stopped selling. Read-only, but reopenable while its end time is still ahead. |
@@ -216,7 +232,7 @@ Open an event to see its detail page. What you can do depends on its status:
 
 - **Draft** — click **Edit** to change any field (name, description, start/end — the dates may stay empty until you have them). You can also add, edit, or remove ticket tiers. The page says what is **still needed** before review: a start and end, a venue or address, and at least one ticket tier. Once nothing is missing, click **Submit for review**: the customer-site preview opens so you can check the page, and you confirm the submission from there. **Cancel** drops the event.
 - **Pending review** — the event and its ticket tiers are locked for editing. You can still **Cancel event**.
-- **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers. Everyone holding a ticket is emailed that it's off — their tickets are not refunded automatically, so refund each registration yourself (see [Emails circls sends you](/help/emails)).
+- **Published** — the **Live settings** card stays freely editable (capacity increases, per-customer limit, description, registration questions, QR rules, visibility and access code), and the **Request changes** card sends name/date/location/tier changes to circls for approval — see above. You can **Cancel event** at any time; cancelling a published event takes it down for consumers. Everyone holding a ticket is emailed that it's off — their tickets are not refunded automatically, so refund each registration yourself (see [Emails circls sends you](/help/emails)).
 - **Rejected** — Circls asked for changes, and the page shows their reason (when they gave one) above the details. The event is editable exactly like a draft: click **Edit**, fix what was asked (any field, tiers and questions included), save, then click **Submit again** — the customer-site preview opens first, and you confirm from there. It goes back to **pending review** and into the Circls review queue, marked as a resubmission; customers don't see it until Circls approves it. For a recurring event, a rejection covers every date, and **Submit all dates again** under **Series dates** sends them all back together. You don't need to duplicate a rejected event.
 - **Cancelled** or **ended** — read-only.
 

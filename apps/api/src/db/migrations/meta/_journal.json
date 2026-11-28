@@ -575,6 +575,13 @@
       "when": 1785706500000,
       "tag": "0083_member_desk_payment",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1785786600000,
+      "tag": "0085_event_visibility",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { apiFetch } from './client';
 import type {
   EventBooking,
   EventQuestion,
+  EventVisibility,
   PostBookingRedirect,
   QrTicketConfig,
   VenueEvent,
@@ -108,6 +109,10 @@ export interface CreateTenantEventInput {
   qrTicketConfig?: QrTicketConfig | null;
   /** Where confirmed bookers are sent next; null/omitted = nothing shown. */
   postBookingRedirect?: PostBookingRedirect | null;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility;
+  /** Required when visibility is 'access_code'. */
+  accessCode?: string | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -209,6 +214,10 @@ export interface CreateEventInput {
   qrTicketConfig?: QrTicketConfig | null;
   /** Where confirmed bookers are sent next; null/omitted = nothing shown. */
   postBookingRedirect?: PostBookingRedirect | null;
+  /** Consumer discovery: public (default) / unlisted / access_code. */
+  visibility?: EventVisibility;
+  /** Required when visibility is 'access_code'. */
+  accessCode?: string | null;
   /** 2+ dates makes this a recurring series (one draft event per date). */
   occurrences?: OccurrenceInput[];
 }
@@ -250,6 +259,10 @@ export interface UpdateEventInput {
   qrTicketConfig?: QrTicketConfig | null;
   /** Post-booking link; null = remove it. Omit to leave unchanged. */
   postBookingRedirect?: PostBookingRedirect | null;
+  /** Consumer discovery — editable on drafts AND published events. */
+  visibility?: EventVisibility;
+  /** Access code for invite-only events; null clears, omit to leave unchanged. */
+  accessCode?: string | null;
   /** Published-only: raise tiers' capacity by id (null = unlimited). The API
    *  rejects decreases (`event_capacity_decrease`). */
   tierCapacities?: { tierId: string; capacity: number | null }[];

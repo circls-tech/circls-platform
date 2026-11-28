@@ -1,5 +1,6 @@
 import { emptyTier, tierDraftFromApi, type TierDraft } from '@/components/TiersEditor';
 import { maxPerUserFromApi } from '@/components/MaxPerUserField';
+import { visibilityFromApi, type VisibilityDraft } from '@/components/EventVisibilityField';
 import type { PostBookingRedirect, QrTicketConfig, VenueEvent } from '@/lib/api/types';
 import type { PinCoords } from '@/lib/map_view';
 import { questionDraftFromApi, type QuestionDraft } from './questions';
@@ -62,6 +63,7 @@ export interface DuplicateDraft {
   maxPerUser: string | null;
   qrConfig: QrTicketConfig | null;
   redirect: PostBookingRedirect | null;
+  visibility: VisibilityDraft;
 }
 
 /**
@@ -86,5 +88,7 @@ export function duplicateDraftFromEvent(source: VenueEvent): DuplicateDraft {
     maxPerUser: maxPerUserFromApi(source.maxPerUser),
     qrConfig: source.qrTicketConfig,
     redirect: source.postBookingRedirect,
+    // A rerun of a private event stays private, on the same code.
+    visibility: visibilityFromApi(source),
   };
 }

@@ -1,7 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import type { EventQuestion, EventTier, PostBookingRedirect, QrTicketConfig } from '@/lib/api/types';
+import type {
+  EventQuestion,
+  EventTier,
+  EventVisibility,
+  PostBookingRedirect,
+  QrTicketConfig,
+} from '@/lib/api/types';
 import type { UpdateEventInput } from '@/lib/api/events';
 import { Button, Card, Input } from '@/lib/ui';
 import { MaxPerUserField, maxPerUserFromApi, maxPerUserToPayload } from './MaxPerUserField';
@@ -19,14 +25,22 @@ import {
   redirectToPayload,
   sameRedirect,
 } from './PostBookingRedirectEditor';
+import {
+  ACCESS_CODE_MIN_LENGTH,
+  EventVisibilityField,
+  visibilityFromApi,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from './EventVisibilityField';
 
 /**
  * The settings a PUBLISHED event may still change freely (no circls review):
  * tier capacity (increase only — higher, or blank for unlimited; the API
  * rejects decreases so tickets already sold are never invalidated), the
  * per-customer ticket limit, the description, QR ticket rules, the
- * post-booking link, and registration questions. Sends only the fields that
- * changed. Name, date/time,
+ * post-booking link, registration questions, and visibility / access code
+ * (they gate discovery and entry, not the approved content). Sends only the
+ * fields that changed. Name, date/time,
  * location, and tier structure go through a change request instead (see
  * EventChangeRequests).
  */
@@ -37,6 +51,8 @@ export function LiveEventSettings({
   qrTicketConfig,
   postBookingRedirect,
   questions,
+  visibility,
+  accessCode,
   onSave,
   saving,
   readOnly = false,
@@ -47,6 +63,8 @@ export function LiveEventSettings({
   qrTicketConfig: QrTicketConfig | null;
   postBookingRedirect: PostBookingRedirect | null;
   questions: EventQuestion[];
+  visibility: EventVisibility;
+  accessCode: string | null;
   onSave: (
     input: Pick<
       UpdateEventInput,
@@ -56,6 +74,8 @@ export function LiveEventSettings({
       | 'qrTicketConfig'
       | 'postBookingRedirect'
       | 'questions'
+      | 'visibility'
+      | 'accessCode'
     >,
   ) => Promise<void>;
   saving: boolean;
@@ -72,6 +92,9 @@ export function LiveEventSettings({
   const [redirectDraft, setRedirectDraft] = useState<PostBookingRedirect | null>(postBookingRedirect);
   const [questionDrafts, setQuestionDrafts] = useState<QuestionDraft[]>(() =>
     questions.map(questionDraftFromApi),
+  );
+  const [visDraft, setVisDraft] = useState<VisibilityDraft>(() =>
+    visibilityFromApi({ visibility, accessCode }),
   );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -91,13 +114,16 @@ export function LiveEventSettings({
   const questionsChanged =
     JSON.stringify(questionsToPayload(questionDrafts)) !==
     JSON.stringify(questionsToPayload(questions.map(questionDraftFromApi)));
+  const visPayload = visibilityToPayload(visDraft);
+  const visChanged = visPayload.visibility !== visibility || visPayload.accessCode !== accessCode;
   const dirty =
     capacityChanges.length > 0 ||
     limitChanged ||
     descriptionChanged ||
     qrChanged ||
     redirectChanged ||
-    questionsChanged;
+    questionsChanged ||
+    visChanged;
 
   async function save() {
     setError(null);
@@ -110,6 +136,10 @@ export function LiveEventSettings({
       setError('Enter a full http:// or https:// link for the after-booking step.');
       return;
     }
+    if (visChanged && visDraft.visibility === 'access_code' && visDraft.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH) {
+      setError('Enter an access code of at least 6 characters (or generate one).');
+      return;
+    }
     try {
       await onSave({
         ...(limitChanged ? { maxPerUser: maxPerUserToPayload(limit) } : {}),
@@ -118,6 +148,7 @@ export function LiveEventSettings({
         ...(qrChanged ? { qrTicketConfig: qrDraft } : {}),
         ...(redirectChanged ? { postBookingRedirect: redirectToPayload(redirectDraft) } : {}),
         ...(questionsChanged ? { questions: questionsToPayload(questionDrafts) } : {}),
+        ...(visChanged ? visPayload : {}),
       });
       setSaved(true);
     } catch (e) {
@@ -136,7 +167,8 @@ export function LiveEventSettings({
           These can change while the event is live, without review. Capacity can only go up (or blank
           for unlimited) and the per-customer limit only affects future purchases — tickets people
           already hold are never touched. Editing a question mid-event keeps the answers people
-          already gave under the old wording. A changed after-booking link applies
+          already gave under the old wording. Visibility and the access code only decide who can
+          find and book from now on. A changed after-booking link applies
           to new bookings; people who already booked keep seeing it on their
           booking page.
         </p>
@@ -186,6 +218,8 @@ export function LiveEventSettings({
         <QrTicketConfigEditor value={qrDraft} onChange={setQrDraft} itemNoun="event" />
 
         <PostBookingRedirectEditor value={redirectDraft} onChange={setRedirectDraft} />
+
+        <EventVisibilityField value={visDraft} onChange={setVisDraft} />
 
         {error && (
           <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">

@@ -27,6 +27,13 @@ import { duplicateDraftFromEvent, type DuplicateDraft } from '@/lib/events/dupli
 import { useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import { RestoredFormNotice } from '@/components/RestoredFormNotice';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
+import {
+  ACCESS_CODE_MIN_LENGTH,
+  EventVisibilityField,
+  emptyVisibility,
+  visibilityToPayload,
+  type VisibilityDraft,
+} from '@/components/EventVisibilityField';
 import { PendingPhotosPicker, type PendingPhoto } from '@/components/PendingPhotos';
 import { RoleNotice } from '@/components/RoleNotice';
 import {
@@ -70,6 +77,7 @@ interface EventFields {
   qrConfig: QrTicketConfig | null;
   maxPerUser: string | null;
   redirect: PostBookingRedirect | null;
+  visibility: VisibilityDraft;
   recurrence: RecurrenceValue;
   line1: string;
   line2: string;
@@ -95,6 +103,7 @@ function eventFieldsFrom(seed: DuplicateDraft | null, startAt: EventStartAt | un
     qrConfig: seed?.qrConfig ?? null,
     maxPerUser: seed?.maxPerUser ?? null,
     redirect: seed?.redirect ?? null,
+    visibility: seed?.visibility ?? emptyVisibility(),
     recurrence: emptyRecurrence(),
     line1: seed?.address.line1 ?? '',
     line2: seed?.address.line2 ?? '',
@@ -168,6 +177,10 @@ export function NewEventForm({
   // null = no per-customer ticket limit; else the count input's string value.
   const [maxPerUser, setMaxPerUser] = useState<string | null>(initial.maxPerUser);
   const [redirect, setRedirect] = useState<PostBookingRedirect | null>(initial.redirect);
+  // `??`: a form autosaved before this field existed restores without it.
+  const [visibility, setVisibility] = useState<VisibilityDraft>(
+    initial.visibility ?? emptyVisibility(),
+  );
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceValue>(initial.recurrence);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
@@ -197,6 +210,7 @@ export function NewEventForm({
     qrConfig,
     maxPerUser,
     redirect,
+    visibility,
     recurrence,
     line1,
     line2,
@@ -271,6 +285,10 @@ export function NewEventForm({
       setErr('Enter a full http:// or https:// link for the after-booking step.');
       return;
     }
+    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH) {
+      setErr('Enter an access code of at least 6 characters (or generate one).');
+      return;
+    }
 
     const isWeekly = recurrence.mode === 'weekly';
     const occurrences = isWeekly
@@ -309,6 +327,7 @@ export function NewEventForm({
       maxPerUser: maxPerUserToPayload(maxPerUser),
       qrTicketConfig: qrConfig,
       postBookingRedirect: redirectToPayload(redirect),
+      ...visibilityToPayload(visibility),
     };
 
     let input: CreateTenantEventInput;
@@ -480,6 +499,8 @@ export function NewEventForm({
           <TiersEditor value={tiers} onChange={setTiers} currency={currency} />
 
           <EventQuestionsEditor value={questions} onChange={setQuestions} />
+
+          <EventVisibilityField value={visibility} onChange={setVisibility} />
 
           <MaxPerUserField value={maxPerUser} onChange={setMaxPerUser} />
 

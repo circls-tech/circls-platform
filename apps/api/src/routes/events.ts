@@ -143,6 +143,17 @@ const occurrencesField = z.array(occurrenceSchema).min(2).max(MAX_SERIES_OCCURRE
 // Per-customer ticket cap for the whole event (all tiers); null = no limit.
 const maxPerUserField = z.number().int().min(1).nullable().optional();
 
+// Consumer discovery: public (default) / unlisted (direct link only) /
+// access_code (listed, but entry gated behind `accessCode`).
+const visibilityField = z.enum(['public', 'unlisted', 'access_code']).optional();
+const accessCodeField = z.string().trim().min(6).max(64).nullable().optional();
+
+/** access_code events must carry a code in the same payload. */
+function visibilityNeedsCode(d: { visibility?: string | undefined; accessCode?: string | null | undefined }) {
+  return d.visibility !== 'access_code' || Boolean(d.accessCode);
+}
+const NEEDS_CODE_MSG = 'Invite-only (access code) events require accessCode';
+
 const createEventSchema = z
   .object({
     name: eventNameField(200),
@@ -154,9 +165,12 @@ const createEventSchema = z
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     postBookingRedirect: postBookingRedirectSchema.optional(),
+    visibility: visibilityField,
+    accessCode: accessCodeField,
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
+  .refine(visibilityNeedsCode, { message: NEEDS_CODE_MSG })
   // A one-off draft may be saved without dates (submission requires them);
   // one date without the other is a slip, not a draft.
   .refine((d) => d.occurrences !== undefined || Boolean(d.startsAt) === Boolean(d.endsAt), {
@@ -183,9 +197,12 @@ const createTenantEventSchema = z
     maxPerUser: maxPerUserField,
     qrTicketConfig: qrTicketConfigSchema.optional(),
     postBookingRedirect: postBookingRedirectSchema.optional(),
+    visibility: visibilityField,
+    accessCode: accessCodeField,
     /** ≥2 dates makes this a recurring series; omit for a one-off event. */
     occurrences: occurrencesField.optional(),
   })
+  .refine(visibilityNeedsCode, { message: NEEDS_CODE_MSG })
   .refine((d) => d.occurrences !== undefined || Boolean(d.startsAt) === Boolean(d.endsAt), {
     message: 'Provide both startsAt and endsAt, or neither for a draft',
   })
@@ -221,6 +238,10 @@ const updateEventSchema = z.object({
   maxPerUser: maxPerUserField,
   qrTicketConfig: qrTicketConfigSchema.optional(),
   postBookingRedirect: postBookingRedirectSchema.optional(),
+  // Visibility/access code are editable on drafts AND live events (the service
+  // validates that access_code events always end up with a code).
+  visibility: visibilityField,
+  accessCode: accessCodeField,
   // Published-only: raise individual tiers' capacity by id (null = unlimited).
   // The service rejects decreases and any use on drafts.
   tierCapacities: z
@@ -376,6 +397,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       tiers: parsed.data.tiers.map(tierToInput),
       questions: parsed.data.questions ?? [],
       maxPerUser: parsed.data.maxPerUser ?? null,
+      visibility: parsed.data.visibility,
+      accessCode: parsed.data.accessCode,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -455,6 +478,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
       tiers: parsed.data.tiers.map(tierToInput),
       questions: parsed.data.questions ?? [],
       maxPerUser: parsed.data.maxPerUser ?? null,
+      visibility: parsed.data.visibility,
+      accessCode: parsed.data.accessCode,
       ...(parsed.data.qrTicketConfig !== undefined
         ? { qrTicketConfig: toQrTicketConfig(parsed.data.qrTicketConfig) }
         : {}),
@@ -492,6 +517,8 @@ export const eventRoutes: FastifyPluginAsync = async (app) => {
     if (parsed.data.tiers !== undefined) patch.tiers = parsed.data.tiers.map(tierToInput);
     if (parsed.data.questions !== undefined) patch.questions = parsed.data.questions;
     if (parsed.data.maxPerUser !== undefined) patch.maxPerUser = parsed.data.maxPerUser;
+    if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
+    if (parsed.data.accessCode !== undefined) patch.accessCode = parsed.data.accessCode;
     if (parsed.data.tierCapacities !== undefined) patch.tierCapacities = parsed.data.tierCapacities;
     if (parsed.data.qrTicketConfig !== undefined)
       patch.qrTicketConfig = toQrTicketConfig(parsed.data.qrTicketConfig);

@@ -36,6 +36,16 @@ export const eventStatus = pgEnum('event_status', [
   'completed',
 ]);
 
+// Who can find/enter the event once published: `public` = normal discovery;
+// `unlisted` = hidden from all consumer listings, reachable only by direct
+// link; `access_code` = listed (badged "invite only") but tiers/booking stay
+// locked until the consumer presents the event's access code.
+export const eventVisibility = pgEnum('event_visibility', [
+  'public',
+  'unlisted',
+  'access_code',
+]);
+
 export const events = pgTable('events', {
   id: uuidPk(),
   tenantId: uuid('tenant_id')
@@ -82,6 +92,11 @@ export const events = pgTable('events', {
   partnerCommissionBps: integer('partner_commission_bps'),
   consumerCommissionBps: integer('consumer_commission_bps'),
   advancePayoutBps: integer('advance_payout_bps'),
+  visibility: eventVisibility('visibility').notNull().default('public'),
+  /** Entry code for `visibility='access_code'` events (compared trimmed,
+   *  case-insensitively). Partner-visible; NEVER included in consumer payloads.
+   *  DB CHECK `events_access_code_chk` requires it for access_code events. */
+  accessCode: text('access_code'),
   status: eventStatus('status').notNull().default('draft'),
   /**
    * Partner-side shelving: non-null hides the event from their default list.
@@ -102,3 +117,4 @@ export const events = pgTable('events', {
 
 export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
+export type EventVisibility = (typeof eventVisibility.enumValues)[number];

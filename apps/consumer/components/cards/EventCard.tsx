@@ -40,12 +40,19 @@ export function EventCard({ event, className = '' }: { event: PublicEventWithVen
           {event.locationName} · {formatTime(event.startsAt)}
           {(event.seriesCount ?? 1) > 1 && ' · repeats'}
         </p>
-        <p className="mt-2 text-sm font-semibold text-ink">{formatPaise(event.pricePaise, currency)}</p>
+        <p className="mt-2 text-sm font-semibold text-ink">
+          {event.locked ? 'Invite only' : formatPaise(event.pricePaise, currency)}
+        </p>
       </div>
     </Link>
       {/* Top-right corner: the dates badge, then share and save. See chips.ts
           for why this row sits outside the link. */}
       <div className={cardChipRowClass}>
+        {event.visibility === 'access_code' && (
+          <div className="rounded-lg border-[2px] border-ink bg-ink px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-offset-sm">
+            Invite only
+          </div>
+        )}
         {(event.seriesCount ?? 1) > 1 && (
           <div className="rounded-lg border-[2px] border-ink bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink shadow-offset-sm">
             {event.seriesCount} dates

@@ -119,14 +119,37 @@ export function useUpcomingEvents(limit = 50, search = '') {
 }
 
 /** A single public event (venue or standalone) by id. */
-export function useEvent(eventId: string, preview: string | null = null) {
+export function useEvent(
+  eventId: string,
+  preview: string | null = null,
+  /** Unlocks an invite-only event; without it (or with a wrong one) the event
+   *  comes back `locked: true` with no tiers. */
+  accessCode?: string,
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery({
-    queryKey: ['event', eventId, preview],
-    queryFn: () =>
-      apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`, previewInit(preview)),
-    enabled: Boolean(eventId),
+    queryKey: ['event', eventId, preview, accessCode ?? null],
+    queryFn: () => {
+      const init = previewInit(preview);
+      return apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          // A header, not a query string, so the code stays out of request
+          // logs; URI-encoded because a header value must be ASCII.
+          ...(accessCode ? { [ACCESS_CODE_HEADER]: encodeURIComponent(accessCode) } : {}),
+        },
+      });
+    },
+    // A code check is one deliberate try: retrying a refusal (too many wrong
+    // codes) or a failure only delays telling the visitor.
+    ...(accessCode ? { retry: false } : {}),
+    enabled: Boolean(eventId) && (opts.enabled ?? true),
   });
 }
+
+/** The request header the API reads an invite-only event's access code from. */
+export const ACCESS_CODE_HEADER = 'X-Circls-Access-Code';
 
 /**
  * All active memberships across venues.
@@ -254,6 +277,8 @@ export interface BookEventInput {
   name?: string;
   contact?: string;
   couponCode?: string;
+  /** Required for invite-only (access_code) events. */
+  accessCode?: string;
   /** Answers to the event's registration questions: a string for free-text and
    *  single-choice questions, the ticked options for multi-select ones. */
   answers?: { questionId: string; answer: string | string[] }[];
