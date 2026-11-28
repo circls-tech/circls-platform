@@ -28,6 +28,7 @@ import { useAutosave, useFormAutosave } from '@/lib/use_form_autosave';
 import { RestoredFormNotice } from '@/components/RestoredFormNotice';
 import { MaxPerUserField, maxPerUserToPayload } from '@/components/MaxPerUserField';
 import {
+  ACCESS_CODE_MIN_LENGTH,
   EventVisibilityField,
   emptyVisibility,
   visibilityToPayload,
@@ -284,8 +285,8 @@ export function NewEventForm({
       setErr('Enter a full http:// or https:// link for the after-booking step.');
       return;
     }
-    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < 4) {
-      setErr('Enter an access code of at least 4 characters (or generate one).');
+    if (visibility.visibility === 'access_code' && visibility.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH) {
+      setErr('Enter an access code of at least 6 characters (or generate one).');
       return;
     }
 

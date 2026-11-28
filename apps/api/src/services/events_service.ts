@@ -420,7 +420,8 @@ async function insertEventTx(
       postBookingRedirect: input.postBookingRedirect ?? null,
       seriesId,
       visibility: input.visibility ?? 'public',
-      accessCode: normalizeAccessCode(input.accessCode),
+      // The code only exists while the event is access_code.
+      accessCode: input.visibility === 'access_code' ? normalizeAccessCode(input.accessCode) : null,
       status: 'draft',
     })
     .returning();
@@ -665,7 +666,10 @@ const LIVE_EDITABLE_KEYS = new Set([
 /**
  * Resolve + validate the visibility/access-code portion of a patch against the
  * event's current values. Returns the columns to set ({} = nothing to change).
- * Throws when the resulting state would be access_code with no code.
+ * Throws when the resulting state would be access_code with no code. The code
+ * only exists while the event is access_code: any other visibility clears it,
+ * so switching back later needs a fresh code rather than quietly reviving one
+ * that may have been shared and retired.
  */
 function resolveVisibilityPatch(
   existing: Event,
@@ -675,8 +679,13 @@ function resolveVisibilityPatch(
   if (patch.visibility !== undefined) set.visibility = patch.visibility;
   if (patch.accessCode !== undefined) set.accessCode = normalizeAccessCode(patch.accessCode);
   const visibility = set.visibility ?? existing.visibility;
+  if (visibility !== 'access_code') {
+    if (existing.accessCode != null || set.accessCode != null) set.accessCode = null;
+    else delete set.accessCode;
+    return set;
+  }
   const accessCode = 'accessCode' in set ? set.accessCode : existing.accessCode;
-  if (visibility === 'access_code' && !accessCode) {
+  if (!accessCode) {
     throw new BadRequest('Invite-only events need an access code', 'event_access_code_required');
   }
   return set;
@@ -791,7 +800,9 @@ async function applyLiveSettings(
       ...(patch.questions !== undefined ? { questions: patch.questions } : {}),
       ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
       // The code itself never lands in the audit log — only that it changed.
-      ...(patch.accessCode !== undefined ? { accessCodeChanged: true } : {}),
+      ...('accessCode' in set && set.accessCode !== existing.accessCode
+        ? { accessCodeChanged: true }
+        : {}),
     },
   );
 

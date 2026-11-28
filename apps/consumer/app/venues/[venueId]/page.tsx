@@ -677,11 +677,20 @@ function EventCard({
   /** In preview the venue's events are not public yet, so there is nothing shareable. */
   preview: boolean;
 }) {
-  const isFree = event.pricePaise === 0;
+  // Invite-only: the price and tickets stay behind the organiser's code.
+  const locked = Boolean(event.locked);
+  const isFree = !locked && event.pricePaise === 0;
   return (
     <Card className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
+        <div className="min-w-0">
+          {locked && (
+            <span className="mb-1 inline-block rounded-lg border-[2px] border-ink bg-ink px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+              Invite only
+            </span>
+          )}
+          <h3 className="font-display text-lg font-extrabold text-ink">{event.name}</h3>
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           {!preview && (
             <ShareButton title={event.name} text={formatDateTime(event.startsAt)} itemType="event" itemId={event.id} />
@@ -699,13 +708,17 @@ function EventCard({
         <p className="mt-2 text-sm text-text-secondary line-clamp-3">{event.description}</p>
       )}
       <div className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
-        <span className="font-medium text-ink">{formatPaise(event.pricePaise, currency)}</span>
+        <span className="font-medium text-ink">
+          {locked ? 'Invite only' : formatPaise(event.pricePaise, currency)}
+        </span>
         {event.capacity != null && <span>· {event.capacity} seats</span>}
       </div>
       <div className="mt-auto pt-4">
         {/* Tickets are tier-based; pick quantities on the event detail page. */}
         <Link href={`/events/${event.id}`}>
-          <Button size="sm">{isFree ? 'View & register' : 'View tickets'}</Button>
+          <Button size="sm">
+            {locked ? 'Enter access code' : isFree ? 'View & register' : 'View tickets'}
+          </Button>
         </Link>
       </div>
     </Card>

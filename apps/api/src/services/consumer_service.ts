@@ -357,7 +357,7 @@ export async function listPublicArenaSlots(
 export async function listPublicEvents(
   venueId: string,
   opts: PublicReadOpts = {},
-): Promise<Array<PublicEventColumns & { seriesCount: number }>> {
+): Promise<Array<PublicEventColumns & { seriesCount: number; locked: boolean }>> {
   await assertVenueVisible(venueId, opts);
   const rows = await db
     .select()
@@ -375,7 +375,21 @@ export async function listPublicEvents(
     .orderBy(sql`${events.startsAt} asc`);
   // Group on the full rows (grouping reads id/seriesId), then strip — this is
   // a public, unauthenticated endpoint, so the raw row must not go out.
-  return groupBySeries(rows, (e) => e).map(toPublicEventColumns);
+  // A list never carries a code, so an invite-only event is always locked here.
+  return groupBySeries(rows, (e) => e).map((e) => lockedColumns(toPublicEventColumns(e), false));
+}
+
+/**
+ * Add `locked` to an event's public columns. A locked event (access_code, not
+ * unlocked) is a teaser — name, when, where — so its price is withheld too,
+ * like its tiers.
+ */
+function lockedColumns<T extends Pick<Event, 'visibility' | 'pricePaise'>>(
+  row: T,
+  unlocked: boolean,
+): T & { locked: boolean } {
+  const locked = row.visibility === 'access_code' && !unlocked;
+  return locked ? { ...row, pricePaise: 0, locked } : { ...row, locked };
 }
 
 /**
@@ -573,8 +587,7 @@ function toPublicEvent(
 ): PublicEventWithVenue {
   const isStandalone = r.e.venueId === null;
   return {
-    ...toPublicEventColumns(r.e),
-    locked: r.e.visibility === 'access_code' && !opts.unlocked,
+    ...lockedColumns(toPublicEventColumns(r.e), Boolean(opts.unlocked)),
     venueName: r.venueName,
     venueTags: r.venueTags ?? [],
     isStandalone,
@@ -804,7 +817,15 @@ export async function nextSeriesOccurrenceFor(ids: string[]): Promise<Map<string
     .from(events)
     .leftJoin(venues, eq(venues.id, events.venueId))
     .innerJoin(tenants, eq(tenants.id, events.tenantId))
-    .where(and(inArray(events.seriesId, seriesIds), ...publicEventConds()))
+    .where(
+      and(
+        inArray(events.seriesId, seriesIds),
+        ...publicEventConds(),
+        // A private-link date is reached by its link only: a saved date must
+        // never roll forward onto one.
+        sql`${events.visibility} <> 'unlisted'`,
+      ),
+    )
     .orderBy(sql`${events.seriesId}`, sql`${events.startsAt} asc`);
   const nextBySeries = new Map<string, string>();
   for (const r of upcoming) if (!nextBySeries.has(r.seriesId!)) nextBySeries.set(r.seriesId!, r.id);

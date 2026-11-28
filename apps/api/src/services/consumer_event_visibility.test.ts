@@ -1,12 +1,22 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, db, pingDb } from '../db/client.js';
-import { eventTicketTiers, events, tenantMembers, tenants, users } from '../db/schema/index.js';
+import {
+  eventTicketTiers,
+  events,
+  tenantMembers,
+  tenants,
+  users,
+  venues,
+} from '../db/schema/index.js';
 import {
   assertEventBookable,
   consumerBookEvent,
   getPublicEventById,
+  listPublicEvents,
   listPublicUpcomingEvents,
+  nextSeriesOccurrenceFor,
   searchPublicCatalogue,
 } from './consumer_service.js';
 import { createEvent, updateEvent } from './events_service.js';
@@ -72,6 +82,7 @@ describe.skipIf(!runIntegration)('event visibility (private / invite-only)', () 
     await db.execute(sql`delete from bookings where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from event_ticket_tiers where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from events where tenant_id = ${tenantId}`);
+    await db.execute(sql`delete from venues where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenant_members where tenant_id = ${tenantId}`);
     await db.execute(sql`delete from tenants where id = ${tenantId}`);
     await db.execute(sql`delete from users where id = ${userId}`);
@@ -100,6 +111,68 @@ describe.skipIf(!runIntegration)('event visibility (private / invite-only)', () 
     expect(row!.visibility).toBe('access_code');
     expect(row!.locked).toBe(true);
     expect('accessCode' in row!).toBe(false);
+  });
+
+  it('withholds the price of a locked event, and shows it once unlocked', async () => {
+    await db.execute(sql`update events set price_paise = 45000 where id = ${codedId}`);
+    const rows = await listPublicUpcomingEvents({ limit: 100 });
+    expect(rows.find((r) => r.id === codedId)!.pricePaise).toBe(0);
+    expect((await getPublicEventById(codedId))!.pricePaise).toBe(0);
+    const unlocked = await getPublicEventById(codedId, { accessCode: 'secret-code' });
+    expect(unlocked!.pricePaise).toBe(45000);
+    await db.execute(sql`update events set price_paise = 0 where id = ${codedId}`);
+  });
+
+  it('marks a venue list row locked and never rolls a saved date onto a private-link one', async () => {
+    const [venue] = await db
+      .insert(venues)
+      .values({
+        tenantId,
+        name: 'Vis Venue',
+        addressJson: { line1: '1 Court Rd', city: 'Pune' },
+        tzName: 'Asia/Kolkata',
+        status: 'active',
+      })
+      .returning();
+    const seriesId = randomUUID();
+    const base = {
+      tenantId,
+      venueId: venue!.id,
+      name: 'Vis Series',
+      pricePaise: 20000,
+      status: 'published' as const,
+      seriesId,
+    };
+    const [past, hidden, coded] = await db
+      .insert(events)
+      .values([
+        { ...base, startsAt: new Date('2020-01-01T10:00:00Z'), endsAt: new Date('2020-01-01T12:00:00Z') },
+        {
+          ...base,
+          startsAt: new Date('2032-09-01T10:00:00Z'),
+          endsAt: new Date('2032-09-01T12:00:00Z'),
+          visibility: 'unlisted' as const,
+        },
+        {
+          ...base,
+          startsAt: new Date('2032-09-08T10:00:00Z'),
+          endsAt: new Date('2032-09-08T12:00:00Z'),
+          visibility: 'access_code' as const,
+          accessCode: 'Series-Code',
+        },
+      ])
+      .returning();
+
+    const rows = await listPublicEvents(venue!.id);
+    expect(rows.map((r) => r.id)).toEqual([coded!.id]);
+    expect(rows[0]!.locked).toBe(true);
+    expect(rows[0]!.pricePaise).toBe(0);
+    expect('accessCode' in rows[0]!).toBe(false);
+
+    // The earlier upcoming date is private-link: skip it for the listed one.
+    const next = await nextSeriesOccurrenceFor([past!.id]);
+    expect(next.get(past!.id)).toBe(coded!.id);
+    expect(next.get(past!.id)).not.toBe(hidden!.id);
   });
 
   it('keeps an access_code event locked (no tiers) without or with a wrong code', async () => {
@@ -183,8 +256,14 @@ describe.skipIf(!runIntegration)('event visibility (private / invite-only)', () 
     const toUnlisted = await updateEvent(ctx, codedId, { visibility: 'unlisted' });
     expect(toUnlisted.visibility).toBe('unlisted');
 
+    // Leaving access_code discards the code: coming back needs a new one,
+    // never the old one revived.
+    expect(toUnlisted.accessCode).toBeNull();
+    await expect(updateEvent(ctx, codedId, { visibility: 'access_code' })).rejects.toMatchObject({
+      code: 'event_access_code_required',
+    });
+    await updateEvent(ctx, codedId, { visibility: 'access_code', accessCode: 'Fresh-Code-7' });
     // Dropping the code while access_code is on must fail.
-    await updateEvent(ctx, codedId, { visibility: 'access_code' });
     await expect(updateEvent(ctx, codedId, { accessCode: null })).rejects.toMatchObject({
       code: 'event_access_code_required',
     });
@@ -195,6 +274,7 @@ describe.skipIf(!runIntegration)('event visibility (private / invite-only)', () 
     );
     const logged = JSON.stringify(audit);
     expect(logged).not.toContain('New-Code-42');
+    expect(logged).not.toContain('Fresh-Code-7');
     expect(logged).toContain('accessCodeChanged');
 
     // Content stays frozen on live events.

@@ -26,6 +26,7 @@ import {
   sameRedirect,
 } from './PostBookingRedirectEditor';
 import {
+  ACCESS_CODE_MIN_LENGTH,
   EventVisibilityField,
   visibilityFromApi,
   visibilityToPayload,
@@ -135,8 +136,8 @@ export function LiveEventSettings({
       setError('Enter a full http:// or https:// link for the after-booking step.');
       return;
     }
-    if (visChanged && visDraft.visibility === 'access_code' && visDraft.accessCode.trim().length < 4) {
-      setError('Enter an access code of at least 4 characters (or generate one).');
+    if (visChanged && visDraft.visibility === 'access_code' && visDraft.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH) {
+      setError('Enter an access code of at least 6 characters (or generate one).');
       return;
     }
     try {

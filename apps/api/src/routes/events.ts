@@ -146,7 +146,7 @@ const maxPerUserField = z.number().int().min(1).nullable().optional();
 // Consumer discovery: public (default) / unlisted (direct link only) /
 // access_code (listed, but entry gated behind `accessCode`).
 const visibilityField = z.enum(['public', 'unlisted', 'access_code']).optional();
-const accessCodeField = z.string().trim().min(4).max(64).nullable().optional();
+const accessCodeField = z.string().trim().min(6).max(64).nullable().optional();
 
 /** access_code events must carry a code in the same payload. */
 function visibilityNeedsCode(d: { visibility?: string | undefined; accessCode?: string | null | undefined }) {

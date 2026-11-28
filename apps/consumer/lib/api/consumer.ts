@@ -125,19 +125,31 @@ export function useEvent(
   /** Unlocks an invite-only event; without it (or with a wrong one) the event
    *  comes back `locked: true` with no tiers. */
   accessCode?: string,
+  opts: { enabled?: boolean } = {},
 ) {
   return useQuery({
     queryKey: ['event', eventId, preview, accessCode ?? null],
-    queryFn: () =>
-      apiFetch<PublicEventWithVenue>(
-        `/v1/consumer/events/${eventId}${accessCode ? `?code=${encodeURIComponent(accessCode)}` : ''}`,
-        previewInit(preview),
-      ),
-    // Keep the teaser on screen while a code is being checked.
-    placeholderData: (prev) => prev,
-    enabled: Boolean(eventId),
+    queryFn: () => {
+      const init = previewInit(preview);
+      return apiFetch<PublicEventWithVenue>(`/v1/consumer/events/${eventId}`, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          // A header, not a query string, so the code stays out of request
+          // logs; URI-encoded because a header value must be ASCII.
+          ...(accessCode ? { [ACCESS_CODE_HEADER]: encodeURIComponent(accessCode) } : {}),
+        },
+      });
+    },
+    // A code check is one deliberate try: retrying a refusal (too many wrong
+    // codes) or a failure only delays telling the visitor.
+    ...(accessCode ? { retry: false } : {}),
+    enabled: Boolean(eventId) && (opts.enabled ?? true),
   });
 }
+
+/** The request header the API reads an invite-only event's access code from. */
+export const ACCESS_CODE_HEADER = 'X-Circls-Access-Code';
 
 /**
  * All active memberships across venues.

@@ -41,6 +41,7 @@ import {
 import type { PostBookingRedirect } from '@/lib/api/types';
 import { LiveEventSettings } from '@/components/LiveEventSettings';
 import {
+  ACCESS_CODE_MIN_LENGTH,
   EventVisibilityField,
   emptyVisibility,
   visibilityFromApi,
@@ -218,9 +219,9 @@ export default function EventDetailPage() {
     }
     if (
       visibilityDraft.visibility === 'access_code' &&
-      visibilityDraft.accessCode.trim().length < 4
+      visibilityDraft.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH
     ) {
-      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      setErrorMsg('Enter an access code of at least 6 characters (or generate one).');
       return;
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {

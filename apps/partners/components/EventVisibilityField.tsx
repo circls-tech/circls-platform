@@ -14,6 +14,9 @@ export interface VisibilityDraft {
   accessCode: string;
 }
 
+/** Shortest access code the API accepts (routes/events.ts). */
+export const ACCESS_CODE_MIN_LENGTH = 6;
+
 export const VISIBILITY_OPTIONS: { value: EventVisibility; label: string; hint: string }[] = [
   {
     value: 'public',
@@ -114,7 +117,7 @@ export function EventVisibilityField({
               disabled={disabled}
               onChange={(e) => onChange({ ...value, accessCode: e.target.value })}
               placeholder="e.g. CLUB-NIGHT"
-              hint="4–64 characters. Not case-sensitive."
+              hint={`${ACCESS_CODE_MIN_LENGTH}–64 characters. Not case-sensitive.`}
             />
           </div>
           <button

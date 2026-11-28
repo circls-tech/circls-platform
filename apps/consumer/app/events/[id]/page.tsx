@@ -13,6 +13,7 @@ import { SportImage } from '@/components/SportImage';
 import { OrgBrandBlock } from '@/components/OrgBrandBlock';
 import { QuestionsSection } from '@/components/questions/QuestionsSection';
 import { useEvent, usePublicOrg } from '@/lib/api/consumer';
+import { ApiError } from '@/lib/api/client';
 import { usePublicCoupons } from '@/lib/api/checkout';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { countryOfAddress, currencyForCountry, formatDateTime, formatPaiseExact } from '@/lib/format';
@@ -45,11 +46,16 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
   // create form posts it here as they type, and nothing is fetched by id.
   const scratch = id === SCRATCH_ID;
   const scratchQ = useScratchListing<PublicEventWithVenue>(scratch, preview, 'event');
-  // Invite-only events: the code the viewer entered. Set on submit — the query
-  // refetches with it and the server unlocks (or keeps `locked: true`).
+  // Invite-only events: the code the viewer entered. Set on submit — a second
+  // read carries it and the server unlocks (or keeps `locked: true`). The
+  // plain read stays the page's own, so a code check that fails for any
+  // reason leaves the teaser on screen.
   const [codeInput, setCodeInput] = useState('');
   const [submittedCode, setSubmittedCode] = useState<string | undefined>(undefined);
-  const eventQ = useEvent(scratch ? '' : id, preview, submittedCode);
+  const eventQ = useEvent(scratch ? '' : id, preview);
+  const unlockQ = useEvent(scratch ? '' : id, preview, submittedCode, {
+    enabled: Boolean(submittedCode),
+  });
   useItemView('event', id, !preview && !scratch);
   const { openCheckout } = useCheckoutModal();
   const { user } = useAuth();
@@ -57,15 +63,33 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
     ? scratchQ.listing
       ? { ...scratchQ.listing, images: scratchQ.images }
       : undefined
-    : eventQ.data;
+    : submittedCode && unlockQ.data
+      ? unlockQ.data
+      : eventQ.data;
   // Owning-org profile for the "Organised by" block; degrades to the compact
   // brand summary while loading or when the org is unavailable.
   const orgQ = usePublicOrg(ev?.brand?.slug ?? '');
-  const codeRejected = Boolean(ev?.locked && submittedCode && !eventQ.isFetching);
+  const checkingCode = Boolean(submittedCode) && unlockQ.isFetching;
+  // Why the form is still showing after a try: the code was wrong, the API
+  // refused more tries for now, or the check itself failed. Only the first is
+  // the visitor's code being wrong, so only it says so.
+  const codeProblem: string | null =
+    !submittedCode || checkingCode
+      ? null
+      : unlockQ.isError
+        ? unlockQ.error instanceof ApiError && unlockQ.error.code === 'event_access_code_attempts'
+          ? unlockQ.error.message
+          : 'We couldn’t check that code just now. Try again in a moment.'
+        : unlockQ.data?.locked
+          ? 'That code didn’t work — check it with the organiser and try again.'
+          : null;
   const [qty, setQty] = useState<Record<string, number>>({});
   // Public offers for this event (partner- and Circls-funded alike); tapping
   // one carries it into checkout pre-applied.
-  const offersQ = usePublicCoupons(ev && !scratch ? { itemType: 'event', itemId: ev.id } : null);
+  // A locked invite-only event shows no prices, so no offers either.
+  const offersQ = usePublicCoupons(
+    ev && !scratch && !ev.locked ? { itemType: 'event', itemId: ev.id } : null,
+  );
   const offers = offersQ.data?.rows ?? [];
   const [offerCode, setOfferCode] = useState<string | null>(null);
   // Prices are denominated by the event's resolved location country.
@@ -257,7 +281,11 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                   className="flex flex-col gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (codeInput.trim()) setSubmittedCode(codeInput.trim());
+                    const next = codeInput.trim();
+                    if (!next) return;
+                    // Same code again (after a failed check): ask again.
+                    if (next === submittedCode) void unlockQ.refetch();
+                    else setSubmittedCode(next);
                   }}
                 >
                   <p className="text-sm font-semibold text-ink">This event is invite-only.</p>
@@ -274,13 +302,13 @@ function EventPageInner({ params }: { params: Promise<{ id: string }> }) {
                       maxLength={64}
                       className="w-48 rounded-[var(--radius)] border-[2px] border-ink bg-white px-3 py-2 text-sm text-ink placeholder:text-text-secondary"
                     />
-                    <Button type="submit" disabled={!codeInput.trim() || eventQ.isFetching}>
-                      {eventQ.isFetching ? 'Checking…' : 'Unlock'}
+                    <Button type="submit" disabled={!codeInput.trim() || checkingCode}>
+                      {checkingCode ? 'Checking…' : 'Unlock'}
                     </Button>
                   </div>
-                  {codeRejected && (
+                  {codeProblem && (
                     <p role="alert" className="text-sm font-semibold text-petal-red">
-                      That code didn’t work — check it with the organiser and try again.
+                      {codeProblem}
                     </p>
                   )}
                 </form>

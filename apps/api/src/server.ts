@@ -83,6 +83,7 @@ export async function buildServer(): Promise<FastifyInstance> {
           'req.headers["x-razorpay-signature"]',
           'req.headers["x-webhook-signature"]',
           'req.headers["x-circls-preview"]',
+          'req.headers["x-circls-access-code"]',
           'req.headers.cookie',
           '*.keySecret',
           '*.key_secret',

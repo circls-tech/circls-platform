@@ -58,6 +58,7 @@ import { ListingPreviewModal } from '@/components/ListingPreviewModal';
 import { RejectionNotice } from '@/components/RejectionNotice';
 import { describeRefusal, missingCopy } from '@/lib/listings/missing';
 import {
+  ACCESS_CODE_MIN_LENGTH,
   EventVisibilityField,
   emptyVisibility,
   visibilityFromApi,
@@ -324,9 +325,9 @@ export default function OrgEventDetailPage() {
     }
     if (
       visibilityDraft.visibility === 'access_code' &&
-      visibilityDraft.accessCode.trim().length < 4
+      visibilityDraft.accessCode.trim().length < ACCESS_CODE_MIN_LENGTH
     ) {
-      setErrorMsg('Enter an access code of at least 4 characters (or generate one).');
+      setErrorMsg('Enter an access code of at least 6 characters (or generate one).');
       return;
     }
     if (redirect && redirect.url.trim() && !isValidRedirectUrl(redirect.url)) {
