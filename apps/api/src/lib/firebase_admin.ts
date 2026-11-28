@@ -68,12 +68,44 @@ export async function markEmailVerified(uid: string): Promise<void> {
 }
 
 /** Firebase Admin errors carry a string `code` such as `auth/user-not-found`. */
+function hasCode(err: unknown, code: string): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === code;
+}
+
 function isUserNotFound(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: unknown }).code === 'auth/user-not-found'
-  );
+  return hasCode(err, 'auth/user-not-found');
+}
+
+/**
+ * The Firebase account that owns `phoneE164`, created when there is none.
+ * For a number Circls verified itself (an MSG91 login code): it is the same
+ * account Firebase phone sign-in finds or creates, so a customer keeps one
+ * uid however their code reached them, and the ID token still carries
+ * `phone_number`. Two first sign-ins racing to create it both end up with
+ * the one account.
+ */
+export async function firebaseUserForPhone(
+  phoneE164: string,
+): Promise<{ uid: string; disabled: boolean }> {
+  try {
+    const user = await firebaseAuth().getUserByPhoneNumber(phoneE164);
+    return { uid: user.uid, disabled: user.disabled };
+  } catch (err) {
+    if (!isUserNotFound(err)) throw err;
+  }
+  try {
+    const user = await firebaseAuth().createUser({ phoneNumber: phoneE164 });
+    return { uid: user.uid, disabled: user.disabled };
+  } catch (err) {
+    if (!hasCode(err, 'auth/phone-number-already-exists')) throw err;
+    const user = await firebaseAuth().getUserByPhoneNumber(phoneE164);
+    return { uid: user.uid, disabled: user.disabled };
+  }
+}
+
+/** A custom token the client exchanges for a session (`signInWithCustomToken`). */
+export async function createCustomToken(uid: string): Promise<string> {
+  return firebaseAuth().createCustomToken(uid);
 }
 
 /**

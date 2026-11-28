@@ -28,6 +28,7 @@ export * from './support_issues.js';
 export * from './circls_support_grants.js';
 export * from './consumer_activity.js';
 export * from './login_events.js';
+export * from './phone_login_codes.js';
 export * from './coupons.js';
 export * from './coupon_redemptions.js';
 export * from './qr_ticket_config.js';

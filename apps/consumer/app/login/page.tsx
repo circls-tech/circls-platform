@@ -2,11 +2,21 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, type FormEvent, useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
+import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/lib/firebase/auth_context';
 import { safeRedirectPath } from '@/lib/nav/safe_redirect';
 import { Button, Card, Input } from '@/lib/ui';
 
 function friendlyError(err: unknown): string {
+  // From Circls' own login codes (Indian numbers). Their messages are written
+  // for customers; the generic ones (a malformed number, the per-IP limiter,
+  // a server error) are not.
+  if (err instanceof ApiError) {
+    if (err.status !== undefined && err.status >= 500) return 'Something went wrong. Please try again.';
+    if (err.status === 429 && err.code === 'bad_request') return 'Too many attempts. Please wait a bit and try again.';
+    if (err.code === 'bad_request') return 'That phone number looks invalid. Use the full number with country code.';
+    return err.message;
+  }
   const code = (err as { code?: string })?.code ?? '';
   if (code.includes('invalid-phone-number')) return 'That phone number looks invalid. Use the full number with country code.';
   if (code.includes('invalid-verification-code')) return 'That code is incorrect. Please try again.';

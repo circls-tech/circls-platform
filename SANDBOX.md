@@ -31,6 +31,9 @@ puts it back.
   - Consumer web — **phone OTP**: phone `+15555550102`; the OTP code is shown in
     the **Emulator UI** at http://localhost:4000 (and in
     `./sandbox logs firebase-emulator`). No real SMS is sent.
+    Indian (+91) numbers sign in the same way, unless `MSG91_OTP_ENABLED=true`
+    is in the repo-root `.env`: then the API sends their code itself, and you
+    read it in `./sandbox logs api` (the `login_code_stub` line).
 - **Emails** the app "sends" land in the inbox at http://localhost:8025.
 - Messed it up? `./sandbox reset` — wipes and reseeds to a clean state.
 - Stop: `./sandbox down`
